@@ -41,21 +41,19 @@ function fmtTps(tps) { return tps == null ? "—" : `${tps >= 100 ? Math.round(t
 function fmtPct(p) { return p == null ? "—" : `${p}%`; }
 function fmtN(n) { return n == null ? "—" : n.toLocaleString("en-US"); }
 function sessionCounts(sessions) {
-	var c = { main: 0, subagent: 0, archived: 0 };
+	var c = { main: 0, subagent: 0 };
 	(sessions || []).forEach(function (s) {
-		if (s.archived) c.archived++;
-		else if (s.subagent) c.subagent++;
+		if (s.archived) return; // 归档会话不显示（宿主已排除，双保险）
+		if (s.subagent) c.subagent++;
 		else c.main++;
 	});
 	return c;
 }
-function addCounts(a, b) { a.main += b.main; a.subagent += b.subagent; a.archived += b.archived; return a; }
-function fmtSessionCounts(c, t) {
-	if (c.subagent === 0 && c.archived === 0) return fmtN(c.main);
-	var parts = [`${t("w.main")} ${fmtN(c.main)}`];
-	if (c.subagent > 0) parts.push(`${t("w.sub")} ${fmtN(c.subagent)}`);
-	if (c.archived > 0) parts.push(`${t("w.archivedCount")} ${fmtN(c.archived)}`);
-	return parts.join(" + ");
+function addCounts(a, b) { a.main += b.main; a.subagent += b.subagent; return a; }
+// 紧凑格式：仅主对话 → "3"；有子对话 → "1+9"（表头标明 主+子）
+function fmtSessionCounts(c) {
+	if (c.subagent > 0) return `${fmtN(c.main)}+${fmtN(c.subagent)}`;
+	return fmtN(c.main);
 }
 function esc(s) {
 	return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -466,7 +464,7 @@ function SummaryCards(props) {
 	var projects = props.projects;
 	var t = props.t;
 	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
-	var totC = { main: 0, subagent: 0, archived: 0 };
+	var totC = { main: 0, subagent: 0 };
 	projects.forEach((p) => {
 		addCounts(totC, sessionCounts(p.sessions));
 		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
@@ -476,7 +474,7 @@ function SummaryCards(props) {
 	});
 	var cards = [
 		[t("card.projects"), fmtN(projects.length)],
-		[t("card.sessions"), fmtSessionCounts(totC, t)],
+		[t("card.sessions"), fmtSessionCounts(totC)],
 		[t("card.turnsSteps"), `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
 		[t("card.llm"), fmtDuration(tot.llmMs)],
 		[t("card.tool"), fmtDuration(tot.toolMs)],
@@ -558,7 +556,7 @@ function ProjectsTable(props) {
 						e("div", { className: "ph" }, esc(p.path))
 					)
 				)),
-				e("td", null, fmtSessionCounts(sessionCounts(p.sessions), t)),
+				e("td", null, fmtSessionCounts(sessionCounts(p.sessions))),
 				e("td", null, fmtN(s.turns)),
 				e("td", null, fmtN(s.steps)),
 				e("td", null, fmtDuration(s.llmMs)),
@@ -576,11 +574,10 @@ function ProjectsTable(props) {
 			)
 		));
 		if (selected === p.id) {
-			var mainSessions = p.sessions.filter((sd) => !sd.subagent && !sd.archived);
-			var subSessions = p.sessions.filter((sd) => sd.subagent && !sd.archived);
-			var archivedSessions = p.sessions.filter((sd) => sd.archived);
+			var mainSessions = p.sessions.filter((sd) => !sd.subagent);
+			var subSessions = p.sessions.filter((sd) => sd.subagent);
 			var sessRow = (sd) => e("div", { className: "dss-sess", key: sd.id },
-				e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.archived ? t("w.archived") : "", sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null),
+				e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null),
 				e("span", { className: "me" }, fmtClock(sd.updatedAt)),
 				e("span", { className: "st" }, `${fmtN(sd.stats.turns)} ${t("w.turns")} · ${fmtN(sd.stats.steps)} ${t("w.steps")}`),
 				e("span", { className: "st" }, `LLM ${fmtDuration(sd.stats.llmMs)}`),
@@ -594,10 +591,6 @@ function ProjectsTable(props) {
 			if (subSessions.length) {
 				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, `${t("w.subagentGroup")} (${subSessions.length})`)]);
 				detailChildren = detailChildren.concat(subSessions.map(sessRow));
-			}
-			if (archivedSessions.length) {
-				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "archgroup" }, `${t("w.archivedGroup")} (${archivedSessions.length})`)]);
-				detailChildren = detailChildren.concat(archivedSessions.map(sessRow));
 			}
 			rows.push(e("tr", { key: p.id + "-detail" },
 				e("td", { colSpan: 13, style: { padding: 0 } },
@@ -713,7 +706,7 @@ function exportCSV(projects, t) {
 	projects.forEach(function (p) {
 		var s = p.stats;
 		lines.push([
-			JSON.stringify(p.name), JSON.stringify(p.path), p.sessionCount, JSON.stringify(fmtSessionCounts(sessionCounts(p.sessions), t)),
+			JSON.stringify(p.name), JSON.stringify(p.path), p.sessionCount, JSON.stringify(fmtSessionCounts(sessionCounts(p.sessions))),
 			s.turns, s.steps, Math.round(s.llmMs), Math.round(s.toolMs),
 			s.inputTokens, s.outputTokens, s.cacheRead, projectCost(p).toFixed(4)
 		].join(","));
@@ -843,7 +836,7 @@ const zh = {
 	"card.cacheHit": "平均缓存命中",
 	"card.cost": "消费金额",
 	"th.project": "项目",
-	"th.sessions": "会话",
+	"th.sessions": "会话（主+子）",
 	"th.turns": "轮",
 	"th.steps": "步",
 	"th.llm": "LLM",
@@ -862,11 +855,6 @@ const zh = {
 	"w.cacheHit": "缓存命中",
 	"w.input": "输入",
 	"w.output": "输出",
-	"w.archived": "（已归档）",
-	"w.archivedCount": "归档",
-	"w.archivedGroup": "已归档",
-	"w.main": "主",
-	"w.sub": "子",
 	"w.subagentTag": "子对话",
 	"w.subagentGroup": "子对话",
 	"w.untitled": "（未命名会话）",
@@ -903,7 +891,7 @@ const en = {
 	"card.cacheHit": "Avg cache hit",
 	"card.cost": "Cost",
 	"th.project": "Project",
-	"th.sessions": "Sessions",
+	"th.sessions": "Sessions (main+sub)",
 	"th.turns": "Turns",
 	"th.steps": "Steps",
 	"th.llm": "LLM",
@@ -922,11 +910,6 @@ const en = {
 	"w.cacheHit": "Cache hit",
 	"w.input": "Input",
 	"w.output": "Output",
-	"w.archived": " (archived)",
-	"w.archivedCount": "archived",
-	"w.archivedGroup": "Archived",
-	"w.main": "main",
-	"w.sub": "sub",
 	"w.subagentTag": "sub-agent",
 	"w.subagentGroup": "Sub-agent sessions",
 	"w.untitled": " (untitled)",

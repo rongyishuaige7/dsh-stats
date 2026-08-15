@@ -321,15 +321,14 @@ let StatsService = (() => {
 				const agg = emptyRaw();
 				let lastActiveAt = null;
 				let subagentCount = 0;
-				let archivedCount = 0;
 
 				for (const sessionId of ws.sessionIds ?? []) {
 					const s = processSession(sessionId, ws.path);
 					if (s.blank) continue;
+					if (s.archived) continue;
 					addRaw(agg, s.stats);
 					sessions.push(s);
 					if (s.subagent) subagentCount++;
-					if (s.archived) archivedCount++;
 					if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 				}
 
@@ -340,7 +339,6 @@ let StatsService = (() => {
 					path: ws.path || "",
 					sessionCount: sessions.length,
 					subagentCount,
-					archivedCount,
 					lastActiveAt,
 					stats: agg,
 					sessions
@@ -354,6 +352,7 @@ let StatsService = (() => {
 				if (seen.has(sessionId)) continue;
 				const s = processSession(sessionId, null);
 				if (s.blank) continue;
+				if (s.archived) continue;
 				const cwd = s.cwd || "(uncategorized)";
 				if (!strayByCwd.has(cwd)) strayByCwd.set(cwd, []);
 				strayByCwd.get(cwd).push(s);
@@ -366,7 +365,6 @@ let StatsService = (() => {
 					path: cwd,
 					sessionCount: 0,
 					subagentCount: 0,
-					archivedCount: 0,
 					lastActiveAt: null,
 					stats: emptyRaw(),
 					sessions: []
@@ -375,7 +373,6 @@ let StatsService = (() => {
 				sessions.forEach((s) => {
 					target.sessions.push(s);
 					if (s.subagent) target.subagentCount++;
-					if (s.archived) target.archivedCount++;
 					addRaw(target.stats, s.stats);
 					if (s.updatedAt != null && (target.lastActiveAt == null || s.updatedAt > target.lastActiveAt)) target.lastActiveAt = s.updatedAt;
 				});
