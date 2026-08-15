@@ -40,6 +40,10 @@ function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null ? "—" : `${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`; }
 function fmtPct(p) { return p == null ? "—" : `${p}%`; }
 function fmtN(n) { return n == null ? "—" : n.toLocaleString("en-US"); }
+function fmtSessionCount(sessions, subagents, t) {
+	if (subagents > 0) return `${t("w.main")} ${sessions - subagents} + ${t("w.sub")} ${subagents}`;
+	return fmtN(sessions);
+}
 function esc(s) {
 	return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -156,8 +160,8 @@ function applyRange(projects, range) {
 	var cutoff = maxUpdated - (range - 1) * 86400000;
 	return projects.map((p) => {
 		var sessions = p.sessions.filter((s) => s.updatedAt != null && s.updatedAt >= cutoff);
-		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0 }) };
-		return { ...p, sessions, sessionCount: sessions.length, stats: sumSessionStats(sessions) };
+		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0 }) };
+		return { ...p, sessions, sessionCount: sessions.length, subagentCount: sessions.filter((s) => s.subagent).length, stats: sumSessionStats(sessions) };
 	});
 }
 
@@ -233,13 +237,16 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var agg = emptyRaw();
 		var sessions = [];
 		var lastActiveAt = null;
+		var subagentCount = 0;
 		members.forEach((s) => {
 			var raw = rawOf(s);
 			addRaw(agg, raw);
+			if (s.origin === "subagent") subagentCount++;
 			sessions.push({
 				id: s.id,
 				title: s.title || s.displayTitle || null,
 				updatedAt: s.updatedAt || null,
+				subagent: s.origin === "subagent",
 				stats: display(raw),
 				durMs: raw.llmMs + raw.toolMs
 			});
@@ -252,6 +259,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 			path: ws.path || "",
 			sessionCount: sessions.length,
 			lastActiveAt,
+			subagentCount,
 			stats: display(agg),
 			sessions
 		});
@@ -269,14 +277,16 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var agg = emptyRaw();
 		var sessions = [];
 		var lastActiveAt = null;
+		var subagentCount = 0;
 		members.forEach((s) => {
 			var raw = rawOf(s);
 			addRaw(agg, raw);
-			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, subagent: s.origin === "subagent", stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			if (s.origin === "subagent") subagentCount++;
 			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 		});
 		sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-		projects.push({ id: "cwd-" + cwd, name: cwd === t("w.uncategorized") ? cwd : basename(cwd), path: cwd, sessionCount: sessions.length, lastActiveAt, stats: display(agg), sessions });
+		projects.push({ id: "cwd-" + cwd, name: cwd === t("w.uncategorized") ? cwd : basename(cwd), path: cwd, sessionCount: sessions.length, subagentCount: subagentCount, lastActiveAt, stats: display(agg), sessions });
 	});
 
 	projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
@@ -387,6 +397,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-sess .ti{font-weight:600;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px}" +
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums}" +
+	".dss-tag{font-size:10px;font-weight:600;color:#4f8cff;background:rgba(79,140,255,.14);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}" +
+	".dss-group{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7280);padding:9px 10px 3px;letter-spacing:.3px}" +
 	".dss-hint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;margin-bottom:10px}" +
 	".dss-heat{display:flex;align-items:center;gap:3px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px}" +
 	".dss-hm{width:14px;height:14px;border-radius:4px;flex:none;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c)}" +
@@ -438,8 +450,10 @@ function SummaryCards(props) {
 	var projects = props.projects;
 	var t = props.t;
 	var tot = { sessions: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
+	var totSub = 0;
 	projects.forEach((p) => {
 		tot.sessions += p.sessionCount;
+		totSub += p.subagentCount || 0;
 		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
 		tot.llmMs += p.stats.llmMs; tot.toolMs += p.stats.toolMs;
 		tot.input += p.stats.inputTokens; tot.output += p.stats.outputTokens; tot.cacheRead += p.stats.cacheRead;
@@ -447,7 +461,7 @@ function SummaryCards(props) {
 	});
 	var cards = [
 		[t("card.projects"), fmtN(projects.length)],
-		[t("card.sessions"), fmtN(tot.sessions)],
+		[t("card.sessions"), fmtSessionCount(tot.sessions, totSub, t)],
 		[t("card.turnsSteps"), `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
 		[t("card.llm"), fmtDuration(tot.llmMs)],
 		[t("card.tool"), fmtDuration(tot.toolMs)],
@@ -529,7 +543,7 @@ function ProjectsTable(props) {
 						e("div", { className: "ph" }, esc(p.path))
 					)
 				)),
-				e("td", null, fmtN(p.sessionCount)),
+				e("td", null, fmtSessionCount(p.sessionCount, p.subagentCount || 0, t)),
 				e("td", null, fmtN(s.turns)),
 				e("td", null, fmtN(s.steps)),
 				e("td", null, fmtDuration(s.llmMs)),
@@ -547,23 +561,27 @@ function ProjectsTable(props) {
 			)
 		));
 		if (selected === p.id) {
+			var mainSessions = p.sessions.filter((sd) => !sd.subagent);
+			var subSessions = p.sessions.filter((sd) => sd.subagent);
+			var sessRow = (sd) => e("div", { className: "dss-sess", key: sd.id },
+				e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.archived ? t("w.archived") : "", sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null),
+				e("span", { className: "me" }, fmtClock(sd.updatedAt)),
+				e("span", { className: "st" }, `${fmtN(sd.stats.turns)} ${t("w.turns")} · ${fmtN(sd.stats.steps)} ${t("w.steps")}`),
+				e("span", { className: "st" }, `LLM ${fmtDuration(sd.stats.llmMs)}`),
+				e("span", { className: "st" }, `${t("w.tool")} ${fmtDuration(sd.stats.toolMs)}`),
+				e("span", { className: "st" }, `${t("w.cacheHit")} ${fmtPct(sd.stats.cacheHitPct)}`),
+				e("span", { className: "st" }, `${t("w.input")} ${fmtTokens(sd.stats.inputTokens)} · ${t("w.output")} ${fmtTokens(sd.stats.outputTokens)}`),
+				e("span", { className: "st" }, `${sd.model || "?"}`),
+				e("span", { className: "st dss-cost" }, fmtCost(sessionCost(sd)))
+			);
+			var detailChildren = mainSessions.map(sessRow);
+			if (subSessions.length) {
+				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, `${t("w.subagentGroup")} (${subSessions.length})`)]);
+				detailChildren = detailChildren.concat(subSessions.map(sessRow));
+			}
 			rows.push(e("tr", { key: p.id + "-detail" },
 				e("td", { colSpan: 13, style: { padding: 0 } },
-					e("div", { className: "dss-detail" },
-						p.sessions.map((sd) =>
-							e("div", { className: "dss-sess", key: sd.id },
-								e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.archived ? t("w.archived") : ""),
-								e("span", { className: "me" }, fmtClock(sd.updatedAt)),
-								e("span", { className: "st" }, `${fmtN(sd.stats.turns)} ${t("w.turns")} · ${fmtN(sd.stats.steps)} ${t("w.steps")}`),
-								e("span", { className: "st" }, `LLM ${fmtDuration(sd.stats.llmMs)}`),
-								e("span", { className: "st" }, `${t("w.tool")} ${fmtDuration(sd.stats.toolMs)}`),
-								e("span", { className: "st" }, `${t("w.cacheHit")} ${fmtPct(sd.stats.cacheHitPct)}`),
-								e("span", { className: "st" }, `${t("w.input")} ${fmtTokens(sd.stats.inputTokens)} · ${t("w.output")} ${fmtTokens(sd.stats.outputTokens)}`),
-								e("span", { className: "st" }, `${sd.model || "?"}`),
-								e("span", { className: "st dss-cost" }, fmtCost(sessionCost(sd)))
-							)
-						)
-					)
+					e("div", { className: "dss-detail" }, detailChildren)
 				)
 			));
 		}
@@ -718,9 +736,9 @@ function StatsPanel(props) {
 	var data = useMemo(() => {
 		if (remoteData && remoteData.projects) {
 			var projects = remoteData.projects.map((p) => ({
-				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, lastActiveAt: p.lastActiveAt,
+				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, subagentCount: p.subagentCount || 0, lastActiveAt: p.lastActiveAt,
 				stats: display(p.stats),
-				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, model: s.model, archived: s.archived, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage }))
+				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, model: s.model, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage }))
 			}));
 			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true };
 		}
@@ -825,6 +843,10 @@ const zh = {
 	"w.input": "输入",
 	"w.output": "输出",
 	"w.archived": "（已归档）",
+	"w.main": "主",
+	"w.sub": "子",
+	"w.subagentTag": "子对话",
+	"w.subagentGroup": "子对话",
 	"w.untitled": "（未命名会话）",
 	"w.duration": "开发时长",
 	"w.path": "路径",
@@ -879,6 +901,10 @@ const en = {
 	"w.input": "Input",
 	"w.output": "Output",
 	"w.archived": " (archived)",
+	"w.main": "main",
+	"w.sub": "sub",
+	"w.subagentTag": "sub-agent",
+	"w.subagentGroup": "Sub-agent sessions",
 	"w.untitled": " (untitled)",
 	"w.duration": "Duration",
 	"w.path": "Path",

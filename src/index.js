@@ -154,15 +154,16 @@ function findSessionFile(home, sessionId) {
 const sessionInfoCache = new Map(); // filePath -> { mtimeMs, info }
 function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
-	if (!file) return { times: [], model: null, usages: [] };
+	if (!file) return { times: [], model: null, usages: [], origin: null, parentSession: null };
 	let mtimeMs;
-	try { mtimeMs = statSync(file).mtimeMs; } catch { return { times: [], model: null, usages: [] }; }
+	try { mtimeMs = statSync(file).mtimeMs; } catch { return { times: [], model: null, usages: [], origin: null, parentSession: null }; }
 	const cached = sessionInfoCache.get(file);
 	if (cached && cached.mtimeMs === mtimeMs) return cached.info;
 	const buf = readFileSync(file);
 	const frames = scanZstdFrames(buf);
 	const times = [];
 	let model = null;
+	let origin = null, parentSession = null;
 	const usageByStep = new Map();
 	for (const frame of frames) {
 		const text = zstdDecompressSync(buf.subarray(frame.start, frame.end)).toString("utf8");
@@ -172,7 +173,10 @@ function sessionInfo(home, sessionId) {
 			try { ev = JSON.parse(line); } catch { continue; }
 			const t = ev.time ?? ev.time0;
 			if (typeof t === "number") times.push(t);
-			if (ev.type === "request/header") {
+			if (ev.type === "session") {
+				if (ev.origin) origin = ev.origin;
+				if (ev.parentSession) parentSession = ev.parentSession;
+			} else if (ev.type === "request/header") {
 				const m = ev.data?.header?.config?.model;
 				if (m) model = m;
 			} else if (ev.type === "assistant/chunk" && ev.data?.chunk?.type === "usage" && typeof t === "number") {
@@ -193,7 +197,7 @@ function sessionInfo(home, sessionId) {
 		}
 	}
 	times.sort((a, b) => a - b);
-	const info = { times, model, usages: [...usageByStep.values()] };
+	const info = { times, model, usages: [...usageByStep.values()], origin, parentSession };
 	sessionInfoCache.set(file, { mtimeMs, info });
 	return info;
 }
@@ -299,6 +303,9 @@ let StatsService = (() => {
 					updatedAt: lastPromptAt ?? createdAt,
 					model: info.model ?? null,
 					archived,
+					subagent: info.origin === "subagent",
+					origin: info.origin ?? null,
+					parentSession: info.parentSession ?? null,
 					stats: raw,
 					durMs: raw.llmMs + raw.toolMs,
 					slots: slotDurations(info.times),
@@ -312,11 +319,13 @@ let StatsService = (() => {
 				const sessions = [];
 				const agg = emptyRaw();
 				let lastActiveAt = null;
+				let subagentCount = 0;
 
 				for (const sessionId of ws.sessionIds ?? []) {
 					const s = processSession(sessionId, ws.path);
 					addRaw(agg, s.stats);
 					sessions.push(s);
+					if (s.subagent) subagentCount++;
 					if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 				}
 
@@ -326,6 +335,7 @@ let StatsService = (() => {
 					name: ws.title || basename(ws.path) || "?",
 					path: ws.path || "",
 					sessionCount: sessions.length,
+					subagentCount,
 					lastActiveAt,
 					stats: agg,
 					sessions
@@ -349,6 +359,7 @@ let StatsService = (() => {
 					name: cwd === "(uncategorized)" ? cwd : basename(cwd),
 					path: cwd,
 					sessionCount: 0,
+					subagentCount: 0,
 					lastActiveAt: null,
 					stats: emptyRaw(),
 					sessions: []
@@ -356,6 +367,7 @@ let StatsService = (() => {
 				if (!existing) projects.push(target);
 				sessions.forEach((s) => {
 					target.sessions.push(s);
+					if (s.subagent) target.subagentCount++;
 					addRaw(target.stats, s.stats);
 					if (s.updatedAt != null && (target.lastActiveAt == null || s.updatedAt > target.lastActiveAt)) target.lastActiveAt = s.updatedAt;
 				});
