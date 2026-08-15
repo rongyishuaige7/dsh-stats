@@ -44,19 +44,19 @@ function esc(s) {
 	return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function statLine(st) {
+function statLine(st, t) {
 	var parts = [];
-	parts.push(`${fmtN(st.turns)} 轮 · ${fmtN(st.steps)} 步`);
+	parts.push(`${fmtN(st.turns)} ${t("w.turns")} · ${fmtN(st.steps)} ${t("w.steps")}`);
 	var dur = [];
 	if (st.llmMs > 0) dur.push(`LLM ${fmtDuration(st.llmMs)}`);
-	if (st.toolMs > 0) dur.push(`工具 ${fmtDuration(st.toolMs)}`);
+	if (st.toolMs > 0) dur.push(`${t("w.tool")} ${fmtDuration(st.toolMs)}`);
 	if (dur.length) parts.push(dur.join(" · "));
 	var spd = [];
-	if (st.ttftAvgMs != null) spd.push(`首 token ${fmtDuration(st.ttftAvgMs)}`);
+	if (st.ttftAvgMs != null) spd.push(`${t("w.ttft")} ${fmtDuration(st.ttftAvgMs)}`);
 	if (st.tps != null) spd.push(fmtTps(st.tps));
 	if (spd.length) parts.push(spd.join(" · "));
-	if (st.cacheHitPct != null) parts.push(`缓存命中 ${fmtPct(st.cacheHitPct)}`);
-	parts.push(`输入 ${fmtTokens(st.inputTokens)} tok · 输出 ${fmtTokens(st.outputTokens)} tok`);
+	if (st.cacheHitPct != null) parts.push(`${t("w.cacheHit")} ${fmtPct(st.cacheHitPct)}`);
+	parts.push(`${t("w.input")} ${fmtTokens(st.inputTokens)} tok · ${t("w.output")} ${fmtTokens(st.outputTokens)} tok`);
 	return parts.join(" | ");
 }
 
@@ -218,7 +218,7 @@ function basename(p) {
 	return (p || "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "";
 }
 
-function aggregate(sessionSummaries, workspaceItems) {
+function aggregate(sessionSummaries, workspaceItems, t) {
 	var byId = new Map();
 	sessionSummaries.forEach((s) => byId.set(s.id, s));
 	var projects = [];
@@ -248,7 +248,7 @@ function aggregate(sessionSummaries, workspaceItems) {
 		sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 		projects.push({
 			id: ws.workspaceId || ("ws-" + (ws.path || "")),
-			name: ws.title || basename(ws.path) || "(未命名)",
+			name: ws.title || basename(ws.path) || t("w.unnamed"),
 			path: ws.path || "",
 			sessionCount: sessions.length,
 			lastActiveAt,
@@ -261,7 +261,7 @@ function aggregate(sessionSummaries, workspaceItems) {
 	var strayByCwd = new Map();
 	sessionSummaries.forEach((s) => {
 		if (accounted.has(s.id)) return;
-		var cwd = s.cwd || "(未分类)";
+		var cwd = s.cwd || t("w.uncategorized");
 		if (!strayByCwd.has(cwd)) strayByCwd.set(cwd, []);
 		strayByCwd.get(cwd).push(s);
 	});
@@ -276,7 +276,7 @@ function aggregate(sessionSummaries, workspaceItems) {
 			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 		});
 		sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-		projects.push({ id: "cwd-" + cwd, name: cwd === "(未分类)" ? cwd : basename(cwd), path: cwd, sessionCount: sessions.length, lastActiveAt, stats: display(agg), sessions });
+		projects.push({ id: "cwd-" + cwd, name: cwd === t("w.uncategorized") ? cwd : basename(cwd), path: cwd, sessionCount: sessions.length, lastActiveAt, stats: display(agg), sessions });
 	});
 
 	projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
@@ -291,7 +291,7 @@ function dayKey(ms) {
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 function dayStartMs(key) {
-	return new Date(key + "T00:00:00").getTime();
+	return new Date(key + "T00:00:00+08:00").getTime();
 }
 function buildTimeline(projects, slotMinutes) {
 	var slotMs = slotMinutes * 60000;
@@ -436,6 +436,7 @@ function StatsTrigger(props) {
 
 function SummaryCards(props) {
 	var projects = props.projects;
+	var t = props.t;
 	var tot = { sessions: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
 	projects.forEach((p) => {
 		tot.sessions += p.sessionCount;
@@ -445,20 +446,20 @@ function SummaryCards(props) {
 		tot.cost += projectCost(p);
 	});
 	var cards = [
-		["项目", fmtN(projects.length)],
-		["会话", fmtN(tot.sessions)],
-		["轮 / 步", `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
-		["LLM 时长", fmtDuration(tot.llmMs)],
-		["工具时长", fmtDuration(tot.toolMs)],
-		["输入 tok", fmtTokens(tot.input)],
-		["输出 tok", fmtTokens(tot.output)],
-		["平均缓存命中", tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
-		["消费金额", fmtCost(tot.cost)]
+		[t("card.projects"), fmtN(projects.length)],
+		[t("card.sessions"), fmtN(tot.sessions)],
+		[t("card.turnsSteps"), `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
+		[t("card.llm"), fmtDuration(tot.llmMs)],
+		[t("card.tool"), fmtDuration(tot.toolMs)],
+		[t("card.input"), fmtTokens(tot.input)],
+		[t("card.output"), fmtTokens(tot.output)],
+		[t("card.cacheHit"), tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
+		[t("card.cost"), fmtCost(tot.cost)]
 	];
 	return e("div", { className: "dss-cards" },
 		cards.map((c, i) => e("div", { className: "dss-card", key: i },
 			e("div", { className: "k" }, c[0]),
-			e("div", { className: "v", ...c[0] === "消费金额" ? { className: "v dss-cost" } : {} }, c[1])
+			e("div", { className: "v", ...c[0] === t("card.cost") ? { className: "v dss-cost" } : {} }, c[1])
 		))
 	);
 }
@@ -499,6 +500,7 @@ function ProjectsTable(props) {
 	var hidden = props.hidden;
 	var selected = props.selected;
 	var onSelect = props.onSelect;
+	var t = props.t;
 	var sortPair = useState({ key: "cost", dir: -1 });
 	var sort = sortPair[0], setSort = sortPair[1];
 
@@ -541,7 +543,7 @@ function ProjectsTable(props) {
 				e("td", { className: "dss-statline" }, fmtClock(p.lastActiveAt))
 			),
 			e("tr", { key: p.id + "-line", "data-color": String(i) },
-				e("td", { colSpan: 13, className: "dss-statline" }, statLine(s))
+				e("td", { colSpan: 13, className: "dss-statline" }, statLine(s, t))
 			)
 		));
 		if (selected === p.id) {
@@ -550,13 +552,13 @@ function ProjectsTable(props) {
 					e("div", { className: "dss-detail" },
 						p.sessions.map((sd) =>
 							e("div", { className: "dss-sess", key: sd.id },
-								e("span", { className: "ti" }, sd.title || "(未命名会话)", sd.archived ? "（已归档）" : ""),
+								e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.archived ? t("w.archived") : ""),
 								e("span", { className: "me" }, fmtClock(sd.updatedAt)),
-								e("span", { className: "st" }, `${fmtN(sd.stats.turns)} 轮 · ${fmtN(sd.stats.steps)} 步`),
+								e("span", { className: "st" }, `${fmtN(sd.stats.turns)} ${t("w.turns")} · ${fmtN(sd.stats.steps)} ${t("w.steps")}`),
 								e("span", { className: "st" }, `LLM ${fmtDuration(sd.stats.llmMs)}`),
-								e("span", { className: "st" }, `工具 ${fmtDuration(sd.stats.toolMs)}`),
-								e("span", { className: "st" }, `缓存 ${fmtPct(sd.stats.cacheHitPct)}`),
-								e("span", { className: "st" }, `入 ${fmtTokens(sd.stats.inputTokens)} · 出 ${fmtTokens(sd.stats.outputTokens)}`),
+								e("span", { className: "st" }, `${t("w.tool")} ${fmtDuration(sd.stats.toolMs)}`),
+								e("span", { className: "st" }, `${t("w.cacheHit")} ${fmtPct(sd.stats.cacheHitPct)}`),
+								e("span", { className: "st" }, `${t("w.input")} ${fmtTokens(sd.stats.inputTokens)} · ${t("w.output")} ${fmtTokens(sd.stats.outputTokens)}`),
 								e("span", { className: "st" }, `${sd.model || "?"}`),
 								e("span", { className: "st dss-cost" }, fmtCost(sessionCost(sd)))
 							)
@@ -568,11 +570,11 @@ function ProjectsTable(props) {
 	});
 	return e("table", { className: "dss-table" },
 		e("thead", null, e("tr", null,
-			e("th", null, "项目"),
-			th("会话", "sessions"), th("轮", "turns"), th("步", "steps"),
-			th("LLM", "llm"), th("工具", "tool"), e("th", null, "首 token"), e("th", null, "tok/s"),
-			th("缓存命中", "hit"), th("输入 tok", "input"), th("输出 tok", "output"), th("消费", "cost"),
-			e("th", null, "最近活跃")
+			e("th", null, t("th.project")),
+			th(t("th.sessions"), "sessions"), th(t("th.turns"), "turns"), th(t("th.steps"), "steps"),
+			th(t("th.llm"), "llm"), th(t("th.tool"), "tool"), e("th", null, t("th.ttft")), e("th", null, t("th.tps")),
+			th(t("th.cacheHit"), "hit"), th(t("th.input"), "input"), th(t("th.output"), "output"), th(t("th.cost"), "cost"),
+			e("th", null, t("th.lastActive"))
 		)),
 		e("tbody", null, rows)
 	);
@@ -591,14 +593,14 @@ function TimelineView(props) {
 	if (range !== "all") {
 		var maxKey = days.length ? days[days.length - 1].date : null;
 		if (maxKey) {
-			var cutoff = new Date(maxKey + "T00:00:00").getTime() - (range - 1) * 86400000;
-			days = days.filter((d) => new Date(d.date + "T00:00:00").getTime() >= cutoff);
+			var cutoff = new Date(maxKey + "T00:00:00+08:00").getTime() - (range - 1) * 86400000;
+			days = days.filter((d) => new Date(d.date + "T00:00:00+08:00").getTime() >= cutoff);
 		}
 	}
 	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 
 	return e("div", null,
-		e("div", { className: "dss-hint" }, "块高 = 该 30 分钟时段开发时长占比"),
+		e("div", { className: "dss-hint" }, tt("hint.timeline")),
 		e("div", { className: "dss-heat" },
 			days.map((d) => {
 				var lvl = d.dayTotalMs / maxDay;
@@ -612,7 +614,7 @@ function TimelineView(props) {
 				});
 			})
 		),
-		days.length === 0 ? e("div", { className: "dss-empty" }, "该范围内暂无开发活动") :
+		days.length === 0 ? e("div", { className: "dss-empty" }, tt("hint.rangeEmpty")) :
 		e("div", null,
 			e("div", { className: "dss-axis" },
 				e("div", null),
@@ -633,9 +635,9 @@ function TimelineView(props) {
 						onMouseLeave: () => hideTip(tt)
 					});
 				});
-				var wd = ["日", "一", "二", "三", "四", "五", "六"][new Date(d.date + "T00:00:00").getDay()];
+				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00+08:00").getUTCDay()];
 				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date },
-					e("div", { className: "date" }, d.date + " 周" + wd),
+					e("div", { className: "date" }, d.date + " " + tt("w.dayPrefix") + wd),
 					e("div", { className: "dss-track" },
 						cells.map((c, i) => e("div", { className: "dss-cell", key: i }, c))
 					),
@@ -647,14 +649,14 @@ function TimelineView(props) {
 }
 
 function DateRangeBar(props) {
-	var range = props.range, setRange = props.setRange;
+	var range = props.range, setRange = props.setRange, t = props.t;
 	var btn = (label, val) => e("button", { className: range === val ? "on" : "", onClick: () => setRange(val) }, label);
 	return e("div", { className: "dss-pricing" },
-		e("label", null, "范围"),
+		e("label", null, t("range.label")),
 		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
-			btn("近 7 天", 7), btn("近 30 天", 30), btn("近 90 天", 90), btn("全部", "all")
+			btn(t("range.7d"), 7), btn(t("range.30d"), 30), btn(t("range.90d"), 90), btn(t("range.all"), "all")
 		),
-		e("span", { className: "note" }, "成本自动按会话实际模型与时段计价（8.17 前平价；8.17 后峰谷：高峰 9:00–12:00 / 14:00–18:00 北京）")
+		e("span", { className: "note" }, t("hint.cost"))
 	);
 }
 
@@ -668,8 +670,8 @@ function download(filename, content, mime) {
 function exportJSON(projects) {
 	download("dsh-stats.json", JSON.stringify(projects, null, 2), "application/json");
 }
-function exportCSV(projects) {
-	var lines = ["项目,路径,会话数,轮,步,LLM时长(ms),工具时长(ms),输入tok,输出tok,缓存命中tok,消费(元)"];
+function exportCSV(projects, t) {
+	var lines = [[t("th.project"), t("w.path"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"), t("th.input"), t("th.output"), t("th.cacheHit"), t("th.cost")].join(",")];
 	projects.forEach(function (p) {
 		var s = p.stats;
 		lines.push([
@@ -727,7 +729,7 @@ function StatsPanel(props) {
 			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true };
 		}
 		var summaries = sessionsSnap && sessionsSnap.byId ? Object.values(sessionsSnap.byId) : [];
-		var projects = aggregate(summaries, workspacesSnap && workspacesSnap.items);
+		var projects = aggregate(summaries, workspacesSnap && workspacesSnap.items, t);
 		var timeline = buildTimeline(projects, 30);
 		return { projects, timeline, remote: false };
 	}, [remoteData, sessionsSnap, workspacesSnap]);
@@ -748,25 +750,25 @@ function StatsPanel(props) {
 					className: "note",
 					style: { fontSize: 11, color: "var(--dsw-alias-label-tertiary,#6b7280)" },
 					title: (mountError ? "mount: " + mountError : "") + (remoteError ? " rpc: " + remoteError : "")
-				}, data.remote ? "精确（宿主）" : "近似（客户端）" + (mountError ? " [挂载失败]" : "") + (remoteError ? " [调用失败]" : "")),
+				}, data.remote ? t("mode.host") : t("mode.client") + (mountError ? t("mode.mountFailed") : "") + (remoteError ? t("mode.callFailed") : "")),
 				e("div", { className: "dss-tabs" },
 					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
 					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline"))
 				),
 				e("button", { className: "dss-export", onClick: () => setRefreshTick((x) => x + 1) }, t("refresh")),
-				e("button", { className: "dss-export", onClick: () => exportCSV(rangeProjects) }, "CSV"),
+				e("button", { className: "dss-export", onClick: () => exportCSV(rangeProjects, t) }, "CSV"),
 				e("button", { className: "dss-export", onClick: () => exportJSON(rangeProjects) }, "JSON"),
 				e("button", { className: "dss-close", onClick: onClose, title: t("close") },
 					e(IconCloseOutline16, { size: 16 })
 				)
 			),
 			e("div", { className: "dss-body" },
-				e(DateRangeBar, { range, setRange }),
+				e(DateRangeBar, { range, setRange, t }),
 				tab === "overview" ? e(Fragment, null,
-					e(SummaryCards, { projects: visibleProjects }),
+					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-					e(ProjectsTable, { projects: rangeProjects, hidden, selected, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+					e(ProjectsTable, { projects: rangeProjects, hidden, selected, t, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : e(TimelineView, { projects: rangeProjects, timeline: data.timeline, hidden, tt: t, range })
 			)
 		)
@@ -776,7 +778,7 @@ function StatsPanel(props) {
 function showTip(t, label, ms, ev) {
 	var el = document.getElementById("dss-tooltip");
 	if (!el) { el = document.createElement("div"); el.id = "dss-tooltip"; el.className = "dss-tt"; document.body.appendChild(el); }
-	el.innerHTML = `<div style="font-weight:650">${esc(label)}</div><div style="color:var(--dsw-alias-label-secondary,#a6adbb)">开发时长 <b>${fmtDuration(ms)}</b></div>`;
+	el.innerHTML = `<div style="font-weight:650">${esc(label)}</div><div style="color:var(--dsw-alias-label-secondary,#a6adbb)">${t("w.duration")} <b>${fmtDuration(ms)}</b></div>`;
 	el.classList.add("show");
 	var pad = 14, x = ev.clientX + pad, y = ev.clientY + pad;
 	var r = el.getBoundingClientRect();
@@ -801,7 +803,56 @@ const zh = {
 	"tab.timeline": "开发时间线",
 	"close": "关闭",
 	"empty": "暂无数据",
-	"refresh": "刷新"
+	"refresh": "刷新",
+	"card.projects": "项目",
+	"card.sessions": "会话",
+	"card.turnsSteps": "轮 / 步",
+	"card.llm": "LLM 时长",
+	"card.tool": "工具时长",
+	"card.input": "输入 tok",
+	"card.output": "输出 tok",
+	"card.cacheHit": "平均缓存命中",
+	"card.cost": "消费金额",
+	"th.project": "项目",
+	"th.sessions": "会话",
+	"th.turns": "轮",
+	"th.steps": "步",
+	"th.llm": "LLM",
+	"th.tool": "工具",
+	"th.ttft": "首 token",
+	"th.tps": "tok/s",
+	"th.cacheHit": "缓存命中",
+	"th.input": "输入 tok",
+	"th.output": "输出 tok",
+	"th.cost": "消费",
+	"th.lastActive": "最近活跃",
+	"w.turns": "轮",
+	"w.steps": "步",
+	"w.tool": "工具",
+	"w.ttft": "首 token",
+	"w.cacheHit": "缓存命中",
+	"w.input": "输入",
+	"w.output": "输出",
+	"w.archived": "（已归档）",
+	"w.untitled": "（未命名会话）",
+	"w.duration": "开发时长",
+	"w.path": "路径",
+	"w.unnamed": "（未命名）",
+	"w.uncategorized": "（未分类）",
+	"w.weekdays": "日,一,二,三,四,五,六",
+	"w.dayPrefix": "周",
+	"hint.timeline": "块高 = 该 30 分钟时段开发时长占比",
+	"hint.rangeEmpty": "该范围内暂无开发活动",
+	"hint.cost": "成本自动按会话实际模型与时段计价（8.17 前平价；8.17 后峰谷：高峰 9:00–12:00 / 14:00–18:00 北京）",
+	"range.label": "范围",
+	"range.7d": "近 7 天",
+	"range.30d": "近 30 天",
+	"range.90d": "近 90 天",
+	"range.all": "全部",
+	"mode.host": "精确（宿主）",
+	"mode.client": "近似（客户端）",
+	"mode.mountFailed": " [挂载失败]",
+	"mode.callFailed": " [调用失败]"
 };
 const en = {
 	"trigger": "Stats",
@@ -810,7 +861,56 @@ const en = {
 	"tab.timeline": "Timeline",
 	"close": "Close",
 	"empty": "No data",
-	"refresh": "Refresh"
+	"refresh": "Refresh",
+	"card.projects": "Projects",
+	"card.sessions": "Sessions",
+	"card.turnsSteps": "Turns / Steps",
+	"card.llm": "LLM time",
+	"card.tool": "Tool time",
+	"card.input": "Input tok",
+	"card.output": "Output tok",
+	"card.cacheHit": "Avg cache hit",
+	"card.cost": "Cost",
+	"th.project": "Project",
+	"th.sessions": "Sessions",
+	"th.turns": "Turns",
+	"th.steps": "Steps",
+	"th.llm": "LLM",
+	"th.tool": "Tool",
+	"th.ttft": "First token",
+	"th.tps": "tok/s",
+	"th.cacheHit": "Cache hit",
+	"th.input": "Input tok",
+	"th.output": "Output tok",
+	"th.cost": "Cost",
+	"th.lastActive": "Last active",
+	"w.turns": "turns",
+	"w.steps": "steps",
+	"w.tool": "Tool",
+	"w.ttft": "First token",
+	"w.cacheHit": "Cache hit",
+	"w.input": "Input",
+	"w.output": "Output",
+	"w.archived": " (archived)",
+	"w.untitled": " (untitled)",
+	"w.duration": "Duration",
+	"w.path": "Path",
+	"w.unnamed": "(unnamed)",
+	"w.uncategorized": "(uncategorized)",
+	"w.weekdays": "Sun,Mon,Tue,Wed,Thu,Fri,Sat",
+	"w.dayPrefix": "",
+	"hint.timeline": "Block height = share of development time in that 30-min slot",
+	"hint.rangeEmpty": "No activity in this range",
+	"hint.cost": "Cost is auto-priced per session model & slot time (flat before 08-17; peak/off-peak after: peak 9:00–12:00 / 14:00–18:00 Beijing)",
+	"range.label": "Range",
+	"range.7d": "7d",
+	"range.30d": "30d",
+	"range.90d": "90d",
+	"range.all": "All",
+	"mode.host": "Host-accurate",
+	"mode.client": "Client approx.",
+	"mode.mountFailed": " [mount failed]",
+	"mode.callFailed": " [call failed]"
 };
 
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，

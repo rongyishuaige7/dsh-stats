@@ -105,32 +105,15 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm reinstall
 # restart dsh web
 ```
 
-## Maturity (v1.0.0)
-
-**Publishable as a formal npm package** (`npm publish` flow above). Done:
-
-- Reproducible build (esbuild + `__ModuleLoader__` wrapping + externalized deps);
-- Clean `npm pack` output (LICENSE/README/lib/*/package.json only, ~21 KB);
-- Official-style dependency declarations (`zod` dependency; `cordis` / `dsh-typert-protocol` / `react` / `dsh-client-*` peers);
-- `prepublishOnly` auto-build.
-
-**Known limitations (non-blocking):**
+## Known limitations
 
 | Item | Note |
 |---|---|
 | Install step | `dsh plugin add` still needs the manual `cordis.patch.yml` line (no `dsh.bundle`) |
-| i18n | Buttons/labels use locale; table headers & hints are hardcoded Chinese |
-| Day bucketing TZ | Days are bucketed in the host's local timezone (peak/off-peak already uses explicit UTC+8); adjust for non-Beijing deployments |
-| Archived sessions | Kept in stats with an “（已归档）” tag, not excluded |
+| Archived sessions | Kept in stats with an “(archived)” tag, not excluded |
 | Freshness | Current session's projection cache may lag by seconds; 60 s auto-refresh mitigates |
+| Decode cost | Many sessions → the host fully decodes on each RPC (mtime-cached, so repeat requests don't re-decode; the first read is still slow) |
+| Price boundary | After the 2026-08-17 price change, historical sessions are priced by the price in effect at their own time (intended); no historical price backfill |
 
-## Known limitations
+Note: timeline days, peak/off-peak hours, and pricing are all bucketed in explicit Beijing time (UTC+8), independent of the host machine's timezone.
 
-- Many sessions → the host fully decodes on each RPC (mtime-cached, so repeat requests don't re-decode; the first read is still slow).
-- After the 2026-08-17 price change, historical sessions are priced by the price in effect at their own time (intended); no historical price backfill.
-- Date-range filtering of the overview buckets sessions by `updatedAt`; sessions spanning the 08-17 boundary are handled per-slot automatically.
-
-## TODO (optional)
-
-- Bucket timeline days explicitly in UTC+8 (currently host-local).
-- Move table headers / hints into the i18n dict.

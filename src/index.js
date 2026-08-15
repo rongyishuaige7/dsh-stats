@@ -101,13 +101,17 @@ function readJson(file) {
 	}
 }
 
+// 北京时间（UTC+8，无夏令时）：日期/时段切分显式用北京时区，与宿主机时区无关
+function beijingDate(ms) {
+	return new Date(ms + 8 * 3600 * 1000);
+}
 function localDayKey(ms) {
-	const d = new Date(ms);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	const d = beijingDate(ms);
+	return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 function minutesOfDay(ms) {
-	const d = new Date(ms);
-	return d.getHours() * 60 + d.getMinutes();
+	const d = beijingDate(ms);
+	return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 function basename(p) {
 	return (p || "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "";
@@ -334,7 +338,7 @@ let StatsService = (() => {
 			for (const sessionId of Object.keys(sessionsTable)) {
 				if (seen.has(sessionId)) continue;
 				const s = processSession(sessionId, null);
-				const cwd = s.cwd || "(未分类)";
+				const cwd = s.cwd || "(uncategorized)";
 				if (!strayByCwd.has(cwd)) strayByCwd.set(cwd, []);
 				strayByCwd.get(cwd).push(s);
 			}
@@ -342,7 +346,7 @@ let StatsService = (() => {
 				const existing = projects.find((p) => p.path === cwd);
 				const target = existing ?? {
 					id: "cwd-" + cwd,
-					name: cwd === "(未分类)" ? cwd : basename(cwd),
+					name: cwd === "(uncategorized)" ? cwd : basename(cwd),
 					path: cwd,
 					sessionCount: 0,
 					lastActiveAt: null,
