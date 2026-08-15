@@ -28,6 +28,20 @@
     "type": "git",
     "url": "git+https://github.com/rongyishuaige7/dsh-stats.git"
   },
+  "homepage": "https://github.com/rongyishuaige7/dsh-stats#readme",
+  "bugs": {
+    "url": "https://github.com/rongyishuaige7/dsh-stats/issues"
+  },
+  "keywords": [
+    "deepseek",
+    "dsh",
+    "harness",
+    "token",
+    "stats",
+    "usage",
+    "cost",
+    "dashboard"
+  ],
   "publishConfig": {
     "access": "public"
   },

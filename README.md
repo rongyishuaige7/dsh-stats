@@ -1,5 +1,10 @@
 # @rongyi7/dsh-stats — DSH Project Stats Plugin
 
+[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
+[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats)](https://nodejs.org)
+[![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
+
 Project-level token usage, a daily development timeline, and cost tracking — integrated into the DeepSeek Harness (DSH) web sidebar.
 
 > Tier 2 architecture: a host-side Typert RPC aggregates the durable session logs, and a client-side React UI renders the dashboard. Falls back to a pure client-side approximation if the RPC is unavailable.

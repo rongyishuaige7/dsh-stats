@@ -1,5 +1,10 @@
 # @rongyi7/dsh-stats — DSH 项目统计插件
 
+[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
+[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats)](https://nodejs.org)
+[![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
+
 把「项目级 Token 消耗统计 + 每日开发时间线 + 消费金额」集成进 DeepSeek Harness（DSH）Web 侧边栏。
 
 > Tier 2 架构：宿主侧 Typert RPC 聚合持久化会话日志，客户端 React UI 渲染面板；RPC 不可用时自动降级为纯客户端近似。
