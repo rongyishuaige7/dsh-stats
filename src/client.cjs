@@ -690,24 +690,20 @@ function StatsPanel(props) {
 	var onClose = props.onClose;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
-	var mountError = props.mountError;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
 	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
 	var rangePair = usePref("range", 30); var range = rangePair[0], setRange = rangePair[1];
 	var [selected, setSelected] = useState(null);
 	var [remoteData, setRemoteData] = useState(null);
-	var [remoteError, setRemoteError] = useState(null);
 	var [refreshTick, setRefreshTick] = useState(0);
 
 	useEffect(() => {
 		if (!open || !open.open || !aggregateRemote) return;
 		var cancelled = false;
-		aggregateRemote().then((r) => { if (!cancelled) { setRemoteData(r); setRemoteError(null); } })
+		aggregateRemote().then((r) => { if (!cancelled) setRemoteData(r); })
 			.catch((err) => {
-				if (cancelled) return;
-				setRemoteData(null);
-				setRemoteError(String(err?.message || err));
-				console.warn("[dsh-stats] aggregate 调用失败:", err);
+				// 偶发失败（连接抖动/宿主繁忙）时保留上次的准确数据，仅记录日志，不降级。
+				if (!cancelled) console.warn("[dsh-stats] aggregate 调用失败（保留上次数据）:", err);
 			});
 		return () => { cancelled = true; };
 	}, [open, aggregateRemote, refreshTick]);
@@ -746,11 +742,6 @@ function StatsPanel(props) {
 		e("div", { className: "dss-panel" },
 			e("div", { className: "dss-head" },
 				e("h2", null, t("title")),
-				e("span", {
-					className: "note",
-					style: { fontSize: 11, color: "var(--dsw-alias-label-tertiary,#6b7280)" },
-					title: (mountError ? "mount: " + mountError : "") + (remoteError ? " rpc: " + remoteError : "")
-				}, data.remote ? t("mode.host") : t("mode.client") + (mountError ? t("mode.mountFailed") : "") + (remoteError ? t("mode.callFailed") : "")),
 				e("div", { className: "dss-tabs" },
 					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
 					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline"))
@@ -848,11 +839,7 @@ const zh = {
 	"range.7d": "近 7 天",
 	"range.30d": "近 30 天",
 	"range.90d": "近 90 天",
-	"range.all": "全部",
-	"mode.host": "精确（宿主）",
-	"mode.client": "近似（客户端）",
-	"mode.mountFailed": " [挂载失败]",
-	"mode.callFailed": " [调用失败]"
+	"range.all": "全部"
 };
 const en = {
 	"trigger": "Stats",
@@ -906,11 +893,7 @@ const en = {
 	"range.7d": "7d",
 	"range.30d": "30d",
 	"range.90d": "90d",
-	"range.all": "All",
-	"mode.host": "Host-accurate",
-	"mode.client": "Client approx.",
-	"mode.mountFailed": " [mount failed]",
-	"mode.callFailed": " [call failed]"
+	"range.all": "All"
 };
 
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，
@@ -947,7 +930,6 @@ async function apply(ctx) {
 
 	// 挂载 remote.stats；失败则保持 null，StatsPanel 自动降级为纯客户端聚合。
 	let aggregateRemote = null;
-	let mountError = null;
 	let disposeRemote = () => {};
 	try {
 		disposeRemote = await ctx.remote.$mount(STATS_REMOTE_CONTRIBUTION);
@@ -961,7 +943,6 @@ async function apply(ctx) {
 			};
 		});
 	} catch (err) {
-		mountError = String(err?.message || err);
 		console.warn("[dsh-stats] remote.stats 挂载失败:", err);
 	}
 
@@ -975,7 +956,7 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote, mountError })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote })
 	}, StatsPanel));
 
 	return () => { disposeRemote(); };
