@@ -33,3 +33,6 @@ jobs:
           node --check lib/typert.remote-client.js
           test -s lib/client.js
           test -s lib/index.js
+
+      - name: Preview npm package
+        run: npm pack --dry-run
