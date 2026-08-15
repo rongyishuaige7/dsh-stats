@@ -40,9 +40,22 @@ function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null ? "—" : `${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`; }
 function fmtPct(p) { return p == null ? "—" : `${p}%`; }
 function fmtN(n) { return n == null ? "—" : n.toLocaleString("en-US"); }
-function fmtSessionCount(sessions, subagents, t) {
-	if (subagents > 0) return `${t("w.main")} ${sessions - subagents} + ${t("w.sub")} ${subagents}`;
-	return fmtN(sessions);
+function sessionCounts(sessions) {
+	var c = { main: 0, subagent: 0, archived: 0 };
+	(sessions || []).forEach(function (s) {
+		if (s.archived) c.archived++;
+		else if (s.subagent) c.subagent++;
+		else c.main++;
+	});
+	return c;
+}
+function addCounts(a, b) { a.main += b.main; a.subagent += b.subagent; a.archived += b.archived; return a; }
+function fmtSessionCounts(c, t) {
+	if (c.subagent === 0 && c.archived === 0) return fmtN(c.main);
+	var parts = [`${t("w.main")} ${fmtN(c.main)}`];
+	if (c.subagent > 0) parts.push(`${t("w.sub")} ${fmtN(c.subagent)}`);
+	if (c.archived > 0) parts.push(`${t("w.archivedCount")} ${fmtN(c.archived)}`);
+	return parts.join(" + ");
 }
 function esc(s) {
 	return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -239,6 +252,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var lastActiveAt = null;
 		var subagentCount = 0;
 		members.forEach((s) => {
+			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
 			if (s.origin === "subagent") subagentCount++;
@@ -247,6 +261,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 				title: s.title || s.displayTitle || null,
 				updatedAt: s.updatedAt || null,
 				subagent: s.origin === "subagent",
+				archived: s.archived === true,
 				stats: display(raw),
 				durMs: raw.llmMs + raw.toolMs
 			});
@@ -279,9 +294,10 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var lastActiveAt = null;
 		var subagentCount = 0;
 		members.forEach((s) => {
+			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
-			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, subagent: s.origin === "subagent", stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, subagent: s.origin === "subagent", archived: s.archived === true, stats: display(raw), durMs: raw.llmMs + raw.toolMs });
 			if (s.origin === "subagent") subagentCount++;
 			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 		});
@@ -449,11 +465,10 @@ function StatsTrigger(props) {
 function SummaryCards(props) {
 	var projects = props.projects;
 	var t = props.t;
-	var tot = { sessions: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
-	var totSub = 0;
+	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
+	var totC = { main: 0, subagent: 0, archived: 0 };
 	projects.forEach((p) => {
-		tot.sessions += p.sessionCount;
-		totSub += p.subagentCount || 0;
+		addCounts(totC, sessionCounts(p.sessions));
 		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
 		tot.llmMs += p.stats.llmMs; tot.toolMs += p.stats.toolMs;
 		tot.input += p.stats.inputTokens; tot.output += p.stats.outputTokens; tot.cacheRead += p.stats.cacheRead;
@@ -461,7 +476,7 @@ function SummaryCards(props) {
 	});
 	var cards = [
 		[t("card.projects"), fmtN(projects.length)],
-		[t("card.sessions"), fmtSessionCount(tot.sessions, totSub, t)],
+		[t("card.sessions"), fmtSessionCounts(totC, t)],
 		[t("card.turnsSteps"), `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
 		[t("card.llm"), fmtDuration(tot.llmMs)],
 		[t("card.tool"), fmtDuration(tot.toolMs)],
@@ -543,7 +558,7 @@ function ProjectsTable(props) {
 						e("div", { className: "ph" }, esc(p.path))
 					)
 				)),
-				e("td", null, fmtSessionCount(p.sessionCount, p.subagentCount || 0, t)),
+				e("td", null, fmtSessionCounts(sessionCounts(p.sessions), t)),
 				e("td", null, fmtN(s.turns)),
 				e("td", null, fmtN(s.steps)),
 				e("td", null, fmtDuration(s.llmMs)),
@@ -561,8 +576,9 @@ function ProjectsTable(props) {
 			)
 		));
 		if (selected === p.id) {
-			var mainSessions = p.sessions.filter((sd) => !sd.subagent);
-			var subSessions = p.sessions.filter((sd) => sd.subagent);
+			var mainSessions = p.sessions.filter((sd) => !sd.subagent && !sd.archived);
+			var subSessions = p.sessions.filter((sd) => sd.subagent && !sd.archived);
+			var archivedSessions = p.sessions.filter((sd) => sd.archived);
 			var sessRow = (sd) => e("div", { className: "dss-sess", key: sd.id },
 				e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.archived ? t("w.archived") : "", sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null),
 				e("span", { className: "me" }, fmtClock(sd.updatedAt)),
@@ -578,6 +594,10 @@ function ProjectsTable(props) {
 			if (subSessions.length) {
 				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, `${t("w.subagentGroup")} (${subSessions.length})`)]);
 				detailChildren = detailChildren.concat(subSessions.map(sessRow));
+			}
+			if (archivedSessions.length) {
+				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "archgroup" }, `${t("w.archivedGroup")} (${archivedSessions.length})`)]);
+				detailChildren = detailChildren.concat(archivedSessions.map(sessRow));
 			}
 			rows.push(e("tr", { key: p.id + "-detail" },
 				e("td", { colSpan: 13, style: { padding: 0 } },
@@ -693,7 +713,7 @@ function exportCSV(projects, t) {
 	projects.forEach(function (p) {
 		var s = p.stats;
 		lines.push([
-			JSON.stringify(p.name), JSON.stringify(p.path), p.sessionCount,
+			JSON.stringify(p.name), JSON.stringify(p.path), p.sessionCount, JSON.stringify(fmtSessionCounts(sessionCounts(p.sessions), t)),
 			s.turns, s.steps, Math.round(s.llmMs), Math.round(s.toolMs),
 			s.inputTokens, s.outputTokens, s.cacheRead, projectCost(p).toFixed(4)
 		].join(","));
@@ -843,6 +863,8 @@ const zh = {
 	"w.input": "输入",
 	"w.output": "输出",
 	"w.archived": "（已归档）",
+	"w.archivedCount": "归档",
+	"w.archivedGroup": "已归档",
 	"w.main": "主",
 	"w.sub": "子",
 	"w.subagentTag": "子对话",
@@ -901,6 +923,8 @@ const en = {
 	"w.input": "Input",
 	"w.output": "Output",
 	"w.archived": " (archived)",
+	"w.archivedCount": "archived",
+	"w.archivedGroup": "Archived",
 	"w.main": "main",
 	"w.sub": "sub",
 	"w.subagentTag": "sub-agent",
