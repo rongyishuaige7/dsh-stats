@@ -34,7 +34,7 @@ npm run build              # esbuild 产出 lib/（client 打成 __ModuleLoader_
 npm publish                # prepublishOnly 自动重新构建（需先 npm login）
 ```
 
-`npm pack --dry-run` 可预览发布内容（只有 LICENSE/README/lib/*/package.json，~21KB）。
+`npm pack --dry-run` 可预览发布内容（LICENSE/README*/lib/*/cordis.patch.yml/package.json，~25KB）。
 
 ## 安装到 DSH profile
 
@@ -42,19 +42,13 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 # 方式 A（从 npm registry）
 dsh plugin --profile web add @rongyi7/dsh-stats
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.1.tgz
 ```
 
-然后在 `~/.dsh/profiles/web/cordis.patch.yml` 插入一行（本包不声明 `dsh.bundle`，
-`dsh plugin` 只装依赖、不加入 bundle 列表，这行需手动加）：
+即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
+`dsh plugin add` 会自动把它加入 `dsh.profile.bundles` 并加载。
 
-```yaml
-- insert:
-    - id: stats
-      name: '@rongyi7/dsh-stats'
-```
-
-验证：`dsh --profile web --dump-config`（应看到 `- id: stats`）。
+验证：`dsh --profile web --dump-config`（应看到 `- id: stats` 与 bundle 列表中的 `@rongyi7/dsh-stats`）。
 
 ## 激活
 
@@ -116,7 +110,6 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm 重装
 
 | 项 | 说明 |
 |---|---|
-| 安装步骤 | `dsh plugin add` 后仍需手动加一行 `cordis.patch.yml`（本包不声明 `dsh.bundle`） |
 | 归档会话 | 统计中保留但打「（已归档）」标记，未排除 |
 | 实时性 | 当前会话投影缓存秒级滞后，60s 自动刷新兜底 |
 | 解码开销 | 会话很多时宿主每次 RPC 全量解码（已加 mtime 缓存，跨请求不重复解码；首次仍慢） |

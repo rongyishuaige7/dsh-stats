@@ -1,0 +1,6 @@
+# @rongyi7/dsh-stats bundle patch — 应用在 profile 其它 bundle 之后。
+# 把本插件注册为宿主 Loader 行，供 dsh-client-modules / dsh-typert-loader
+# 扫描 dsh.client / ./typert 并注入浏览器 roster / 注册 Typert remote。
+- insert:
+    - id: stats
+      name: '@rongyi7/dsh-stats'

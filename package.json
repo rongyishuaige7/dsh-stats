@@ -1,6 +1,6 @@
 {
   "name": "@rongyi7/dsh-stats",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "工作区 Token 消耗统计 + 开发时间线 + 消费金额（DSH 插件：Tier 2 宿主 RPC + 客户端 UI）",
   "type": "module",
   "main": "lib/index.js",
@@ -16,6 +16,7 @@
     "lib/client.js",
     "lib/typert.host.js",
     "lib/typert.remote-client.js",
+    "cordis.patch.yml",
     "LICENSE",
     "README.md"
   ],
@@ -49,6 +50,9 @@
     "node": ">=22"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [

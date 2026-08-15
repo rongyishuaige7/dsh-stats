@@ -34,7 +34,7 @@ npm run build              # esbuild → lib/ (client wrapped as __ModuleLoader_
 npm publish                # prepublishOnly rebuilds automatically (npm login first)
 ```
 
-Preview the publish contents with `npm pack --dry-run` (only LICENSE/README/lib/*/package.json, ~21 KB).
+Preview the publish contents with `npm pack --dry-run` (LICENSE/README*/lib/*/cordis.patch.yml/package.json, ~25 KB).
 
 ## Install into a DSH profile
 
@@ -42,18 +42,12 @@ Preview the publish contents with `npm pack --dry-run` (only LICENSE/README/lib/
 # Option A (from the npm registry)
 dsh plugin --profile web add @rongyi7/dsh-stats
 # Option B (from a local tarball)
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.1.tgz
 ```
 
-Then add one line to `~/.dsh/profiles/web/cordis.patch.yml` (this package does not declare `dsh.bundle`, so `dsh plugin` installs it as a plain dependency and the patch line must be added manually):
+That's it — this package declares `dsh.bundle` (with a `cordis.patch.yml` that inserts the plugin row), so `dsh plugin add` registers it into `dsh.profile.bundles` automatically. No manual patch line needed.
 
-```yaml
-- insert:
-    - id: stats
-      name: '@rongyi7/dsh-stats'
-```
-
-Verify: `dsh --profile web --dump-config` (you should see `- id: stats`).
+Verify: `dsh --profile web --dump-config` (you should see `- id: stats` and `@rongyi7/dsh-stats` in the bundle list).
 
 ## Activation
 
@@ -111,7 +105,6 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm reinstall
 
 | Item | Note |
 |---|---|
-| Install step | `dsh plugin add` still needs the manual `cordis.patch.yml` line (no `dsh.bundle`) |
 | Archived sessions | Kept in stats with an “(archived)” tag, not excluded |
 | Freshness | Current session's projection cache may lag by seconds; 60 s auto-refresh mitigates |
 | Decode cost | Many sessions → the host fully decodes on each RPC (mtime-cached, so repeat requests don't re-decode; the first read is still slow) |
