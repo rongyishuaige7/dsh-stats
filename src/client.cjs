@@ -6,7 +6,6 @@ var useState = react.useState;
 var useMemo = react.useMemo;
 var useEffect = react.useEffect;
 var Fragment = react.Fragment;
-var Tooltip = primitives.Tooltip;
 var IconDataOutline16 = primitives.IconDataOutline16;
 var IconCloseOutline16 = primitives.IconCloseOutline16;
 
@@ -284,6 +283,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var subagentCount = 0;
 		members.forEach((s) => {
 			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
+			if (s.archived === true) return; // 归档会话与宿主口径一致：不计入列表与聚合
 			var raw = rawOf(s);
 			addRaw(agg, raw);
 			if (s.origin === "subagent") subagentCount++;
@@ -327,6 +327,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var subagentCount = 0;
 		members.forEach((s) => {
 			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
+			if (s.archived === true) return; // 归档会话与宿主口径一致：不计入列表与聚合
 			var raw = rawOf(s);
 			addRaw(agg, raw);
 			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, model: s.model || null, subagent: s.origin === "subagent", archived: s.archived === true, stats: display(raw), durMs: raw.llmMs + raw.toolMs });
@@ -897,8 +898,10 @@ function TimelineView(props) {
 				);
 				// 右侧信息列：总时长 + 活动时段 + 项目数，填充右侧空白
 				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
+				// 总时长按可见项目重算（隐藏的项目不计入）
+				var visibleMs = (d.slotBlocks || []).reduce(function(sum, b) { return hidden[b.projectId] ? sum : sum + b.ms; }, 0);
 				var rightCol = e("div", { className: "dss-day-info" },
-					e("div", { className: "dur" }, fmtDuration(d.dayTotalMs)),
+					e("div", { className: "dur" }, fmtDuration(visibleMs)),
 					e("div", { className: "span" }, spanText),
 					e("div", { className: "cnt" }, projList.length + " 项目")
 				);
@@ -1002,7 +1005,7 @@ function StatsPanel(props) {
 			var projects = remoteData.projects.map((p) => ({
 				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, subagentCount: p.subagentCount || 0, lastActiveAt: p.lastActiveAt,
 				stats: display(p.stats),
-				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage, origin: s.origin, parentSession: s.parentSession, seedLength: s.seedLength, calls: s.calls }))
+				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage }))
 			}));
 			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true };
 		}
@@ -1035,8 +1038,8 @@ function StatsPanel(props) {
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
-	// 按日聚合：hero 总览 / 模型分布随选中日期变化
-	var dateGlobals = useMemo(() => buildGlobals(dateProjects), [dateProjects]);
+	// 按日聚合：hero 总览 / 模型分布随选中日期变化（全部模式复用 globals，避免重复计算）
+	var dateGlobals = useMemo(() => (effectiveDate ? buildGlobals(dateProjects) : globals), [effectiveDate, dateProjects, globals]);
 
 	if (!open || !open.open) return null;
 
@@ -1469,10 +1472,6 @@ function localDayKey(ts) {
 	var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
 	return y + "-" + (m < 10 ? "0" + m : m) + "-" + (day < 10 ? "0" + day : day);
 }
-function ymKey(ts) {
-	var d = new Date(ts);
-	return d.getFullYear() + "-" + (d.getMonth() + 1 < 10 ? "0" + (d.getMonth() + 1) : "" + (d.getMonth() + 1));
-}
 function emptyBucket() {
 	return { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, input: 0 };
 }
@@ -1630,8 +1629,6 @@ function buildGlobals(projects) {
 	var byDay = sessionDayTokens(all);
 	var models = modelAgg(all);
 	var sa = streakAndActive(byDay);
-	var monthBuckets = monthlyFromDays(byDay);
-	var weekBuckets = weeklyFromDays(byDay);
 	var totals = emptyBucket();
 	byDay.forEach(function(b) { addBucket(totals, b); });
 	// 全局总费用（按会话逐个计算，用 slotUsage 或 stats 兜底）
@@ -1642,7 +1639,6 @@ function buildGlobals(projects) {
 		byDay, models, totals,
 		streak: sa.currentStreak, longestStreak: sa.longestStreak, activeDays: sa.activeDays,
 		firstDay: sa.firstDay, lastDay: sa.lastDay,
-		monthBuckets, weekBuckets,
 		totalCost: totalCost
 	};
 }
@@ -1698,11 +1694,6 @@ const zh = {
 	"hint.timeline": "块高 = 该 30 分钟时段开发时长占比",
 	"hint.rangeEmpty": "该范围内暂无开发活动",
 	"hint.cost": "成本按实际模型与时段自动计价",
-	"range.label": "范围",
-	"range.7d": "近 7 天",
-	"range.30d": "近 30 天",
-	"range.90d": "近 90 天",
-	"range.all": "全部",
 	"trends.activeDays": "活跃天数",
 	"trends.streak": "当前连续",
 	"trends.longestStreak": "最长连续",
@@ -1767,11 +1758,6 @@ const en = {
 	"hint.timeline": "Block height = share of development time in that 30-min slot",
 	"hint.rangeEmpty": "No activity in this range",
 	"hint.cost": "Cost auto-priced by actual model & time slot",
-	"range.label": "Range",
-	"range.7d": "7d",
-	"range.30d": "30d",
-	"range.90d": "90d",
-	"range.all": "All",
 	"trends.activeDays": "Active days",
 	"trends.streak": "Current streak",
 	"trends.longestStreak": "Longest streak",

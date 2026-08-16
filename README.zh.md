@@ -49,9 +49,9 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 ```bash
 # 方式 A（从 npm registry 安装/升级）
 dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
-dsh plugin --profile web add @rongyi7/dsh-stats@1.1.15     # 指定版本
+dsh plugin --profile web add @rongyi7/dsh-stats@1.1.44     # 指定版本
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.15.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.44.tgz
 ```
 
 即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
