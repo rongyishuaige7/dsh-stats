@@ -470,7 +470,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
 	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:column;justify-content:flex-end;gap:1px}" +
 	".dss-cell:last-child{border-right:none}" +
-	".dss-blk{width:100%;border-radius:2px;background:var(--c);cursor:pointer}" +
+	".dss-blk{width:100%;border-radius:3px;background:var(--c);cursor:pointer;transition:filter .12s}" +
 	".dss-blk:hover{filter:brightness(1.25)}" +
 	".dss-day .total{font-size:11px;color:var(--dsw-alias-label-tertiary,#6b7280);text-align:right;align-self:center;padding:8px 0 8px 8px;font-variant-numeric:tabular-nums}" +
 	".dss-empty{color:var(--dsw-alias-label-tertiary,#6b7280);text-align:center;padding:32px 0}" +
@@ -813,10 +813,15 @@ function TimelineView(props) {
 
 	var days = timeline.days;
 	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
+	// 块高随可见天数自适应：单天（按日模式）拉高到 160px 与其它页面高度协调；
+	// 少量天（≤7）96px；多天保持 56px 避免列表过长。
+	var maxBlockH = days.length <= 1 ? 160 : days.length <= 7 ? 96 : 56;
+	var rowMinH = maxBlockH + 14;
 
 	return e("div", null,
 		e("div", { className: "dss-hint" }, tt("hint.timeline")),
-		e("div", { className: "dss-heat" },
+		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
+		days.length > 1 ? e("div", { className: "dss-heat" },
 			days.map((d) => {
 				var lvl = d.dayTotalMs / maxDay;
 				return e("div", {
@@ -828,7 +833,7 @@ function TimelineView(props) {
 					onClick: () => { var el = document.getElementById("dss-day-" + d.date); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
 				});
 			})
-		),
+		) : null,
 		days.length === 0 ? e("div", { className: "dss-empty" }, tt("hint.rangeEmpty")) :
 		e("div", null,
 			e("div", { className: "dss-axis" },
@@ -840,7 +845,7 @@ function TimelineView(props) {
 				var cells = new Array(48).fill(null);
 				(d.slotBlocks || []).forEach((b) => {
 					if (hidden[b.projectId]) return;
-					var h = Math.min(52, Math.max(2, Math.round((b.ms / slotMs) * 52)));
+					var h = Math.min(maxBlockH, Math.max(2, Math.round((b.ms / slotMs) * maxBlockH)));
 					cells[b.slot] = e("div", {
 						key: b.projectId + "-" + b.slot,
 						className: "dss-blk",
@@ -851,7 +856,7 @@ function TimelineView(props) {
 					});
 				});
 				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00+08:00").getUTCDay()];
-				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date },
+				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
 					e("div", { className: "date" }, d.date + " " + tt("w.dayPrefix") + wd),
 					e("div", { className: "dss-track" },
 						cells.map((c, i) => e("div", { className: "dss-cell", key: i }, c))
