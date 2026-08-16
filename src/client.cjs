@@ -463,25 +463,30 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-hm{width:14px;height:14px;border-radius:4px;flex:none;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-hm.has{cursor:pointer}" +
 	".dss-hm.has:hover{outline:1.5px solid #4f8cff;outline-offset:1px}" +
-	".dss-axis{display:grid;grid-template-columns:170px 1fr 70px;margin-bottom:4px}" +
+	".dss-axis{display:grid;grid-template-columns:180px 1fr 104px;margin-bottom:4px}" +
 	".dss-hours{display:grid;grid-template-columns:repeat(9,1fr);color:var(--dsw-alias-label-tertiary,#6b7280);font-size:10.5px}" +
 	".dss-hours span{text-align:center}" +
 	".dss-hours span:first-child{text-align:left}" +
 	".dss-hours span:last-child{text-align:right}" +
-	".dss-day{display:grid;grid-template-columns:170px 1fr 70px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
+	".dss-day{display:grid;grid-template-columns:180px 1fr 104px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
 	// 左侧：项目颜色块列表（总览同款色点）+ 多天模式附加日期
-	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:4px;padding:8px 10px 8px 0;min-width:0}" +
-	".dss-day-date{font-size:11px;color:var(--dsw-alias-label-secondary,#a6adbb);margin-bottom:2px;font-variant-numeric:tabular-nums}" +
-	".dss-day-proj{display:flex;align-items:center;gap:7px;min-width:0}" +
-	".dss-day-dot{width:9px;height:9px;border-radius:3px;flex:none;background:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
-	".dss-day-pname{font-size:11.5px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-	".dss-day-more{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280)}" +
+	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:7px;padding:10px 12px 10px 0;min-width:0}" +
+	".dss-day-date{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary,#a6adbb);margin-bottom:3px;font-variant-numeric:tabular-nums}" +
+	".dss-day-proj{display:flex;align-items:center;gap:8px;min-width:0;transition:opacity .12s}" +
+	".dss-day-proj:hover{opacity:.8}" +
+	".dss-day-dot{width:10px;height:10px;border-radius:3px;flex:none;background:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
+	".dss-day-pname{font-size:12px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+	".dss-day-more{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280);padding-left:18px}" +
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
 	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:column;justify-content:flex-end;gap:1px}" +
 	".dss-cell:last-child{border-right:none}" +
 	".dss-blk{width:100%;border-radius:3px;background:var(--c);cursor:pointer;transition:filter .12s}" +
 	".dss-blk:hover{filter:brightness(1.25)}" +
-	".dss-day .total{font-size:11px;color:var(--dsw-alias-label-tertiary,#6b7280);text-align:right;align-self:center;padding:8px 0 8px 8px;font-variant-numeric:tabular-nums}" +
+		// 右侧信息列：总时长 + 活动时段 + 项目数
+	".dss-day-info{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:4px;padding:8px 0 8px 12px;min-width:0}" +
+	".dss-day-info .dur{font-size:13.5px;font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums}" +
+	".dss-day-info .span{font-size:10.5px;color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;white-space:nowrap}" +
+	".dss-day-info .cnt{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280);white-space:nowrap}" +
 	".dss-empty{color:var(--dsw-alias-label-tertiary,#6b7280);text-align:center;padding:32px 0}" +
 	".dss-tt{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:9px;padding:8px 11px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12.5px;position:fixed;z-index:2000;pointer-events:none;display:none;max-width:320px}" +
 	".dss-tt.show{display:block}" +
@@ -812,6 +817,12 @@ function ProjectsTable(props) {
 	);
 }
 
+// 槽索引（0-47，每槽 30 分钟）→ HH:MM
+function slotToClock(s) {
+	var m = s * 30;
+	return pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+}
+
 function TimelineView(props) {
 	var projects = props.projects;
 	var timeline = props.timeline;
@@ -854,9 +865,12 @@ function TimelineView(props) {
 				var cells = new Array(48).fill(null);
 				// 当天参与的项目（去重保序，隐藏项目跳过）→ 左侧颜色块列表
 				var seenP = new Map();
+				var minSlot = 47, maxSlot = -1;
 				(d.slotBlocks || []).forEach((b) => {
 					if (hidden[b.projectId]) return;
 					if (!seenP.has(b.projectId)) seenP.set(b.projectId, { name: b.name, colorIndex: b.colorIndex });
+					if (b.slot < minSlot) minSlot = b.slot;
+					if (b.slot > maxSlot) maxSlot = b.slot;
 					var h = Math.min(maxBlockH, Math.max(2, Math.round((b.ms / slotMs) * maxBlockH)));
 					cells[b.slot] = e("div", {
 						key: b.projectId + "-" + b.slot,
@@ -868,7 +882,7 @@ function TimelineView(props) {
 					});
 				});
 				var projList = Array.from(seenP.values());
-				var MAXL = 3;
+				var MAXL = 4;
 				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00+08:00").getUTCDay()];
 				var leftCol = e("div", { className: "dss-day-projs" },
 					// 多天模式需要日期区分各行；单天（按日）日期已在顶部导航显示，不重复
@@ -881,12 +895,19 @@ function TimelineView(props) {
 					}),
 					projList.length > MAXL ? e("div", { className: "dss-day-more" }, "+" + (projList.length - MAXL) + " 项") : null
 				);
+				// 右侧信息列：总时长 + 活动时段 + 项目数，填充右侧空白
+				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
+				var rightCol = e("div", { className: "dss-day-info" },
+					e("div", { className: "dur" }, fmtDuration(d.dayTotalMs)),
+					e("div", { className: "span" }, spanText),
+					e("div", { className: "cnt" }, projList.length + " 项目")
+				);
 				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
 					leftCol,
 					e("div", { className: "dss-track" },
 						cells.map((c, i) => e("div", { className: "dss-cell", key: i }, c))
 					),
-					e("div", { className: "total" }, fmtDuration(d.dayTotalMs))
+					rightCol
 				);
 			})
 		)
