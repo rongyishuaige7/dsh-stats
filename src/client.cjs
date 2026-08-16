@@ -463,13 +463,19 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-hm{width:14px;height:14px;border-radius:4px;flex:none;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-hm.has{cursor:pointer}" +
 	".dss-hm.has:hover{outline:1.5px solid #4f8cff;outline-offset:1px}" +
-	".dss-axis{display:grid;grid-template-columns:120px 1fr 70px;margin-bottom:4px}" +
+	".dss-axis{display:grid;grid-template-columns:170px 1fr 70px;margin-bottom:4px}" +
 	".dss-hours{display:grid;grid-template-columns:repeat(9,1fr);color:var(--dsw-alias-label-tertiary,#6b7280);font-size:10.5px}" +
 	".dss-hours span{text-align:center}" +
 	".dss-hours span:first-child{text-align:left}" +
 	".dss-hours span:last-child{text-align:right}" +
-	".dss-day{display:grid;grid-template-columns:120px 1fr 70px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
-	".dss-day .date{font-size:12px;color:var(--dsw-alias-label-secondary,#a6adbb);padding:8px 8px 8px 0;font-variant-numeric:tabular-nums}" +
+	".dss-day{display:grid;grid-template-columns:170px 1fr 70px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
+	// 左侧：项目颜色块列表（总览同款色点）+ 多天模式附加日期
+	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:4px;padding:8px 10px 8px 0;min-width:0}" +
+	".dss-day-date{font-size:11px;color:var(--dsw-alias-label-secondary,#a6adbb);margin-bottom:2px;font-variant-numeric:tabular-nums}" +
+	".dss-day-proj{display:flex;align-items:center;gap:7px;min-width:0}" +
+	".dss-day-dot{width:9px;height:9px;border-radius:3px;flex:none;background:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
+	".dss-day-pname{font-size:11.5px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+	".dss-day-more{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280)}" +
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
 	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:column;justify-content:flex-end;gap:1px}" +
 	".dss-cell:last-child{border-right:none}" +
@@ -846,8 +852,11 @@ function TimelineView(props) {
 			),
 			days.map((d) => {
 				var cells = new Array(48).fill(null);
+				// 当天参与的项目（去重保序，隐藏项目跳过）→ 左侧颜色块列表
+				var seenP = new Map();
 				(d.slotBlocks || []).forEach((b) => {
 					if (hidden[b.projectId]) return;
+					if (!seenP.has(b.projectId)) seenP.set(b.projectId, { name: b.name, colorIndex: b.colorIndex });
 					var h = Math.min(maxBlockH, Math.max(2, Math.round((b.ms / slotMs) * maxBlockH)));
 					cells[b.slot] = e("div", {
 						key: b.projectId + "-" + b.slot,
@@ -858,9 +867,22 @@ function TimelineView(props) {
 						onMouseLeave: () => hideTip(tt)
 					});
 				});
+				var projList = Array.from(seenP.values());
+				var MAXL = 3;
 				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00+08:00").getUTCDay()];
+				var leftCol = e("div", { className: "dss-day-projs" },
+					// 多天模式需要日期区分各行；单天（按日）日期已在顶部导航显示，不重复
+					days.length > 1 ? e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd) : null,
+					projList.slice(0, MAXL).map(function(pj, pi) {
+						return e("div", { className: "dss-day-proj", key: pi },
+							e("span", { className: "dss-day-dot", "data-color": String(pj.colorIndex) }),
+							e("span", { className: "dss-day-pname", title: pj.name }, pj.name)
+						);
+					}),
+					projList.length > MAXL ? e("div", { className: "dss-day-more" }, "+" + (projList.length - MAXL) + " 项") : null
+				);
 				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
-					e("div", { className: "date" }, d.date + " " + tt("w.dayPrefix") + wd),
+					leftCol,
 					e("div", { className: "dss-track" },
 						cells.map((c, i) => e("div", { className: "dss-cell", key: i }, c))
 					),
