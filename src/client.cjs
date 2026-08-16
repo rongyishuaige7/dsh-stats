@@ -464,7 +464,10 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-hm.has{cursor:pointer}" +
 	".dss-hm.has:hover{outline:1.5px solid #4f8cff;outline-offset:1px}" +
 	".dss-axis{display:grid;grid-template-columns:120px 1fr 70px;margin-bottom:4px}" +
-	".dss-hours{display:grid;grid-template-columns:repeat(8,1fr);color:var(--dsw-alias-label-tertiary,#6b7280);font-size:10.5px}" +
+	".dss-hours{display:grid;grid-template-columns:repeat(9,1fr);color:var(--dsw-alias-label-tertiary,#6b7280);font-size:10.5px}" +
+	".dss-hours span{text-align:center}" +
+	".dss-hours span:first-child{text-align:left}" +
+	".dss-hours span:last-child{text-align:right}" +
 	".dss-day{display:grid;grid-template-columns:120px 1fr 70px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
 	".dss-day .date{font-size:12px;color:var(--dsw-alias-label-secondary,#a6adbb);padding:8px 8px 8px 0;font-variant-numeric:tabular-nums}" +
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
