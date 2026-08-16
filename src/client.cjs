@@ -693,6 +693,7 @@ function ProjectsTable(props) {
 	var selected = props.selected;
 	var onSelect = props.onSelect;
 	var t = props.t;
+	var dayMode = props.dayMode === true; // 按日模式：隐藏"最近活跃"（项目级元数据与单日切片语义冲突）
 	var sortPair = useState({ key: "cost", dir: -1 });
 	var sort = sortPair[0], setSort = sortPair[1];
 
@@ -711,15 +712,16 @@ function ProjectsTable(props) {
 		{ key: "turns", label: "轮" },
 		{ key: "steps", label: "步" },
 		{ key: "tool", label: "工具" },
-		{ key: "hit", label: "缓存命中" },
-		{ key: "lastActive", label: "最近活跃" }
+		{ key: "hit", label: "缓存命中" }
 	];
+	if (!dayMode) SORT_FIELDS.push({ key: "lastActive", label: "最近活跃" });
 
+	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
 	var toolbar = e("div", { className: "dss-sortbar" },
 		e("span", { className: "dss-sortbar-label" }, "排序"),
 		e("select", {
 			className: "dss-sortbar-select",
-			value: sort.key,
+			value: effSortKey,
 			onChange: function(ev) { setSort({ key: ev.target.value, dir: sort.dir }); }
 		},
 			SORT_FIELDS.map(function(f) { return e("option", { key: f.key, value: f.key }, f.label); })
@@ -788,7 +790,7 @@ function ProjectsTable(props) {
 					pm(fmtTokens(s.inputTokens), t("th.input")),
 					pm(fmtTokens(s.outputTokens), t("th.output")),
 					pm(fmtCost(projectCost(p)), t("th.cost"), "cost"),
-					pm(fmtClock(p.lastActiveAt), t("th.lastActive"))
+					dayMode ? null : pm(fmtClock(p.lastActiveAt), t("th.lastActive"))
 				)
 			),
 			detail
@@ -1009,7 +1011,7 @@ function StatsPanel(props) {
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, tt: t })
 				: e(TrendsView, { globals, selectedDate: effectiveDate })
 			)
