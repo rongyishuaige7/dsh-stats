@@ -150,20 +150,29 @@ function findSessionFile(home, sessionId) {
 }
 
 // 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本。
+// seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
 // 结果按文件 mtime 缓存（会话日志 append 后 mtime 变化，自动失效）。
 const sessionInfoCache = new Map(); // filePath -> { mtimeMs, info }
+const SESSION_CACHE_LIMIT = 300; // LRU 上限，防长期运行内存膨胀
 function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
-	if (!file) return { times: [], model: null, usages: [], origin: null, parentSession: null };
+	if (!file) return { times: [], model: null, usages: [], origin: null, parentSession: null, seedLength: null };
 	let mtimeMs;
-	try { mtimeMs = statSync(file).mtimeMs; } catch { return { times: [], model: null, usages: [], origin: null, parentSession: null }; }
+	try { mtimeMs = statSync(file).mtimeMs; } catch { return { times: [], model: null, usages: [], origin: null, parentSession: null, seedLength: null }; }
 	const cached = sessionInfoCache.get(file);
-	if (cached && cached.mtimeMs === mtimeMs) return cached.info;
+	if (cached && cached.mtimeMs === mtimeMs) {
+		// LRU 提升：命中后移到最新
+		sessionInfoCache.delete(file);
+		sessionInfoCache.set(file, cached);
+		return cached.info;
+	}
 	const buf = readFileSync(file);
 	const frames = scanZstdFrames(buf);
 	const times = [];
 	let model = null;
-	let origin = null, parentSession = null;
+	let origin = null, parentSession = null, seedLength = null;
+	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
+	let firstOwnSeq = 0;
 	const usageByStep = new Map();
 	for (const frame of frames) {
 		const text = zstdDecompressSync(buf.subarray(frame.start, frame.end)).toString("utf8");
@@ -171,44 +180,60 @@ function sessionInfo(home, sessionId) {
 			if (!line) continue;
 			let ev;
 			try { ev = JSON.parse(line); } catch { continue; }
+			// 读 seq（事件顶层字段）
+			const evSeq = ev.seq;
+			// session 头部事件不参与 seed 过滤（evSeq === undefined，过滤表达式永远为 false）
+			if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
 			const t = ev.time ?? ev.time0;
 			if (typeof t === "number") times.push(t);
 			if (ev.type === "session") {
-				if (ev.origin) origin = ev.origin;
-				if (ev.parentSession) parentSession = ev.parentSession;
+				origin = ev.origin ?? null;
+				parentSession = ev.parentSession ?? null;
+				seedLength = ev.seedLength ?? null;
+				if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
 			} else if (ev.type === "request/header") {
 				const m = ev.data?.header?.config?.model;
 				if (m) model = m;
 			} else if (ev.type === "assistant/chunk" && ev.data?.chunk?.type === "usage" && typeof t === "number") {
 				const u = ev.data.chunk.usage;
-				usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
-					time: t,
-					uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
-					cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0
-				});
+				if (evSeq !== undefined) {
+					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
+						time: t,
+						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
+						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
+						reasoning: u.reasoningTokens ?? 0
+					});
+				}
 			} else if (ev.type === "assistant/message" && ev.data?.usage !== void 0 && typeof t === "number") {
 				const u = ev.data.usage;
-				usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
-					time: t,
-					uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
-					cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0
-				});
+				if (evSeq !== undefined) {
+					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
+						time: t,
+						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
+						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
+						reasoning: u.reasoningTokens ?? 0
+					});
+				}
 			}
 		}
 	}
 	times.sort((a, b) => a - b);
-	const info = { times, model, usages: [...usageByStep.values()], origin, parentSession };
+	const info = { times, model, usages: [...usageByStep.values()], origin, parentSession, seedLength };
 	sessionInfoCache.set(file, { mtimeMs, info });
+	// LRU 淘汰：超限删除最旧条目
+	while (sessionInfoCache.size > SESSION_CACHE_LIMIT) {
+		const oldest = sessionInfoCache.keys().next().value;
+		sessionInfoCache.delete(oldest);
+	}
 	return info;
 }
-
 function emptyRaw() {
-	return { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+	return { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 }
 function addRaw(a, b) {
 	a.turns += b.turns; a.steps += b.steps; a.llmMs += b.llmMs; a.toolMs += b.toolMs;
 	a.ttftMs += b.ttftMs; a.ttftSteps += b.ttftSteps; a.decodeMs += b.decodeMs; a.decodeTokens += b.decodeTokens;
-	a.uncached += b.uncached; a.output += b.output; a.cacheRead += b.cacheRead; a.cacheWrite += b.cacheWrite;
+	a.uncached += b.uncached; a.output += b.output; a.cacheRead += b.cacheRead; a.cacheWrite += b.cacheWrite; a.reasoning += b.reasoning;
 }
 
 // 把活跃区间按 30 分钟绝对槽切分累计
@@ -230,11 +255,12 @@ function slotUsages(usages) {
 	const m = new Map();
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
-		const cur = m.get(k) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+		const cur = m.get(k) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 		cur.uncached += u.uncached; cur.output += u.output; cur.cacheRead += u.cacheRead; cur.cacheWrite += u.cacheWrite;
+		cur.reasoning += u.reasoning;
 		m.set(k, cur);
 	}
-	return [...m.entries()].map(([slot, b]) => ({ slot, uncached: b.uncached, output: b.output, cacheRead: b.cacheRead, cacheWrite: b.cacheWrite }));
+	return [...m.entries()].map(([slot, b]) => ({ slot, uncached: b.uncached, output: b.output, cacheRead: b.cacheRead, cacheWrite: b.cacheWrite, reasoning: b.reasoning }));
 }
 
 let StatsService = (() => {
@@ -274,7 +300,6 @@ let StatsService = (() => {
 				seen.add(sessionId);
 				const entry = sessionsTable[sessionId];
 				const statsRow = entry?.rows?.sessionStats?.val;
-				const usageTotals = entry?.rows?.tokenUsage?.val?.totals ?? {};
 				const title = entry?.rows?.title?.val;
 				const meta = entry?.rows?.sessionListMetadata?.val;
 				const createdAt = entry?.identity?.createdAt ?? null;
@@ -289,24 +314,39 @@ let StatsService = (() => {
 					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（跳过其时间线数据）:`, err?.message);
 					info = { times: [], model: null, usages: [] };
 				}
+				// token 口径统一走日志 usages（已按 seedLength 过滤 fork 继承、按 turn:step 去重），
+				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
+				// 子代理继承的父上下文 cacheRead 也计入了，导致总览页与趋势页不一致。
+				let totalUncached = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalReasoning = 0;
+				for (const u of info.usages) {
+					totalUncached += u.uncached || 0;
+					totalOutput += u.output || 0;
+					totalCacheRead += u.cacheRead || 0;
+					totalCacheWrite += u.cacheWrite || 0;
+					totalReasoning += u.reasoning || 0;
+				}
 				const raw = {
 					turns: statsRow?.turns ?? 0, steps: statsRow?.steps ?? 0,
 					llmMs: statsRow?.llmMs ?? 0, toolMs: statsRow?.toolMs ?? 0,
 					ttftMs: statsRow?.ttftMs ?? 0, ttftSteps: statsRow?.ttftSteps ?? 0,
 					decodeMs: statsRow?.decodeMs ?? 0, decodeTokens: statsRow?.decodeTokens ?? 0,
-					uncached: usageTotals.uncachedInputTokens ?? 0, output: usageTotals.outputTokens ?? 0,
-					cacheRead: usageTotals.cacheReadTokens ?? 0, cacheWrite: usageTotals.cacheWriteTokens ?? 0
+					uncached: totalUncached, output: totalOutput,
+					cacheRead: totalCacheRead, cacheWrite: totalCacheWrite,
+					reasoning: totalReasoning
 				};
 				return {
 					id: sessionId,
 					title: title ?? null,
 					updatedAt: lastPromptAt ?? createdAt,
+					createdAt,
 					model: info.model ?? null,
 					archived,
 					blank: meta?.blank === true,
 					subagent: info.origin === "subagent",
 					origin: info.origin ?? null,
 					parentSession: info.parentSession ?? null,
+					seedLength: info.seedLength ?? null,
+					calls: info.usages.length,
 					stats: raw,
 					durMs: raw.llmMs + raw.toolMs,
 					slots: slotDurations(info.times),

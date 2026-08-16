@@ -38,11 +38,20 @@ Preview the publish contents with `npm pack --dry-run` (LICENSE/README*/lib/*/co
 
 ## Install into a DSH profile
 
+> ⚠️ **Never install into a DSH profile with `npm install --prefix ~/.dsh/profiles/web ...`.**
+> DSH profiles are managed by **pnpm** (workspace + virtual store + supply-chain policies). npm writes its own
+> `package-lock.json`, rewrites `node_modules` in a flat layout, and auto-installs this package's
+> peerDependencies — producing duplicate copies of `@deepseek-ai/dsh-*` internals and a split cordis context.
+> The symptom after restart: `agent-presets: refusing to compose an unscoped context` on session resume,
+> only fixed by `rm -rf node_modules package-lock.json && pnpm install`.
+> Always use the official `dsh plugin` command (it forwards to pnpm).
+
 ```bash
-# Option A (from the npm registry)
-dsh plugin --profile web add @rongyi7/dsh-stats
+# Option A (from the npm registry; install or upgrade)
+dsh plugin --profile web add @rongyi7/dsh-stats            # latest
+dsh plugin --profile web add @rongyi7/dsh-stats@1.1.15     # pinned
 # Option B (from a local tarball)
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.1.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.15.tgz
 ```
 
 That's it — this package declares `dsh.bundle` (with a `cordis.patch.yml` that inserts the plugin row), so `dsh plugin add` registers it into `dsh.profile.bundles` automatically. No manual patch line needed.

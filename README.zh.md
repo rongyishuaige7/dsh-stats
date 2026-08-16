@@ -38,11 +38,20 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 
 ## 安装到 DSH profile
 
+> ⚠️ **切勿用 `npm install --prefix ~/.dsh/profiles/web ...` 等方式直接操作 profile 目录**。
+> DSH profile 由 **pnpm** 管理（workspace + 虚拟存储 + 供应链策略）。npm 会写入自己的
+> `package-lock.json`、以扁平结构重写 `node_modules`，并自动安装本包的 peerDependencies，
+> 导致 `@deepseek-ai/dsh-*` 内部包出现多份副本、cordis 上下文分裂，重启后会话恢复报
+> `agent-presets: refusing to compose an unscoped context`。修复只能删掉
+> `node_modules`/`package-lock.json` 后 `pnpm install`。
+> 更新插件请一律走官方命令 `dsh plugin`（内部转发给 pnpm）。
+
 ```bash
-# 方式 A（从 npm registry）
-dsh plugin --profile web add @rongyi7/dsh-stats
+# 方式 A（从 npm registry 安装/升级）
+dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
+dsh plugin --profile web add @rongyi7/dsh-stats@1.1.15     # 指定版本
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.1.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.15.tgz
 ```
 
 即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
