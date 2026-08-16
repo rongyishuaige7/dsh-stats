@@ -334,3 +334,56 @@ test('fmtDateCN formats Chinese date with weekday', () => {
 	expect(fmtDateCN('2026-08-16')).toBe('2026年8月16日 周日');
 	expect(fmtDateCN(null)).toBe('—');
 });
+
+test('applyDate clips slotUsage to the day and recomputes tokens', () => {
+	var d1 = new Date('2025-03-15T10:00:00');
+	var slotDay = Math.floor(d1.getTime() / 1800000);          // 当天槽
+	var slotPrev = slotDay - 40;                                // 前一天槽（40 槽 = 20 小时前）
+	var slotNext = slotDay + 40;                                // 次日槽
+	const projects = [
+		{
+			id: 'p1', name: 'P1', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: d1.getTime(),
+			stats: {},
+			sessions: [
+				{
+					id: 's1', updatedAt: d1.getTime(), subagent: false, model: 'deepseek-v4-pro',
+					slotUsage: [
+						{ slot: slotPrev, uncached: 1000000, output: 100, cacheRead: 500000, cacheWrite: 0, reasoning: 10 },
+						{ slot: slotDay, uncached: 100, output: 200, cacheRead: 300, cacheWrite: 0, reasoning: 5 },
+						{ slot: slotNext, uncached: 1000000, output: 100, cacheRead: 500000, cacheWrite: 0, reasoning: 10 },
+					],
+					stats: { turns: 7, steps: 3, llmMs: 1000, toolMs: 500, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 2000100, output: 400, cacheRead: 1000300, cacheWrite: 0, reasoning: 25, inputTokens: 3000400, outputTokens: 400, cacheHitPct: 33, tps: null, ttftAvgMs: null },
+				},
+			],
+		},
+	];
+	const out = applyDate(projects, '2025-03-15');
+	const s = out[0].sessions[0];
+	expect(s.slotUsage.length).toBe(1);
+	expect(s.slotUsage[0].slot).toBe(slotDay);
+	// token 重算为当天槽的值
+	expect(s.stats.uncached).toBe(100);
+	expect(s.stats.output).toBe(200);
+	expect(s.stats.cacheRead).toBe(300);
+	expect(s.stats.reasoning).toBe(5);
+	expect(s.stats.inputTokens).toBe(400);
+	// turns/steps/时长不拆分，保留会话完整值
+	expect(s.stats.turns).toBe(7);
+	expect(s.stats.steps).toBe(3);
+});
+
+test('applyDate keeps session stats when no slotUsage (client fallback)', () => {
+	var d1 = new Date('2025-03-15T10:00:00');
+	const projects = [
+		{
+			id: 'p1', name: 'P1', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: d1.getTime(),
+			stats: {},
+			sessions: [
+				{ id: 's1', updatedAt: d1.getTime(), subagent: false, slotUsage: undefined, stats: { turns: 2, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 500, output: 60, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 500, outputTokens: 60, cacheHitPct: 0, tps: null, ttftAvgMs: null } },
+			],
+		},
+	];
+	const out = applyDate(projects, '2025-03-15');
+	expect(out[0].sessions[0].stats.uncached).toBe(500); // 保留原值
+	expect(out[0].sessions[0].stats.outputTokens).toBe(60);
+});

@@ -147,7 +147,9 @@ function sumSessionStats(sessions) {
 	});
 	return display(raw);
 }
-// 按日期过滤项目会话并重建聚合（updatedAt 落在当天 [00:00, 次日 00:00)）
+// 按日期过滤项目会话并重建聚合（updatedAt 落在当天 [00:00, 次日 00:00)）。
+// 同时把每个会话的 slotUsage 裁剪到当天，并按裁剪后的槽重算 token 统计：
+// 否则跨天会话的完整成本/token 会被整段算进某一天（如今天 ¥31 偏高、昨天 ¥1 偏低）。
 function applyDate(projects, dateKey) {
 	if (!dateKey) return projects;
 	var dayStart = new Date(dateKey + "T00:00:00").getTime();
@@ -155,7 +157,38 @@ function applyDate(projects, dateKey) {
 	return projects.map((p) => {
 		var sessions = p.sessions.filter((s) => s.updatedAt != null && s.updatedAt >= dayStart && s.updatedAt < dayEnd);
 		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }) };
-		return { ...p, sessions, sessionCount: sessions.length, subagentCount: sessions.filter((s) => s.subagent).length, stats: sumSessionStats(sessions) };
+		// 裁剪每个会话到当天
+		var clipped = sessions.map(function(s) {
+			var hasSlots = s.slotUsage && s.slotUsage.length > 0;
+			if (!hasSlots) return s; // 无逐槽数据（客户端近似），无法按天拆分，保留
+			var su = s.slotUsage.filter(function(u) {
+				var t = u.slot * 1800000;
+				return t >= dayStart && t < dayEnd;
+			});
+			var tok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+			su.forEach(function(u) {
+				tok.uncached += u.uncached || 0;
+				tok.output += u.output || 0;
+				tok.cacheRead += u.cacheRead || 0;
+				tok.cacheWrite += u.cacheWrite || 0;
+				tok.reasoning += u.reasoning || 0;
+			});
+			// 有逐槽数据时：token 字段按当天槽重算；turns/steps/时长等会话粒度指标
+			// 没有逐日分布，保留会话完整值（仅作参考）。无逐槽数据（客户端近似）时
+			// 无法拆分，保留原 stats。
+			var st = s.stats || {};
+			var newStats = display({
+				turns: st.turns || 0, steps: st.steps || 0,
+				llmMs: st.llmMs || 0, toolMs: st.toolMs || 0,
+				ttftMs: st.ttftMs || 0, ttftSteps: st.ttftSteps || 0,
+				decodeMs: st.decodeMs || 0, decodeTokens: st.decodeTokens || 0,
+				uncached: tok.uncached, output: tok.output,
+				cacheRead: tok.cacheRead, cacheWrite: tok.cacheWrite,
+				reasoning: tok.reasoning
+			});
+			return { ...s, slotUsage: su, stats: newStats };
+		});
+		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length, stats: sumSessionStats(clipped) };
 	});
 }
 
