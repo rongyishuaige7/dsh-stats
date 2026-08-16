@@ -463,19 +463,19 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-hm{width:14px;height:14px;border-radius:4px;flex:none;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-hm.has{cursor:pointer}" +
 	".dss-hm.has:hover{outline:1.5px solid #4f8cff;outline-offset:1px}" +
-	".dss-axis{display:grid;grid-template-columns:180px 1fr 104px;margin-bottom:4px}" +
+	".dss-axis{display:grid;grid-template-columns:150px 1fr 104px;margin-bottom:4px}" +
 	".dss-hours{display:grid;grid-template-columns:repeat(9,1fr);color:var(--dsw-alias-label-tertiary,#6b7280);font-size:10.5px}" +
 	".dss-hours span{text-align:center}" +
 	".dss-hours span:first-child{text-align:left}" +
 	".dss-hours span:last-child{text-align:right}" +
-	".dss-day{display:grid;grid-template-columns:180px 1fr 104px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
+	".dss-day{display:grid;grid-template-columns:150px 1fr 104px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
 	// 左侧：项目颜色块列表（总览同款色点）+ 多天模式附加日期
-	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:7px;padding:10px 12px 10px 0;min-width:0}" +
+	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:9px;padding:10px 8px 10px 0;min-width:0}" +
 	".dss-day-date{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary,#a6adbb);margin-bottom:3px;font-variant-numeric:tabular-nums}" +
 	".dss-day-proj{display:flex;align-items:center;gap:8px;min-width:0;transition:opacity .12s}" +
 	".dss-day-proj:hover{opacity:.8}" +
 	".dss-day-dot{width:10px;height:10px;border-radius:3px;flex:none;background:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
-	".dss-day-pname{font-size:12px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+	".dss-day-pname{font-size:12.5px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-day-more{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280);padding-left:18px}" +
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
 	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:column;justify-content:flex-end;gap:1px}" +
