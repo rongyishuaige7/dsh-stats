@@ -448,7 +448,6 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-nav-btn{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;line-height:1.2}" +
 	".dss-nav-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-nav-btn:disabled{opacity:.35;cursor:default}" +
-	".dss-nav-btn.today{border-color:rgba(79,140,255,.5);color:#4f8cff}" +
 	".dss-nav-date{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums;min-width:160px;text-align:center}" +
 	".dss-nav-note{margin-left:auto;color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px}" +
 	".dss-cost{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
@@ -842,11 +841,6 @@ function DateNavigator(props) {
 		if (ni < 0 || ni >= dates.length) return;
 		setNav({ mode: "day", date: dates[ni] });
 	};
-	var goToday = function() {
-		var todayKey = localDayKey(Date.now());
-		var target = dates.indexOf(todayKey) >= 0 ? todayKey : (dates.length ? dates[dates.length - 1] : null);
-		setNav({ mode: "day", date: target });
-	};
 
 	return e("div", { className: "dss-nav" },
 		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
@@ -855,9 +849,8 @@ function DateNavigator(props) {
 		),
 		mode === "day" ? e(Fragment, null,
 			e("button", { className: "dss-nav-btn", onClick: () => move(-1), disabled: idx <= 0, title: "前一天" }, "‹"),
-			e("span", { className: "dss-nav-date" }, fmtDateCN(effectiveDate) + (effectiveDate === localDayKey(Date.now()) ? "（今天）" : "")),
-			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: "后一天" }, "›"),
-			e("button", { className: "dss-nav-btn today", onClick: goToday, title: "回到今天（无数据则最近活动日）" }, "今天")
+			e("span", { className: "dss-nav-date" }, fmtDateCN(effectiveDate)),
+			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: "后一天" }, "›")
 		) : null,
 		e("span", { className: "dss-nav-note" }, t("hint.cost"))
 	);
