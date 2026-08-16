@@ -169,7 +169,7 @@ function sessionInfo(home, sessionId) {
 	const buf = readFileSync(file);
 	const frames = scanZstdFrames(buf);
 	const times = [];
-	let model = null;
+	let currentModel = null; // 最近 request/header 声明的模型（chunk 兜底用）
 	let origin = null, parentSession = null, seedLength = null;
 	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
 	let firstOwnSeq = 0;
@@ -193,12 +193,13 @@ function sessionInfo(home, sessionId) {
 				if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
 			} else if (ev.type === "request/header") {
 				const m = ev.data?.header?.config?.model;
-				if (m) model = m;
+				if (m) currentModel = m;
 			} else if (ev.type === "assistant/chunk" && ev.data?.chunk?.type === "usage" && typeof t === "number") {
 				const u = ev.data.chunk.usage;
 				if (evSeq !== undefined) {
 					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
 						time: t,
+						model: currentModel,
 						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
 						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
 						reasoning: u.reasoningTokens ?? 0
@@ -206,9 +207,12 @@ function sessionInfo(home, sessionId) {
 				}
 			} else if (ev.type === "assistant/message" && ev.data?.usage !== void 0 && typeof t === "number") {
 				const u = ev.data.usage;
+				// 每个消息的实际模型来自 message.source.model（会话内可切换模型，见参考实现）
+				const msgModel = ev.data?.message?.source?.model || currentModel;
 				if (evSeq !== undefined) {
 					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
 						time: t,
+						model: msgModel,
 						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
 						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
 						reasoning: u.reasoningTokens ?? 0
@@ -218,6 +222,19 @@ function sessionInfo(home, sessionId) {
 		}
 	}
 	times.sort((a, b) => a - b);
+	// session 主要模型 = 按 token 量（cacheRead+output+uncached）加权最大的模型，
+	// 避免会话中途切换模型时整体被错误归到最后一个模型。
+	const modelTokens = new Map();
+	for (const u of usageByStep.values()) {
+		const mk = u.model || "(unknown)";
+		const weight = (u.cacheRead || 0) + (u.output || 0) + (u.uncached || 0);
+		modelTokens.set(mk, (modelTokens.get(mk) || 0) + weight);
+	}
+	let model = null, modelWeight = -1;
+	for (const [mk, w] of modelTokens) {
+		if (w > modelWeight) { modelWeight = w; model = mk; }
+	}
+	if (model === null) model = currentModel;
 	const info = { times, model, usages: [...usageByStep.values()], origin, parentSession, seedLength };
 	sessionInfoCache.set(file, { mtimeMs, info });
 	// LRU 淘汰：超限删除最旧条目
