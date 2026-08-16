@@ -5,6 +5,7 @@ const {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration,
+	applyDate, activityDates, fmtDateCN,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -271,4 +272,65 @@ test('costOf with cacheWrite included', () => {
 	const cost = costOf(stats, offPeak);
 	// miss: 700k * 1.5/1M = 1.05; hit: 500k * 0.05/1M = 0.025; out: 800k * 4.5/1M = 3.6
 	expect(cost).toBeCloseTo(4.675, 3);
+});
+
+// ---------------------------------------------------------------------------
+// applyDate / activityDates / fmtDateCN（日期导航）
+// ---------------------------------------------------------------------------
+test('applyDate filters sessions by local day window', () => {
+	const d0 = new Date('2025-03-15T12:00:00').getTime(); // 当天
+	const d1 = new Date('2025-03-15T23:59:59').getTime(); // 当天末
+	const dPrev = new Date('2025-03-14T23:00:00').getTime(); // 前一天
+	const dNext = new Date('2025-03-16T00:00:00').getTime(); // 次日零点
+	const projects = [
+		{
+			id: 'p1', name: 'P1', path: '/p', sessionCount: 3, subagentCount: 0, lastActiveAt: d0,
+			stats: { turns: 0 },
+			sessions: [
+				{ id: 's1', updatedAt: d0, subagent: false, stats: { turns: 5, steps: 1, llmMs: 100, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 100, output: 50, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 100, outputTokens: 50, cacheHitPct: 0, tps: null, ttftAvgMs: null } },
+				{ id: 's2', updatedAt: d1, subagent: false, stats: { turns: 3, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } },
+				{ id: 's3', updatedAt: dPrev, subagent: true, stats: { turns: 9, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } },
+				{ id: 's4', updatedAt: dNext, subagent: false, stats: { turns: 7, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } },
+			],
+		},
+	];
+	const out = applyDate(projects, '2025-03-15');
+	expect(out[0].sessions.length).toBe(2); // s1 + s2，s3 前一天、s4 次日零点被排除
+	expect(out[0].sessionCount).toBe(2);
+	expect(out[0].stats.turns).toBe(8);
+});
+
+test('applyDate with no date returns projects unchanged', () => {
+	const projects = [{ id: 'p1', sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: {} }];
+	expect(applyDate(projects, null)).toBe(projects);
+});
+
+test('applyDate empty day zeroes project stats', () => {
+	const projects = [
+		{
+			id: 'p1', name: 'P1', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: 1,
+			stats: { turns: 1 },
+			sessions: [{ id: 's1', updatedAt: new Date('2025-03-14T12:00:00').getTime(), subagent: false, stats: { turns: 1, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } }],
+		},
+	];
+	const out = applyDate(projects, '2025-03-15');
+	expect(out[0].sessions.length).toBe(0);
+	expect(out[0].sessionCount).toBe(0);
+	expect(out[0].stats.turns).toBe(0);
+});
+
+test('activityDates extracts sorted active dates from timeline', () => {
+	const timeline = { days: [{ date: '2025-03-15', dayTotalMs: 100 }, { date: '2025-03-12', dayTotalMs: 50 }, { date: '2025-03-15', dayTotalMs: 10 }] };
+	const dates = activityDates(timeline);
+	expect(dates).toEqual(['2025-03-12', '2025-03-15', '2025-03-15']);
+});
+
+test('activityDates empty timeline returns empty', () => {
+	expect(activityDates({ days: [] })).toEqual([]);
+	expect(activityDates(null)).toEqual([]);
+});
+
+test('fmtDateCN formats Chinese date with weekday', () => {
+	expect(fmtDateCN('2026-08-16')).toBe('2026年8月16日 周日');
+	expect(fmtDateCN(null)).toBe('—');
 });

@@ -147,18 +147,31 @@ function sumSessionStats(sessions) {
 	});
 	return display(raw);
 }
-// 按日期范围过滤项目会话并重建聚合（保持项目顺序/数量，颜色索引稳定）
-function applyRange(projects, range) {
-	if (range === "all") return projects;
-	var maxUpdated = 0;
-	projects.forEach((p) => p.sessions.forEach((s) => { if (s.updatedAt != null && s.updatedAt > maxUpdated) maxUpdated = s.updatedAt; }));
-	if (!maxUpdated) return projects;
-	var cutoff = maxUpdated - (range - 1) * 86400000;
+// 按日期过滤项目会话并重建聚合（updatedAt 落在当天 [00:00, 次日 00:00)）
+function applyDate(projects, dateKey) {
+	if (!dateKey) return projects;
+	var dayStart = new Date(dateKey + "T00:00:00").getTime();
+	var dayEnd = dayStart + 86400000;
 	return projects.map((p) => {
-		var sessions = p.sessions.filter((s) => s.updatedAt != null && s.updatedAt >= cutoff);
+		var sessions = p.sessions.filter((s) => s.updatedAt != null && s.updatedAt >= dayStart && s.updatedAt < dayEnd);
 		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }) };
 		return { ...p, sessions, sessionCount: sessions.length, subagentCount: sessions.filter((s) => s.subagent).length, stats: sumSessionStats(sessions) };
 	});
+}
+
+// 活动日列表（timeline 里有活动的日期，升序）
+function activityDates(timeline) {
+	var dates = (timeline && timeline.days ? timeline.days : []).map(function(d) { return d.date; });
+	dates.sort();
+	return dates;
+}
+
+// 中文日期：2026年8月16日 周六
+function fmtDateCN(dateKey) {
+	if (!dateKey) return "—";
+	var d = new Date(dateKey + "T00:00:00");
+	var DOW = ["日","一","二","三","四","五","六"];
+	return d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日 周" + DOW[d.getDay()];
 }
 
 // 偏好持久化（localStorage）
@@ -430,9 +443,14 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-empty{color:var(--dsw-alias-label-tertiary,#6b7280);text-align:center;padding:32px 0}" +
 	".dss-tt{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:9px;padding:8px 11px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12.5px;position:fixed;z-index:2000;pointer-events:none;display:none;max-width:320px}" +
 	".dss-tt.show{display:block}" +
-	".dss-pricing{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
-	".dss-pricing select{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-primary,#e7eaf0);border-radius:7px;padding:4px 8px;font-size:12.5px}" +
-	".dss-pricing .note{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px}" +
+	// 日期导航器
+	".dss-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
+	".dss-nav-btn{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;line-height:1.2}" +
+	".dss-nav-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+	".dss-nav-btn:disabled{opacity:.35;cursor:default}" +
+	".dss-nav-btn.today{border-color:rgba(79,140,255,.5);color:#4f8cff}" +
+	".dss-nav-date{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums;min-width:160px;text-align:center}" +
+	".dss-nav-note{margin-left:auto;color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px}" +
 	".dss-cost{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	"[data-color='0']{--c:#4f8cff}[data-color='1']{--c:#34d399}[data-color='2']{--c:#fbbf24}[data-color='3']{--c:#f472b6}[data-color='4']{--c:#a78bfa}[data-color='5']{--c:#22d3ee}[data-color='6']{--c:#fb923c}[data-color='7']{--c:#e879f9}[data-color='8']{--c:#a3e635}" +
 	// 用量趋势（重构版）
@@ -482,6 +500,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-cal-cell.lvl3.has{background:rgba(79,140,255,.8);border-color:transparent}" +
 	".dss-cal-cell.lvl4.has{background:rgba(79,140,255,1);border-color:transparent;box-shadow:0 0 0 1px rgba(79,140,255,.4)}" +
 	".dss-cal-cell.today{outline:1.5px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:1px}" +
+	".dss-cal-cell.selected{outline:2px solid #ff922b;outline-offset:1px;z-index:1}" +
 	".dss-cal-cell.future{opacity:.35;border-style:dashed}" +
 	".dss-cal-cell.has:hover{outline:1.5px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:1px}" +
 	".dss-cal-legend{display:flex;align-items:center;gap:3px;font-size:10px;color:var(--dsw-alias-label-tertiary,#6b7280);justify-content:center}" +
@@ -517,6 +536,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-mchart-xlabels{display:flex;gap:6px;margin-top:4px}" +
 	".dss-mchart-label{flex:1;min-width:26px;max-width:64px;text-align:center;font-size:10px;color:var(--dsw-alias-label-tertiary,#6b7280);height:18px;line-height:18px;overflow:hidden;white-space:nowrap}" +
 	".dss-mchart-label.today{color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
+	".dss-mchart-label.selected{color:#ff922b;font-weight:700}" +
 	".dss-mchart-legend{grid-column:1 / -1;display:flex;gap:14px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb);align-items:center}" +
 	".dss-mchart-lg{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:-1px}" +
 	".dss-mchart-lg.input{background:#4f8cff}" +
@@ -753,19 +773,11 @@ function TimelineView(props) {
 	var projects = props.projects;
 	var timeline = props.timeline;
 	var hidden = props.hidden;
-	var range = props.range;
 	var slotMinutes = 30;
 	var slotMs = slotMinutes * 60000;
 	var tt = props.tt;
 
 	var days = timeline.days;
-	if (range !== "all") {
-		var maxKey = days.length ? days[days.length - 1].date : null;
-		if (maxKey) {
-			var cutoff = new Date(maxKey + "T00:00:00+08:00").getTime() - (range - 1) * 86400000;
-			days = days.filter((d) => new Date(d.date + "T00:00:00+08:00").getTime() >= cutoff);
-		}
-	}
 	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 
 	return e("div", null,
@@ -817,15 +829,37 @@ function TimelineView(props) {
 	);
 }
 
-function DateRangeBar(props) {
-	var range = props.range, setRange = props.setRange, t = props.t;
-	var btn = (label, val) => e("button", { className: range === val ? "on" : "", onClick: () => setRange(val) }, label);
-	return e("div", { className: "dss-pricing" },
-		e("label", null, t("range.label")),
+// 日期导航器：按日模式（◀ 日期 ▶ + 今天）与全部模式（汇总）
+function DateNavigator(props) {
+	var nav = props.nav, setNav = props.setNav, dates = props.dates, effectiveDate = props.effectiveDate, t = props.t;
+	var mode = nav.mode || "day";
+	var idx = effectiveDate ? dates.indexOf(effectiveDate) : -1;
+
+	var setMode = function(m) { setNav({ mode: m, date: effectiveDate }); };
+	var move = function(delta) {
+		if (idx < 0) return;
+		var ni = idx + delta;
+		if (ni < 0 || ni >= dates.length) return;
+		setNav({ mode: "day", date: dates[ni] });
+	};
+	var goToday = function() {
+		var todayKey = localDayKey(Date.now());
+		var target = dates.indexOf(todayKey) >= 0 ? todayKey : (dates.length ? dates[dates.length - 1] : null);
+		setNav({ mode: "day", date: target });
+	};
+
+	return e("div", { className: "dss-nav" },
 		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
-			btn(t("range.7d"), 7), btn(t("range.30d"), 30), btn(t("range.90d"), 90), btn(t("range.all"), "all")
+			e("button", { className: mode === "day" ? "on" : "", onClick: () => setMode("day") }, "按日"),
+			e("button", { className: mode === "all" ? "on" : "", onClick: () => setMode("all") }, "全部")
 		),
-		e("span", { className: "note" }, t("hint.cost"))
+		mode === "day" ? e(Fragment, null,
+			e("button", { className: "dss-nav-btn", onClick: () => move(-1), disabled: idx <= 0, title: "前一天" }, "‹"),
+			e("span", { className: "dss-nav-date" }, fmtDateCN(effectiveDate) + (effectiveDate === localDayKey(Date.now()) ? "（今天）" : "")),
+			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: "后一天" }, "›"),
+			e("button", { className: "dss-nav-btn today", onClick: goToday, title: "回到今天（无数据则最近活动日）" }, "今天")
+		) : null,
+		e("span", { className: "dss-nav-note" }, t("hint.cost"))
 	);
 }
 
@@ -861,7 +895,7 @@ function StatsPanel(props) {
 	var aggregateRemote = props.aggregate;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
 	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
-	var rangePair = usePref("range", 30); var range = rangePair[0], setRange = rangePair[1];
+	var navPair = usePref("nav", { mode: "day", date: null }); var nav = navPair[0], setNav = navPair[1];
 	var [selected, setSelected] = useState(null);
 	var [remoteData, setRemoteData] = useState(null);
 	var [refreshTick, setRefreshTick] = useState(0);
@@ -900,15 +934,32 @@ function StatsPanel(props) {
 	}, [remoteData, sessionsSnap, workspacesSnap]);
 
 	// hooks 必须在早退之前调用（React 规则：每次渲染 hooks 数量一致）
-	var rangeProjects = useMemo(() => applyRange(data.projects, range), [data.projects, range]);
+	// 活动日列表（timeline 中有活动的日期）
+	var dates = useMemo(() => activityDates(data.timeline), [data.timeline]);
 
-	// 全局聚合（用于用量趋势）：基于范围过滤后的项目
-	var globals = useMemo(() => buildGlobals(rangeProjects), [rangeProjects]);
+	// 按日模式的有效日期：nav.date 无效或不在活动日列表时，回退最近活动日
+	var effectiveDate = useMemo(() => {
+		if (!nav || nav.mode !== "day") return null;
+		if (nav.date && dates.indexOf(nav.date) >= 0) return nav.date;
+		return dates.length ? dates[dates.length - 1] : null;
+	}, [nav, dates]);
+
+	// 按日过滤后的项目（全部模式 = 全量）
+	var dateProjects = useMemo(() => applyDate(data.projects, effectiveDate), [data.projects, effectiveDate]);
+
+	// 时间线视图：按日模式只保留选中日
+	var viewTimeline = useMemo(() => {
+		if (!effectiveDate) return data.timeline;
+		return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
+	}, [data.timeline, effectiveDate]);
+
+	// 全局聚合（用量趋势页）：始终基于全量数据（宏观视图，不随日期过滤）
+	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...h, [id]: !h[id] }));
-	var visibleProjects = rangeProjects.filter((p) => !hidden[p.id]);
+	var visibleProjects = dateProjects.filter((p) => !hidden[p.id]);
 
 	return e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); } },
 		e("div", { className: "dss-panel" },
@@ -920,21 +971,21 @@ function StatsPanel(props) {
 					e("button", { className: tab === "trends" ? "on" : "", onClick: () => setTab("trends") }, t("tab.trends"))
 				),
 				e("button", { className: "dss-export", onClick: () => setRefreshTick((x) => x + 1) }, t("refresh")),
-				e("button", { className: "dss-export", onClick: () => exportCSV(rangeProjects, t) }, "CSV"),
-				e("button", { className: "dss-export", onClick: () => exportJSON(rangeProjects) }, "JSON"),
+				e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
+				e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON"),
 				e("button", { className: "dss-close", onClick: onClose, title: t("close") },
 					e(IconCloseOutline16, { size: 16 })
 				)
 			),
 			e("div", { className: "dss-body" },
-				e(DateRangeBar, { range, setRange, t }),
+				e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-					e(ProjectsTable, { projects: rangeProjects, hidden, selected, t, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-				) : tab === "timeline" ? e(TimelineView, { projects: rangeProjects, timeline: data.timeline, hidden, tt: t, range })
-				: e(TrendsView, { globals })
+					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, tt: t })
+				: e(TrendsView, { globals, selectedDate: effectiveDate })
 			)
 		)
 	);
@@ -1010,11 +1061,11 @@ function TrendsView(props) {
 		e(Section, { title: "活动热力图", hint: "左侧：当月按实际天数 · 右侧：近 7 天每日 Token" },
 			e("div", { className: "dss-trend-duo" },
 				e("div", { className: "dss-duo-cell" },
-					e(CalendarHeatmap, { byDay: g.byDay || new Map() })
+					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate })
 				),
 				e("div", { className: "dss-duo-cell grow" },
 					e("div", { className: "dss-duo-title" }, "每日 Token（近 7 天）"),
-					e(DailyTrendChart, { byDay: g.byDay || new Map() })
+					e(DailyTrendChart, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate })
 				)
 			)
 		),
@@ -1091,9 +1142,10 @@ function CalendarHeatmap(props) {
 		let lvl = lvlOf(tot);
 		let isToday = dk === todayKey;
 		let isFuture = dk > todayKey;
+		let isSel = props.selectedDate != null && dk === props.selectedDate;
 		cells.push(e("div", {
 			key: dk,
-			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (isToday ? " today" : "") + (isFuture ? " future" : ""),
+			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (isToday ? " today" : "") + (isFuture ? " future" : "") + (isSel ? " selected" : ""),
 			title: dk,
 			onMouseEnter: function(ev) {
 				var bbb = byDay.get(dk);
@@ -1217,7 +1269,7 @@ function DailyTrendChart(props) {
 			// 日期行独立于柱区，位于 X 轴基线下方
 			e("div", { className: "dss-mchart-xlabels" },
 				days.map(function(dd) {
-					return e("div", { key: dd.key, className: "dss-mchart-label" + (dd.key === todayKey ? " today" : "") },
+					return e("div", { key: dd.key, className: "dss-mchart-label" + (dd.key === todayKey ? " today" : "") + (props.selectedDate != null && dd.key === props.selectedDate ? " selected" : "") },
 						dd.key === todayKey ? "今天" : (dd.mon + "/" + dd.day)
 					);
 				})
@@ -1709,5 +1761,6 @@ module.exports = { apply, inject };
 module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, fmtN, fmtTokens, fmtCost, fmtDuration
+	costOf, fmtN, fmtTokens, fmtCost, fmtDuration,
+	applyDate, activityDates, fmtDateCN
 };
