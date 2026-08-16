@@ -387,3 +387,33 @@ test('applyDate keeps session stats when no slotUsage (client fallback)', () => 
 	expect(out[0].sessions[0].stats.uncached).toBe(500); // 保留原值
 	expect(out[0].sessions[0].stats.outputTokens).toBe(60);
 });
+
+test('modelAgg splits LLM/tool duration by token share across modelUsage', () => {
+	const sessions = [
+		{
+			id: 's1', model: 'deepseek-v4-pro',
+			modelUsage: [
+				{ model: 'deepseek-v4-pro', uncached: 9000, output: 900, cacheRead: 100, cacheWrite: 0, reasoning: 0 },
+				{ model: 'deepseek-v4-flash', uncached: 900, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			],
+			stats: { llmMs: 10000, toolMs: 5000, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+		},
+	];
+	const models = modelAgg(sessions);
+	const pro = models.find(m => m.model === 'deepseek-v4-pro');
+	const flash = models.find(m => m.model === 'deepseek-v4-flash');
+	// pro token 10000 / flash token 1000 → 时长按 10:1 分摊
+	expect(pro.llmMs).toBe(9091);   // 10000 * 10000/11000
+	expect(pro.toolMs).toBe(4545);   // 5000 * 10000/11000
+	expect(flash.llmMs).toBe(909);   // 10000 * 1000/11000
+	expect(flash.toolMs).toBe(455);  // 5000 * 1000/11000
+});
+
+test('modelAgg fallback gives full duration to single model', () => {
+	const sessions = [
+		{ id: 's1', model: 'deepseek-chat', stats: { inputTokens: 1000, outputTokens: 200, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 3000, toolMs: 1000 } },
+	];
+	const models = modelAgg(sessions);
+	expect(models[0].llmMs).toBe(3000);
+	expect(models[0].toolMs).toBe(1000);
+});

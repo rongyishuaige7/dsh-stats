@@ -1578,6 +1578,9 @@ function modelAgg(sessions) {
 				output: st.output != null ? st.output : (st.outputTokens || 0),
 				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0
 			}];
+		// 会话总 token（用于 LLM/工具时长按占比分摊到各模型）
+		var sessTok = 0;
+		entries.forEach((e) => { sessTok += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0); });
 		entries.forEach((e) => {
 			var m = e.model || "(unknown)";
 			var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 };
@@ -1587,11 +1590,12 @@ function modelAgg(sessions) {
 			cur.cacheRead += e.cacheRead || 0;
 			cur.cacheWrite += e.cacheWrite || 0;
 			cur.reasoning += e.reasoning || 0;
+			// DSH 无逐模型时长数据：按 token 占比分摊会话 LLM/工具时长（近似合理）
+			var share = sessTok > 0 ? ((e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0)) / sessTok : 0;
+			cur.llmMs += Math.round((st.llmMs || 0) * share);
+			cur.toolMs += Math.round((st.toolMs || 0) * share);
 			byModel.set(m, cur);
 		});
-		// LLM/工具时长没有逐消息分布，归会话主要模型
-		var main = byModel.get(s.model || "(unknown)");
-		if (main) { main.llmMs += st.llmMs || 0; main.toolMs += st.toolMs || 0; }
 	});
 	return Array.from(byModel.values()).sort((a, b) => b.input + b.output - (a.input + a.output));
 }
