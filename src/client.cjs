@@ -154,7 +154,17 @@ function applyDate(projects, dateKey) {
 	var dayStart = new Date(dateKey + "T00:00:00").getTime();
 	var dayEnd = dayStart + 86400000;
 	return projects.map((p) => {
-		var sessions = p.sessions.filter((s) => s.updatedAt != null && s.updatedAt >= dayStart && s.updatedAt < dayEnd);
+		var sessions = p.sessions.filter(function(s) {
+			// 有逐槽数据：按 slot 是否落在当天判断（跨日会话保留，后续 clip 精确切分）
+			if (s.slotUsage && s.slotUsage.length) {
+				return s.slotUsage.some(function(u) {
+					var t = u.slot * 1800000;
+					return t >= dayStart && t < dayEnd;
+				});
+			}
+			// 无逐槽数据（客户端近似）：退回按 updatedAt 判断
+			return s.updatedAt != null && s.updatedAt >= dayStart && s.updatedAt < dayEnd;
+		});
 		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }) };
 		// 裁剪每个会话到当天
 		var clipped = sessions.map(function(s) {
