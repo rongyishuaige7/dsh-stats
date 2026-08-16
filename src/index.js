@@ -335,13 +335,24 @@ let StatsService = (() => {
 				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
 				// 子代理继承的父上下文 cacheRead 也计入了，导致总览页与趋势页不一致。
 				let totalUncached = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalReasoning = 0;
+				// 按模型聚合的 token 分布（消息粒度：跨模型会话的各模型 token 各归其位）
+				const modelUsageMap = new Map();
 				for (const u of info.usages) {
 					totalUncached += u.uncached || 0;
 					totalOutput += u.output || 0;
 					totalCacheRead += u.cacheRead || 0;
 					totalCacheWrite += u.cacheWrite || 0;
 					totalReasoning += u.reasoning || 0;
+					const mk = u.model || "(unknown)";
+					const cur = modelUsageMap.get(mk) || { model: mk, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+					cur.uncached += u.uncached || 0;
+					cur.output += u.output || 0;
+					cur.cacheRead += u.cacheRead || 0;
+					cur.cacheWrite += u.cacheWrite || 0;
+					cur.reasoning += u.reasoning || 0;
+					modelUsageMap.set(mk, cur);
 				}
+				const modelUsage = [...modelUsageMap.values()];
 				const raw = {
 					turns: statsRow?.turns ?? 0, steps: statsRow?.steps ?? 0,
 					llmMs: statsRow?.llmMs ?? 0, toolMs: statsRow?.toolMs ?? 0,
