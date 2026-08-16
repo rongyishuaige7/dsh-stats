@@ -1002,7 +1002,7 @@ function StatsPanel(props) {
 			var projects = remoteData.projects.map((p) => ({
 				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, subagentCount: p.subagentCount || 0, lastActiveAt: p.lastActiveAt,
 				stats: display(p.stats),
-				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage, origin: s.origin, parentSession: s.parentSession, seedLength: s.seedLength, calls: s.calls }))
+				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage, origin: s.origin, parentSession: s.parentSession, seedLength: s.seedLength, calls: s.calls }))
 			}));
 			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true };
 		}
@@ -1032,8 +1032,11 @@ function StatsPanel(props) {
 		return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
 	}, [data.timeline, effectiveDate]);
 
-	// 全局聚合（用量趋势页）：始终基于全量数据（宏观视图，不随日期过滤）
+	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
+
+	// 按日聚合：hero 总览 / 模型分布随选中日期变化
+	var dateGlobals = useMemo(() => buildGlobals(dateProjects), [dateProjects]);
 
 	if (!open || !open.open) return null;
 
@@ -1064,7 +1067,7 @@ function StatsPanel(props) {
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, tt: t })
-				: e(TrendsView, { globals, selectedDate: effectiveDate })
+				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate })
 			)
 		)
 	);
@@ -1090,9 +1093,10 @@ function hideTip() {
 // 用量趋势视图（重构版：hero 总览 + 指标卡 + 热力图 + 堆叠趋势 + 模型分布）
 // ------------------------------------------------------------------
 function TrendsView(props) {
-	var g = props.globals;
-	var topModel = g.models && g.models.length ? g.models[0] : null;
-	var totals = g.totals || emptyBucket();
+	var g = props.globals; // 全量：热力图 / 7 天趋势 / 连续天数指标卡
+	var dg = props.dateGlobals || props.globals; // 按日（或全部模式）：hero / 模型分布
+	var topModel = dg.models && dg.models.length ? dg.models[0] : null;
+	var totals = dg.totals || emptyBucket();
 	var totalTok = (totals.input || 0) + (totals.output || 0);
 	var hitPct = totals.input > 0 ? Math.round((totals.cacheRead || 0) / totals.input * 100) : null;
 
@@ -1110,7 +1114,7 @@ function TrendsView(props) {
 		e("div", { className: "dss-hero-side" },
 			e("div", { className: "dss-hero-cell" },
 				e("div", { className: "dss-hero-k" }, "总消费"),
-				e("div", { className: "dss-hero-v dss-cost" }, fmtCost(g.totalCost || 0))
+				e("div", { className: "dss-hero-v dss-cost" }, fmtCost(dg.totalCost || 0))
 			),
 			e("div", { className: "dss-hero-cell" },
 				e("div", { className: "dss-hero-k" }, "最常用模型"),
@@ -1150,8 +1154,8 @@ function TrendsView(props) {
 		),
 		e(Section, { title: "模型分布", hint: "按输入 + 输出 token 占比" },
 			e("div", { className: "dss-model-split" },
-				e(ModelRing, { models: g.models || [] }),
-				e(ModelList, { models: g.models || [] })
+				e(ModelRing, { models: dg.models || [] }),
+				e(ModelList, { models: dg.models || [] })
 			)
 		)
 	);
@@ -1388,7 +1392,7 @@ function ModelRing(props) {
 			)
 		),
 		e("div", { className: "dss-ring-legend" },
-			stops.filter(function(s) { return s.v > 0.01; }).map(function(s, i) {
+			stops.map(function(s, i) {
 				return e("div", { key: i, className: "dss-ring-item" },
 					e("span", { className: "dss-ring-swatch", style: { background: s.color } }),
 					e("span", { className: "dss-ring-name", title: s.label }, s.label),
@@ -1563,18 +1567,31 @@ function weeklyFromDays(byDay) {
 function modelAgg(sessions) {
 	var byModel = new Map();
 	sessions.forEach((s) => {
-		var m = s.model || "(unknown)";
-		var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 };
-		cur.sessions += 1;
 		var st = s.stats || {};
-		cur.input += st.inputTokens || 0;
-		cur.output += st.outputTokens || 0;
-		cur.cacheRead += st.cacheRead || 0;
-		cur.cacheWrite += st.cacheWrite || 0;
-		cur.reasoning += st.reasoning || 0;
-		cur.llmMs += st.llmMs || 0;
-		cur.toolMs += st.toolMs || 0;
-		byModel.set(m, cur);
+		// 消息粒度模型分布（宿主提供）：跨模型会话的各模型 token 各归其位；
+		// 无分布数据（客户端近似）时退化为会话主要模型单条目。
+		var entries = (s.modelUsage && s.modelUsage.length)
+			? s.modelUsage
+			: [{
+				model: s.model || "(unknown)",
+				uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
+				output: st.output != null ? st.output : (st.outputTokens || 0),
+				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0
+			}];
+		entries.forEach((e) => {
+			var m = e.model || "(unknown)";
+			var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 };
+			cur.sessions += 1;
+			cur.input += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0);
+			cur.output += e.output || 0;
+			cur.cacheRead += e.cacheRead || 0;
+			cur.cacheWrite += e.cacheWrite || 0;
+			cur.reasoning += e.reasoning || 0;
+			byModel.set(m, cur);
+		});
+		// LLM/工具时长没有逐消息分布，归会话主要模型
+		var main = byModel.get(s.model || "(unknown)");
+		if (main) { main.llmMs += st.llmMs || 0; main.toolMs += st.toolMs || 0; }
 	});
 	return Array.from(byModel.values()).sort((a, b) => b.input + b.output - (a.input + a.output));
 }

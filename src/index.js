@@ -357,6 +357,7 @@ let StatsService = (() => {
 					updatedAt: lastPromptAt ?? createdAt,
 					createdAt,
 					model: info.model ?? null,
+					modelUsage,
 					archived,
 					blank: meta?.blank === true,
 					subagent: info.origin === "subagent",
