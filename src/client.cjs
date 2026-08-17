@@ -667,6 +667,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-mchart-seg{width:100%}" +
 	".dss-mchart-seg.input{background:#4f8cff}" +
 	".dss-mchart-seg.output{background:#ffd43b}" +
+// 输出通常远少于输入；有真实输出时保留 2px 可见高度，避免被压成不可见的亚像素线。
+	".dss-mchart-seg.output.has-value{min-height:2px}" +
 	".dss-mchart-seg.reasoning{background:#cc5de8}" +
 	// 日期行：独立于柱区，位于 X 轴基线下方（margin-top 4 + 高 18 = grid 底部 22px，与 Y 轴 padding 对齐）
 	".dss-mchart-xlabels{display:flex;gap:6px;margin-top:4px}" +
@@ -1468,7 +1470,7 @@ function DailyTrendChart(props) {
 							onMouseLeave: hideTip
 						},
 							e("div", { className: "dss-mchart-seg input", style: { height: pIn + "%" } }),
-							e("div", { className: "dss-mchart-seg output", style: { height: pOut + "%" } })
+						e("div", { className: "dss-mchart-seg output" + ((b.output || 0) > 0 ? " has-value" : ""), style: { height: pOut + "%" } })
 						)
 					);
 				})

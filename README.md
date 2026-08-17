@@ -49,9 +49,9 @@ Preview the publish contents with `npm pack --dry-run` (LICENSE/README*/lib/*/co
 ```bash
 # Option A (from the npm registry; install or upgrade)
 dsh plugin --profile web add @rongyi7/dsh-stats            # latest
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.1     # pinned
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.2     # pinned
 # Option B (from a local tarball)
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.1.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.2.tgz
 ```
 
 That's it — this package declares `dsh.bundle` (with a `cordis.patch.yml` that inserts the plugin row), so `dsh plugin add` registers it into `dsh.profile.bundles` automatically. No manual patch line needed.
@@ -117,7 +117,7 @@ Gotchas (hard-won):
 ```bash
 # after editing src/: rebuild, repack, reinstall into the profile, then restart
 npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.1.tgz   # pnpm reinstall
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.2.tgz   # pnpm reinstall
 # restart dsh web
 ```
 
