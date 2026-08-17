@@ -4,9 +4,9 @@ const client = require('../src/client.cjs');
 const {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, fmtN, fmtTokens, fmtCost, fmtDuration,
+	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, activityDates, fmtDateCN,
-	applyRange, buildTimeline, parseAggregateResult,
+	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -185,6 +185,43 @@ test('modelAgg null model maps to (unknown)', () => {
 	expect(models[0].model).toBe('(unknown)');
 });
 
+test('modelAgg accumulates each model cost with the price of its actual slot', () => {
+	const offPeakSlot = Math.floor(Date.parse('2026-08-17T00:00:00+08:00') / 1800000);
+	const peakSlot = Math.floor(Date.parse('2026-08-17T09:00:00+08:00') / 1800000);
+	const models = modelAgg([{
+		model: 'deepseek-v4-pro',
+		slotUsage: [
+			{ slot: offPeakSlot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+			{ slot: peakSlot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+			{ slot: offPeakSlot, model: 'deepseek-v4-flash', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+		],
+		stats: { llmMs: 0, toolMs: 0 },
+	}]);
+	const pro = models.find(m => m.model === 'deepseek-v4-pro');
+	const flash = models.find(m => m.model === 'deepseek-v4-flash');
+	// pro: offPeak 0.00735 + peak 0.0147; flash offPeak: 0.00245
+	expect(pro.costKnown).toBe(true);
+	expect(pro.cost).toBeCloseTo(0.02205, 6);
+	expect(flash.costKnown).toBe(true);
+	expect(flash.cost).toBeCloseTo(0.00245, 6);
+});
+
+test('modelAgg keeps known model costs when another model price is unknown', () => {
+	const slot = Math.floor(Date.parse('2026-08-17T00:00:00+08:00') / 1800000);
+	const models = modelAgg([{
+		model: 'deepseek-v4-pro',
+		slotUsage: [
+			{ slot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			{ slot, model: 'future-model', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+		],
+		stats: { llmMs: 0, toolMs: 0 },
+	}]);
+	const known = models.find(m => m.model === 'deepseek-v4-pro');
+	expect(known.costKnown).toBe(true);
+	expect(known.cost).toBeCloseTo(0.00585, 6);
+	expect(models.find(m => m.model === 'future-model')).toMatchObject({ costKnown: false, cost: 0 });
+});
+
 // ---------------------------------------------------------------------------
 // monthlyFromDays / weeklyFromDays
 // ---------------------------------------------------------------------------
@@ -214,6 +251,12 @@ test('weeklyFromDays starts week on Sunday', () => {
 // ---------------------------------------------------------------------------
 // fmtN / fmtTokens / fmtCost / fmtDuration（真实实现格式）
 // ---------------------------------------------------------------------------
+test('fmtTps leaves the unit to the project metric label', () => {
+	expect(fmtTps(78.45)).toBe('78.5');
+	expect(fmtTps(123.4)).toBe('123');
+	expect(fmtTps(null)).toBe('—');
+});
+
 test('fmtN uses en-US locale grouping', () => {
 	expect(fmtN(0)).toBe('0');
 	expect(fmtN(999)).toBe('999');
@@ -317,6 +360,33 @@ test('applyDate empty day zeroes project stats', () => {
 	];
 	const out = applyDate(projects, '2025-03-15');
 	expect(out.length).toBe(0);
+});
+
+test('hasTokenUsage excludes activity-only projects from date statistics', () => {
+	expect(hasTokenUsage({ stats: { inputTokens: 0, outputTokens: 0 } })).toBe(false);
+	expect(hasTokenUsage({ stats: { inputTokens: 100, outputTokens: 0 } })).toBe(true);
+	expect(hasTokenUsage({ stats: { inputTokens: 0, outputTokens: 50 } })).toBe(true);
+	expect(hasTokenUsage({ stats: { inputTokens: 0, outputTokens: 0, toolMs: 1000 } })).toBe(false);
+});
+
+test('timelineLayout shows more projects when the visible range is short', () => {
+	expect(timelineLayout(1)).toMatchObject({ maxBlockH: 200, maxProjects: 6, laneHeight: 72, laneViewportH: 306, rowMinH: 214 });
+	expect(timelineLayout(7)).toMatchObject({ maxBlockH: 112, maxProjects: 5, rowMinH: 153 });
+	expect(timelineLayout(30)).toMatchObject({ maxBlockH: 56, maxProjects: 4, rowMinH: 129 });
+});
+
+test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {
+	const grouped = groupTimelineBlocks({ slotBlocks: [
+		{ slot: 4, projectId: 'a', name: 'A', colorIndex: 0, ms: 1000 },
+		{ slot: 4, projectId: 'a', name: 'A', colorIndex: 0, ms: 2000 },
+		{ slot: 4, projectId: 'b', name: 'B', colorIndex: 1, ms: 5000 },
+		{ slot: 48, projectId: 'ignored', name: 'Ignored', colorIndex: 2, ms: 9999 },
+	] }, {});
+	const a = grouped.projects.find(p => p.projectId === 'a');
+	expect(grouped.projects).toHaveLength(2);
+	expect(a.slots.get(4)).toBe(3000);
+	expect(grouped.slots[4].map(b => b.projectId)).toEqual(['a', 'b']);
+	expect(grouped.slots[48]).toBeUndefined();
 });
 
 test('activityDates extracts sorted active dates from timeline', () => {

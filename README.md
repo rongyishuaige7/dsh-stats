@@ -73,7 +73,7 @@ After restart, a “Stats” button appears in the sidebar footer. The panel tit
 - **Projects overview** — summary cards (incl. cost) + one row per project + expandable session detail (model / cost / archived tag).
 - **Development timeline** — exact 30-minute slots (host slices activity intervals from event timestamps) + a daily total heat strip.
 - **Cost** — auto-priced by the actual model and official rules: DeepSeek uses the price effective in each 30-minute slot; MiniMax M3 uses the request's service tier and input-context tier. No manual model selection.
-- **Date range** — last 7 / 30 / 90 days / all, applied to both the overview (re-aggregated) and the timeline.
+- **Date scope** — switch between one active day and all recorded activity; the overview and timeline stay in sync.
 - **Data quality** — the panel labels host-exact, partial, stale, and client-approximate results; incomplete or missing logs are surfaced in the source tooltip instead of being presented as exact.
 - **Polish** — option persistence (localStorage), column sorting, CSV/JSON export, legend filtering, 60 s auto-refresh + manual refresh.
 

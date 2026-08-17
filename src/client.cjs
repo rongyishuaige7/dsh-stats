@@ -37,7 +37,7 @@ function fmtClock(ms) {
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 function pad(n) { return String(n).padStart(2, "0"); }
-function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : `${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`; }
+function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : tps.toFixed(1)); }
 function fmtPct(p) { return p == null || !Number.isFinite(p) ? "—" : `${p}%`; }
 function fmtN(n) { return n == null || !Number.isFinite(n) ? "—" : n.toLocaleString("en-US"); }
 function sessionCounts(sessions) {
@@ -147,16 +147,20 @@ function priceForUsage(slotIdx, m, usage) {
 	if (m.fixed) return m.fixed;
 	return priceForSlot(slotIdx, m);
 }
+function usageCost(usage, fallbackModel) {
+	var m = pricingForModel(usage.model || fallbackModel);
+	if (!m) return null;
+	return costOf(usage, priceForUsage(usage.slot, m, usage));
+}
 // 单个会话成本：按逐槽逐模型精确计价（slotUsage 已带 model 字段，宿主端按模型分槽聚合）。
 function sessionCost(s) {
 	if (s.slotUsage && s.slotUsage.length) {
 		var total = 0;
 		for (var i = 0; i < s.slotUsage.length; i++) {
 			var su = s.slotUsage[i];
-			var m = pricingForModel(su.model || s.model);
-			if (!m) return null;
-			var price = priceForUsage(su.slot, m, su);
-			total += costOf(su, price);
+			var cost = usageCost(su, s.model);
+			if (cost == null) return null;
+			total += cost;
 		}
 		return total;
 	}
@@ -330,6 +334,11 @@ function display(raw) {
 		tps: raw.decodeMs > 0 ? raw.decodeTokens / (raw.decodeMs / 1000) : null,
 		ttftAvgMs: raw.ttftSteps > 0 ? raw.ttftMs / raw.ttftSteps : null
 	};
+}
+// 日期范围内只展示有 token 消耗的项目卡片；纯工具活动仍保留给时间线使用。
+function hasTokenUsage(project) {
+	var stats = project && project.stats;
+	return !!stats && ((stats.inputTokens || 0) > 0 || (stats.outputTokens || 0) > 0);
 }
 function emptyRaw() {
 	return { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
@@ -529,7 +538,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-pcard-head{display:flex;align-items:center;gap:18px;padding:13px 16px}" +
 	".dss-pcard-metrics{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}" +
 	".dss-pm{min-width:58px;text-align:right}" +
-	".dss-pm-l{font-size:10px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:3px}" +
+	".dss-pm-l{height:15px;font-size:10px;line-height:15px;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:3px}" +
 	".dss-pm-v{font-size:13px;font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums;line-height:1.15}" +
 	".dss-pm.cost .dss-pm-v{color:#ff922b}" +
 	".dss-pcard-detail{border-top:1px solid var(--dsw-alias-border,#2a303c);background:rgba(255,255,255,.015);padding:6px 4px;overflow-x:auto}" +
@@ -572,6 +581,19 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-cell:last-child{border-right:none}" +
 	".dss-blk{flex:1;min-width:2px;border-radius:3px;background:var(--c);cursor:pointer;transition:filter .12s}" +
 	".dss-blk:hover{filter:brightness(1.25)}" +
+	// 按日模式：项目独立泳道，标签和轨道在同一个滚动容器内保持对齐。
+	".dss-day.day-mode{grid-template-columns:minmax(0,1fr) 104px}" +
+	".dss-day-lanes{grid-column:1;display:flex;flex-direction:column;gap:6px;align-self:start;max-height:306px;overflow-y:auto;overflow-x:hidden;margin:8px 0;min-width:0;scrollbar-gutter:stable}" +
+	".dss-day-lane{display:grid;grid-template-columns:150px minmax(0,1fr);gap:0;align-items:stretch;min-height:72px;flex:none}" +
+	".dss-day-lane-label{display:flex;align-items:center;gap:8px;min-width:0;padding-right:8px}" +
+	".dss-day-lane-track{display:grid;grid-template-columns:repeat(48,minmax(0,1fr));min-width:0;min-height:72px}" +
+	".dss-day-lane-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;align-items:flex-end}" +
+	".dss-day-lane-cell:last-child{border-right:none}" +
+	".dss-day-lane-cell .dss-blk{width:100%;min-width:0;flex:none}" +
+	// 全部模式：同槽项目合并成全宽色块，颜色沿垂直方向切分，避免并排后变窄。
+	".dss-blk-composite{width:100%;min-width:0;border-radius:3px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;cursor:pointer;transition:filter .12s}" +
+	".dss-blk-composite:hover{filter:brightness(1.25)}" +
+	".dss-blk-segment{display:block;flex:1;min-height:1px;background:var(--c)}" +
 		// 右侧信息列：总时长 + 活动时段 + 项目数
 	".dss-day-info{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:4px;padding:8px 0 8px 12px;min-width:0}" +
 	".dss-day-info .dur{font-size:13.5px;font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums}" +
@@ -677,23 +699,23 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-mchart-label{flex:1;min-width:26px;max-width:64px;text-align:center;font-size:10px;color:var(--dsw-alias-label-tertiary,#6b7280);height:18px;line-height:18px;overflow:hidden;white-space:nowrap}" +
 	".dss-mchart-label.today{color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
 	".dss-mchart-label.selected{color:#ff922b;font-weight:700}" +
-	".dss-mchart-legend{grid-column:1 / -1;display:flex;gap:14px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb);align-items:center}" +
+	".dss-mchart-legend{grid-column:2;display:flex;justify-content:center;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb);align-items:center}" +
 	".dss-mchart-lg{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:-1px}" +
 	".dss-mchart-lg.input{background:#4f8cff}" +
 	".dss-mchart-lg.output{background:#ffd43b}" +
 	".dss-mchart-lg.reasoning{background:#cc5de8}" +
 	// 模型分布（紧凑：环 112px、列表行更矮）
-	".dss-model-split{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}" +
-	".dss-ring-wrap{display:flex;gap:12px;align-items:center;flex-direction:column}" +
+	".dss-model-split{display:grid;grid-template-columns:160px minmax(0,1fr);gap:18px;align-items:start}" +
+	".dss-ring-wrap{display:flex;width:160px;gap:12px;align-items:center;flex-direction:column}" +
 	".dss-ring{width:112px;height:112px;border-radius:50%;display:grid;place-items:center;flex:none;position:relative}" +
 	".dss-ring::after{content:\"\";position:absolute;inset:19px;background:var(--dsw-specific-menu,#1d222c);border-radius:50%}" +
 	".dss-ring-center{position:relative;text-align:center;z-index:1}" +
 	".dss-ring-total{font-size:15px;font-weight:700;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums}" +
 	".dss-ring-label{font-size:9.5px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-top:2px}" +
-	".dss-ring-legend{display:flex;flex-direction:column;gap:5px;width:100%;min-width:130px}" +
+	".dss-ring-legend{display:flex;flex-direction:column;gap:5px;width:100%;min-width:0}" +
 	".dss-ring-item{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-ring-swatch{width:10px;height:10px;border-radius:3px;flex:none}" +
-	".dss-ring-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+	".dss-ring-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-ring-pct{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
 	".dss-model-list{display:flex;flex-direction:column;gap:8px;min-width:0}" +
 	".dss-model-item{padding:8px 10px;border:1px solid var(--dsw-alias-border,#2a303c);border-radius:9px;background:rgba(255,255,255,.015);min-width:0;transition:border-color .15s}" +
@@ -709,7 +731,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-tip-title{font-weight:650;margin-bottom:5px;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-tip-row{display:flex;justify-content:space-between;gap:14px;line-height:1.6;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
-	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
+	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day.day-mode{grid-template-columns:minmax(0,1fr) 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-day-lane{grid-template-columns:94px minmax(0,1fr)}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{width:100%;flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
 
 // ------------------------------------------------------------------
 // 组件
@@ -920,23 +942,75 @@ function slotToClock(s) {
 	return pad(Math.floor(m / 60)) + ":" + pad(m % 60);
 }
 
+function groupTimelineBlocks(day, hidden) {
+	var projects = new Map();
+	var slots = Array.from({ length: 48 }, function() { return []; });
+	(day && day.slotBlocks || []).forEach(function(b) {
+		if (hidden && hidden[b.projectId]) return;
+		if (b.slot < 0 || b.slot >= slots.length) return;
+		var project = projects.get(b.projectId);
+		if (!project) {
+			project = { projectId: b.projectId, name: b.name, colorIndex: b.colorIndex, slots: new Map() };
+			projects.set(b.projectId, project);
+		}
+		project.slots.set(b.slot, (project.slots.get(b.slot) || 0) + Math.max(0, b.ms || 0));
+	});
+	projects.forEach(function(project) {
+		project.slots.forEach(function(ms, slot) {
+			slots[slot].push({ projectId: project.projectId, name: project.name, colorIndex: project.colorIndex, ms: ms });
+		});
+	});
+	return { projects: Array.from(projects.values()), slots: slots };
+}
+
+function timelineLayout(dayCount, dayMode) {
+	// 保留单日默认值供旧调用方使用；全部模式即使只有一天也走紧凑布局。
+	var isDayMode = dayMode == null ? dayCount <= 1 : dayMode;
+	if (isDayMode) {
+		var dayMaxBlockH = 200;
+		var dayMaxProjects = 6;
+		var dayProjectListH = dayMaxProjects * 15 + Math.max(0, dayMaxProjects - 1) * 9 + 20;
+		return {
+			maxBlockH: dayMaxBlockH,
+			maxProjects: dayMaxProjects,
+			laneHeight: 72,
+			laneGap: 6,
+			laneViewportH: 306,
+			rowMinH: Math.max(dayMaxBlockH + 14, dayProjectListH)
+		};
+	}
+	var maxBlockH = dayCount <= 7 ? 112 : 56;
+	var maxProjects = dayCount <= 7 ? 5 : 4;
+	var projectListH = maxProjects * 15 + Math.max(0, maxProjects - 1) * 9 + 20 + (dayCount > 1 ? 22 : 0);
+	return { maxBlockH: maxBlockH, maxProjects: maxProjects, rowMinH: Math.max(maxBlockH + 14, projectListH) };
+}
+
+function timelineTipRows(blocks) {
+	return blocks.map(function(b) { return [b.name, fmtDuration(b.ms)]; });
+}
+
+function showTimelineBlocksTip(date, slot, blocks, ev) {
+	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
+}
+
 function TimelineView(props) {
-	var projects = props.projects;
 	var timeline = props.timeline;
 	var hidden = props.hidden;
 	var slotMinutes = 30;
 	var slotMs = slotMinutes * 60000;
 	var tt = props.tt;
+	var dayMode = props.dayMode === true;
 
 	var days = timeline.days;
 	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
-	// 块高随可见天数自适应：单天（按日模式）拉高到 160px 与其它页面高度协调；
-	// 少量天（≤7）96px；多天保持 56px 避免列表过长。
-	var maxBlockH = days.length <= 1 ? 160 : days.length <= 7 ? 96 : 56;
-	var rowMinH = maxBlockH + 14;
+	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
+	var layout = timelineLayout(days.length, dayMode);
+	var maxBlockH = layout.maxBlockH;
+	var maxProjects = layout.maxProjects;
+	var rowMinH = layout.rowMinH;
 
 	return e("div", null,
-		e("div", { className: "dss-hint" }, tt("hint.timeline")),
+		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
 		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
 		days.length > 1 ? e("div", { className: "dss-heat" },
 			days.map((d) => {
@@ -959,54 +1033,85 @@ function TimelineView(props) {
 				e("div", null)
 			),
 			days.map((d) => {
-				var cells = Array.from({ length: 48 }, function() { return []; });
-				// 当天参与的项目（去重保序，隐藏项目跳过）→ 左侧颜色块列表
-				var seenP = new Map();
+				var grouped = groupTimelineBlocks(d, hidden);
+				var projList = grouped.projects;
 				var minSlot = 47, maxSlot = -1;
-				(d.slotBlocks || []).forEach((b) => {
-					if (hidden[b.projectId]) return;
-					if (!seenP.has(b.projectId)) seenP.set(b.projectId, { name: b.name, colorIndex: b.colorIndex });
-					if (b.slot < minSlot) minSlot = b.slot;
-					if (b.slot > maxSlot) maxSlot = b.slot;
-					var h = Math.min(maxBlockH, Math.max(2, Math.round((b.ms / slotMs) * maxBlockH)));
-					if (b.slot < 0 || b.slot >= cells.length) return;
-					cells[b.slot].push(e("div", {
-						key: b.projectId + "-" + b.slot,
-						className: "dss-blk",
-						"data-color": String((b.colorIndex || 0) % 16),
-						style: { height: h + "px" },
-						onMouseEnter: (ev) => showTip(tt, `${b.name} · ${d.date}`, b.ms, ev),
-						onMouseLeave: () => hideTip(tt)
-					}));
+				grouped.slots.forEach(function(blocks, slot) {
+					if (!blocks.length) return;
+					minSlot = Math.min(minSlot, slot);
+					maxSlot = Math.max(maxSlot, slot);
 				});
-				var projList = Array.from(seenP.values());
-				var MAXL = 4;
 				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00Z").getUTCDay()];
-				var leftCol = e("div", { className: "dss-day-projs" },
-					// 多天模式需要日期区分各行；单天（按日）日期已在顶部导航显示，不重复
-					days.length > 1 ? e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd) : null,
-					projList.slice(0, MAXL).map(function(pj, pi) {
-						return e("div", { className: "dss-day-proj", key: pi },
-							e("span", { className: "dss-day-dot", "data-color": String((pj.colorIndex || 0) % 16) }),
-							e("span", { className: "dss-day-pname", title: pj.name }, pj.name)
-						);
-					}),
-					projList.length > MAXL ? e("div", { className: "dss-day-more" }, "+" + (projList.length - MAXL) + " " + tt("w.projects")) : null
-				);
 				// 右侧信息列：总时长 + 活动时段 + 项目数，填充右侧空白
 				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
 				// 总时长按可见项目重算（隐藏的项目不计入）
-				var visibleMs = (d.slotBlocks || []).reduce(function(sum, b) { return hidden[b.projectId] ? sum : sum + b.ms; }, 0);
+				var visibleMs = grouped.slots.reduce(function(sum, blocks) {
+					return sum + blocks.reduce(function(slotSum, b) { return slotSum + b.ms; }, 0);
+				}, 0);
+				var dayLaneContentH = projList.length ? projList.length * layout.laneHeight + Math.max(0, projList.length - 1) * layout.laneGap + 16 : 56;
+				var dayRowMinH = dayMode ? Math.max(56, Math.min(rowMinH, dayLaneContentH)) : rowMinH;
 				var rightCol = e("div", { className: "dss-day-info" },
 					e("div", { className: "dur" }, fmtDuration(visibleMs)),
 					e("div", { className: "span" }, spanText),
 					e("div", { className: "cnt" }, projList.length + " " + tt("w.projects"))
 				);
+
+				if (dayMode) {
+					var lanes = projList.map(function(project) {
+						var laneCells = Array.from({ length: 48 }, function(_, slot) {
+							var ms = project.slots.get(slot) || 0;
+							var block = ms > 0 ? { projectId: project.projectId, name: project.name, colorIndex: project.colorIndex, ms: ms } : null;
+							var h = ms > 0 ? Math.min(layout.laneHeight, Math.max(2, Math.round((ms / slotMs) * layout.laneHeight))) : 0;
+							return e("div", { className: "dss-day-lane-cell", key: slot }, block ? e("div", {
+								className: "dss-blk",
+								"data-color": String((project.colorIndex || 0) % 16),
+								style: { height: h + "px" },
+								onMouseEnter: function(ev) { showTimelineBlocksTip(d.date, slot, [block], ev); },
+								onMouseLeave: hideTip
+							}) : null);
+						});
+						return e("div", { className: "dss-day-lane", key: project.projectId },
+							e("div", { className: "dss-day-lane-label" },
+								e("span", { className: "dss-day-dot", "data-color": String((project.colorIndex || 0) % 16) }),
+								e("span", { className: "dss-day-pname", title: project.name }, project.name)
+							),
+							e("div", { className: "dss-day-lane-track" }, laneCells)
+						);
+					});
+					return e("div", { className: "dss-day day-mode", id: "dss-day-" + d.date, key: d.date, style: { minHeight: dayRowMinH + "px" } },
+						e("div", { className: "dss-day-lanes", style: { maxHeight: layout.laneViewportH + "px" } }, lanes),
+						rightCol
+					);
+				}
+
+				var leftCol = e("div", { className: "dss-day-projs" },
+					e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd),
+					projList.slice(0, maxProjects).map(function(project) {
+						return e("div", { className: "dss-day-proj", key: project.projectId },
+							e("span", { className: "dss-day-dot", "data-color": String((project.colorIndex || 0) % 16) }),
+							e("span", { className: "dss-day-pname", title: project.name }, project.name)
+						);
+					}),
+					projList.length > maxProjects ? e("div", { className: "dss-day-more" }, "+" + (projList.length - maxProjects) + " " + tt("w.projects")) : null
+				);
+				var cells = grouped.slots.map(function(blocks, slot) {
+					if (!blocks.length) return e("div", { className: "dss-cell", key: slot });
+					var maxMs = blocks.reduce(function(max, b) { return Math.max(max, b.ms); }, 0);
+					var h = Math.min(maxBlockH, Math.max(2, Math.round((maxMs / slotMs) * maxBlockH)));
+					return e("div", { className: "dss-cell", key: slot },
+						e("div", {
+							className: "dss-blk-composite",
+							style: { height: h + "px" },
+							onMouseEnter: function(ev) { showTimelineBlocksTip(d.date, slot, blocks, ev); },
+							onMouseLeave: hideTip
+						}, blocks.map(function(block, i) {
+							return e("i", { key: block.projectId + "-" + i, className: "dss-blk-segment", "data-color": String((block.colorIndex || 0) % 16), style: { flexGrow: Math.max(1, block.ms) } });
+						}))
+					);
+				});
 				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
 					leftCol,
-					e("div", { className: "dss-track" },
-						cells.map((blocks, i) => e("div", { className: "dss-cell", key: i }, blocks))
-					),
+					e("div", { className: "dss-track" }, cells),
 					rightCol
 				);
 			})
@@ -1031,9 +1136,6 @@ function DateNavigator(props) {
 	return e("div", { className: "dss-nav" },
 		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
 			e("button", { className: mode === "day" ? "on" : "", onClick: () => setMode("day") }, t("nav.day")),
-			e("button", { className: mode === "7" ? "on" : "", onClick: () => setMode("7") }, t("nav.days7")),
-			e("button", { className: mode === "30" ? "on" : "", onClick: () => setMode("30") }, t("nav.days30")),
-			e("button", { className: mode === "90" ? "on" : "", onClick: () => setMode("90") }, t("nav.days90")),
 			e("button", { className: mode === "all" ? "on" : "", onClick: () => setMode("all") }, t("nav.all"))
 		),
 		mode === "day" ? e(Fragment, null,
@@ -1084,7 +1186,12 @@ function StatsPanel(props) {
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
 	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
-	var navPair = usePref("nav", { mode: "day", date: null }); var nav = navPair[0], setNav = navPair[1];
+	var navPair = usePref("nav", { mode: "day", date: null });
+	var storedNav = navPair[0] || {};
+	var setNav = navPair[1];
+	// 旧版本曾保存 7/30/90 模式；这些模式已从界面移除，统一回退到按日。
+	var navMode = storedNav.mode === "all" ? "all" : "day";
+	var nav = { mode: navMode, date: storedNav.date || null };
 	var [selected, setSelected] = useState(null);
 	var [remoteData, setRemoteData] = useState(null);
 	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
@@ -1137,37 +1244,34 @@ function StatsPanel(props) {
 
 	// 按日模式的有效日期：nav.date 无效或不在活动日列表时，回退最近活动日
 	var effectiveDate = useMemo(() => {
-		if (!nav || nav.mode !== "day") return null;
+		if (navMode !== "day") return null;
 		if (nav.date && dates.indexOf(nav.date) >= 0) return nav.date;
 		return dates.length ? dates[dates.length - 1] : null;
-	}, [nav, dates]);
+	}, [navMode, nav.date, dates]);
 
 	// 按日过滤后的项目（全部模式 = 全量）
-	var rangeEndDate = localDayKey(Date.now());
-	var rangeDays = nav && (nav.mode === "7" || nav.mode === "30" || nav.mode === "90") ? Number(nav.mode) : null;
-	var dateProjects = useMemo(() => effectiveDate ? applyDate(data.projects, effectiveDate) : rangeDays ? applyRange(data.projects, rangeEndDate, rangeDays) : data.projects,
-		[data.projects, effectiveDate, rangeEndDate, rangeDays]);
+	var dateProjects = useMemo(() => effectiveDate ? applyDate(data.projects, effectiveDate) : data.projects,
+		[data.projects, effectiveDate]);
 
 	// 时间线视图：按日模式只保留选中日
 	var viewTimeline = useMemo(() => {
 		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
-		if (rangeDays && rangeEndDate) {
-			var start = dateKeyOffset(rangeEndDate, -(rangeDays - 1));
-			return { days: (data.timeline.days || []).filter(function(d) { return d.date >= start && d.date <= rangeEndDate; }) };
-		}
 		return data.timeline;
-	}, [data.timeline, effectiveDate, rangeDays, rangeEndDate]);
+	}, [data.timeline, effectiveDate]);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
+	// 按日时，项目卡片与趋势只统计有 token 消耗的项目；时间线仍使用完整活动项目。
+	var statProjects = useMemo(() => effectiveDate ? dateProjects.filter(hasTokenUsage) : dateProjects, [effectiveDate, dateProjects]);
+
 	// 按日聚合：hero 总览 / 模型分布随选中日期变化（全部模式复用 globals，避免重复计算）
-	var dateGlobals = useMemo(() => (effectiveDate || rangeDays ? buildGlobals(dateProjects) : globals), [effectiveDate, rangeDays, dateProjects, globals]);
+	var dateGlobals = useMemo(() => (effectiveDate ? buildGlobals(statProjects) : globals), [effectiveDate, statProjects, globals]);
 
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...h, [id]: !h[id] }));
-	var visibleProjects = dateProjects.filter((p) => !hidden[p.id]);
+	var visibleProjects = statProjects.filter((p) => !hidden[p.id]);
 	var sourceLabel = t("source." + sourceState.kind);
 	var sourceTitle = sourceState.error || (sourceState.at ? t("source.updated") + " " + fmtClock(sourceState.at) : sourceLabel);
 
@@ -1193,8 +1297,8 @@ function StatsPanel(props) {
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, tt: t })
+					 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate, t })
 			)
 		)
@@ -1425,7 +1529,6 @@ function DailyTrendChart(props) {
 	var t = props.t;
 	var todayKey = localDayKey(Date.now());
 
-	var DOW = t("trends.weekdays").split(",").slice(1).concat(t("trends.weekdays").split(",")[0]);
 	// 近 7 天窗口：today-6 … today
 	var days = [];
 	var d = new Date(todayKey + "T00:00:00Z");
@@ -1461,7 +1564,7 @@ function DailyTrendChart(props) {
 						e("div", {
 							className: "dss-mchart-bar",
 							onMouseEnter: function(ev) {
-									showTipRaw(tipRows(dd.key + " " + DOW[dd.dow] + (dd.key === todayKey ? " " + t("trends.today") : ""), [
+									showTipRaw(tipRows(dd.key + (dd.key === todayKey ? " " + t("trends.today") : ""), [
 										[t("trends.totalInput"), fmtTokens(b.input || 0)],
 										[t("trends.totalOutput"), fmtTokens(b.output || 0)],
 										[t("trends.totalReasoning"), fmtTokens(b.reasoning || 0)],
@@ -1507,7 +1610,7 @@ function ModelRing(props) {
 		var from = (cum * 360).toFixed(1);
 		cum += v;
 		var to = (cum * 360).toFixed(1);
-		return { color: modelColor(m.model || "(unknown)"), from: from, to: to, label: m.model, pct: (v * 100).toFixed(1), v: v };
+		return { color: modelColor(m.model || "(unknown)"), from: from, to: to, label: m.model || "(unknown)", pct: (v * 100).toFixed(1), model: m };
 	});
 
 	var gradient = stops.map(function(s) { return s.color + " " + s.from + "deg " + s.to + "deg"; }).join(", ");
@@ -1521,7 +1624,12 @@ function ModelRing(props) {
 		),
 		e("div", { className: "dss-ring-legend" },
 			stops.map(function(s, i) {
-				return e("div", { key: i, className: "dss-ring-item" },
+				return e("div", {
+					key: i,
+					className: "dss-ring-item",
+					onMouseEnter: function(ev) { showModelTip(s.model, t, ev); },
+					onMouseLeave: hideTip
+				},
 					e("span", { className: "dss-ring-swatch", style: { background: s.color } }),
 					e("span", { className: "dss-ring-name", title: s.label }, s.label),
 					e("span", { className: "dss-ring-pct" }, s.pct + "%")
@@ -1529,6 +1637,14 @@ function ModelRing(props) {
 			})
 		)
 	);
+}
+
+function showModelTip(model, t, ev) {
+	showTipRaw(tipRows(model.model || "(unknown)", [
+		[t("th.cost"), fmtCost(model.costKnown ? model.cost : null)],
+		[t("w.input"), fmtTokens(model.input || 0)],
+		[t("w.output"), fmtTokens(model.output || 0)]
+	]), ev);
 }
 
 function ModelList(props) {
@@ -1543,7 +1659,12 @@ function ModelList(props) {
 			var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
 			var pct = share * 100;
 			var color = modelColor(m.model || "(unknown)");
-			return e("div", { key: i, className: "dss-model-item" },
+			return e("div", {
+				key: i,
+				className: "dss-model-item",
+				onMouseEnter: function(ev) { showModelTip(m, t, ev); },
+				onMouseLeave: hideTip
+			},
 				e("div", { className: "dss-model-head" },
 					e("span", { className: "dss-model-dot", style: { background: color } }),
 					e("span", { className: "dss-model-name", title: m.model || "(unknown)" }, m.model || "(unknown)"),
@@ -1702,7 +1823,7 @@ function weeklyFromDays(byDay) {
 	return byWeek;
 }
 
-// 模型分布：session.model -> { sessions, input, output, reasoning, llmMs }
+// 模型分布：session.model -> { sessions, input, output, reasoning, llmMs, cost }
 function modelAgg(sessions) {
 	var byModel = new Map();
 	sessions.forEach((s) => {
@@ -1713,35 +1834,42 @@ function modelAgg(sessions) {
 		if (s.slotUsage && s.slotUsage.length) {
 			s.slotUsage.forEach((su) => {
 				var mk = su.model || s.model || "(unknown)";
-				var t = modelTok.get(mk) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+				var t = modelTok.get(mk) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: 0, costKnown: true };
 				t.uncached += su.uncached || 0;
 				t.output += su.output || 0;
 				t.cacheRead += su.cacheRead || 0;
 				t.cacheWrite += su.cacheWrite || 0;
 				t.reasoning += su.reasoning || 0;
+				var rowCost = usageCost(su, s.model);
+				if (rowCost == null) t.costKnown = false;
+				else t.cost += rowCost;
 				modelTok.set(mk, t);
 			});
 		}
+		var fallbackCost = modelTok.size ? null : sessionCost(s);
 		var entries = modelTok.size
-			? Array.from(modelTok.entries()).map(([m, t]) => ({ model: m, uncached: t.uncached, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, reasoning: t.reasoning }))
+			? Array.from(modelTok.entries()).map(([m, t]) => ({ model: m, uncached: t.uncached, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, reasoning: t.reasoning, cost: t.cost, costKnown: t.costKnown }))
 			: [{
 				model: s.model || "(unknown)",
 				uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
 				output: st.output != null ? st.output : (st.outputTokens || 0),
-				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0
+				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0,
+				cost: fallbackCost || 0, costKnown: fallbackCost != null
 			}];
 		// 会话总 token（用于 LLM/工具时长按占比分摊到各模型）
 		var sessTok = 0;
 		entries.forEach((e) => { sessTok += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0); });
 		entries.forEach((e) => {
 			var m = e.model || "(unknown)";
-			var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 };
+			var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0, cost: 0, costKnown: true };
 			cur.sessions += 1;
 			cur.input += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0);
 			cur.output += e.output || 0;
 			cur.cacheRead += e.cacheRead || 0;
 			cur.cacheWrite += e.cacheWrite || 0;
 			cur.reasoning += e.reasoning || 0;
+			if (!e.costKnown) cur.costKnown = false;
+			else cur.cost += e.cost || 0;
 			// DSH 无逐模型时长数据：按 token 占比分摊会话 LLM/工具时长（近似合理）
 			var share = sessTok > 0 ? ((e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0)) / sessTok : 0;
 			cur.llmMs += Math.round((st.llmMs || 0) * share);
@@ -1860,7 +1988,8 @@ const zh = {
 	"w.uncategorized": "（未分类）",
 	"w.weekdays": "日,一,二,三,四,五,六",
 	"w.dayPrefix": "周",
-	"hint.timeline": "块高 = 该 30 分钟时段开发时长占比",
+	"hint.timeline.day": "按项目分泳道；块高 = 该 30 分钟时段开发时长占比",
+	"hint.timeline.all": "同一时段的多个项目合并显示，悬停查看各项目时长",
 	"hint.rangeEmpty": "该范围内暂无开发活动",
 	"hint.cost": "成本按实际模型与时段自动计价",
 	"trends.activeDays": "活跃天数",
@@ -1938,7 +2067,8 @@ const en = {
 	"w.uncategorized": "(uncategorized)",
 	"w.weekdays": "Sun,Mon,Tue,Wed,Thu,Fri,Sat",
 	"w.dayPrefix": "",
-	"hint.timeline": "Block height = share of development time in that 30-min slot",
+	"hint.timeline.day": "Projects use separate lanes; block height = share of development time in that 30-min slot",
+	"hint.timeline.all": "Overlapping projects are combined; hover to see each project duration",
 	"hint.rangeEmpty": "No activity in this range",
 	"hint.cost": "Cost auto-priced by actual model & time slot",
 	"trends.activeDays": "Active days",
@@ -2107,6 +2237,6 @@ module.exports = { apply, inject };
 module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration,
-	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult
+	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout
 };
