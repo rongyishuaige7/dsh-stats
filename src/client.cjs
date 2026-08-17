@@ -581,8 +581,10 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-tt{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:9px;padding:8px 11px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12.5px;position:fixed;z-index:2000;pointer-events:none;display:none;max-width:320px}" +
 	".dss-tt.show{display:block}" +
 	// 日期导航器
-	".dss-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
-	".dss-nav-btn{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;line-height:1.2}" +
+	".dss-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
+	".dss-nav > .dss-tabs{gap:2px}" +
+	".dss-nav > .dss-tabs button{padding:5px 9px}" +
+	".dss-nav-btn{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;min-width:28px;min-height:28px;padding:3px 7px;cursor:pointer;font-size:12.5px;line-height:1.2}" +
 	".dss-nav-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-nav-btn:disabled{opacity:.35;cursor:default}" +
 	".dss-nav-date{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums;min-width:160px;text-align:center}" +

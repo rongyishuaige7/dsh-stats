@@ -49,9 +49,9 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 ```bash
 # 方式 A（从 npm registry 安装/升级）
 dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.2     # 指定版本
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.3     # 指定版本
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.2.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.3.tgz
 ```
 
 即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
@@ -122,7 +122,7 @@ MiniMax 单价来自[官方按量计费页面](https://platform.minimaxi.com/doc
 ```bash
 # 改 src/ 后重新构建 + 重新打包 + 重装进 profile，再重启
 npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.2.tgz   # pnpm 重装
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.3.tgz   # pnpm 重装
 # 重启 dsh web
 ```
 
