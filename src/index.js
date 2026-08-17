@@ -267,17 +267,19 @@ function slotDurations(times) {
 	return [...slotMs.entries()].map(([slot, ms]) => ({ slot, ms }));
 }
 
-// 把 usage 样本按 30 分钟绝对槽聚合 token
+// 把 usage 样本按「模型 + 30 分钟绝对槽」聚合 token，供客户端逐槽逐模型精确计价。
 function slotUsages(usages) {
 	const m = new Map();
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
-		const cur = m.get(k) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+		const mk = u.model || "(unknown)";
+		const key = mk + "\u0000" + k;
+		const cur = m.get(key) || { model: mk, slot: k, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 		cur.uncached += u.uncached; cur.output += u.output; cur.cacheRead += u.cacheRead; cur.cacheWrite += u.cacheWrite;
 		cur.reasoning += u.reasoning;
-		m.set(k, cur);
+		m.set(key, cur);
 	}
-	return [...m.entries()].map(([slot, b]) => ({ slot, uncached: b.uncached, output: b.output, cacheRead: b.cacheRead, cacheWrite: b.cacheWrite, reasoning: b.reasoning }));
+	return [...m.values()];
 }
 
 let StatsService = (() => {

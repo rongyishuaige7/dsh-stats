@@ -108,19 +108,20 @@ function priceForSlot(slotIdx, m) {
 	var min = bj.getUTCHours() * 60 + bj.getUTCMinutes();
 	return isPeakMinutes(min) ? m.v0817.peak : m.v0817.offPeak;
 }
-// 单个会话成本：按会话实际模型 + 逐槽实际价格
+// 单个会话成本：按逐槽逐模型精确计价（slotUsage 已带 model 字段，宿主端按模型分槽聚合）。
 function sessionCost(s) {
-	var m = PRICING[s.model || "deepseek-v4-pro"] || PRICING["deepseek-v4-pro"];
 	if (s.slotUsage && s.slotUsage.length) {
 		var total = 0;
 		for (var i = 0; i < s.slotUsage.length; i++) {
 			var su = s.slotUsage[i];
+			var m = PRICING[su.model || s.model || "deepseek-v4-pro"] || PRICING["deepseek-v4-pro"];
 			var price = priceForSlot(su.slot, m);
 			total += (su.uncached + su.cacheWrite) * price.miss / 1e6 + su.cacheRead * price.hit / 1e6 + su.output * price.out / 1e6;
 		}
 		return total;
 	}
-	// 无逐槽数据（客户端近似）：按会话更新时间判定（8.17 前平价，否则保守按空闲价）
+	// 无逐槽数据（客户端近似）：按会话模型 + 更新时间判定（8.17 前平价，否则保守按空闲价）
+	var m = PRICING[s.model || "deepseek-v4-pro"] || PRICING["deepseek-v4-pro"];
 	var price = s.updatedAt != null && s.updatedAt < PRICE_CHANGE_AT ? m.legacy : m.v0817.offPeak;
 	return costOf(s.stats, price);
 }
@@ -175,34 +176,12 @@ function applyDate(projects, dateKey) {
 				return t >= dayStart && t < dayEnd;
 			});
 			var tok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
-			var allTok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 			su.forEach(function(u) {
 				tok.uncached += u.uncached || 0;
 				tok.output += u.output || 0;
 				tok.cacheRead += u.cacheRead || 0;
 				tok.cacheWrite += u.cacheWrite || 0;
 				tok.reasoning += u.reasoning || 0;
-			});
-			(s.slotUsage || []).forEach(function(u) {
-				allTok.uncached += u.uncached || 0;
-				allTok.output += u.output || 0;
-				allTok.cacheRead += u.cacheRead || 0;
-				allTok.cacheWrite += u.cacheWrite || 0;
-				allTok.reasoning += u.reasoning || 0;
-			});
-			// modelUsage 无时间戳：按 slotUsage 的综合裁剪比例分摊，保持与 hero/按日口径一致
-			var allTotal = allTok.uncached + allTok.output + allTok.cacheRead + allTok.cacheWrite + allTok.reasoning;
-			var dayTotal = tok.uncached + tok.output + tok.cacheRead + tok.cacheWrite + tok.reasoning;
-			var ratio = allTotal > 0 ? dayTotal / allTotal : 0;
-			var clippedModelUsage = (s.modelUsage || []).map(function(e) {
-				return {
-					model: e.model,
-					uncached: Math.round((e.uncached || 0) * ratio),
-					output: Math.round((e.output || 0) * ratio),
-					cacheRead: Math.round((e.cacheRead || 0) * ratio),
-					cacheWrite: Math.round((e.cacheWrite || 0) * ratio),
-					reasoning: Math.round((e.reasoning || 0) * ratio)
-				};
 			});
 			// 有逐槽数据时：token 字段按当天槽重算；turns/steps/时长等会话粒度指标
 			// 没有逐日分布，保留会话完整值（仅作参考）。无逐槽数据（客户端近似）时
@@ -217,7 +196,7 @@ function applyDate(projects, dateKey) {
 				cacheRead: tok.cacheRead, cacheWrite: tok.cacheWrite,
 				reasoning: tok.reasoning
 			});
-			return { ...s, slotUsage: su, stats: newStats, modelUsage: clippedModelUsage };
+			return { ...s, slotUsage: su, stats: newStats };
 		});
 		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length, stats: sumSessionStats(clipped) };
 	});
@@ -1599,10 +1578,23 @@ function modelAgg(sessions) {
 	var byModel = new Map();
 	sessions.forEach((s) => {
 		var st = s.stats || {};
-		// 消息粒度模型分布（宿主提供）：跨模型会话的各模型 token 各归其位；
-		// 无分布数据（客户端近似）时退化为会话主要模型单条目。
-		var entries = (s.modelUsage && s.modelUsage.length)
-			? s.modelUsage
+		// 逐槽逐模型分布（宿主提供）：slotUsage 已带 model，各模型 token 各归其位；
+		// 无逐槽数据（客户端近似）时退化为会话主要模型单条目。
+		var modelTok = new Map();
+		if (s.slotUsage && s.slotUsage.length) {
+			s.slotUsage.forEach((su) => {
+				var mk = su.model || s.model || "(unknown)";
+				var t = modelTok.get(mk) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+				t.uncached += su.uncached || 0;
+				t.output += su.output || 0;
+				t.cacheRead += su.cacheRead || 0;
+				t.cacheWrite += su.cacheWrite || 0;
+				t.reasoning += su.reasoning || 0;
+				modelTok.set(mk, t);
+			});
+		}
+		var entries = modelTok.size
+			? Array.from(modelTok.entries()).map(([m, t]) => ({ model: m, uncached: t.uncached, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, reasoning: t.reasoning }))
 			: [{
 				model: s.model || "(unknown)",
 				uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
@@ -1879,6 +1871,6 @@ module.exports = { apply, inject };
 module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, fmtN, fmtTokens, fmtCost, fmtDuration,
+	costOf, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration,
 	applyDate, activityDates, fmtDateCN
 };

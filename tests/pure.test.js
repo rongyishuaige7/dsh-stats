@@ -388,13 +388,13 @@ test('applyDate keeps session stats when no slotUsage (client fallback)', () => 
 	expect(out[0].sessions[0].stats.outputTokens).toBe(60);
 });
 
-test('modelAgg splits LLM/tool duration by token share across modelUsage', () => {
+test('modelAgg splits LLM/tool duration by token share across slotUsage models', () => {
 	const sessions = [
 		{
 			id: 's1', model: 'deepseek-v4-pro',
-			modelUsage: [
-				{ model: 'deepseek-v4-pro', uncached: 9000, output: 900, cacheRead: 100, cacheWrite: 0, reasoning: 0 },
-				{ model: 'deepseek-v4-flash', uncached: 900, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			slotUsage: [
+				{ slot: 0, model: 'deepseek-v4-pro', uncached: 9000, output: 900, cacheRead: 100, cacheWrite: 0, reasoning: 0 },
+				{ slot: 0, model: 'deepseek-v4-flash', uncached: 900, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 			],
 			stats: { llmMs: 10000, toolMs: 5000, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 		},

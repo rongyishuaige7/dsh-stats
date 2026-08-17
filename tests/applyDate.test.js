@@ -93,7 +93,7 @@ test('applyDate 无逐槽数据的会话退回按 updatedAt 判断', () => {
 	expect(applyDate([makeProject([outDay])], dayKey)[0].sessions.length).toBe(0);
 });
 
-test('applyDate 按 slotUsage 比例分摊 modelUsage（模型分布与当天口径一致）', () => {
+test('applyDate 裁剪 slotUsage 时保留 model 字段（供逐模型计价）', () => {
 	const dayKey = '2026-08-17';
 	const dayStart = new Date(dayKey + 'T00:00:00').getTime();
 	const slotBefore = Math.floor((dayStart - SLOT_MS) / SLOT_MS); // 前一天最后一个槽
@@ -102,32 +102,19 @@ test('applyDate 按 slotUsage 比例分摊 modelUsage（模型分布与当天口
 	const session = makeSession(
 		dayStart - 370260,
 		[
-			{ slot: slotBefore, uncached: 1000, output: 100, cacheRead: 100000, cacheWrite: 0, reasoning: 0 },
-			{ slot: slotInDay, uncached: 100, output: 50, cacheRead: 50000, cacheWrite: 0, reasoning: 0 },
+			{ slot: slotBefore, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 100000, cacheWrite: 0, reasoning: 0 },
+			{ slot: slotInDay, model: 'deepseek-v4-flash', uncached: 100, output: 50, cacheRead: 50000, cacheWrite: 0, reasoning: 0 },
 		]
 	);
-	// modelUsage 总和与 slotUsage 总和一致（pro 在前一天槽，flash 在当天槽）
-	session.modelUsage = [
-		{ model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 100000, cacheWrite: 0, reasoning: 0 },
-		{ model: 'deepseek-v4-flash', uncached: 100, output: 50, cacheRead: 50000, cacheWrite: 0, reasoning: 0 },
-	];
 
 	const out = applyDate([makeProject([session])], dayKey);
 	const clipped = out[0].sessions[0];
 
-	// modelUsage 被保留且按当天比例分摊
-	expect(clipped.modelUsage.length).toBe(2);
-	const flash = clipped.modelUsage.find((e) => e.model === 'deepseek-v4-flash');
-	const pro = clipped.modelUsage.find((e) => e.model === 'deepseek-v4-pro');
-
-	// 当天/全部 token 比例 = 50150/151250 ≈ 0.3316
-	const ratio = 50150 / 151250;
-	expect(flash.cacheRead).toBe(Math.round(50000 * ratio));   // ≈ 16579
-	expect(flash.uncached).toBe(Math.round(100 * ratio));      // ≈ 33
-	expect(pro.cacheRead).toBe(Math.round(100000 * ratio));    // ≈ 33157
-
-	// 分摊后的模型 token 总和 ≈ 当天 stats 的 token 总和（rounding 误差内）
-	const muTotal = clipped.modelUsage.reduce((s, e) => s + e.uncached + e.cacheRead + e.cacheWrite + e.output, 0);
-	const stTotal = (clipped.stats.uncached || 0) + (clipped.stats.cacheRead || 0) + (clipped.stats.cacheWrite || 0) + (clipped.stats.output || 0);
-	expect(Math.abs(muTotal - stTotal)).toBeLessThan(3);
+	// 裁剪后只保留当天 slot，且 model 字段原样保留
+	expect(clipped.slotUsage.length).toBe(1);
+	expect(clipped.slotUsage[0].slot).toBe(slotInDay);
+	expect(clipped.slotUsage[0].model).toBe('deepseek-v4-flash');
+	// token 只统计当天
+	expect(clipped.stats.cacheRead).toBe(50000);
+	expect(clipped.stats.uncached).toBe(100);
 });
