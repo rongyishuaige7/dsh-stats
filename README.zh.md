@@ -49,9 +49,9 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 ```bash
 # 方式 A（从 npm registry 安装/升级）
 dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.0     # 指定版本
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.1     # 指定版本
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.1.tgz
 ```
 
 即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
@@ -74,11 +74,21 @@ dsh web
 
 - **项目总览**：汇总卡（含消费金额）+ 每项目统计行 + 会话明细（含每会话模型/消费/归档标记）。
 - **开发时间线**：30 分钟槽精确时间线（宿主读事件时间戳切活跃区间）+ 每日总量热力条。
-- **成本计算**：按每会话实际模型 + 逐槽实际价格（8.17 前平价；8.17 后峰谷，
-  高峰 9:00–12:00 / 14:00–18:00 北京时间）自动计价，无需手动选择。
+- **成本计算**：按实际模型与官方规则自动计价；DeepSeek 按逐槽生效价，MiniMax M3 按请求的
+  服务档和输入上下文档计价，无需手动选择模型。
 - **日期范围**：近 7/30/90 天/全部，同时作用于总览（重建聚合）与时间线。
 - **数据质量**：面板明确显示「精确（宿主）」「部分精确」「已过期」或「近似（客户端）」；日志不完整或缺失时会在数据源提示中告警，不会伪装成精确结果。
 - **打磨**：选项持久化（localStorage）、列排序、CSV/JSON 导出、图例过滤、60s 自动刷新 + 手动刷新。
+
+当前支持的按量计费模型：
+
+| 模型 | 规则 |
+|---|---|
+| `deepseek-v4-pro`、`deepseek-v4-flash` | 官方历史价与 2026-08-17 后峰谷价，按北京时间槽计费 |
+| `MiniMax-M3` | 官方 standard/priority 与输入 `≤512K`/`>512K` 四档价格 |
+| `MiniMax-M2.7`、`MiniMax-M2.7-highspeed` | 官方输入、输出、缓存读取、缓存写入价格 |
+
+MiniMax 单价来自[官方按量计费页面](https://platform.minimaxi.com/docs/guides/pricing-paygo)。模型名匹配忽略大小写，但不会把带供应商前缀或未知模型静默映射到相近模型。
 
 ## 数据流（Tier 2）
 
@@ -112,7 +122,7 @@ dsh web
 ```bash
 # 改 src/ 后重新构建 + 重新打包 + 重装进 profile，再重启
 npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz   # pnpm 重装
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.1.tgz   # pnpm 重装
 # 重启 dsh web
 ```
 
@@ -123,7 +133,7 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz   # pnpm 重装
 | 归档会话 | 统计中保留但打「（已归档）」标记，未排除 |
 | 实时性 | 当前会话投影缓存秒级滞后，60s 自动刷新兜底 |
 | 解码开销 | 会话很多时宿主每次 RPC 全量解码（已加 mtime 缓存，跨请求不重复解码；首次仍慢） |
-| 调价边界 | 8.17 调价后，历史会话按「发生时的价格」计价（正是预期行为），无历史价格回填 |
+| 调价边界 | DeepSeek 在 8.17 调价后按会话「发生时的价格」计价（正是预期行为），无历史价格回填 |
 | 未知模型 | 无法识别的模型成本显示「—」，不会猜测价格 |
 | 时长口径 | 项目 LLM/工具时长是工作量累计；同一项目并发会话在时间线中合并为墙钟区间 |
 | 存储不完整 | 日志缺失、损坏或正写入时会标记为「部分精确/已过期」，必要时使用 projection cache token 总量并提示告警 |

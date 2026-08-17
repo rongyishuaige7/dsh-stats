@@ -59,7 +59,9 @@ function esc(s) {
 }
 
 // ------------------------------------------------------------------
-// 定价与成本（元/百万 tokens；来源 api-docs.deepseek.com/zh-cn/quick_start/pricing）
+// 定价与成本（元/百万 tokens）
+// DeepSeek: api-docs.deepseek.com/zh-cn/quick_start/pricing
+// MiniMax: platform.minimaxi.com/docs/guides/pricing-paygo
 // ------------------------------------------------------------------
 var PRICING = {
 	"deepseek-v4-pro": {
@@ -77,13 +79,41 @@ var PRICING = {
 			offPeak: { hit: 0.05, miss: 1.5, out: 4.5 },
 			peak: { hit: 0.10, miss: 3.0, out: 9.0 }
 		}
+	},
+	"MiniMax-M3": {
+		label: "MiniMax M3",
+		serviceTiers: {
+			standard: {
+				short: { hit: 0.42, miss: 2.1, write: 2.1, out: 8.4 },
+				long: { hit: 0.84, miss: 4.2, write: 4.2, out: 16.8 }
+			},
+			priority: {
+				short: { hit: 0.63, miss: 3.15, write: 3.15, out: 12.6 },
+				long: { hit: 1.26, miss: 6.3, write: 6.3, out: 25.2 }
+			}
+		}
+	},
+	"MiniMax-M2.7": {
+		label: "MiniMax M2.7",
+		fixed: { hit: 0.42, miss: 2.1, write: 2.625, out: 8.4 }
+	},
+	"MiniMax-M2.7-highspeed": {
+		label: "MiniMax M2.7 Highspeed",
+		fixed: { hit: 0.42, miss: 4.2, write: 2.625, out: 16.8 }
 	}
 };
+var PRICING_LOWER = {};
+Object.keys(PRICING).forEach(function (model) { PRICING_LOWER[model.toLowerCase()] = PRICING[model]; });
+function pricingForModel(model) {
+	if (!model) return null;
+	return PRICING[model] || PRICING_LOWER[String(model).toLowerCase()] || null;
+}
 function costOf(stats, price) {
-	var miss = (stats.uncached + stats.cacheWrite) * price.miss / 1e6;
+	var miss = stats.uncached * price.miss / 1e6;
+	var write = stats.cacheWrite * (price.write == null ? price.miss : price.write) / 1e6;
 	var hit = stats.cacheRead * price.hit / 1e6;
 	var out = stats.output * price.out / 1e6;
-	return miss + hit + out;
+	return miss + write + hit + out;
 }
 function fmtCost(rmb) {
 	if (rmb == null || !Number.isFinite(rmb)) return "—";
@@ -109,23 +139,34 @@ function priceForSlot(slotIdx, m) {
 	var min = bj.getUTCHours() * 60 + bj.getUTCMinutes();
 	return isPeakMinutes(min) ? m.v0817.peak : m.v0817.offPeak;
 }
+function priceForUsage(slotIdx, m, usage) {
+	if (m.serviceTiers) {
+		var tier = usage && usage.serviceTier === "priority" ? "priority" : "standard";
+		return m.serviceTiers[tier][usage && usage.contextOver512k ? "long" : "short"];
+	}
+	if (m.fixed) return m.fixed;
+	return priceForSlot(slotIdx, m);
+}
 // 单个会话成本：按逐槽逐模型精确计价（slotUsage 已带 model 字段，宿主端按模型分槽聚合）。
 function sessionCost(s) {
 	if (s.slotUsage && s.slotUsage.length) {
 		var total = 0;
 		for (var i = 0; i < s.slotUsage.length; i++) {
 			var su = s.slotUsage[i];
-			var m = PRICING[su.model || s.model];
+			var m = pricingForModel(su.model || s.model);
 			if (!m) return null;
-			var price = priceForSlot(su.slot, m);
-			total += (su.uncached + su.cacheWrite) * price.miss / 1e6 + su.cacheRead * price.hit / 1e6 + su.output * price.out / 1e6;
+			var price = priceForUsage(su.slot, m, su);
+			total += costOf(su, price);
 		}
 		return total;
 	}
-	// 无逐槽数据（客户端近似）：按会话模型 + 更新时间判定（8.17 前平价，否则保守按空闲价）
-	var m = PRICING[s.model];
+	// 无逐槽数据（客户端近似）：DeepSeek 按更新时间；MiniMax 保守按 standard/短上下文档。
+	var m = pricingForModel(s.model);
 	if (!m) return null;
-	var price = s.updatedAt != null && s.updatedAt < PRICE_CHANGE_AT ? m.legacy : m.v0817.offPeak;
+	var price;
+	if (m.serviceTiers) price = m.serviceTiers.standard.short;
+	else if (m.fixed) price = m.fixed;
+	else price = s.updatedAt != null && s.updatedAt < PRICE_CHANGE_AT ? m.legacy : m.v0817.offPeak;
 	return costOf(s.stats, price);
 }
 // 项目成本 = 各会话成本之和
@@ -1960,7 +2001,8 @@ function parseAggregateResult(value) {
 				["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"].forEach(function(k) { number(row[k], rp + "." + k, false); });
 			});
 			array(s.slotUsage, sp + ".slotUsage").forEach(function(row, ri) {
-				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(row.model, rp + ".model"); number(row.slot, rp + ".slot", true);
+				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "serviceTier", "contextOver512k", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(row.model, rp + ".model");
+				if (["standard", "priority"].indexOf(row.serviceTier) < 0) throw new TypeError(rp + ".serviceTier: invalid value"); boolean(row.contextOver512k, rp + ".contextOver512k"); number(row.slot, rp + ".slot", true);
 				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(row[k], rp + "." + k, false); });
 			});
 		});

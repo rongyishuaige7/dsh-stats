@@ -22,7 +22,7 @@ const _slotStat$schema = z.object({
   decodeMs: z.number().nonnegative(), decodeTokens: z.number().nonnegative(),
 }).strict()
 const _usage$schema = z.object({
-  model: z.string(), slot: z.number().int().nonnegative(),
+  model: z.string(), serviceTier: z.enum(['standard', 'priority']), contextOver512k: z.boolean(), slot: z.number().int().nonnegative(),
   uncached: z.number().nonnegative(), output: z.number().nonnegative(),
   cacheRead: z.number().nonnegative(), cacheWrite: z.number().nonnegative(), reasoning: z.number().nonnegative(),
 }).strict()

@@ -55,6 +55,7 @@ const SLOT_MINUTES = 30;
 const SLOT_MS = SLOT_MINUTES * 60 * 1000;
 const GAP_MS = 10 * 60 * 1000;
 const MIN_INTERVAL_MS = 60 * 1000;
+const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
 
 function dshHome() {
@@ -230,6 +231,7 @@ function sessionInfo(home, sessionId) {
 	const scanned = scanZstdFrames(buf);
 	const times = [];
 	let currentModel = null; // 最近 request/header 声明的模型（chunk 兜底用）
+	let currentServiceTier = "standard";
 	let origin = null, parentSession = null, seedLength = null;
 	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
 	let firstOwnSeq = 0;
@@ -276,14 +278,16 @@ function sessionInfo(home, sessionId) {
 					seedLength = ev.seedLength ?? null;
 					if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
 				} else if (ev.type === "request/header") {
-					const m = ev.data?.header?.config?.model;
+					const config = ev.data?.header?.config;
+					const m = config?.model;
 					if (m) currentModel = m;
+					currentServiceTier = config?.serviceTier === "priority" || config?.service_tier === "priority" ? "priority" : "standard";
 				} else if (ev.type === "step/start") {
 					openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
 				} else if (ev.type === "assistant/chunk") {
 					if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
 						const u = ev.data.chunk.usage || {};
-						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel,
+						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel, serviceTier: currentServiceTier,
 							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
 							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
 					} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) {
@@ -291,8 +295,10 @@ function sessionInfo(home, sessionId) {
 					}
 				} else if (ev.type === "assistant/message") {
 					const u = ev.data?.usage;
-					const msgModel = ev.data?.message?.source?.model || currentModel;
-					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel,
+					const source = ev.data?.message?.source;
+					const msgModel = source?.model || currentModel;
+					const msgServiceTier = source?.serviceTier === "priority" || source?.service_tier === "priority" ? "priority" : currentServiceTier;
+					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel, serviceTier: msgServiceTier,
 						uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
 						cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
 					if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
@@ -373,14 +379,17 @@ function slotDurations(times) {
 	return [...slotMs.entries()].map(([slot, ms]) => ({ slot, ms }));
 }
 
-// 把 usage 样本按「模型 + 30 分钟绝对槽」聚合 token，供客户端逐槽逐模型精确计价。
+// 按「模型 + 服务档 + 上下文档 + 30 分钟槽」聚合，既保留 DeepSeek 峰谷时段，
+// 也保留 MiniMax M3 的 priority 与 >512K 输入分档。
 function slotUsages(usages) {
 	const m = new Map();
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
 		const mk = u.model || "(unknown)";
-		const key = mk + "\u0000" + k;
-		const cur = m.get(key) || { model: mk, slot: k, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+		const serviceTier = u.serviceTier === "priority" ? "priority" : "standard";
+		const contextOver512k = u.uncached + u.cacheRead + u.cacheWrite > LONG_CONTEXT_TOKENS;
+		const key = mk + "\u0000" + serviceTier + "\u0000" + (contextOver512k ? "long" : "short") + "\u0000" + k;
+		const cur = m.get(key) || { model: mk, serviceTier, contextOver512k, slot: k, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 		cur.uncached += u.uncached; cur.output += u.output; cur.cacheRead += u.cacheRead; cur.cacheWrite += u.cacheWrite;
 		cur.reasoning += u.reasoning;
 		m.set(key, cur);
@@ -499,7 +508,7 @@ let StatsService = (() => {
 				};
 				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
 				let perSlotUsage = slotUsages(info.usages);
-				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [{ model: "(unknown)", slot: Math.floor(updatedAt / SLOT_MS), ...projectionUsage }];
+				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [{ model: "(unknown)", serviceTier: "standard", contextOver512k: false, slot: Math.floor(updatedAt / SLOT_MS), ...projectionUsage }];
 				const session = {
 					id: sessionId,
 					title: title ?? null,

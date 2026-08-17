@@ -13,7 +13,7 @@
 - **Tier 1（纯客户端）**：`sidebar.footer.action` + `shell.overlay` 挂载，读 `useSessions`/`useWorkspaces` 投影值聚合。
 - **Tier 2（宿主 RPC）**：`StatsService`（`@Remote("aggregate")` + `./typert` manifest）读 `~/.dsh` 落盘数据，
   客户端内联描述符 + `ctx.remote.$mount` + `ctx.inject` 子 ctx 访问 `remote.stats`。
-- **成本**：DeepSeek 官方定价（8.17 前 / 8.17 后峰谷），按会话模型自动计价，峰谷按 30 分钟槽实际时段。
+- **成本**：DeepSeek 按官方历史/峰谷价与 30 分钟实际时段计费；MiniMax M3 按官方 standard/priority 与 `512K` 输入上下文边界计费，M2.7 系列支持独立缓存写入价。
 - **打磨**：localStorage 持久化、列排序、CSV/JSON 导出、图例过滤。
 
 ---

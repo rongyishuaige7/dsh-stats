@@ -56,8 +56,39 @@ test('单模型会话仍按 s.model 逐槽计价', () => {
 	expect(cost).toBeCloseTo(0.02085, 5);
 });
 
-test('未知模型不再静默套用 Pro 价格', () => {
+test('MiniMax-M3 标准短上下文按官方价格计费', () => {
 	const slot = Math.floor(DAY_START / SLOT_MS);
-	const cost = sessionCost({ model: 'MiniMax-M3', updatedAt: DAY_START, slotUsage: [{ slot, model: 'MiniMax-M3', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }], stats: {} });
+	const cost = sessionCost({
+		model: 'MiniMax-M3', updatedAt: DAY_START,
+		slotUsage: [{ slot, model: 'MiniMax-M3', serviceTier: 'standard', contextOver512k: false, uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 200, reasoning: 0 }],
+		stats: {},
+	});
+	// (1000+200)*2.1 + 10000*0.42 + 100*8.4 = 7560 (→ 0.00756)
+	expect(cost).toBeCloseTo(0.00756, 6);
+});
+
+test('MiniMax-M3 长上下文与 priority 分档分别生效', () => {
+	const slot = Math.floor(DAY_START / SLOT_MS);
+	const base = { slot, model: 'MiniMax-M3', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 200, reasoning: 0 };
+	const standardLong = sessionCost({ model: 'MiniMax-M3', slotUsage: [{ ...base, serviceTier: 'standard', contextOver512k: true }], stats: {} });
+	const priorityShort = sessionCost({ model: 'MiniMax-M3', slotUsage: [{ ...base, serviceTier: 'priority', contextOver512k: false }], stats: {} });
+	expect(standardLong).toBeCloseTo(0.01512, 6);
+	expect(priorityShort).toBeCloseTo(0.01134, 6);
+});
+
+test('MiniMax-M2.7 缓存写入使用官方独立单价', () => {
+	const slot = Math.floor(DAY_START / SLOT_MS);
+	const cost = sessionCost({
+		model: 'minimax-m2.7',
+		slotUsage: [{ slot, model: 'minimax-m2.7', serviceTier: 'standard', contextOver512k: false, uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 200, reasoning: 0 }],
+		stats: {},
+	});
+	// 1000*2.1 + 200*2.625 + 10000*0.42 + 100*8.4 = 7665 (→ 0.007665)
+	expect(cost).toBeCloseTo(0.007665, 6);
+});
+
+test('未知模型不再静默套用已知模型价格', () => {
+	const slot = Math.floor(DAY_START / SLOT_MS);
+	const cost = sessionCost({ model: 'unknown-model', updatedAt: DAY_START, slotUsage: [{ slot, model: 'unknown-model', serviceTier: 'standard', contextOver512k: false, uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }], stats: {} });
 	expect(cost).toBeNull();
 });

@@ -104,6 +104,26 @@ test('fork seed events are excluded from usage totals', async () => {
 	expect(session.calls).toBe(1);
 });
 
+test('slot usage preserves MiniMax service and 512k context pricing tiers', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ s1: projection(now) });
+	writeLog(home, 's1', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'request/header', seq: 1, time: now + 10, data: { header: { config: { model: 'MiniMax-M3' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 1000, cacheReadTokens: 511000, outputTokens: 10 }, message: { source: { model: 'MiniMax-M3' } } } },
+		{ type: 'request/header', seq: 3, time: now + 200, data: { header: { config: { model: 'MiniMax-M3', serviceTier: 'priority' } } } },
+		{ type: 'assistant/message', seq: 4, time: now + 300, data: { turn: 1, step: 0, usage: { inputTokens: 1001, cacheReadTokens: 511000, outputTokens: 20 }, message: { source: { model: 'MiniMax-M3' } } } },
+	]);
+
+	const session = (await aggregate()).projects[0].sessions[0];
+	expect(session.slotUsage).toHaveLength(2);
+	expect(session.slotUsage).toEqual(expect.arrayContaining([
+		expect.objectContaining({ serviceTier: 'standard', contextOver512k: false, uncached: 1000 }),
+		expect.objectContaining({ serviceTier: 'priority', contextOver512k: true, uncached: 1001 }),
+	]));
+	TYPERT.invocations[0].result.schema.parse(await aggregate());
+});
+
 test('a truncated active tail keeps committed frames and reports partial quality', async () => {
 	const now = Date.parse('2026-08-17T10:00:00+08:00');
 	const home = fixture({ s1: projection(now) });
