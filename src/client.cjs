@@ -175,12 +175,34 @@ function applyDate(projects, dateKey) {
 				return t >= dayStart && t < dayEnd;
 			});
 			var tok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+			var allTok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 			su.forEach(function(u) {
 				tok.uncached += u.uncached || 0;
 				tok.output += u.output || 0;
 				tok.cacheRead += u.cacheRead || 0;
 				tok.cacheWrite += u.cacheWrite || 0;
 				tok.reasoning += u.reasoning || 0;
+			});
+			(s.slotUsage || []).forEach(function(u) {
+				allTok.uncached += u.uncached || 0;
+				allTok.output += u.output || 0;
+				allTok.cacheRead += u.cacheRead || 0;
+				allTok.cacheWrite += u.cacheWrite || 0;
+				allTok.reasoning += u.reasoning || 0;
+			});
+			// modelUsage 无时间戳：按 slotUsage 的综合裁剪比例分摊，保持与 hero/按日口径一致
+			var allTotal = allTok.uncached + allTok.output + allTok.cacheRead + allTok.cacheWrite + allTok.reasoning;
+			var dayTotal = tok.uncached + tok.output + tok.cacheRead + tok.cacheWrite + tok.reasoning;
+			var ratio = allTotal > 0 ? dayTotal / allTotal : 0;
+			var clippedModelUsage = (s.modelUsage || []).map(function(e) {
+				return {
+					model: e.model,
+					uncached: Math.round((e.uncached || 0) * ratio),
+					output: Math.round((e.output || 0) * ratio),
+					cacheRead: Math.round((e.cacheRead || 0) * ratio),
+					cacheWrite: Math.round((e.cacheWrite || 0) * ratio),
+					reasoning: Math.round((e.reasoning || 0) * ratio)
+				};
 			});
 			// 有逐槽数据时：token 字段按当天槽重算；turns/steps/时长等会话粒度指标
 			// 没有逐日分布，保留会话完整值（仅作参考）。无逐槽数据（客户端近似）时
@@ -195,7 +217,7 @@ function applyDate(projects, dateKey) {
 				cacheRead: tok.cacheRead, cacheWrite: tok.cacheWrite,
 				reasoning: tok.reasoning
 			});
-			return { ...s, slotUsage: su, stats: newStats };
+			return { ...s, slotUsage: su, stats: newStats, modelUsage: clippedModelUsage };
 		});
 		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length, stats: sumSessionStats(clipped) };
 	});
