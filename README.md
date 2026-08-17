@@ -49,9 +49,9 @@ Preview the publish contents with `npm pack --dry-run` (LICENSE/README*/lib/*/co
 ```bash
 # Option A (from the npm registry; install or upgrade)
 dsh plugin --profile web add @rongyi7/dsh-stats            # latest
-dsh plugin --profile web add @rongyi7/dsh-stats@1.1.44     # pinned
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.0     # pinned
 # Option B (from a local tarball)
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.44.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz
 ```
 
 That's it — this package declares `dsh.bundle` (with a `cordis.patch.yml` that inserts the plugin row), so `dsh plugin add` registers it into `dsh.profile.bundles` automatically. No manual patch line needed.
@@ -74,6 +74,7 @@ After restart, a “Stats” button appears in the sidebar footer. The panel tit
 - **Development timeline** — exact 30-minute slots (host slices activity intervals from event timestamps) + a daily total heat strip.
 - **Cost** — auto-priced by each session's actual model and per-slot actual price (flat before 2026-08-17; peak/off-peak after, peak hours 9:00–12:00 / 14:00–18:00 Beijing time). No manual selection.
 - **Date range** — last 7 / 30 / 90 days / all, applied to both the overview (re-aggregated) and the timeline.
+- **Data quality** — the panel labels host-exact, partial, stale, and client-approximate results; incomplete or missing logs are surfaced in the source tooltip instead of being presented as exact.
 - **Polish** — option persistence (localStorage), column sorting, CSV/JSON export, legend filtering, 60 s auto-refresh + manual refresh.
 
 ## Data flow (Tier 2)
@@ -91,7 +92,7 @@ host index.js:
                  (skipping it breaks SRC dispatch)
     aggregate(): reads workspace.json + session_projcache.json (tokenUsage/sessionStats)
                + decodes session.jsonl.zstd (timestamps / model / usage, deduped by turn:step)
-               → { projects, timeline } (sessions carry model / slots / slotUsage)
+               → { projects, timeline, meta } (sessions carry model / slots / slotStats / slotUsage / quality)
 ```
 
 Gotchas (hard-won):
@@ -106,7 +107,7 @@ Gotchas (hard-won):
 ```bash
 # after editing src/: rebuild, repack, reinstall into the profile, then restart
 npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm reinstall
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz   # pnpm reinstall
 # restart dsh web
 ```
 
@@ -118,6 +119,8 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm reinstall
 | Freshness | Current session's projection cache may lag by seconds; 60 s auto-refresh mitigates |
 | Decode cost | Many sessions → the host fully decodes on each RPC (mtime-cached, so repeat requests don't re-decode; the first read is still slow) |
 | Price boundary | After the 2026-08-17 price change, historical sessions are priced by the price in effect at their own time (intended); no historical price backfill |
+| Unknown model | Sessions whose model is not recognized are shown with an unknown cost (`—`); the plugin does not guess a price |
+| Duration semantics | Project LLM/tool totals are cumulative work metrics; the timeline merges overlapping sessions in the same project into wall-clock intervals |
+| Incomplete storage | A missing, malformed, or actively-written log is marked partial/stale and may use projection-cache token totals with a warning |
 
 Note: timeline days, peak/off-peak hours, and pricing are all bucketed in explicit Beijing time (UTC+8), independent of the host machine's timezone.
-

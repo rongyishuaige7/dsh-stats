@@ -63,12 +63,14 @@ function dshHome() {
 
 function scanZstdFrames(buffer) {
 	const frames = [];
+	let truncated = false;
 	let offset = 0;
 	while (offset < buffer.length) {
 		const start = offset;
-		if (buffer.length - offset < 4) break;
+		if (buffer.length - offset < 4) { truncated = true; break; }
 		if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) throw new Error("corrupt Zstandard session log: invalid frame magic");
 		offset += 4;
+		if (offset >= buffer.length) { truncated = true; break; }
 		const descriptor = buffer.readUInt8(offset);
 		offset += 1;
 		const contentSizeFlag = descriptor >>> 6;
@@ -77,28 +79,50 @@ function scanZstdFrames(buffer) {
 		const dictionaryFlag = descriptor & 3;
 		const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
 		const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : (1 << contentSizeFlag);
-		offset += (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
+		const headerBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
+		if (offset + headerBytes > buffer.length) { truncated = true; break; }
+		offset += headerBytes;
 		for (;;) {
+			if (offset + 3 > buffer.length) { truncated = true; offset = buffer.length; break; }
 			const blockHeader = buffer.readUIntLE(offset, 3);
 			offset += 3;
 			const lastBlock = (blockHeader & 1) !== 0;
 			const blockType = (blockHeader >>> 1) & 3;
 			const blockSize = blockHeader >>> 3;
-			offset += blockType === 1 ? 1 : blockSize;
+			const storedBytes = blockType === 1 ? 1 : blockSize;
+			if (blockType === 3) throw new Error("corrupt Zstandard session log: reserved block type");
+			if (offset + storedBytes > buffer.length) { truncated = true; offset = buffer.length; break; }
+			offset += storedBytes;
 			if (lastBlock) break;
 		}
+		if (truncated) break;
+		if (checksum && offset + 4 > buffer.length) { truncated = true; break; }
 		if (checksum) offset += 4;
 		frames.push({ start, end: offset });
 	}
-	return frames;
+	return { frames, truncated };
 }
 
 function readJson(file) {
 	try {
-		return JSON.parse(readFileSync(file, "utf8"));
-	} catch {
-		return null;
+		return { ok: true, value: JSON.parse(readFileSync(file, "utf8")), error: null };
+	} catch (error) {
+		return { ok: false, value: null, error };
 	}
+}
+
+// JSONL persistence appends while the host may be reading it. Retry a stable
+// stat/read/stat snapshot so an active file is never decoded from a torn tail.
+function readStable(file, attempts = 3) {
+	let last = null;
+	for (let i = 0; i < attempts; i++) {
+		const before = statSync(file);
+		const buf = readFileSync(file);
+		const after = statSync(file);
+		last = { buf, mtimeMs: after.mtimeMs, size: after.size, stable: before.mtimeMs === after.mtimeMs && before.size === after.size };
+		if (last.stable) return last;
+	}
+	return last;
 }
 
 // 北京时间（UTC+8，无夏令时）：日期/时段切分显式用北京时区，与宿主机时区无关
@@ -117,6 +141,10 @@ function basename(p) {
 	return (p || "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "";
 }
 
+function nonNegativeNumber(value) {
+	return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 // 从事件时间戳提取活跃区间（相邻间隔 <= GAP_MS 归一段；孤立事件计 1 分钟）
 function activityIntervals(times) {
 	if (!times.length) return [];
@@ -132,12 +160,12 @@ function activityIntervals(times) {
 }
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
-let sessionsDirCache = { at: 0, dirs: [] };
+let sessionsDirCache = { home: null, at: 0, dirs: [] };
 function sessionDirs(home) {
 	const now = Date.now();
-	if (now - sessionsDirCache.at > 5000) {
-		try { sessionsDirCache = { at: now, dirs: readdirSync(join(home, "sessions")) }; }
-		catch { sessionsDirCache = { at: now, dirs: [] }; }
+	if (sessionsDirCache.home !== home || now - sessionsDirCache.at > 5000) {
+		try { sessionsDirCache = { home, at: now, dirs: readdirSync(join(home, "sessions")) }; }
+		catch { sessionsDirCache = { home, at: now, dirs: [] }; }
 	}
 	return sessionsDirCache.dirs;
 }
@@ -149,74 +177,148 @@ function findSessionFile(home, sessionId) {
 	return null;
 }
 
-// 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本。
+function expandStorageRecord(record) {
+	if (!record || typeof record !== "object") return [record];
+	const type = record.type;
+	if (type !== "text-chunks" && type !== "reasoning-chunks" && type !== "tool-call-chunks") return [record];
+	const data = record.data;
+	const members = type === "tool-call-chunks" ? data?.args : data?.texts;
+	if (!data || !Array.isArray(members) || !Array.isArray(data.dt)) throw new Error("corrupt session log: malformed packed chunk row");
+	if (!members.length) return [];
+	if (!Number.isFinite(record.time0) || !Number.isInteger(record.seq0) || data.dt.length < members.length - 1 || data.dt.slice(0, members.length - 1).some((dt) => !Number.isFinite(dt) || dt < 0)) {
+		throw new Error("corrupt session log: invalid packed chunk offsets");
+	}
+	let time = record.time0;
+	return members.map((value, index) => {
+		if (index > 0) time += data.dt[index - 1];
+		let chunk;
+		if (type === "text-chunks") chunk = { type: "text-delta", index: data.index, text: value };
+		else if (type === "reasoning-chunks") chunk = { type: "reasoning-delta", index: data.index, text: value };
+		else chunk = { type: "tool-call-delta", index: data.index, id: data.id, ...(data.name !== undefined ? { name: data.name } : {}), argumentsDelta: value };
+		return { type: "assistant/chunk", seq: record.seq0 + index, time, data: { turn: data.turn, step: data.step, chunk } };
+	});
+}
+
+function isTokenDelta(chunk) {
+	if (!chunk || typeof chunk !== "object") return false;
+	if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") return chunk.text !== "";
+	return chunk.type === "tool-call-delta" && (chunk.argumentsDelta !== "" || chunk.name !== undefined);
+}
+
+// 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本和逐槽统计。
 // seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
-// 结果按文件 mtime 缓存（会话日志 append 后 mtime 变化，自动失效）。
-const sessionInfoCache = new Map(); // filePath -> { mtimeMs, info }
+// 读取使用 stat/read/stat 稳定快照，并只消费完整 zstd frame；活跃尾部会标记 partial。
+const sessionInfoCache = new Map(); // filePath -> { mtimeMs, size, info }
 const SESSION_CACHE_LIMIT = 300; // LRU 上限，防长期运行内存膨胀
 function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
-	if (!file) return { times: [], model: null, usages: [], origin: null, parentSession: null, seedLength: null };
-	let mtimeMs;
-	try { mtimeMs = statSync(file).mtimeMs; } catch { return { times: [], model: null, usages: [], origin: null, parentSession: null, seedLength: null }; }
+	if (!file) return { times: [], lastTime: null, model: null, usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true };
 	const cached = sessionInfoCache.get(file);
-	if (cached && cached.mtimeMs === mtimeMs) {
+	let snapshot;
+	try { snapshot = readStable(file); } catch (error) {
+		if (cached) return { ...cached.info, stale: true, readError: error.message };
+		throw error;
+	}
+	const { mtimeMs, size } = snapshot;
+	if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
 		// LRU 提升：命中后移到最新
 		sessionInfoCache.delete(file);
 		sessionInfoCache.set(file, cached);
 		return cached.info;
 	}
-	const buf = readFileSync(file);
-	const frames = scanZstdFrames(buf);
+	const buf = snapshot.buf;
+	const scanned = scanZstdFrames(buf);
 	const times = [];
 	let currentModel = null; // 最近 request/header 声明的模型（chunk 兜底用）
 	let origin = null, parentSession = null, seedLength = null;
 	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
 	let firstOwnSeq = 0;
 	const usageByStep = new Map();
-	for (const frame of frames) {
+	const derived = emptyRaw();
+	const slotStats = new Map();
+	const addSlot = (time, field, value) => {
+		if (typeof time !== "number" || !Number.isFinite(time) || !value) return;
+		const slot = Math.floor(time / SLOT_MS);
+		const row = slotStats.get(slot) || { slot, turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 };
+		row[field] += value;
+		slotStats.set(slot, row);
+	};
+	const addInterval = (field, start, end) => {
+		if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+		const first = Math.floor(start / SLOT_MS), last = Math.floor((end - 1) / SLOT_MS);
+		for (let slot = first; slot <= last; slot++) {
+			const overlap = Math.min(end, (slot + 1) * SLOT_MS) - Math.max(start, slot * SLOT_MS);
+			if (overlap > 0) addSlot(slot * SLOT_MS, field, overlap);
+		}
+	};
+	let openStep = null;
+	let lastTurn = null;
+	const pendingCalls = new Map();
+	let derivedEvents = 0;
+	let malformedRecords = 0;
+	for (const frame of scanned.frames) {
 		const text = zstdDecompressSync(buf.subarray(frame.start, frame.end)).toString("utf8");
 		for (const line of text.split("\n")) {
 			if (!line) continue;
-			let ev;
-			try { ev = JSON.parse(line); } catch { continue; }
-			// 读 seq（事件顶层字段）
-			const evSeq = ev.seq;
-			// session 头部事件不参与 seed 过滤（evSeq === undefined，过滤表达式永远为 false）
-			if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
-			const t = ev.time ?? ev.time0;
-			if (typeof t === "number") times.push(t);
-			if (ev.type === "session") {
-				origin = ev.origin ?? null;
-				parentSession = ev.parentSession ?? null;
-				seedLength = ev.seedLength ?? null;
-				if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
-			} else if (ev.type === "request/header") {
-				const m = ev.data?.header?.config?.model;
-				if (m) currentModel = m;
-			} else if (ev.type === "assistant/chunk" && ev.data?.chunk?.type === "usage" && typeof t === "number") {
-				const u = ev.data.chunk.usage;
-				if (evSeq !== undefined) {
-					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
-						time: t,
-						model: currentModel,
-						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
-						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
-						reasoning: u.reasoningTokens ?? 0
-					});
-				}
-			} else if (ev.type === "assistant/message" && ev.data?.usage !== void 0 && typeof t === "number") {
-				const u = ev.data.usage;
-				// 每个消息的实际模型来自 message.source.model（会话内可切换模型，见参考实现）
-				const msgModel = ev.data?.message?.source?.model || currentModel;
-				if (evSeq !== undefined) {
-					usageByStep.set(`${ev.data.turn}:${ev.data.step}`, {
-						time: t,
-						model: msgModel,
-						uncached: u.inputTokens ?? 0, output: u.outputTokens ?? 0,
-						cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0,
-						reasoning: u.reasoningTokens ?? 0
-					});
+			let record;
+			try { record = JSON.parse(line); } catch { malformedRecords++; continue; }
+			let events;
+			try { events = expandStorageRecord(record); } catch { malformedRecords++; continue; }
+			for (const ev of events) {
+				const evSeq = ev?.seq;
+				if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
+				const t = ev?.time;
+				if (Number.isFinite(t)) times.push(t);
+				if (!ev || typeof ev !== "object") continue;
+				if (ev.type === "session") {
+					origin = ev.origin ?? null;
+					parentSession = ev.parentSession ?? null;
+					seedLength = ev.seedLength ?? null;
+					if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
+				} else if (ev.type === "request/header") {
+					const m = ev.data?.header?.config?.model;
+					if (m) currentModel = m;
+				} else if (ev.type === "step/start") {
+					openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
+				} else if (ev.type === "assistant/chunk") {
+					if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
+						const u = ev.data.chunk.usage || {};
+						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel,
+							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
+							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
+					} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) {
+						openStep.firstTokenTime = t;
+					}
+				} else if (ev.type === "assistant/message") {
+					const u = ev.data?.usage;
+					const msgModel = ev.data?.message?.source?.model || currentModel;
+					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel,
+						uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
+						cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
+					if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
+						const llm = Math.max(0, t - openStep.startTime);
+						derived.llmMs += llm; addInterval("llmMs", openStep.startTime, t);
+						if (openStep.firstTokenTime !== null) {
+							const ttft = Math.max(0, openStep.firstTokenTime - openStep.startTime);
+							derived.ttftMs += ttft; derived.ttftSteps++; addSlot(openStep.firstTokenTime, "ttftMs", ttft); addSlot(openStep.firstTokenTime, "ttftSteps", 1);
+							const out = Number.isFinite(u?.outputTokens) && u.outputTokens >= 0 ? u.outputTokens : null;
+							if (out !== null) { const decode = Math.max(0, t - openStep.firstTokenTime); derived.decodeMs += decode; derived.decodeTokens += out; addInterval("decodeMs", openStep.firstTokenTime, t); addSlot(t, "decodeTokens", out); }
+						}
+						derivedEvents++;
+						openStep = null;
+					}
+				} else if (ev.type === "tool/call") {
+					const callId = ev.data?.callId;
+					if (callId !== undefined && Number.isFinite(t)) pendingCalls.set(callId, t);
+				} else if (ev.type === "tool/result") {
+					const callId = ev.data?.message?.source?.callId;
+					if (pendingCalls.has(callId) && Number.isFinite(t)) { const start = pendingCalls.get(callId); const tool = Math.max(0, t - start); derived.toolMs += tool; addInterval("toolMs", start, t); pendingCalls.delete(callId); derivedEvents++; }
+				} else if (ev.type === "step/end") {
+					derived.steps++; addSlot(t, "steps", 1); derivedEvents++;
+					if (lastTurn !== ev.data?.turn) { derived.turns++; addSlot(t, "turns", 1); lastTurn = ev.data?.turn; }
+					openStep = null;
+				} else if (ev.type === "turn/end") {
+					pendingCalls.clear();
 				}
 			}
 		}
@@ -235,8 +337,12 @@ function sessionInfo(home, sessionId) {
 		if (w > modelWeight) { modelWeight = w; model = mk; }
 	}
 	if (model === null) model = currentModel;
-	const info = { times, model, usages: [...usageByStep.values()], origin, parentSession, seedLength };
-	sessionInfoCache.set(file, { mtimeMs, info });
+	const info = {
+		times, lastTime: times.length ? times[times.length - 1] : null, model, usages: [...usageByStep.values()],
+		origin, parentSession, seedLength, stats: derivedEvents ? derived : null,
+		slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot), partial: scanned.truncated || !snapshot.stable || malformedRecords > 0, stale: false, missing: false
+	};
+	sessionInfoCache.set(file, { mtimeMs, size, info });
 	// LRU 淘汰：超限删除最旧条目
 	while (sessionInfoCache.size > SESSION_CACHE_LIMIT) {
 		const oldest = sessionInfoCache.keys().next().value;
@@ -308,10 +414,15 @@ let StatsService = (() => {
 
 		async aggregate() {
 			const home = dshHome();
-			const wsJson = readJson(join(home, "storages", "workspace.json"));
+			const warnings = [];
+			const wsRead = readJson(join(home, "storages", "workspace.json"));
+			const sessionsRead = readJson(join(home, "storages", "session_projcache.json"));
+			if (!wsRead.ok) warnings.push({ code: "WORKSPACE_READ_FAILED", message: wsRead.error?.message || "workspace storage read failed" });
+			if (!sessionsRead.ok) warnings.push({ code: "SESSION_CACHE_READ_FAILED", message: sessionsRead.error?.message || "session projection cache read failed" });
+			const wsJson = wsRead.value;
 			const workspaces = wsJson?.tables?.workspaces ?? {};
 			const archivedSet = new Set(wsJson?.global?.archivedSessionIds ?? []);
-			const sessionsTable = readJson(join(home, "storages", "session_projcache.json"))?.tables?.sessions ?? {};
+			const sessionsTable = sessionsRead.value?.tables?.sessions ?? {};
 			const seen = new Set();
 
 			// 处理一个会话：容错（坏日志不拖垮整体），返回会话记录或 null
@@ -319,6 +430,7 @@ let StatsService = (() => {
 				seen.add(sessionId);
 				const entry = sessionsTable[sessionId];
 				const statsRow = entry?.rows?.sessionStats?.val;
+				const usageTotals = entry?.rows?.tokenUsage?.val?.totals;
 				const title = entry?.rows?.title?.val;
 				const meta = entry?.rows?.sessionListMetadata?.val;
 				const createdAt = entry?.identity?.createdAt ?? null;
@@ -330,9 +442,14 @@ let StatsService = (() => {
 				try {
 					info = sessionInfo(home, sessionId);
 				} catch (err) {
-					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（跳过其时间线数据）:`, err?.message);
-					info = { times: [], model: null, usages: [] };
+					const message = err?.message || String(err);
+					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（使用 projection cache）:`, message);
+					warnings.push({ code: "SESSION_DECODE_FAILED", sessionId, message });
+					info = { times: [], lastTime: null, model: null, usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
 				}
+				if (info.missing) warnings.push({ code: "SESSION_LOG_MISSING", sessionId, message: "session log was not found; projection cache was used where available" });
+				if (info.partial) warnings.push({ code: "SESSION_LOG_PARTIAL", sessionId, message: "session log was incomplete or malformed; only valid committed records were used" });
+				if (info.stale) warnings.push({ code: "SESSION_LOG_STALE", sessionId, message: info.readError || "cached session snapshot was used" });
 				// token 口径统一走日志 usages（已按 seedLength 过滤 fork 继承、按 turn:step 去重），
 				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
 				// 子代理继承的父上下文 cacheRead 也计入了，导致总览页与趋势页不一致。
@@ -354,20 +471,39 @@ let StatsService = (() => {
 					cur.reasoning += u.reasoning || 0;
 					modelUsageMap.set(mk, cur);
 				}
+				const projectionUsage = {
+					uncached: nonNegativeNumber(usageTotals?.uncachedInputTokens),
+					output: nonNegativeNumber(usageTotals?.outputTokens),
+					cacheRead: nonNegativeNumber(usageTotals?.cacheReadTokens),
+					cacheWrite: nonNegativeNumber(usageTotals?.cacheWriteTokens),
+					reasoning: 0
+				};
+				const projectionTokens = projectionUsage.uncached + projectionUsage.output + projectionUsage.cacheRead + projectionUsage.cacheWrite;
+				const usedProjectionUsage = info.usages.length === 0 && projectionTokens > 0;
+				if (usedProjectionUsage) {
+					totalUncached = projectionUsage.uncached; totalOutput = projectionUsage.output;
+					totalCacheRead = projectionUsage.cacheRead; totalCacheWrite = projectionUsage.cacheWrite;
+					modelUsageMap.set("(unknown)", { model: "(unknown)", ...projectionUsage });
+					warnings.push({ code: "SESSION_USAGE_FALLBACK", sessionId, message: "token usage came from the projection cache and may include inherited fork context" });
+				}
 				const modelUsage = [...modelUsageMap.values()];
+				const eventStats = info.stats || statsRow || {};
 				const raw = {
-					turns: statsRow?.turns ?? 0, steps: statsRow?.steps ?? 0,
-					llmMs: statsRow?.llmMs ?? 0, toolMs: statsRow?.toolMs ?? 0,
-					ttftMs: statsRow?.ttftMs ?? 0, ttftSteps: statsRow?.ttftSteps ?? 0,
-					decodeMs: statsRow?.decodeMs ?? 0, decodeTokens: statsRow?.decodeTokens ?? 0,
+					turns: nonNegativeNumber(eventStats.turns), steps: nonNegativeNumber(eventStats.steps),
+					llmMs: nonNegativeNumber(eventStats.llmMs), toolMs: nonNegativeNumber(eventStats.toolMs),
+					ttftMs: nonNegativeNumber(eventStats.ttftMs), ttftSteps: nonNegativeNumber(eventStats.ttftSteps),
+					decodeMs: nonNegativeNumber(eventStats.decodeMs), decodeTokens: nonNegativeNumber(eventStats.decodeTokens),
 					uncached: totalUncached, output: totalOutput,
 					cacheRead: totalCacheRead, cacheWrite: totalCacheWrite,
 					reasoning: totalReasoning
 				};
-				return {
+				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
+				let perSlotUsage = slotUsages(info.usages);
+				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [{ model: "(unknown)", slot: Math.floor(updatedAt / SLOT_MS), ...projectionUsage }];
+				const session = {
 					id: sessionId,
 					title: title ?? null,
-					updatedAt: lastPromptAt ?? createdAt,
+					updatedAt,
 					createdAt,
 					model: info.model ?? null,
 					modelUsage,
@@ -381,9 +517,13 @@ let StatsService = (() => {
 					stats: raw,
 					durMs: raw.llmMs + raw.toolMs,
 					slots: slotDurations(info.times),
-					slotUsage: slotUsages(info.usages),
+					slotStats: info.slotStats || [],
+					slotUsage: perSlotUsage,
+					quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || usedProjectionUsage) ? "partial" : "exact",
 					cwd
 				};
+				Object.defineProperty(session, "_intervals", { value: activityIntervals(info.times), enumerable: false });
+				return session;
 			};
 
 			const projects = [];
@@ -396,7 +536,6 @@ let StatsService = (() => {
 				for (const sessionId of ws.sessionIds ?? []) {
 					const s = processSession(sessionId, ws.path);
 					if (s.blank) continue;
-					if (s.archived) continue;
 					addRaw(agg, s.stats);
 					sessions.push(s);
 					if (s.subagent) subagentCount++;
@@ -423,7 +562,6 @@ let StatsService = (() => {
 				if (seen.has(sessionId)) continue;
 				const s = processSession(sessionId, null);
 				if (s.blank) continue;
-				if (s.archived) continue;
 				const cwd = s.cwd || "(uncategorized)";
 				if (!strayByCwd.has(cwd)) strayByCwd.set(cwd, []);
 				strayByCwd.get(cwd).push(s);
@@ -455,11 +593,25 @@ let StatsService = (() => {
 			const projectIndex = new Map();
 			projects.forEach((p, i) => projectIndex.set(p.id, i));
 
-			// 时间线：把每会话 slots 聚合到 (day, slotOfDay, project)
+			// 时间线：先合并同项目并发会话区间，再按槽切分，避免父/子代理重叠计时。
 			const daysMap = new Map();
 			for (const p of projects) {
-				for (const s of p.sessions) {
-					for (const { slot, ms } of s.slots) {
+				const intervals = p.sessions.flatMap((s) => s._intervals || []).sort((a, b) => a[0] - b[0]);
+				const merged = [];
+				for (const interval of intervals) {
+					const last = merged[merged.length - 1];
+					if (last && interval[0] <= last[1]) last[1] = Math.max(last[1], interval[1]);
+					else merged.push([...interval]);
+				}
+				const projectSlots = new Map();
+				for (const [start, end] of merged) {
+					const first = Math.floor(start / SLOT_MS), last = Math.floor((end - 1) / SLOT_MS);
+					for (let slot = first; slot <= last; slot++) {
+						const overlap = Math.min(end, (slot + 1) * SLOT_MS) - Math.max(start, slot * SLOT_MS);
+						if (overlap > 0) projectSlots.set(slot, (projectSlots.get(slot) || 0) + overlap);
+					}
+				}
+				for (const [slot, ms] of projectSlots) {
 						const slotStartMs = slot * SLOT_MS;
 						const date = localDayKey(slotStartMs);
 						const slotOfDay = Math.floor(minutesOfDay(slotStartMs) / SLOT_MINUTES);
@@ -467,13 +619,16 @@ let StatsService = (() => {
 						if (!day) { day = { date, dayTotalMs: 0, slotBlocks: [] }; daysMap.set(date, day); }
 						day.dayTotalMs += ms;
 						day.slotBlocks.push({ slot: slotOfDay, projectId: p.id, name: p.name, colorIndex: projectIndex.get(p.id), ms });
-					}
 				}
 			}
 			const days = [...daysMap.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 			days.forEach((d) => d.slotBlocks.sort((a, b) => a.slot - b.slot));
 
-			return { projects, timeline: { days } };
+			return {
+				projects,
+				timeline: { slotMinutes: SLOT_MINUTES, days },
+				meta: { source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
+			};
 		}
 	};
 })();

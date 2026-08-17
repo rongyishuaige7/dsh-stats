@@ -25,6 +25,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Test
+        run: npm test
+
+      - name: Test timezone independence
+        run: TZ=UTC npm test
+
       - name: Verify artifacts
         run: |
           node --check lib/client.js

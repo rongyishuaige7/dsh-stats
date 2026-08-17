@@ -6,14 +6,16 @@ const {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration,
 	applyDate, activityDates, fmtDateCN,
+	applyRange, buildTimeline, parseAggregateResult,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
 // localDayKey
 // ---------------------------------------------------------------------------
 test('localDayKey returns YYYY-MM-DD', () => {
-	expect(localDayKey(new Date('2025-03-15T14:30:00').getTime())).toBe('2025-03-15');
-	expect(localDayKey(new Date('2026-01-01T00:00:00').getTime())).toBe('2026-01-01');
+	expect(localDayKey(Date.parse('2025-03-15T14:30:00+08:00'))).toBe('2025-03-15');
+	expect(localDayKey(Date.parse('2026-01-01T00:00:00+08:00'))).toBe('2026-01-01');
+	expect(localDayKey(Date.parse('2025-03-15T16:30:00Z'))).toBe('2025-03-16');
 });
 
 // ---------------------------------------------------------------------------
@@ -56,9 +58,9 @@ test('addBucket handles null/undefined gracefully', () => {
 // ---------------------------------------------------------------------------
 test('sessionDayTokens groups sessions by day (fallback path)', () => {
 	const sessions = [
-		{ id: 's1', updatedAt: new Date('2025-03-15T10:00:00').getTime(), stats: { outputTokens: 100, uncached: 200, cacheRead: 50, cacheWrite: 0, reasoning: 10, inputTokens: 250 } },
-		{ id: 's2', updatedAt: new Date('2025-03-15T15:00:00').getTime(), stats: { outputTokens: 200, uncached: 300, cacheRead: 100, cacheWrite: 0, reasoning: 20, inputTokens: 400 } },
-		{ id: 's3', updatedAt: new Date('2025-03-16T09:00:00').getTime(), stats: { outputTokens: 50, uncached: 100, cacheRead: 0, cacheWrite: 0, reasoning: 5, inputTokens: 100 } },
+		{ id: 's1', updatedAt: Date.parse('2025-03-15T10:00:00+08:00'), stats: { outputTokens: 100, uncached: 200, cacheRead: 50, cacheWrite: 0, reasoning: 10, inputTokens: 250 } },
+		{ id: 's2', updatedAt: Date.parse('2025-03-15T15:00:00+08:00'), stats: { outputTokens: 200, uncached: 300, cacheRead: 100, cacheWrite: 0, reasoning: 20, inputTokens: 400 } },
+		{ id: 's3', updatedAt: Date.parse('2025-03-16T09:00:00+08:00'), stats: { outputTokens: 50, uncached: 100, cacheRead: 0, cacheWrite: 0, reasoning: 5, inputTokens: 100 } },
 	];
 	const byDay = sessionDayTokens(sessions);
 	expect(byDay.has('2025-03-15')).toBe(true);
@@ -69,7 +71,7 @@ test('sessionDayTokens groups sessions by day (fallback path)', () => {
 
 test('sessionDayTokens uses createdAt as fallback', () => {
 	const sessions = [
-		{ id: 's1', updatedAt: null, createdAt: new Date('2025-03-15T10:00:00').getTime(), stats: { outputTokens: 100, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 100 } },
+		{ id: 's1', updatedAt: null, createdAt: Date.parse('2025-03-15T10:00:00+08:00'), stats: { outputTokens: 100, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 100 } },
 	];
 	const byDay = sessionDayTokens(sessions);
 	expect(byDay.has('2025-03-15')).toBe(true);
@@ -78,15 +80,15 @@ test('sessionDayTokens uses createdAt as fallback', () => {
 test('sessionDayTokens skips sessions without timestamps', () => {
 	const sessions = [
 		{ id: 's1', updatedAt: null, createdAt: null, stats: { outputTokens: 100, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0 } },
-		{ id: 's2', updatedAt: new Date('2025-03-15T10:00:00').getTime(), stats: { outputTokens: 200, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0 } },
+		{ id: 's2', updatedAt: Date.parse('2025-03-15T10:00:00+08:00'), stats: { outputTokens: 200, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0 } },
 	];
 	const byDay = sessionDayTokens(sessions);
 	expect(byDay.size).toBe(1);
 });
 
 test('sessionDayTokens distributes slotUsage tokens across actual days', () => {
-	var d1 = new Date('2025-03-12T00:00:00');
-	var d2 = new Date('2025-03-13T00:00:00');
+	var d1 = new Date('2025-03-12T00:00:00+08:00');
+	var d2 = new Date('2025-03-13T00:00:00+08:00');
 	var slot1 = Math.floor(d1.getTime() / 1800000);
 	var slot2 = Math.floor(d2.getTime() / 1800000);
 	const sessions = [
@@ -235,8 +237,8 @@ test('fmtCost formats RMB correctly', () => {
 	expect(fmtCost(50)).toBe('¥50.00');
 	expect(fmtCost(1500)).toBe('¥1500');
 	expect(fmtCost(-1)).toBe('¥0');
-	expect(fmtCost(NaN)).toBe('¥0');
-	expect(fmtCost(null)).toBe('¥0');
+	expect(fmtCost(NaN)).toBe('—');
+	expect(fmtCost(null)).toBe('—');
 });
 
 test('fmtDuration formats ms to h/m/s', () => {
@@ -278,10 +280,10 @@ test('costOf with cacheWrite included', () => {
 // applyDate / activityDates / fmtDateCN（日期导航）
 // ---------------------------------------------------------------------------
 test('applyDate filters sessions by local day window', () => {
-	const d0 = new Date('2025-03-15T12:00:00').getTime(); // 当天
-	const d1 = new Date('2025-03-15T23:59:59').getTime(); // 当天末
-	const dPrev = new Date('2025-03-14T23:00:00').getTime(); // 前一天
-	const dNext = new Date('2025-03-16T00:00:00').getTime(); // 次日零点
+	const d0 = Date.parse('2025-03-15T12:00:00+08:00'); // 当天
+	const d1 = Date.parse('2025-03-15T23:59:59+08:00'); // 当天末
+	const dPrev = Date.parse('2025-03-14T23:00:00+08:00'); // 前一天
+	const dNext = Date.parse('2025-03-16T00:00:00+08:00'); // 次日零点
 	const projects = [
 		{
 			id: 'p1', name: 'P1', path: '/p', sessionCount: 3, subagentCount: 0, lastActiveAt: d0,
@@ -310,13 +312,11 @@ test('applyDate empty day zeroes project stats', () => {
 		{
 			id: 'p1', name: 'P1', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: 1,
 			stats: { turns: 1 },
-			sessions: [{ id: 's1', updatedAt: new Date('2025-03-14T12:00:00').getTime(), subagent: false, stats: { turns: 1, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } }],
+			sessions: [{ id: 's1', updatedAt: Date.parse('2025-03-14T12:00:00+08:00'), subagent: false, stats: { turns: 1, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, inputTokens: 0, outputTokens: 0, cacheHitPct: null, tps: null, ttftAvgMs: null } }],
 		},
 	];
 	const out = applyDate(projects, '2025-03-15');
-	expect(out[0].sessions.length).toBe(0);
-	expect(out[0].sessionCount).toBe(0);
-	expect(out[0].stats.turns).toBe(0);
+	expect(out.length).toBe(0);
 });
 
 test('activityDates extracts sorted active dates from timeline', () => {
@@ -336,7 +336,7 @@ test('fmtDateCN formats Chinese date with weekday', () => {
 });
 
 test('applyDate clips slotUsage to the day and recomputes tokens', () => {
-	var d1 = new Date('2025-03-15T10:00:00');
+	var d1 = new Date('2025-03-15T10:00:00+08:00');
 	var slotDay = Math.floor(d1.getTime() / 1800000);          // 当天槽
 	var slotPrev = slotDay - 40;                                // 前一天槽（40 槽 = 20 小时前）
 	var slotNext = slotDay + 40;                                // 次日槽
@@ -373,7 +373,7 @@ test('applyDate clips slotUsage to the day and recomputes tokens', () => {
 });
 
 test('applyDate keeps session stats when no slotUsage (client fallback)', () => {
-	var d1 = new Date('2025-03-15T10:00:00');
+	var d1 = new Date('2025-03-15T10:00:00+08:00');
 	const projects = [
 		{
 			id: 'p1', name: 'P1', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: d1.getTime(),
@@ -386,6 +386,49 @@ test('applyDate keeps session stats when no slotUsage (client fallback)', () => 
 	const out = applyDate(projects, '2025-03-15');
 	expect(out[0].sessions[0].stats.uncached).toBe(500); // 保留原值
 	expect(out[0].sessions[0].stats.outputTokens).toBe(60);
+});
+
+test('applyDate keeps activity-only sessions when usage is empty', () => {
+	var d1 = Date.parse('2025-03-15T10:00:00+08:00');
+	var slot = Math.floor(d1 / 1800000);
+	const projects = [{ id: 'p1', name: 'P1', path: '/p', sessions: [{ id: 's1', updatedAt: d1, slots: [{ slot, ms: 60000 }], slotStats: [{ slot, turns: 0, steps: 1, llmMs: 0, toolMs: 1000, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }], slotUsage: [], stats: { turns: 0, steps: 1, llmMs: 0, toolMs: 1000, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 } }] }];
+	const out = applyDate(projects, '2025-03-15');
+	expect(out[0].sessions[0].stats.steps).toBe(1);
+	expect(out[0].sessions[0].stats.toolMs).toBe(1000);
+});
+
+test('applyRange clips detailed sessions to the requested Beijing window', () => {
+	var first = Math.floor(Date.parse('2025-03-13T10:00:00+08:00') / 1800000);
+	var second = Math.floor(Date.parse('2025-03-15T10:00:00+08:00') / 1800000);
+	const projects = [{ id: 'p1', name: 'P1', path: '/p', sessions: [{ id: 's1', updatedAt: Date.parse('2025-03-15T10:00:00+08:00'), slots: [{ slot: first, ms: 1000 }, { slot: second, ms: 1000 }], slotStats: [], slotUsage: [{ slot: first, uncached: 10, output: 1, cacheRead: 0, cacheWrite: 0, reasoning: 0 }, { slot: second, uncached: 20, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0 }], stats: { turns: 0, steps: 0, llmMs: 0, toolMs: 0, uncached: 30, output: 3, cacheRead: 0, cacheWrite: 0, reasoning: 0 } }] }];
+	expect(applyRange(projects, '2025-03-15', 2)[0].sessions[0].stats.uncached).toBe(20);
+});
+
+test('empty detail arrays still use the session timestamp fallback', () => {
+	const updatedAt = Date.parse('2025-03-15T10:00:00+08:00');
+	const byDay = sessionDayTokens([{ updatedAt, slots: [], slotStats: [], slotUsage: [], stats: { turns: 2, uncached: 10, outputTokens: 3, inputTokens: 10 } }]);
+	expect(byDay.get('2025-03-15')).toMatchObject({ turns: 2, uncached: 10, output: 3 });
+});
+
+test('date range preserves legacy session stats when only activity slots exist', () => {
+	const updatedAt = Date.parse('2025-03-15T10:00:00+08:00');
+	const slot = Math.floor(updatedAt / 1800000);
+	const projects = [{ id: 'p1', name: 'P1', path: '/p', sessions: [{ id: 's1', updatedAt, slots: [{ slot, ms: 60000 }], stats: { turns: 2, steps: 1, llmMs: 100, toolMs: 50, uncached: 10, output: 3, cacheRead: 4, cacheWrite: 0, reasoning: 0 } }] }];
+	const out = applyDate(projects, '2025-03-15');
+	expect(out[0].sessions[0].stats).toMatchObject({ turns: 2, uncached: 10, output: 3, cacheRead: 4 });
+});
+
+test('fallback timeline gives zero-duration sessions a forward one-minute activity interval', () => {
+	const updatedAt = Date.parse('2025-03-15T00:00:00+08:00');
+	const timeline = buildTimeline([{ id: 'p1', name: 'P1', sessions: [{ updatedAt, durMs: 0 }] }], 30);
+	expect(timeline.days).toHaveLength(1);
+	expect(timeline.days[0]).toMatchObject({ date: '2025-03-15', dayTotalMs: 60000 });
+});
+
+test('client aggregate parser validates nested RPC data', () => {
+	const valid = { projects: [], timeline: { slotMinutes: 30, days: [] }, meta: { source: 'host', generatedAt: 1, degraded: false, warnings: [] } };
+	expect(parseAggregateResult(valid)).toBe(valid);
+	expect(() => parseAggregateResult({ ...valid, timeline: { slotMinutes: 30, days: [{ date: '2025-03-15', dayTotalMs: 1, slotBlocks: [{ slot: 0, projectId: 'p', name: 'P', colorIndex: 0, ms: NaN }] }] } })).toThrow(/timeline\.days\[0\]\.slotBlocks\[0\]\.ms/);
 });
 
 test('modelAgg splits LLM/tool duration by token share across slotUsage models', () => {

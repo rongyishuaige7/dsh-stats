@@ -49,9 +49,9 @@ npm publish                # prepublishOnly 自动重新构建（需先 npm logi
 ```bash
 # 方式 A（从 npm registry 安装/升级）
 dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
-dsh plugin --profile web add @rongyi7/dsh-stats@1.1.44     # 指定版本
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.0     # 指定版本
 # 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.1.44.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz
 ```
 
 即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
@@ -77,6 +77,7 @@ dsh web
 - **成本计算**：按每会话实际模型 + 逐槽实际价格（8.17 前平价；8.17 后峰谷，
   高峰 9:00–12:00 / 14:00–18:00 北京时间）自动计价，无需手动选择。
 - **日期范围**：近 7/30/90 天/全部，同时作用于总览（重建聚合）与时间线。
+- **数据质量**：面板明确显示「精确（宿主）」「部分精确」「已过期」或「近似（客户端）」；日志不完整或缺失时会在数据源提示中告警，不会伪装成精确结果。
 - **打磨**：选项持久化（localStorage）、列排序、CSV/JSON 导出、图例过滤、60s 自动刷新 + 手动刷新。
 
 ## 数据流（Tier 2）
@@ -93,7 +94,7 @@ dsh web
     constructor: __runInitializers 触发 @Remote 标记注册（漏掉会导致 SRC 派发失效）
     aggregate(): 读 workspace.json + session_projcache.json（tokenUsage/sessionStats 聚合）
                + 解码 session.jsonl.zstd（时间戳/模型/usage 按 turn:step 去重）
-               → { projects, timeline }（会话带 model / slots / slotUsage）
+               → { projects, timeline, meta }（会话带 model / slots / slotStats / slotUsage / quality）
 ```
 
 要点（踩过的坑）：
@@ -111,7 +112,7 @@ dsh web
 ```bash
 # 改 src/ 后重新构建 + 重新打包 + 重装进 profile，再重启
 npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm 重装
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.0.tgz   # pnpm 重装
 # 重启 dsh web
 ```
 
@@ -123,5 +124,8 @@ dsh plugin --profile web add ./rongyi7-dsh-stats-1.0.0.tgz   # pnpm 重装
 | 实时性 | 当前会话投影缓存秒级滞后，60s 自动刷新兜底 |
 | 解码开销 | 会话很多时宿主每次 RPC 全量解码（已加 mtime 缓存，跨请求不重复解码；首次仍慢） |
 | 调价边界 | 8.17 调价后，历史会话按「发生时的价格」计价（正是预期行为），无历史价格回填 |
+| 未知模型 | 无法识别的模型成本显示「—」，不会猜测价格 |
+| 时长口径 | 项目 LLM/工具时长是工作量累计；同一项目并发会话在时间线中合并为墙钟区间 |
+| 存储不完整 | 日志缺失、损坏或正写入时会标记为「部分精确/已过期」，必要时使用 projection cache token 总量并提示告警 |
 
 说明：时间线切天、峰谷时段、计价均已按显式北京时间（UTC+8）处理，与宿主机时区无关。

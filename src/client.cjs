@@ -8,6 +8,7 @@ var useEffect = react.useEffect;
 var Fragment = react.Fragment;
 var IconDataOutline16 = primitives.IconDataOutline16;
 var IconCloseOutline16 = primitives.IconCloseOutline16;
+var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // ------------------------------------------------------------------
 // 格式化
@@ -32,8 +33,8 @@ function fmtDuration(ms) {
 }
 function fmtClock(ms) {
 	if (ms == null || !Number.isFinite(ms)) return "—";
-	var d = new Date(ms);
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	var d = new Date(ms + BEIJING_OFFSET_MS);
+	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : `${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`; }
@@ -42,7 +43,6 @@ function fmtN(n) { return n == null || !Number.isFinite(n) ? "—" : n.toLocaleS
 function sessionCounts(sessions) {
 	var c = { main: 0, subagent: 0 };
 	(sessions || []).forEach(function (s) {
-		if (s.archived) return; // 归档会话不显示（宿主已排除，双保险）
 		if (s.subagent) c.subagent++;
 		else c.main++;
 	});
@@ -86,7 +86,8 @@ function costOf(stats, price) {
 	return miss + hit + out;
 }
 function fmtCost(rmb) {
-	if (rmb == null || isNaN(rmb) || rmb <= 0) return "¥0";
+	if (rmb == null || !Number.isFinite(rmb)) return "—";
+	if (rmb <= 0) return "¥0";
 	if (rmb >= 1000) return "¥" + rmb.toFixed(0);
 	if (rmb >= 0.01) return "¥" + rmb.toFixed(2);
 	return "¥" + rmb.toFixed(4);
@@ -114,21 +115,27 @@ function sessionCost(s) {
 		var total = 0;
 		for (var i = 0; i < s.slotUsage.length; i++) {
 			var su = s.slotUsage[i];
-			var m = PRICING[su.model || s.model || "deepseek-v4-pro"] || PRICING["deepseek-v4-pro"];
+			var m = PRICING[su.model || s.model];
+			if (!m) return null;
 			var price = priceForSlot(su.slot, m);
 			total += (su.uncached + su.cacheWrite) * price.miss / 1e6 + su.cacheRead * price.hit / 1e6 + su.output * price.out / 1e6;
 		}
 		return total;
 	}
 	// 无逐槽数据（客户端近似）：按会话模型 + 更新时间判定（8.17 前平价，否则保守按空闲价）
-	var m = PRICING[s.model || "deepseek-v4-pro"] || PRICING["deepseek-v4-pro"];
+	var m = PRICING[s.model];
+	if (!m) return null;
 	var price = s.updatedAt != null && s.updatedAt < PRICE_CHANGE_AT ? m.legacy : m.v0817.offPeak;
 	return costOf(s.stats, price);
 }
 // 项目成本 = 各会话成本之和
 function projectCost(p) {
 	var total = 0;
-	for (var i = 0; i < p.sessions.length; i++) total += sessionCost(p.sessions[i]);
+	for (var i = 0; i < p.sessions.length; i++) {
+		var cost = sessionCost(p.sessions[i]);
+		if (cost == null) return null;
+		total += cost;
+	}
 	return total;
 }
 
@@ -147,34 +154,33 @@ function sumSessionStats(sessions) {
 	});
 	return display(raw);
 }
-// 按日期过滤项目会话并重建聚合（updatedAt 落在当天 [00:00, 次日 00:00)）。
-// 同时把每个会话的 slotUsage 裁剪到当天，并按裁剪后的槽重算 token 统计：
-// 否则跨天会话的完整成本/token 会被整段算进某一天（如今天 ¥31 偏高、昨天 ¥1 偏低）。
-function applyDate(projects, dateKey) {
-	if (!dateKey) return projects;
-	var dayStart = new Date(dateKey + "T00:00:00").getTime();
-	var dayEnd = dayStart + 86400000;
+function slotOnDate(slot, dateKey) {
+	return localDayKey(slot * SLOT_MS) === dateKey;
+}
+function slotInWindow(slot, startMs, endMs) {
+	var t = slot * SLOT_MS;
+	return t >= startMs && t < endMs;
+}
+
+// 按北京时间日期过滤并重建聚合。宿主数据同时裁剪 activity slots、token slots
+// 和 stats slots；因此无 token 的工具活动不会丢失，跨日会话也不会重复整段统计。
+function applyWindow(projects, startMs, endMs) {
+	if (startMs == null || endMs == null) return projects;
 	return projects.map((p) => {
 		var sessions = p.sessions.filter(function(s) {
-			// 有逐槽数据：按 slot 是否落在当天判断（跨日会话保留，后续 clip 精确切分）
-			if (s.slotUsage && s.slotUsage.length) {
-				return s.slotUsage.some(function(u) {
-					var t = u.slot * 1800000;
-					return t >= dayStart && t < dayEnd;
-				});
-			}
+			var detailedRows = (s.slots || []).concat(s.slotStats || [], s.slotUsage || []);
+			if (detailedRows.length) return detailedRows.some(function(x) { return slotInWindow(x.slot, startMs, endMs); });
 			// 无逐槽数据（客户端近似）：退回按 updatedAt 判断
-			return s.updatedAt != null && s.updatedAt >= dayStart && s.updatedAt < dayEnd;
+			return s.updatedAt != null && s.updatedAt >= startMs && s.updatedAt < endMs;
 		});
-		if (!sessions.length) return { ...p, sessions: [], sessionCount: 0, subagentCount: 0, lastActiveAt: null, stats: display({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }) };
+		if (!sessions.length) return null;
 		// 裁剪每个会话到当天
 		var clipped = sessions.map(function(s) {
-			var hasSlots = s.slotUsage && s.slotUsage.length > 0;
-			if (!hasSlots) return s; // 无逐槽数据（客户端近似），无法按天拆分，保留
-			var su = s.slotUsage.filter(function(u) {
-				var t = u.slot * 1800000;
-				return t >= dayStart && t < dayEnd;
-			});
+			var hasDetailed = (s.slotUsage && s.slotUsage.length) || (s.slotStats && s.slotStats.length) || (s.slots && s.slots.length);
+			if (!hasDetailed) return s;
+			var su = (s.slotUsage || []).filter(function(u) { return slotInWindow(u.slot, startMs, endMs); });
+			var ss = (s.slotStats || []).filter(function(x) { return slotInWindow(x.slot, startMs, endMs); });
+			var activity = (s.slots || []).filter(function(x) { return slotInWindow(x.slot, startMs, endMs); });
 			var tok = { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
 			su.forEach(function(u) {
 				tok.uncached += u.uncached || 0;
@@ -183,23 +189,43 @@ function applyDate(projects, dateKey) {
 				tok.cacheWrite += u.cacheWrite || 0;
 				tok.reasoning += u.reasoning || 0;
 			});
-			// 有逐槽数据时：token 字段按当天槽重算；turns/steps/时长等会话粒度指标
-			// 没有逐日分布，保留会话完整值（仅作参考）。无逐槽数据（客户端近似）时
-			// 无法拆分，保留原 stats。
 			var st = s.stats || {};
+			var hasUsageData = Array.isArray(s.slotUsage) && s.slotUsage.length > 0;
+			var timed = ss.reduce(function(acc, row) {
+				acc.turns += row.turns || 0; acc.steps += row.steps || 0;
+				acc.llmMs += row.llmMs || 0; acc.toolMs += row.toolMs || 0;
+				acc.ttftMs += row.ttftMs || 0; acc.ttftSteps += row.ttftSteps || 0;
+				acc.decodeMs += row.decodeMs || 0; acc.decodeTokens += row.decodeTokens || 0;
+				return acc;
+			}, { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 });
+			// 旧宿主或降级会话没有有效 slotStats 时，保留会话级时间指标。
+			var useTimed = Array.isArray(s.slotStats) && s.slotStats.length > 0;
 			var newStats = display({
-				turns: st.turns || 0, steps: st.steps || 0,
-				llmMs: st.llmMs || 0, toolMs: st.toolMs || 0,
-				ttftMs: st.ttftMs || 0, ttftSteps: st.ttftSteps || 0,
-				decodeMs: st.decodeMs || 0, decodeTokens: st.decodeTokens || 0,
-				uncached: tok.uncached, output: tok.output,
-				cacheRead: tok.cacheRead, cacheWrite: tok.cacheWrite,
-				reasoning: tok.reasoning
+				turns: useTimed ? timed.turns : (st.turns || 0), steps: useTimed ? timed.steps : (st.steps || 0),
+				llmMs: useTimed ? timed.llmMs : (st.llmMs || 0), toolMs: useTimed ? timed.toolMs : (st.toolMs || 0),
+				ttftMs: useTimed ? timed.ttftMs : (st.ttftMs || 0), ttftSteps: useTimed ? timed.ttftSteps : (st.ttftSteps || 0),
+				decodeMs: useTimed ? timed.decodeMs : (st.decodeMs || 0), decodeTokens: useTimed ? timed.decodeTokens : (st.decodeTokens || 0),
+				uncached: hasUsageData ? tok.uncached : (st.uncached || 0), output: hasUsageData ? tok.output : (st.output || st.outputTokens || 0),
+				cacheRead: hasUsageData ? tok.cacheRead : (st.cacheRead || 0), cacheWrite: hasUsageData ? tok.cacheWrite : (st.cacheWrite || 0),
+				reasoning: hasUsageData ? tok.reasoning : (st.reasoning || 0)
 			});
-			return { ...s, slotUsage: su, stats: newStats };
+			return { ...s, slots: activity, slotStats: ss, slotUsage: su, stats: newStats, durMs: newStats.llmMs + newStats.toolMs };
 		});
-		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length, stats: sumSessionStats(clipped) };
-	});
+		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length,
+			lastActiveAt: clipped.reduce(function(max, s) { return Math.max(max || 0, s.updatedAt || 0); }, 0) || null,
+			stats: sumSessionStats(clipped) };
+	}).filter(Boolean);
+}
+
+function applyDate(projects, dateKey) {
+	if (!dateKey) return projects;
+	var start = Date.parse(dateKey + "T00:00:00+08:00");
+	return applyWindow(projects, start, start + 86400000);
+}
+function applyRange(projects, endKey, days) {
+	if (!endKey || !days) return projects;
+	var end = Date.parse(endKey + "T00:00:00+08:00") + 86400000;
+	return applyWindow(projects, end - days * 86400000, end);
 }
 
 // 活动日列表（timeline 里有活动的日期，升序）
@@ -212,9 +238,9 @@ function activityDates(timeline) {
 // 中文日期：2026年8月16日 周六
 function fmtDateCN(dateKey) {
 	if (!dateKey) return "—";
-	var d = new Date(dateKey + "T00:00:00");
+	var d = new Date(dateKey + "T00:00:00Z");
 	var DOW = ["日","一","二","三","四","五","六"];
-	return d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日 周" + DOW[d.getDay()];
+	return dateKey.slice(0, 4) + "年" + Number(dateKey.slice(5, 7)) + "月" + Number(dateKey.slice(8, 10)) + "日 周" + DOW[d.getUTCDay()];
 }
 
 // 偏好持久化（localStorage）
@@ -247,7 +273,8 @@ function rawOf(s) {
 		ttftMs: st.ttftMs || 0, ttftSteps: st.ttftSteps || 0,
 		decodeMs: st.decodeMs || 0, decodeTokens: st.decodeTokens || 0,
 		uncached: b.uncachedInputTokens || 0, output: b.outputTokens || 0,
-		cacheRead: b.cacheReadTokens || 0, cacheWrite: b.cacheWriteTokens || 0
+		cacheRead: b.cacheReadTokens || 0, cacheWrite: b.cacheWriteTokens || 0,
+		reasoning: b.reasoningTokens || 0
 	};
 }
 function display(raw) {
@@ -276,9 +303,14 @@ function basename(p) {
 	return (p || "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "";
 }
 
-function aggregate(sessionSummaries, workspaceItems, t) {
+function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 	var byId = new Map();
 	sessionSummaries.forEach((s) => byId.set(s.id, s));
+	var archivedSet = new Set(archivedIds || []);
+	var isBlank = function(s) {
+		return s.blank === true || s.sessionListMetadata?.blank === true || s.projectionValues?.sessionListMetadata?.blank === true;
+	};
+	var isArchived = function(s) { return s.archived === true || archivedSet.has(s.id); };
 	var projects = [];
 	var accounted = new Set();
 
@@ -293,8 +325,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var lastActiveAt = null;
 		var subagentCount = 0;
 		members.forEach((s) => {
-			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
-			if (s.archived === true) return; // 归档会话与宿主口径一致：不计入列表与聚合
+			if (isBlank(s)) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
 			if (s.origin === "subagent") subagentCount++;
@@ -304,7 +335,7 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 				updatedAt: s.updatedAt || null,
 				model: s.model || null,
 				subagent: s.origin === "subagent",
-				archived: s.archived === true,
+				archived: isArchived(s),
 				stats: display(raw),
 				durMs: raw.llmMs + raw.toolMs
 			});
@@ -337,11 +368,10 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 		var lastActiveAt = null;
 		var subagentCount = 0;
 		members.forEach((s) => {
-			if (s.projectionValues && s.projectionValues.sessionListMetadata && s.projectionValues.sessionListMetadata.blank) return;
-			if (s.archived === true) return; // 归档会话与宿主口径一致：不计入列表与聚合
+			if (isBlank(s)) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
-			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, model: s.model || null, subagent: s.origin === "subagent", archived: s.archived === true, stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, model: s.model || null, subagent: s.origin === "subagent", archived: isArchived(s), stats: display(raw), durMs: raw.llmMs + raw.toolMs });
 			if (s.origin === "subagent") subagentCount++;
 			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 		});
@@ -357,11 +387,13 @@ function aggregate(sessionSummaries, workspaceItems, t) {
 // 时间线（Tier 1：会话粒度，用 updatedAt 与 llm+tool 时长近似）
 // ------------------------------------------------------------------
 function dayKey(ms) {
-	var d = new Date(ms);
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	return localDayKey(ms);
 }
 function dayStartMs(key) {
 	return new Date(key + "T00:00:00+08:00").getTime();
+}
+function dateKeyOffset(key, delta) {
+	return new Date(Date.parse(key + "T00:00:00Z") + delta * 86400000).toISOString().slice(0, 10);
 }
 function buildTimeline(projects, slotMinutes) {
 	var slotMs = slotMinutes * 60000;
@@ -371,9 +403,10 @@ function buildTimeline(projects, slotMinutes) {
 
 	projects.forEach((p) => {
 		p.sessions.forEach((s) => {
-			if (!s.durMs || !s.updatedAt) return;
-			var end = s.updatedAt;
-			var start = end - s.durMs;
+			if (!s.updatedAt) return;
+			var duration = Math.max(s.durMs || 0, 0);
+			var start = duration > 0 ? s.updatedAt - duration : s.updatedAt;
+			var end = duration > 0 ? s.updatedAt : s.updatedAt + 60000;
 			var startSlot = Math.floor(start / slotMs);
 			var endSlot = Math.floor(end / slotMs);
 			for (var k = startSlot; k <= endSlot; k++) {
@@ -421,6 +454,10 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-panel{width:min(1180px,100%);background:var(--dsw-specific-menu,#161a21);border:1px solid var(--dsw-alias-border-inverted,#2a303c);border-radius:16px;box-shadow:var(--dsw-shadow-lv3,0 20px 60px rgba(0,0,0,.5));color:var(--dsw-alias-label-primary,#e7eaf0);display:flex;flex-direction:column;overflow:hidden}" +
 	".dss-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1}" +
+	".dss-source{display:inline-flex;align-items:center;margin-left:9px;padding:2px 6px;border-radius:5px;font-size:10px;font-weight:600;color:#34d399;background:rgba(52,211,153,.12);vertical-align:1px}" +
+	".dss-source.loading,.dss-source.refreshing{color:#60a5fa;background:rgba(96,165,250,.12)}" +
+	".dss-source.partial,.dss-source.stale{color:#fbbf24;background:rgba(251,191,36,.12)}" +
+	".dss-source.fallback{color:#f87171;background:rgba(248,113,113,.12)}" +
 	".dss-tabs{display:flex;gap:4px}" +
 	".dss-tabs button{background:none;border:none;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}" +
 	".dss-tabs button.on{background:rgba(79,140,255,.14);color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
@@ -490,9 +527,9 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-day-pname{font-size:12.5px;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-day-more{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280);padding-left:18px}" +
 	".dss-track{display:grid;grid-template-columns:repeat(48,1fr);margin:4px 0}" +
-	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:column;justify-content:flex-end;gap:1px}" +
+	".dss-cell{position:relative;min-width:0;border-right:1px solid var(--dsw-alias-border,#2a303c);display:flex;flex-direction:row;align-items:flex-end;gap:1px}" +
 	".dss-cell:last-child{border-right:none}" +
-	".dss-blk{width:100%;border-radius:3px;background:var(--c);cursor:pointer;transition:filter .12s}" +
+	".dss-blk{flex:1;min-width:2px;border-radius:3px;background:var(--c);cursor:pointer;transition:filter .12s}" +
 	".dss-blk:hover{filter:brightness(1.25)}" +
 		// 右侧信息列：总时长 + 活动时段 + 项目数
 	".dss-day-info{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:4px;padding:8px 0 8px 12px;min-width:0}" +
@@ -510,7 +547,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-nav-date{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums;min-width:160px;text-align:center}" +
 	".dss-nav-note{margin-left:auto;color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px}" +
 	".dss-cost{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
-	"[data-color='0']{--c:#4f8cff}[data-color='1']{--c:#34d399}[data-color='2']{--c:#fbbf24}[data-color='3']{--c:#f472b6}[data-color='4']{--c:#a78bfa}[data-color='5']{--c:#22d3ee}[data-color='6']{--c:#fb923c}[data-color='7']{--c:#e879f9}[data-color='8']{--c:#a3e635}" +
+	"[data-color='0']{--c:#4f8cff}[data-color='1']{--c:#34d399}[data-color='2']{--c:#fbbf24}[data-color='3']{--c:#f472b6}[data-color='4']{--c:#a78bfa}[data-color='5']{--c:#22d3ee}[data-color='6']{--c:#fb923c}[data-color='7']{--c:#e879f9}[data-color='8']{--c:#a3e635}[data-color='9']{--c:#f87171}[data-color='10']{--c:#2dd4bf}[data-color='11']{--c:#facc15}[data-color='12']{--c:#60a5fa}[data-color='13']{--c:#c084fc}[data-color='14']{--c:#fb7185}[data-color='15']{--c:#38bdf8}" +
 	// 用量趋势（重构版）
 	".dss-trends{display:flex;flex-direction:column;gap:14px}" +
 	// hero：总 token + 消费 + 最常用模型
@@ -626,7 +663,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	// tooltip 结构化样式
 	".dss-tip-title{font-weight:650;margin-bottom:5px;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-tip-row{display:flex;justify-content:space-between;gap:14px;line-height:1.6;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
-	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}";
+	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
 
 // ------------------------------------------------------------------
 // 组件
@@ -654,14 +692,16 @@ function StatsTrigger(props) {
 function SummaryCards(props) {
 	var projects = props.projects;
 	var t = props.t;
-	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0 };
+	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0, costKnown: true };
 	var totC = { main: 0, subagent: 0 };
 	projects.forEach(function(p) {
 		addCounts(totC, sessionCounts(p.sessions));
 		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
 		tot.llmMs += p.stats.llmMs; tot.toolMs += p.stats.toolMs;
 		tot.input += p.stats.inputTokens; tot.output += p.stats.outputTokens; tot.cacheRead += p.stats.cacheRead;
-		tot.cost += projectCost(p);
+		var cost = projectCost(p);
+		if (cost == null) tot.costKnown = false;
+		else tot.cost += cost;
 	});
 	var cards = [
 		[t("card.projects"), fmtN(projects.length)],
@@ -672,7 +712,7 @@ function SummaryCards(props) {
 		[t("card.input"), fmtTokens(tot.input)],
 		[t("card.output"), fmtTokens(tot.output)],
 		[t("card.cacheHit"), tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
-		[t("card.cost"), fmtCost(tot.cost)]
+		[t("card.cost"), fmtCost(tot.costKnown ? tot.cost : null)]
 	];
 	return e("div", { className: "dss-cards" },
 		cards.map((c, i) => e("div", { className: "dss-card", key: i },
@@ -690,7 +730,7 @@ function Legend(props) {
 		projects.map((p, i) =>
 			e("span", {
 				key: p.id, className: "dss-chip" + (hidden[p.id] ? " off" : ""),
-				"data-color": String(i), onClick: () => onToggle(p.id)
+				"data-color": String(i % 16), onClick: () => onToggle(p.id)
 			},
 				e("span", { className: "sw" }), p.name
 			)
@@ -700,7 +740,7 @@ function Legend(props) {
 
 function sortValue(p, key) {
 	switch (key) {
-		case "cost": return projectCost(p);
+		case "cost": { var cost = projectCost(p); return cost == null ? -1 : cost; }
 		case "input": return p.stats.inputTokens;
 		case "output": return p.stats.outputTokens;
 		case "turns": return p.stats.turns;
@@ -724,27 +764,27 @@ function ProjectsTable(props) {
 	var sort = sortPair[0], setSort = sortPair[1];
 
 	var idxOf = new Map(projects.map((p, i) => [p.id, i]));
+	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
 	var sorted = projects.filter((p) => !hidden[p.id]);
 	sorted.sort((a, b) => {
-		var va = sortValue(a, sort.key), vb = sortValue(b, sort.key);
+		var va = sortValue(a, effSortKey), vb = sortValue(b, effSortKey);
 		return (va > vb ? 1 : (va < vb ? -1 : 0)) * sort.dir;
 	});
 
 	var SORT_FIELDS = [
-		{ key: "cost", label: "消费" },
-		{ key: "sessions", label: "会话" },
-		{ key: "input", label: "输入" },
-		{ key: "output", label: "输出" },
-		{ key: "turns", label: "轮" },
-		{ key: "steps", label: "步" },
-		{ key: "tool", label: "工具" },
-		{ key: "hit", label: "缓存命中" }
+		{ key: "cost", label: t("th.cost") },
+		{ key: "sessions", label: t("card.sessions") },
+		{ key: "input", label: t("w.input") },
+		{ key: "output", label: t("w.output") },
+		{ key: "turns", label: t("w.turns") },
+		{ key: "steps", label: t("w.steps") },
+		{ key: "tool", label: t("w.tool") },
+		{ key: "hit", label: t("w.cacheHit") }
 	];
-	if (!dayMode) SORT_FIELDS.push({ key: "lastActive", label: "最近活跃" });
+	if (!dayMode) SORT_FIELDS.push({ key: "lastActive", label: t("th.lastActive") });
 
-	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
 	var toolbar = e("div", { className: "dss-sortbar" },
-		e("span", { className: "dss-sortbar-label" }, "排序"),
+		e("span", { className: "dss-sortbar-label" }, t("sort.label")),
 		e("select", {
 			className: "dss-sortbar-select",
 			value: effSortKey,
@@ -755,8 +795,8 @@ function ProjectsTable(props) {
 		e("button", {
 			className: "dss-sortbar-dir",
 			onClick: function() { setSort(function(s) { return { key: s.key, dir: -s.dir }; }); },
-			title: "切换升降序"
-		}, sort.dir > 0 ? "升序 ↑" : "降序 ↓")
+			title: t("sort.toggle")
+		}, sort.dir > 0 ? t("sort.asc") + " ↑" : t("sort.desc") + " ↓")
 	);
 
 	var cards = sorted.map(function(p) {
@@ -777,7 +817,7 @@ function ProjectsTable(props) {
 			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
 			var sessRow = function(sd) {
 				return e("div", { className: "dss-sess", key: sd.id },
-					e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null),
+					e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
 					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
 					e("span", { className: "st" }, fmtN(sd.stats.turns) + " " + t("w.turns") + " · " + fmtN(sd.stats.steps) + " " + t("w.steps")),
 					e("span", { className: "st" }, "LLM " + fmtDuration(sd.stats.llmMs)),
@@ -796,13 +836,13 @@ function ProjectsTable(props) {
 			detail = e("div", { className: "dss-pcard-detail" }, detailChildren);
 		}
 
-		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i), onClick: function() { onSelect(p.id); } },
+		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16), onClick: function() { onSelect(p.id); } },
 			e("div", { className: "dss-pcard-head" },
 				e("div", { className: "dss-proj" },
 					e("span", { className: "dot" }),
 					e("span", { className: "dss-proj-txt" },
 						e("div", { className: "nm" }, p.name),
-						e("div", { className: "ph" }, esc(p.path))
+						e("div", { className: "ph" }, p.path)
 					)
 				),
 				e("div", { className: "dss-pcard-metrics" },
@@ -874,7 +914,7 @@ function TimelineView(props) {
 				e("div", null)
 			),
 			days.map((d) => {
-				var cells = new Array(48).fill(null);
+				var cells = Array.from({ length: 48 }, function() { return []; });
 				// 当天参与的项目（去重保序，隐藏项目跳过）→ 左侧颜色块列表
 				var seenP = new Map();
 				var minSlot = 47, maxSlot = -1;
@@ -884,28 +924,29 @@ function TimelineView(props) {
 					if (b.slot < minSlot) minSlot = b.slot;
 					if (b.slot > maxSlot) maxSlot = b.slot;
 					var h = Math.min(maxBlockH, Math.max(2, Math.round((b.ms / slotMs) * maxBlockH)));
-					cells[b.slot] = e("div", {
+					if (b.slot < 0 || b.slot >= cells.length) return;
+					cells[b.slot].push(e("div", {
 						key: b.projectId + "-" + b.slot,
 						className: "dss-blk",
-						"data-color": String(b.colorIndex),
+						"data-color": String((b.colorIndex || 0) % 16),
 						style: { height: h + "px" },
 						onMouseEnter: (ev) => showTip(tt, `${b.name} · ${d.date}`, b.ms, ev),
 						onMouseLeave: () => hideTip(tt)
-					});
+					}));
 				});
 				var projList = Array.from(seenP.values());
 				var MAXL = 4;
-				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00+08:00").getUTCDay()];
+				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00Z").getUTCDay()];
 				var leftCol = e("div", { className: "dss-day-projs" },
 					// 多天模式需要日期区分各行；单天（按日）日期已在顶部导航显示，不重复
 					days.length > 1 ? e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd) : null,
 					projList.slice(0, MAXL).map(function(pj, pi) {
 						return e("div", { className: "dss-day-proj", key: pi },
-							e("span", { className: "dss-day-dot", "data-color": String(pj.colorIndex) }),
+							e("span", { className: "dss-day-dot", "data-color": String((pj.colorIndex || 0) % 16) }),
 							e("span", { className: "dss-day-pname", title: pj.name }, pj.name)
 						);
 					}),
-					projList.length > MAXL ? e("div", { className: "dss-day-more" }, "+" + (projList.length - MAXL) + " 项") : null
+					projList.length > MAXL ? e("div", { className: "dss-day-more" }, "+" + (projList.length - MAXL) + " " + tt("w.projects")) : null
 				);
 				// 右侧信息列：总时长 + 活动时段 + 项目数，填充右侧空白
 				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
@@ -914,12 +955,12 @@ function TimelineView(props) {
 				var rightCol = e("div", { className: "dss-day-info" },
 					e("div", { className: "dur" }, fmtDuration(visibleMs)),
 					e("div", { className: "span" }, spanText),
-					e("div", { className: "cnt" }, projList.length + " 项目")
+					e("div", { className: "cnt" }, projList.length + " " + tt("w.projects"))
 				);
 				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
 					leftCol,
 					e("div", { className: "dss-track" },
-						cells.map((c, i) => e("div", { className: "dss-cell", key: i }, c))
+						cells.map((blocks, i) => e("div", { className: "dss-cell", key: i }, blocks))
 					),
 					rightCol
 				);
@@ -944,13 +985,16 @@ function DateNavigator(props) {
 
 	return e("div", { className: "dss-nav" },
 		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
-			e("button", { className: mode === "day" ? "on" : "", onClick: () => setMode("day") }, "按日"),
-			e("button", { className: mode === "all" ? "on" : "", onClick: () => setMode("all") }, "全部")
+			e("button", { className: mode === "day" ? "on" : "", onClick: () => setMode("day") }, t("nav.day")),
+			e("button", { className: mode === "7" ? "on" : "", onClick: () => setMode("7") }, t("nav.days7")),
+			e("button", { className: mode === "30" ? "on" : "", onClick: () => setMode("30") }, t("nav.days30")),
+			e("button", { className: mode === "90" ? "on" : "", onClick: () => setMode("90") }, t("nav.days90")),
+			e("button", { className: mode === "all" ? "on" : "", onClick: () => setMode("all") }, t("nav.all"))
 		),
 		mode === "day" ? e(Fragment, null,
-			e("button", { className: "dss-nav-btn", onClick: () => move(-1), disabled: idx <= 0, title: "前一天" }, "‹"),
-			e("span", { className: "dss-nav-date" }, fmtDateCN(effectiveDate)),
-			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: "后一天" }, "›")
+			e("button", { className: "dss-nav-btn", onClick: () => move(-1), disabled: idx <= 0, title: t("nav.previous") }, "‹"),
+			e("span", { className: "dss-nav-date" }, effectiveDate ? effectiveDate + " " + t("w.dayPrefix") + t("w.weekdays").split(",")[new Date(effectiveDate + "T00:00:00Z").getUTCDay()] : "—"),
+			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: t("nav.next") }, "›")
 		) : null,
 		e("span", { className: "dss-nav-note" }, t("hint.cost"))
 	);
@@ -966,15 +1010,21 @@ function download(filename, content, mime) {
 function exportJSON(projects) {
 	download("dsh-stats.json", JSON.stringify(projects, null, 2), "application/json");
 }
+function csvField(value) {
+	if (value == null) return "";
+	var text = String(value);
+	return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
 function exportCSV(projects, t) {
-	var lines = [[t("th.project"), t("w.path"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"), t("th.input"), t("th.output"), t("th.cacheHit"), t("th.cost")].join(",")];
+	var lines = [[t("th.project"), t("w.path"), t("w.sessionTotal"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"), t("th.input"), t("th.output"), t("th.cacheHit"), t("th.cost")].map(csvField).join(",")];
 	projects.forEach(function (p) {
 		var s = p.stats;
+		var cost = projectCost(p);
 		lines.push([
-			JSON.stringify(p.name), JSON.stringify(p.path), p.sessionCount, JSON.stringify(fmtSessionCounts(sessionCounts(p.sessions))),
+			p.name, p.path, p.sessionCount, fmtSessionCounts(sessionCounts(p.sessions)),
 			s.turns, s.steps, Math.round(s.llmMs), Math.round(s.toolMs),
-			s.inputTokens, s.outputTokens, s.cacheHitPct == null ? "" : s.cacheHitPct, projectCost(p).toFixed(4)
-		].join(","));
+			s.inputTokens, s.outputTokens, s.cacheHitPct == null ? "" : s.cacheHitPct, cost == null ? "" : cost.toFixed(4)
+		].map(csvField).join(","));
 	});
 	download("dsh-stats.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
 }
@@ -986,23 +1036,32 @@ function StatsPanel(props) {
 	var onClose = props.onClose;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
+	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
 	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
 	var navPair = usePref("nav", { mode: "day", date: null }); var nav = navPair[0], setNav = navPair[1];
 	var [selected, setSelected] = useState(null);
 	var [remoteData, setRemoteData] = useState(null);
+	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
 	var [refreshTick, setRefreshTick] = useState(0);
 
 	useEffect(() => {
-		if (!open || !open.open || !aggregateRemote) return;
+		if (!open || !open.open) return;
+		if (!aggregateRemote) { setSourceState({ kind: "fallback", error: remoteMountError || null, at: null }); return; }
 		var cancelled = false;
-		aggregateRemote().then((r) => { if (!cancelled) setRemoteData(r); })
+		setSourceState(function(prev) { return { kind: remoteData ? "refreshing" : "loading", error: null, at: prev.at }; });
+		aggregateRemote().then((r) => {
+			if (cancelled) return;
+			setRemoteData(r);
+			setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt || Date.now() });
+		})
 			.catch((err) => {
-				// 偶发失败（连接抖动/宿主繁忙）时保留上次的准确数据，仅记录日志，不降级。
-				if (!cancelled) console.warn("[dsh-stats] aggregate 调用失败（保留上次数据）:", err);
+				if (cancelled) return;
+				console.warn("[dsh-stats] aggregate 调用失败:", err);
+				setSourceState({ kind: remoteData ? "stale" : "fallback", error: err?.message || String(err), at: remoteData?.meta?.generatedAt || null });
 			});
 		return () => { cancelled = true; };
-	}, [open, aggregateRemote, refreshTick]);
+	}, [open, aggregateRemote, remoteMountError, refreshTick]);
 
 	// 面板打开期间每 60 秒自动刷新一次
 	useEffect(() => {
@@ -1016,12 +1075,13 @@ function StatsPanel(props) {
 			var projects = remoteData.projects.map((p) => ({
 				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, subagentCount: p.subagentCount || 0, lastActiveAt: p.lastActiveAt,
 				stats: display(p.stats),
-				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slotUsage: s.slotUsage }))
+				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slots: s.slots, slotStats: s.slotStats, slotUsage: s.slotUsage, quality: s.quality }))
 			}));
-			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true };
+			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true, meta: remoteData.meta };
 		}
 		var summaries = sessionsSnap && sessionsSnap.byId ? Object.values(sessionsSnap.byId) : [];
-		var projects = aggregate(summaries, workspacesSnap && workspacesSnap.items, t);
+		var archivedIds = workspacesSnap?.archivedSessionIds || workspacesSnap?.global?.archivedSessionIds || [];
+		var projects = aggregate(summaries, workspacesSnap && workspacesSnap.items, t, archivedIds);
 		var timeline = buildTimeline(projects, 30);
 		return { projects, timeline, remote: false };
 	}, [remoteData, sessionsSnap, workspacesSnap]);
@@ -1038,29 +1098,38 @@ function StatsPanel(props) {
 	}, [nav, dates]);
 
 	// 按日过滤后的项目（全部模式 = 全量）
-	var dateProjects = useMemo(() => applyDate(data.projects, effectiveDate), [data.projects, effectiveDate]);
+	var rangeEndDate = localDayKey(Date.now());
+	var rangeDays = nav && (nav.mode === "7" || nav.mode === "30" || nav.mode === "90") ? Number(nav.mode) : null;
+	var dateProjects = useMemo(() => effectiveDate ? applyDate(data.projects, effectiveDate) : rangeDays ? applyRange(data.projects, rangeEndDate, rangeDays) : data.projects,
+		[data.projects, effectiveDate, rangeEndDate, rangeDays]);
 
 	// 时间线视图：按日模式只保留选中日
 	var viewTimeline = useMemo(() => {
-		if (!effectiveDate) return data.timeline;
-		return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
-	}, [data.timeline, effectiveDate]);
+		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
+		if (rangeDays && rangeEndDate) {
+			var start = dateKeyOffset(rangeEndDate, -(rangeDays - 1));
+			return { days: (data.timeline.days || []).filter(function(d) { return d.date >= start && d.date <= rangeEndDate; }) };
+		}
+		return data.timeline;
+	}, [data.timeline, effectiveDate, rangeDays, rangeEndDate]);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
 	// 按日聚合：hero 总览 / 模型分布随选中日期变化（全部模式复用 globals，避免重复计算）
-	var dateGlobals = useMemo(() => (effectiveDate ? buildGlobals(dateProjects) : globals), [effectiveDate, dateProjects, globals]);
+	var dateGlobals = useMemo(() => (effectiveDate || rangeDays ? buildGlobals(dateProjects) : globals), [effectiveDate, rangeDays, dateProjects, globals]);
 
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...h, [id]: !h[id] }));
 	var visibleProjects = dateProjects.filter((p) => !hidden[p.id]);
+	var sourceLabel = t("source." + sourceState.kind);
+	var sourceTitle = sourceState.error || (sourceState.at ? t("source.updated") + " " + fmtClock(sourceState.at) : sourceLabel);
 
 	return e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); } },
 		e("div", { className: "dss-panel" },
 			e("div", { className: "dss-head" },
-				e("h2", null, t("title")),
+				e("h2", null, t("title"), e("span", { className: "dss-source " + sourceState.kind, title: sourceTitle }, sourceLabel)),
 				e("div", { className: "dss-tabs" },
 					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
 					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline")),
@@ -1081,7 +1150,7 @@ function StatsPanel(props) {
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 					e(ProjectsTable, { projects: dateProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, tt: t })
-				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate })
+				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate, t })
 			)
 		)
 	);
@@ -1116,32 +1185,32 @@ function TrendsView(props) {
 
 	var hero = e("div", { className: "dss-hero" },
 		e("div", { className: "dss-hero-main" },
-			e("div", { className: "dss-hero-k" }, "总 Token 消耗"),
+					e("div", { className: "dss-hero-k" }, props.t("trends.totalTokens")),
 			e("div", { className: "dss-hero-v" }, fmtTokens(totalTok)),
 			e("div", { className: "dss-hero-chips" },
-				e("span", { className: "dss-hero-chip" }, "输入 " + fmtTokens(totals.input || 0)),
-				e("span", { className: "dss-hero-chip" }, "输出 " + fmtTokens(totals.output || 0)),
-				e("span", { className: "dss-hero-chip" }, "思考 " + fmtTokens(totals.reasoning || 0)),
-				hitPct != null ? e("span", { className: "dss-hero-chip" }, "缓存命中 " + hitPct + "%") : null
+					e("span", { className: "dss-hero-chip" }, props.t("w.input") + " " + fmtTokens(totals.input || 0)),
+					e("span", { className: "dss-hero-chip" }, props.t("w.output") + " " + fmtTokens(totals.output || 0)),
+					e("span", { className: "dss-hero-chip" }, props.t("trends.totalReasoning") + " " + fmtTokens(totals.reasoning || 0)),
+					hitPct != null ? e("span", { className: "dss-hero-chip" }, props.t("w.cacheHit") + " " + hitPct + "%") : null
 			)
 		),
 		e("div", { className: "dss-hero-side" },
 			e("div", { className: "dss-hero-cell" },
-				e("div", { className: "dss-hero-k" }, "总消费"),
-				e("div", { className: "dss-hero-v dss-cost" }, fmtCost(dg.totalCost || 0))
+					e("div", { className: "dss-hero-k" }, props.t("trends.totalCost")),
+				e("div", { className: "dss-hero-v dss-cost" }, fmtCost(dg.totalCost))
 			),
 			e("div", { className: "dss-hero-cell" },
-				e("div", { className: "dss-hero-k" }, "最常用模型"),
+					e("div", { className: "dss-hero-k" }, props.t("trends.mostUsed")),
 				e("div", { className: "dss-hero-v model" }, topModel ? topModel.model : "—")
 			)
 		)
 	);
 
 	var metrics = [
-		{ v: fmtN(g.activeDays || 0), l: "活跃天数", s: "有活动的自然日" },
-		{ v: fmtN(g.streak || 0), l: "当前连续", s: "截至最近活动日" },
-		{ v: fmtN(g.longestStreak || 0), l: "最长连续", s: "历史最佳纪录" },
-		{ v: fmtN(g.sessions ? g.sessions.length : 0), l: "会话总数", s: "主会话 + 子会话" }
+			{ v: fmtN(g.activeDays || 0), l: props.t("trends.activeDays"), s: props.t("trends.activeDaysHint") },
+			{ v: fmtN(g.streak || 0), l: props.t("trends.streak"), s: props.t("trends.streakHint") },
+			{ v: fmtN(g.longestStreak || 0), l: props.t("trends.longestStreak"), s: props.t("trends.longestStreakHint") },
+			{ v: fmtN(g.sessions ? g.sessions.length : 0), l: props.t("trends.totalSessions"), s: props.t("trends.totalSessionsHint") }
 	];
 
 	return e("div", { className: "dss-trends" },
@@ -1155,21 +1224,21 @@ function TrendsView(props) {
 				);
 			})
 		),
-		e(Section, { title: "活动热力图", hint: "左侧：当月按实际天数 · 右侧：近 7 天每日 Token" },
+		e(Section, { title: props.t("trends.heatmap"), hint: props.t("trends.heatmapHint") },
 			e("div", { className: "dss-trend-duo" },
 				e("div", { className: "dss-duo-cell" },
-					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate })
+					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, t: props.t })
 				),
 				e("div", { className: "dss-duo-cell grow" },
-					e("div", { className: "dss-duo-title" }, "每日 Token（近 7 天）"),
-					e(DailyTrendChart, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate })
+						e("div", { className: "dss-duo-title" }, props.t("trends.dailyTrend")),
+						e(DailyTrendChart, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, t: props.t })
 				)
 			)
 		),
-		e(Section, { title: "模型分布", hint: "按输入 + 输出 token 占比" },
+		e(Section, { title: props.t("trends.modelDist"), hint: props.t("trends.modelHint") },
 			e("div", { className: "dss-model-split" },
-				e(ModelRing, { models: dg.models || [] }),
-				e(ModelList, { models: dg.models || [] })
+					e(ModelRing, { models: dg.models || [], t: props.t }),
+					e(ModelList, { models: dg.models || [], t: props.t })
 			)
 		)
 	);
@@ -1190,15 +1259,16 @@ function Section(props) {
 // 色阶按当月数据分位数分级（GitHub 风格）：无论总量大小，色差总是明显。
 function CalendarHeatmap(props) {
 	var byDay = props.byDay;
-	var today = new Date();
-	var todayKey = localDayKey(today.getTime());
+	var t = props.t;
+	var todayKey = localDayKey(Date.now());
 
-	var mo = { y: today.getFullYear(), m: today.getMonth() };
-	var first = new Date(mo.y, mo.m, 1);
-	var offset = (first.getDay() + 6) % 7; // 周一 = 0
-	var daysInMonth = new Date(mo.y, mo.m + 1, 0).getDate();
+	var mo = { y: Number(todayKey.slice(0, 4)), m: Number(todayKey.slice(5, 7)) - 1 };
+	var first = new Date(Date.UTC(mo.y, mo.m, 1));
+	var offset = (first.getUTCDay() + 6) % 7; // 周一 = 0
+	var daysInMonth = new Date(Date.UTC(mo.y, mo.m + 1, 0)).getUTCDate();
 
-	var DOW = ["一","二","三","四","五","六","日"];
+	var weekLabels = t("trends.weekdays").split(",");
+	var DOW = weekLabels.slice(1).concat(weekLabels[0]);
 
 	// 第一遍：收集当月所有活动天的总量 → 分位数阈值（25% / 50% / 75%）
 	var actTots = [];
@@ -1246,12 +1316,12 @@ function CalendarHeatmap(props) {
 			title: dk,
 			onMouseEnter: function(ev) {
 				var bbb = byDay.get(dk);
-				if (!bbb) { showTipRaw(tipRows(dk, [["活动", isFuture ? "未来日期" : "无"]]), ev); return; }
+				if (!bbb) { showTipRaw(tipRows(dk, [[t("trends.activity"), isFuture ? t("trends.futureDate") : t("trends.none")]]), ev); return; }
 				showTipRaw(tipRows(dk, [
-					["总输入", fmtTokens(bbb.input || 0)],
-					["总输出", fmtTokens(bbb.output || 0)],
-					["思考", fmtTokens(bbb.reasoning || 0)],
-					["开发时长", fmtDuration((bbb.llmMs || 0) + (bbb.toolMs || 0))]
+					[t("trends.totalInput"), fmtTokens(bbb.input || 0)],
+					[t("trends.totalOutput"), fmtTokens(bbb.output || 0)],
+					[t("trends.totalReasoning"), fmtTokens(bbb.reasoning || 0)],
+					[t("w.duration"), fmtDuration((bbb.llmMs || 0) + (bbb.toolMs || 0))]
 				]), ev);
 			},
 			onMouseLeave: hideTip
@@ -1261,15 +1331,15 @@ function CalendarHeatmap(props) {
 	return e("div", { className: "dss-cal-wrap" },
 		e("div", { className: "dss-cal" },
 			e("div", { className: "dss-cal-month" },
-				e("div", { className: "dss-cal-title" }, mo.y + "年" + (mo.m + 1) + "月"),
+				e("div", { className: "dss-cal-title" }, mo.y + "-" + pad(mo.m + 1)),
 				e("div", { className: "dss-cal-dow" }, DOW.map(function(dw, i) { return e("span", { key: i }, dw); })),
 				e("div", { className: "dss-cal-grid" }, cells)
 			)
 		),
 		e("div", { className: "dss-cal-legend" },
-			e("span", null, "少"),
+			e("span", null, t("trends.less")),
 			[0,1,2,3,4].map(function(i) { return e("i", { key: i, className: "dss-hm-lg lvl" + i }); }),
-			e("span", null, "多")
+			e("span", null, t("trends.more"))
 		)
 	);
 }
@@ -1304,25 +1374,26 @@ function niceCeil(n) {
 	return nice * exp;
 }
 
-// 每日 Token 趋势：最近 7 天（含今天），每天堆叠柱 = 输入 / 输出 / 思考
+// 每日 Token 趋势：最近 7 天（含今天），柱高 = 输入 + 输出；思考是输出子集，仅在提示中展示。
 function DailyTrendChart(props) {
 	var byDay = props.byDay;
-	var today = new Date();
-	var todayKey = localDayKey(today.getTime());
+	var t = props.t;
+	var todayKey = localDayKey(Date.now());
 
-	var DOW = ["一","二","三","四","五","六","日"];
+	var DOW = t("trends.weekdays").split(",").slice(1).concat(t("trends.weekdays").split(",")[0]);
 	// 近 7 天窗口：today-6 … today
 	var days = [];
-	var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+	var d = new Date(todayKey + "T00:00:00Z");
+	d.setUTCDate(d.getUTCDate() - 6);
 	for (var i = 0; i < 7; i++) {
-		days.push({ key: localDayKey(d.getTime()), mon: d.getMonth() + 1, day: d.getDate(), dow: (d.getDay() + 6) % 7 });
-		d.setDate(d.getDate() + 1);
+		days.push({ key: d.toISOString().slice(0, 10), mon: d.getUTCMonth() + 1, day: d.getUTCDate(), dow: (d.getUTCDay() + 6) % 7 });
+		d.setUTCDate(d.getUTCDate() + 1);
 	}
 
 	var maxTot = 0;
 	days.forEach(function(dd) {
 		var b = byDay.get(dd.key);
-		if (b) maxTot = Math.max(maxTot, (b.input || 0) + (b.output || 0) + (b.reasoning || 0));
+		if (b) maxTot = Math.max(maxTot, (b.input || 0) + (b.output || 0));
 	});
 	var yMax = niceCeil(maxTot);
 
@@ -1341,24 +1412,22 @@ function DailyTrendChart(props) {
 					var b = byDay.get(dd.key) || emptyBucket();
 					var pIn = Math.max(0, (b.input || 0)) / yMax * 100;
 					var pOut = Math.max(0, (b.output || 0)) / yMax * 100;
-					var pRs = Math.max(0, (b.reasoning || 0)) / yMax * 100;
 					return e("div", { key: dd.key, className: "dss-mchart-col" },
 						e("div", {
 							className: "dss-mchart-bar",
 							onMouseEnter: function(ev) {
-								showTipRaw(tipRows(dd.mon + "月" + dd.day + "日 周" + DOW[dd.dow] + (dd.key === todayKey ? "（今天）" : ""), [
-									["总输入", fmtTokens(b.input || 0)],
-									["总输出", fmtTokens(b.output || 0)],
-									["思考", fmtTokens(b.reasoning || 0)],
-									["缓存读取", fmtTokens(b.cacheRead || 0)],
-									["开发时长", fmtDuration((b.llmMs || 0) + (b.toolMs || 0))]
+									showTipRaw(tipRows(dd.key + " " + DOW[dd.dow] + (dd.key === todayKey ? " " + t("trends.today") : ""), [
+										[t("trends.totalInput"), fmtTokens(b.input || 0)],
+										[t("trends.totalOutput"), fmtTokens(b.output || 0)],
+										[t("trends.totalReasoning"), fmtTokens(b.reasoning || 0)],
+										[t("trends.cacheRead"), fmtTokens(b.cacheRead || 0)],
+										[t("w.duration"), fmtDuration((b.llmMs || 0) + (b.toolMs || 0))]
 								]), ev);
 							},
 							onMouseLeave: hideTip
 						},
 							e("div", { className: "dss-mchart-seg input", style: { height: pIn + "%" } }),
-							e("div", { className: "dss-mchart-seg output", style: { height: pOut + "%" } }),
-							e("div", { className: "dss-mchart-seg reasoning", style: { height: pRs + "%" } })
+							e("div", { className: "dss-mchart-seg output", style: { height: pOut + "%" } })
 						)
 					);
 				})
@@ -1367,25 +1436,25 @@ function DailyTrendChart(props) {
 			e("div", { className: "dss-mchart-xlabels" },
 				days.map(function(dd) {
 					return e("div", { key: dd.key, className: "dss-mchart-label" + (dd.key === todayKey ? " today" : "") + (props.selectedDate != null && dd.key === props.selectedDate ? " selected" : "") },
-						dd.key === todayKey ? "今天" : (dd.mon + "/" + dd.day)
+										dd.key === todayKey ? t("trends.today") : (dd.mon + "/" + dd.day)
 					);
 				})
 			)
 		),
 		e("div", { className: "dss-mchart-legend" },
-			e("span", null, e("i", { className: "dss-mchart-lg input" }), "输入"),
-			e("span", null, e("i", { className: "dss-mchart-lg output" }), "输出"),
-			e("span", null, e("i", { className: "dss-mchart-lg reasoning" }), "思考")
+					e("span", null, e("i", { className: "dss-mchart-lg input" }), t("w.input")),
+					e("span", null, e("i", { className: "dss-mchart-lg output" }), t("trends.outputIncludesReasoning"))
 		)
 	);
 }
 
 function ModelRing(props) {
 	var models = props.models;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, "暂无数据");
+	var t = props.t;
+	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
 
 	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
-	if (!total) return e("div", { className: "dss-empty" }, "暂无数据");
+	if (!total) return e("div", { className: "dss-empty" }, t("empty"));
 
 	var cum = 0;
 	var stops = models.map(function(m) {
@@ -1402,7 +1471,7 @@ function ModelRing(props) {
 		e("div", { className: "dss-ring", style: { background: "conic-gradient(" + gradient + ")" } },
 			e("div", { className: "dss-ring-center" },
 				e("div", { className: "dss-ring-total" }, fmtTokens(total)),
-				e("div", { className: "dss-ring-label" }, "输入 + 输出")
+				e("div", { className: "dss-ring-label" }, t("trends.inputOutput"))
 			)
 		),
 		e("div", { className: "dss-ring-legend" },
@@ -1419,7 +1488,8 @@ function ModelRing(props) {
 
 function ModelList(props) {
 	var models = props.models;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, "暂无数据");
+	var t = props.t;
+	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
 
 	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
 
@@ -1438,12 +1508,12 @@ function ModelList(props) {
 					e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
 				),
 				e("div", { className: "dss-model-meta" },
-					"输入 " + fmtTokens(m.input || 0) +
-					" · 输出 " + fmtTokens(m.output || 0) +
-					" · 思考 " + fmtTokens(m.reasoning || 0) +
-					" · 会话 " + fmtN(m.sessions || 0) +
-					" · LLM " + fmtDuration(m.llmMs || 0) +
-					" · 工具 " + fmtDuration(m.toolMs || 0)
+						t("w.input") + " " + fmtTokens(m.input || 0) +
+						" · " + t("w.output") + " " + fmtTokens(m.output || 0) +
+						" · " + t("trends.totalReasoning") + " " + fmtTokens(m.reasoning || 0) +
+						" · " + t("card.sessions") + " " + fmtN(m.sessions || 0) +
+						" · LLM " + fmtDuration(m.llmMs || 0) +
+						" · " + t("w.tool") + " " + fmtDuration(m.toolMs || 0)
 				)
 			);
 		})
@@ -1479,8 +1549,8 @@ function modelColor(model) {
 // 全局聚合（用于用量趋势 / 概览卡片）：按天 token、模型分布、连续天数
 // ------------------------------------------------------------------
 function localDayKey(ts) {
-	var d = new Date(ts);
-	var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+	var d = new Date(ts + BEIJING_OFFSET_MS);
+	var y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
 	return y + "-" + (m < 10 ? "0" + m : m) + "-" + (day < 10 ? "0" + day : day);
 }
 function emptyBucket() {
@@ -1508,8 +1578,9 @@ function sessionDayTokens(sessions) {
 	};
 	sessions.forEach(function(s) {
 		var st = s.stats || {};
+		var detailed = false;
 		if (s.slotUsage && s.slotUsage.length) {
-			// 逐槽分布：slot * 30min → 本地日期
+			detailed = true;
 			s.slotUsage.forEach(function(su) {
 				var k = localDayKey(su.slot * 1800000);
 				var b = getDay(k);
@@ -1520,17 +1591,30 @@ function sessionDayTokens(sessions) {
 				b.reasoning += su.reasoning || 0;
 				b.input += (su.uncached || 0) + (su.cacheRead || 0) + (su.cacheWrite || 0);
 			});
-			// turns/steps/时长只有会话粒度，按 updatedAt 落一天（避免重复计）
-			var ts = s.updatedAt || s.createdAt;
-			if (ts) {
-				var b2 = getDay(localDayKey(ts));
-				b2.turns += st.turns || 0;
-				b2.steps += st.steps || 0;
-				b2.llmMs += st.llmMs || 0;
-				b2.toolMs += st.toolMs || 0;
-			}
-			return;
 		}
+		if (s.slotStats && s.slotStats.length) {
+			detailed = true;
+			(s.slotStats || []).forEach(function(ss) {
+				var b = getDay(localDayKey(ss.slot * SLOT_MS));
+				b.turns += ss.turns || 0; b.steps += ss.steps || 0;
+				b.llmMs += ss.llmMs || 0; b.toolMs += ss.toolMs || 0;
+				b.ttftMs += ss.ttftMs || 0; b.ttftSteps += ss.ttftSteps || 0;
+				b.decodeMs += ss.decodeMs || 0; b.decodeTokens += ss.decodeTokens || 0;
+			});
+		}
+		if (s.slots && s.slots.length) {
+			detailed = true;
+			s.slots.forEach(function(slot) { getDay(localDayKey(slot.slot * SLOT_MS)); });
+		}
+		if (detailed && !(s.slotStats && s.slotStats.length)) {
+			var legacyTs = s.updatedAt || s.createdAt;
+			if (legacyTs) {
+				var legacy = getDay(localDayKey(legacyTs));
+				legacy.turns += st.turns || 0; legacy.steps += st.steps || 0;
+				legacy.llmMs += st.llmMs || 0; legacy.toolMs += st.toolMs || 0;
+			}
+		}
+		if (detailed) return;
 		var ts = s.updatedAt || s.createdAt;
 		if (!ts) return;
 		var b = getDay(localDayKey(ts));
@@ -1562,10 +1646,10 @@ function monthlyFromDays(byDay) {
 function weeklyFromDays(byDay) {
 	var byWeek = new Map();
 	byDay.forEach((b, day) => {
-		var d = new Date(day + "T00:00:00");
-		var dow = d.getDay(); // 0..6, Sun=0
-		d.setDate(d.getDate() - dow); // back to Sunday
-		var wk = localDayKey(d.getTime());
+		var d = new Date(day + "T00:00:00Z");
+		var dow = d.getUTCDay(); // 0..6, Sun=0
+		d.setUTCDate(d.getUTCDate() - dow); // back to Sunday
+		var wk = d.toISOString().slice(0, 10);
 		var w = byWeek.get(wk) || emptyBucket();
 		addBucket(w, b);
 		byWeek.set(wk, w);
@@ -1630,16 +1714,16 @@ function streakAndActive(byDay) {
 	if (!activeDays) return { activeDays: 0, currentStreak: 0, longestStreak: 0, firstDay: null, lastDay: null };
 	var longest = 1, run = 1;
 	for (var i = 1; i < dates.length; i++) {
-		var prev = new Date(dates[i - 1] + "T00:00:00").getTime();
-		var cur = new Date(dates[i] + "T00:00:00").getTime();
+		var prev = Date.parse(dates[i - 1] + "T00:00:00Z");
+		var cur = Date.parse(dates[i] + "T00:00:00Z");
 		if (cur - prev === 86400000) { run++; if (run > longest) longest = run; } else run = 1;
 	}
 	// 当前连续：以 lastDay 为起点往前回溯
 	var last = dates[dates.length - 1];
-	var cursor = new Date(last + "T00:00:00").getTime();
+	var cursor = Date.parse(last + "T00:00:00Z");
 	var set = new Set(dates);
 	var current = 0;
-	while (set.has(localDayKey(cursor))) { current++; cursor -= 86400000; }
+	while (set.has(new Date(cursor).toISOString().slice(0, 10))) { current++; cursor -= 86400000; }
 	return { activeDays, currentStreak: current, longestStreak: longest, firstDay: dates[0], lastDay: last };
 }
 
@@ -1656,14 +1740,18 @@ function buildGlobals(projects) {
 	var totals = emptyBucket();
 	byDay.forEach(function(b) { addBucket(totals, b); });
 	// 全局总费用（按会话逐个计算，用 slotUsage 或 stats 兜底）
-	var totalCost = 0;
-	for (var k = 0; k < all.length; k++) totalCost += sessionCost(all[k]);
+	var totalCost = 0, costKnown = true;
+	for (var k = 0; k < all.length; k++) {
+		var cost = sessionCost(all[k]);
+		if (cost == null) costKnown = false;
+		else totalCost += cost;
+	}
 	return {
 		sessions: all,
 		byDay, models, totals,
 		streak: sa.currentStreak, longestStreak: sa.longestStreak, activeDays: sa.activeDays,
 		firstDay: sa.firstDay, lastDay: sa.lastDay,
-		totalCost: totalCost
+		totalCost: costKnown ? totalCost : null
 	};
 }
 const inject = ["slots", "locale", "remote"];
@@ -1677,6 +1765,15 @@ const zh = {
 	"close": "关闭",
 	"empty": "暂无数据",
 	"refresh": "刷新",
+	"source.loading": "加载中",
+	"source.refreshing": "刷新中",
+	"source.exact": "精确（宿主）",
+	"source.partial": "部分精确",
+	"source.stale": "已过期",
+	"source.fallback": "近似（客户端）",
+	"source.updated": "更新时间",
+	"nav.day": "按日", "nav.days7": "7日", "nav.days30": "30日", "nav.days90": "90日", "nav.all": "全部", "nav.previous": "前一天", "nav.next": "后一天",
+	"sort.label": "排序", "sort.toggle": "切换升降序", "sort.asc": "升序", "sort.desc": "降序",
 	"card.projects": "项目",
 	"card.sessions": "会话",
 	"card.turnsSteps": "轮 / 步",
@@ -1707,10 +1804,13 @@ const zh = {
 	"w.input": "输入",
 	"w.output": "输出",
 	"w.subagentTag": "子对话",
+	"w.archivedTag": "已归档",
 	"w.subagentGroup": "子对话",
 	"w.untitled": "（未命名会话）",
 	"w.duration": "开发时长",
 	"w.path": "路径",
+	"w.sessionTotal": "会话总数",
+	"w.projects": "项目",
 	"w.unnamed": "（未命名）",
 	"w.uncategorized": "（未分类）",
 	"w.weekdays": "日,一,二,三,四,五,六",
@@ -1726,8 +1826,10 @@ const zh = {
 	"trends.totalInput": "总输入",
 	"trends.totalOutput": "总输出",
 	"trends.totalReasoning": "思考 token",
+	"trends.totalTokens": "总 Token 消耗", "trends.totalCost": "总消费", "trends.activeDaysHint": "有活动的自然日", "trends.streakHint": "截至最近活动日", "trends.longestStreakHint": "历史最佳纪录", "trends.totalSessionsHint": "主会话 + 子会话",
 	"trends.heatmap": "活动热力图",
-	"trends.dailyTrend": "每月 token 趋势",
+	"trends.heatmapHint": "左侧：当月按实际天数 · 右侧：近 7 天每日 Token", "trends.dailyTrend": "每日 Token（近 7 天）", "trends.modelHint": "按输入 + 输出 token 占比",
+	"trends.activity": "活动", "trends.futureDate": "未来日期", "trends.none": "无", "trends.less": "少", "trends.more": "多", "trends.today": "今天", "trends.cacheRead": "缓存读取", "trends.outputIncludesReasoning": "输出（含思考）", "trends.inputOutput": "输入 + 输出",
 	"trends.modelDist": "模型分布",
 	"trends.days": "天",
 	"trends.weekdays": "日,一,二,三,四,五,六"
@@ -1741,6 +1843,15 @@ const en = {
 	"close": "Close",
 	"empty": "No data",
 	"refresh": "Refresh",
+	"source.loading": "Loading",
+	"source.refreshing": "Refreshing",
+	"source.exact": "Exact (host)",
+	"source.partial": "Partial",
+	"source.stale": "Stale",
+	"source.fallback": "Approx. (client)",
+	"source.updated": "Updated",
+	"nav.day": "Day", "nav.days7": "7D", "nav.days30": "30D", "nav.days90": "90D", "nav.all": "All", "nav.previous": "Previous day", "nav.next": "Next day",
+	"sort.label": "Sort", "sort.toggle": "Toggle sort direction", "sort.asc": "Ascending", "sort.desc": "Descending",
 	"card.projects": "Projects",
 	"card.sessions": "Sessions",
 	"card.turnsSteps": "Turns / Steps",
@@ -1771,10 +1882,13 @@ const en = {
 	"w.input": "Input",
 	"w.output": "Output",
 	"w.subagentTag": "sub-agent",
+	"w.archivedTag": "archived",
 	"w.subagentGroup": "Sub-agent sessions",
 	"w.untitled": " (untitled)",
 	"w.duration": "Duration",
 	"w.path": "Path",
+	"w.sessionTotal": "Total sessions",
+	"w.projects": "projects",
 	"w.unnamed": "(unnamed)",
 	"w.uncategorized": "(uncategorized)",
 	"w.weekdays": "Sun,Mon,Tue,Wed,Thu,Fri,Sat",
@@ -1790,16 +1904,83 @@ const en = {
 	"trends.totalInput": "Total input",
 	"trends.totalOutput": "Total output",
 	"trends.totalReasoning": "Thinking tokens",
+	"trends.totalTokens": "Total token usage", "trends.totalCost": "Total cost", "trends.activeDaysHint": "Calendar days with activity", "trends.streakHint": "Through the latest active day", "trends.longestStreakHint": "Best historical run", "trends.totalSessionsHint": "Main + sub-agent sessions",
 	"trends.heatmap": "Activity heatmap",
-	"trends.dailyTrend": "Daily tokens",
+	"trends.heatmapHint": "Calendar days this month · daily tokens for the last 7 days", "trends.dailyTrend": "Daily tokens (last 7 days)", "trends.modelHint": "Share of input + output tokens",
+	"trends.activity": "Activity", "trends.futureDate": "Future date", "trends.none": "None", "trends.less": "Less", "trends.more": "More", "trends.today": "Today", "trends.cacheRead": "Cache read", "trends.outputIncludesReasoning": "Output (incl. reasoning)", "trends.inputOutput": "Input + output",
 	"trends.modelDist": "Model distribution",
 	"trends.days": "days",
 	"trends.weekdays": "S,M,T,W,T,F,S"
 };
 
+function parseAggregateResult(value) {
+	var object = function(input, path, keys) {
+		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
+		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
+		return input;
+	};
+	var array = function(input, path) { if (!Array.isArray(input)) throw new TypeError(path + ": expected array"); return input; };
+	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
+	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
+	var boolean = function(input, path) { if (typeof input !== "boolean") throw new TypeError(path + ": expected boolean"); };
+	var number = function(input, path, integer) {
+		if (!Number.isFinite(input) || input < 0 || (integer && !Number.isInteger(input))) throw new TypeError(path + ": expected non-negative " + (integer ? "integer" : "number"));
+	};
+	var nullableNumber = function(input, path) { if (input !== null && !Number.isFinite(input)) throw new TypeError(path + ": expected number or null"); };
+	var numberFields = ["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"];
+	var checkStats = function(stats, path) {
+		object(stats, path, numberFields);
+		numberFields.forEach(function(k) { number(stats[k], path + "." + k, false); });
+	};
+	object(value, "stats/aggregate", ["projects", "timeline", "meta"]);
+	array(value.projects, "projects");
+	value.projects.forEach(function(p, pi) {
+		var pp = "projects[" + pi + "]";
+		object(p, pp, ["id", "name", "path", "sessionCount", "subagentCount", "lastActiveAt", "stats", "sessions"]);
+		string(p.id, pp + ".id"); string(p.name, pp + ".name"); string(p.path, pp + ".path");
+		number(p.sessionCount, pp + ".sessionCount", true); number(p.subagentCount, pp + ".subagentCount", true); nullableNumber(p.lastActiveAt, pp + ".lastActiveAt");
+		checkStats(p.stats, pp + ".stats"); array(p.sessions, pp + ".sessions");
+		p.sessions.forEach(function(s, si) {
+			var sp = pp + ".sessions[" + si + "]";
+			object(s, sp, ["id", "title", "updatedAt", "createdAt", "model", "modelUsage", "archived", "blank", "subagent", "origin", "parentSession", "seedLength", "calls", "stats", "durMs", "slots", "slotStats", "slotUsage", "quality", "cwd"]);
+			string(s.id, sp + ".id"); nullableString(s.title, sp + ".title"); nullableNumber(s.updatedAt, sp + ".updatedAt"); nullableNumber(s.createdAt, sp + ".createdAt"); nullableString(s.model, sp + ".model");
+			boolean(s.archived, sp + ".archived"); boolean(s.blank, sp + ".blank"); boolean(s.subagent, sp + ".subagent"); nullableString(s.origin, sp + ".origin"); nullableString(s.parentSession, sp + ".parentSession"); nullableNumber(s.seedLength, sp + ".seedLength");
+			number(s.calls, sp + ".calls", true); checkStats(s.stats, sp + ".stats"); number(s.durMs, sp + ".durMs", false); nullableString(s.cwd, sp + ".cwd");
+			if (["exact", "partial", "stale"].indexOf(s.quality) < 0) throw new TypeError(sp + ".quality: invalid value");
+			array(s.modelUsage, sp + ".modelUsage").forEach(function(u, ui) {
+				var up = sp + ".modelUsage[" + ui + "]";
+				object(u, up, ["model", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(u.model, up + ".model");
+				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(u[k], up + "." + k, false); });
+			});
+			array(s.slots, sp + ".slots").forEach(function(row, ri) {
+				var rp = sp + ".slots[" + ri + "]"; object(row, rp, ["slot", "ms"]); number(row.slot, rp + ".slot", true); number(row.ms, rp + ".ms", false);
+			});
+			array(s.slotStats, sp + ".slotStats").forEach(function(row, ri) {
+				var rp = sp + ".slotStats[" + ri + "]"; object(row, rp, ["slot", "turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"]); number(row.slot, rp + ".slot", true);
+				["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"].forEach(function(k) { number(row[k], rp + "." + k, false); });
+			});
+			array(s.slotUsage, sp + ".slotUsage").forEach(function(row, ri) {
+				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(row.model, rp + ".model"); number(row.slot, rp + ".slot", true);
+				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(row[k], rp + "." + k, false); });
+			});
+		});
+	});
+	object(value.timeline, "timeline", ["slotMinutes", "days"]); number(value.timeline.slotMinutes, "timeline.slotMinutes", true);
+	array(value.timeline.days, "timeline.days").forEach(function(day, di) {
+		var dp = "timeline.days[" + di + "]"; object(day, dp, ["date", "dayTotalMs", "slotBlocks"]); string(day.date, dp + ".date"); number(day.dayTotalMs, dp + ".dayTotalMs", false);
+		array(day.slotBlocks, dp + ".slotBlocks").forEach(function(block, bi) {
+			var bp = dp + ".slotBlocks[" + bi + "]"; object(block, bp, ["slot", "projectId", "name", "colorIndex", "ms"]); number(block.slot, bp + ".slot", true); string(block.projectId, bp + ".projectId"); string(block.name, bp + ".name"); number(block.colorIndex, bp + ".colorIndex", true); number(block.ms, bp + ".ms", false);
+		});
+	});
+	object(value.meta, "meta", ["source", "generatedAt", "degraded", "warnings"]); if (value.meta.source !== "host") throw new TypeError("meta.source: expected host"); number(value.meta.generatedAt, "meta.generatedAt", false); boolean(value.meta.degraded, "meta.degraded");
+	array(value.meta.warnings, "meta.warnings").forEach(function(warning, wi) {
+		var wp = "meta.warnings[" + wi + "]"; object(warning, wp, ["code", "message", "sessionId"]); string(warning.code, wp + ".code"); string(warning.message, wp + ".message"); if (warning.sessionId !== undefined) string(warning.sessionId, wp + ".sessionId");
+	});
+	return value;
+}
+
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，
 // 需在客户端手动 ctx.remote.$mount(contribution)。
-// result 用透传 schema（客户端解码仅要求 schema.parse 函数）。
 const STATS_REMOTE_CONTRIBUTION = {
 	package: "@rongyi7/dsh-stats",
 	descriptors: [{
@@ -1812,7 +1993,7 @@ const STATS_REMOTE_CONTRIBUTION = {
 		result: {
 			mode: "strict",
 			typeSymbol: "@rongyi7/dsh-stats#stats/aggregate:result",
-			schema: { parse: (v) => v }
+				schema: { parse: parseAggregateResult }
 		},
 		sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
 	}]
@@ -1822,17 +2003,20 @@ async function apply(ctx) {
 	// 附加 CSS — 必须在 CSS 注入前定义
 	var _phaseDCSS = "\n\t.dss-tc-val.dss-tc-cost{color:#ff922b}\n\t.dss-ml-row .dss-ml-reasoning{color:#cc5de8}\n\t";
 
+	var ownedStyle = null;
 	if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(CSS_ID) + "]") === null) {
 		var tag = document.createElement("style");
 		tag.dataset.plugin = "@rongyi7/dsh-stats";
 		tag.dataset.pluginCss = CSS_ID;
 		tag.textContent = css + _phaseDCSS;
 		document.head.appendChild(tag);
+		ownedStyle = tag;
 	}
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-stats: dictionaries");
 	const openStore = createOpenStore();
 
 	let aggregateRemote = null;
+	let remoteError = null;
 	let disposeRemote = () => {};
 	try {
 		disposeRemote = await ctx.remote.$mount(STATS_REMOTE_CONTRIBUTION);
@@ -1846,6 +2030,7 @@ async function apply(ctx) {
 			};
 		});
 	} catch (err) {
+		remoteError = err?.message || String(err);
 		console.warn("[dsh-stats] remote.stats 挂载失败:", err);
 	}
 
@@ -1860,10 +2045,15 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote, remoteError })
 	}, StatsPanel));
 
-	return () => { disposeRemote(); };
+	return () => {
+		disposeRemote();
+		if (ownedStyle && ownedStyle.isConnected) ownedStyle.remove();
+		var tooltip = typeof document !== "undefined" ? document.getElementById("dss-tooltip") : null;
+		if (tooltip) tooltip.remove();
+	};
 }
 
 module.exports = { apply, inject };
@@ -1872,5 +2062,5 @@ module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration,
-	applyDate, activityDates, fmtDateCN
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult
 };

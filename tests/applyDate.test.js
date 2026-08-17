@@ -39,8 +39,8 @@ function makeProject(sessions) {
 
 test('applyDate 保留跨日会话并只统计当天 slot（核心回归）', () => {
 	const dayKey = '2026-08-17';
-	// 与 applyDate 内部相同的 dayStart 口径（本地时区，测试与时区无关自洽）
-	const dayStart = new Date(dayKey + 'T00:00:00').getTime();
+	// 与 applyDate 内部相同的北京时区 dayStart 口径
+	const dayStart = new Date(dayKey + 'T00:00:00+08:00').getTime();
 	const slotBefore = Math.floor((dayStart - SLOT_MS) / SLOT_MS); // 前一天最后一个槽
 	const slotInDay = Math.floor(dayStart / SLOT_MS);              // 当天第一个槽
 
@@ -68,7 +68,7 @@ test('applyDate 保留跨日会话并只统计当天 slot（核心回归）', ()
 
 test('applyDate 过滤所有 slot 都在当天之外的会话', () => {
 	const dayKey = '2026-08-17';
-	const dayStart = new Date(dayKey + 'T00:00:00').getTime();
+	const dayStart = new Date(dayKey + 'T00:00:00+08:00').getTime();
 	const slotBefore = Math.floor((dayStart - SLOT_MS) / SLOT_MS);
 
 	const session = makeSession(
@@ -77,12 +77,12 @@ test('applyDate 过滤所有 slot 都在当天之外的会话', () => {
 	);
 
 	const out = applyDate([makeProject([session])], dayKey);
-	expect(out[0].sessions.length).toBe(0);
+	expect(out.length).toBe(0);
 });
 
 test('applyDate 无逐槽数据的会话退回按 updatedAt 判断', () => {
 	const dayKey = '2026-08-17';
-	const dayStart = new Date(dayKey + 'T00:00:00').getTime();
+	const dayStart = new Date(dayKey + 'T00:00:00+08:00').getTime();
 
 	// 当天内（无 slotUsage）→ 保留
 	const inDay = makeSession(dayStart + 1000, null);
@@ -90,12 +90,12 @@ test('applyDate 无逐槽数据的会话退回按 updatedAt 判断', () => {
 
 	// 当天外（无 slotUsage）→ 过滤
 	const outDay = makeSession(dayStart - 1000, null);
-	expect(applyDate([makeProject([outDay])], dayKey)[0].sessions.length).toBe(0);
+	expect(applyDate([makeProject([outDay])], dayKey).length).toBe(0);
 });
 
 test('applyDate 裁剪 slotUsage 时保留 model 字段（供逐模型计价）', () => {
 	const dayKey = '2026-08-17';
-	const dayStart = new Date(dayKey + 'T00:00:00').getTime();
+	const dayStart = new Date(dayKey + 'T00:00:00+08:00').getTime();
 	const slotBefore = Math.floor((dayStart - SLOT_MS) / SLOT_MS); // 前一天最后一个槽
 	const slotInDay = Math.floor(dayStart / SLOT_MS);              // 当天第一个槽
 

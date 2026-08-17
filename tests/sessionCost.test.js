@@ -3,7 +3,7 @@
 const { sessionCost } = require('../src/client.cjs').__test;
 
 const SLOT_MS = 1800000;
-const DAY_START = new Date('2026-08-17T00:00:00').getTime(); // 8/17 00:00（北京）→ offPeak
+const DAY_START = Date.parse('2026-08-17T00:00:00+08:00'); // 8/17 00:00（北京）→ offPeak
 
 test('跨模型会话按逐模型价格计价（flash 不按 pro 高价算）', () => {
 	const slot = Math.floor(DAY_START / SLOT_MS);
@@ -54,4 +54,10 @@ test('单模型会话仍按 s.model 逐槽计价', () => {
 	const cost = sessionCost(session);
 	// 1000*4.5 + 100000*0.15 + 100*13.5 = 20850 (→ 0.02085)
 	expect(cost).toBeCloseTo(0.02085, 5);
+});
+
+test('未知模型不再静默套用 Pro 价格', () => {
+	const slot = Math.floor(DAY_START / SLOT_MS);
+	const cost = sessionCost({ model: 'MiniMax-M3', updatedAt: DAY_START, slotUsage: [{ slot, model: 'MiniMax-M3', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }], stats: {} });
+	expect(cost).toBeNull();
 });
