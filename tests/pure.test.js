@@ -198,6 +198,32 @@ test('modelAgg null model maps to (unknown)', () => {
 	expect(models[0].model).toBe('(unknown)');
 });
 
+test('modelAgg omits zero-token slot models while keeping positive usage', () => {
+	const slot = Math.floor(Date.parse('2026-08-17T10:00:00+08:00') / 1800000);
+	const models = modelAgg([{
+		model: 'deepseek-v4-pro',
+		slotUsage: [
+			{ slot, providerId: 'deepseek-modlens', model: 'deepseek-v4-flash', uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			{ slot, providerId: 'deepseek-official', model: 'deepseek-v4-pro', uncached: 100, output: 20, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+		],
+		stats: { llmMs: 100, toolMs: 0 },
+	}]);
+
+	expect(models.map((model) => model.displayName)).toEqual(['deepseek-official · deepseek-v4-pro']);
+	expect(models[0]).toMatchObject({ input: 100, output: 20 });
+});
+
+test('modelAgg falls back to session tokens when slot rows are all zero', () => {
+	const models = modelAgg([{
+		model: 'deepseek-v4-pro',
+		slotUsage: [{ slot: 0, model: 'deepseek-v4-flash', uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }],
+		stats: { uncached: 7, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 },
+	}]);
+
+	expect(models).toHaveLength(1);
+	expect(models[0]).toMatchObject({ model: 'deepseek-v4-pro', input: 7, output: 2 });
+});
+
 test('project session model labels omit the provider name', () => {
 	const session = {
 		providerId: 'deepseek-official',

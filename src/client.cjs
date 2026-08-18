@@ -2028,6 +2028,10 @@ function modelDisplayName(value) {
 	return provider && provider !== "unknown" ? provider + " · " + model : model;
 }
 
+function modelTokenTotal(value) {
+	return (value?.uncached || 0) + (value?.cacheRead || 0) + (value?.cacheWrite || 0) + (value?.output || 0);
+}
+
 // 模型分布按 provider + model + accountType 分组，同名模型不跨 Provider 合并。
 function modelAgg(sessions) {
 	var byModel = new Map();
@@ -2038,6 +2042,8 @@ function modelAgg(sessions) {
 		var modelTok = new Map();
 		if (s.slotUsage && s.slotUsage.length) {
 			s.slotUsage.forEach((su) => {
+				// 某些日志会写入只有路由元数据、没有 token 的 usage 行；它们不应成为模型分布条目。
+				if (modelTokenTotal(su) <= 0) return;
 				var identity = identityForUsage(su, s.modelRaw || s.model, s.providerId, s.accountType);
 				var mk = [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000");
 				var t = modelTok.get(mk) || { key: mk, model: identity.modelRaw, providerId: identity.providerId, providerFamily: identity.providerFamily, modelRaw: identity.modelRaw, modelCanonical: identity.modelCanonical, accountType: identity.accountType, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, costs: [] };
@@ -2058,17 +2064,20 @@ function modelAgg(sessions) {
 				if (s.accountType) usage.accountType = s.accountType;
 				var identity = identityForUsage(usage, usage.model, undefined, s.accountType);
 				return [{
-				key: [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000"), model: identity.modelRaw,
-				providerId: identity.providerId, providerFamily: identity.providerFamily, modelRaw: identity.modelRaw, modelCanonical: identity.modelCanonical, accountType: identity.accountType,
-				uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
-				output: st.output != null ? st.output : (st.outputTokens || 0),
-				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0,
-				costSummary: sessionCostSummary(s)
-			}];
+					key: [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000"), model: identity.modelRaw,
+					providerId: identity.providerId, providerFamily: identity.providerFamily, modelRaw: identity.modelRaw, modelCanonical: identity.modelCanonical, accountType: identity.accountType,
+					uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
+					output: st.output != null ? st.output : (st.outputTokens || 0),
+					cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0,
+					costSummary: sessionCostSummary(s)
+				}];
 			})();
+		// 有全零逐槽行时回退到会话级统计；若两者都没有 token，则跳过该会话。
+		entries = entries.filter(function(entry) { return modelTokenTotal(entry) > 0; });
+		if (!entries.length) return;
 		// 会话总 token（用于 LLM/工具时长按占比分摊到各模型）
 		var sessTok = 0;
-		entries.forEach((e) => { sessTok += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0); });
+		entries.forEach((e) => { sessTok += modelTokenTotal(e); });
 		entries.forEach((e) => {
 			var m = e.key;
 			var cur = byModel.get(m) || { key: m, model: e.model, providerId: e.providerId, providerFamily: e.providerFamily, modelRaw: e.modelRaw, modelCanonical: e.modelCanonical, accountType: e.accountType, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0, costSummaries: [] };
@@ -2080,7 +2089,7 @@ function modelAgg(sessions) {
 			cur.reasoning += e.reasoning || 0;
 			cur.costSummaries.push(e.costSummary);
 			// DSH 无逐模型时长数据：按 token 占比分摊会话 LLM/工具时长（近似合理）
-			var share = sessTok > 0 ? ((e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0)) / sessTok : 0;
+			var share = sessTok > 0 ? modelTokenTotal(e) / sessTok : 0;
 			cur.llmMs += Math.round((st.llmMs || 0) * share);
 			cur.toolMs += Math.round((st.toolMs || 0) * share);
 			byModel.set(m, cur);
