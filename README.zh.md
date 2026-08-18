@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.13
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.14
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.13.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.14.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -261,9 +261,7 @@ npm publish
 - 不同币种不会自动换算；未知模型、relay、local 和订阅用量不会猜价。
 - 同一项目的并发会话在时间线中合并为墙钟区间，项目 LLM/工具时长仍是累计工作量指标。
 
-## 🙌 参考与许可
-
-README 的信息组织和账户说明参考了 [Ychris12138/dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 的公开文档；本项目只记录自己实际实现的能力，不包含该项目特有的安装器或自定义 monitor 功能。
+## 🙌 参与与许可
 
 欢迎提交 Issue 和 Pull Request。项目采用 [MIT License](LICENSE)。
 

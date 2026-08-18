@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.13
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.14
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.13.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.14.tgz
 ```
 
 Verify the bundle registration:
@@ -259,9 +259,7 @@ npm publish
 - Currencies are not converted. Unknown models, relays, local providers, and subscription usage are not guessed.
 - Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool durations remain cumulative work metrics.
 
-## 🙌 Reference and license
-
-The README structure and account explanations were informed by the public documentation of [Ychris12138/dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats). This project documents only capabilities implemented here; it does not claim that project's installer or custom monitor adapters.
+## 🙌 Contributing and license
 
 Issues and pull requests are welcome. Licensed under the [MIT License](LICENSE).
 
