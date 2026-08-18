@@ -7,7 +7,7 @@ const {
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	projectCsvTable,
+	modelNameOnly, modelDisplayName, projectCsvTable,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -184,6 +184,15 @@ test('modelAgg null model maps to (unknown)', () => {
 	const sessions = [{ id: 's1', model: null, stats: { inputTokens: 100, outputTokens: 50, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0 } }];
 	const models = modelAgg(sessions);
 	expect(models[0].model).toBe('(unknown)');
+});
+
+test('project session model labels omit the provider name', () => {
+	const session = {
+		providerId: 'deepseek-official',
+		modelCanonical: 'deepseek-v4-pro',
+	};
+	expect(modelNameOnly(session)).toBe('deepseek-v4-pro');
+	expect(modelDisplayName(session)).toBe('deepseek-official · deepseek-v4-pro');
 });
 
 test('modelAgg accumulates each model cost with the price of its actual slot', () => {

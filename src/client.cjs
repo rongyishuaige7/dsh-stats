@@ -873,7 +873,7 @@ function ProjectsTable(props) {
 			var mainSessions = p.sessions.filter(function(sd) { return !sd.subagent; });
 			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
 			var sessRow = function(sd) {
-				var modelName = modelDisplayName(sd);
+				var modelName = modelNameOnly(sd);
 				return e("div", { className: "dss-sess", key: sd.id },
 					e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
 					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
@@ -2003,8 +2003,12 @@ function weeklyFromDays(byDay) {
 	return byWeek;
 }
 
+function modelNameOnly(value) {
+	return value?.modelCanonical || value?.modelRaw || value?.model || "(unknown)";
+}
+
 function modelDisplayName(value) {
-	var model = value?.modelCanonical || value?.modelRaw || value?.model || "(unknown)";
+	var model = modelNameOnly(value);
 	var provider = value?.providerId;
 	return provider && provider !== "unknown" ? provider + " · " + model : model;
 }
@@ -2648,5 +2652,5 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, fmtCostSummary, modelDisplayName, projectCsvTable
+	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, projectCsvTable
 };
