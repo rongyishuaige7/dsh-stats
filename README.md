@@ -13,10 +13,10 @@ English | [简体中文](README.zh.md)
 `@rongyi7/dsh-stats` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. It uses host-side aggregation when available and falls back to a client-side approximation on older hosts, so the same UI remains useful during upgrades.
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="Project overview with masked project names and synthetic usage data" width="920" />
+  <img src="docs/images/overview.png" alt="Light-mode project overview with masked project names and an all-time usage summary" width="920" />
 </p>
 
-> **Privacy note:** every screenshot uses deterministic demo data. Project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture; dates, balances, and metrics are synthetic. No personal workspace value appears in these images. The plugin never sends API keys, cookies, management tokens, or raw upstream responses to the browser.
+> **Privacy note:** project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture. Balance amounts use demo values; aggregate dates, tokens, durations, and spend reflect the all-time view at capture. No API key, cookie, management token, raw session content, or upstream response appears in these images. The plugin also never sends those credentials or raw upstream responses to the browser.
 
 ## ✨ At a glance
 
@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.14
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.15
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.14.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.15.tgz
 ```
 
 Verify the bundle registration:
@@ -72,7 +72,7 @@ You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **
 
 ## 🖼️ Interface tour
 
-These are captures from the running panel with all user data replaced by examples:
+These light-mode captures come from the running panel. Project identity fields are masked, balance amounts are examples, and the overview and trends show the all-time aggregate selected at capture:
 
 <table>
   <tr>
@@ -144,7 +144,7 @@ Account queries run only in the host. The references below are variable names, n
 - Credentials are resolved through the DSH host `credentials` service only; they never enter the client bundle, RPC logs, or CSV/JSON exports.
 - Account adapters allow fixed official HTTPS hosts, issue GET requests only, reject redirects, time out after 15 seconds, and cap responses at 1 MiB.
 - Never commit real API keys, cookies, management keys, `auth.json`, or `.credentials.yaml` to Git, an issue, or an Agent conversation.
-- The screenshots use `********` project labels, `/workspace/********` paths, replaced session identifiers, and synthetic dates, balances, and metrics; they are not copies of a user's workspace.
+- The screenshots use `********` project labels, `/workspace/********` paths, and replaced session identifiers. Balance amounts are demo values; only aggregate dates and usage metrics from the selected all-time view remain.
 
 ## 🎯 Accuracy and data sources
 

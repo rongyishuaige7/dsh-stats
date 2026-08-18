@@ -13,10 +13,10 @@
 `@rongyi7/dsh-stats` 是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的插件。它同时支持纯客户端回退和宿主侧精确聚合，适合日常复盘，也适合核对账单。
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="项目总览：项目名已打码，Token 与消费为演示数据" width="920" />
+  <img src="docs/images/overview.png" alt="浅色模式项目总览：项目名已打码，展示全部时间汇总" width="920" />
 </p>
 
-> **隐私说明**：README 中的所有界面图均使用确定性演示数据。项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换；日期、余额和统计数字均为模拟值。图片中不包含个人工作区数据。插件也不会把 API Key、Cookie、管理令牌或上游原始响应发送到浏览器。
+> **隐私说明**：项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换。余额金额使用演示值；日期、Token、时长和消费为截图时的“全部”汇总。图片中不包含 API Key、Cookie、管理令牌、原始会话内容或上游原始响应；插件也不会把这些凭证或原始响应发送到浏览器。
 
 ## ✨ 一眼看懂
 
@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.14
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.15
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.14.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.15.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -72,7 +72,7 @@ dsh --profile web --dump-config
 
 ## 🖼️ 界面导览
 
-下面的图片来自真实运行中的 DSH 面板，但内容全部替换成了演示数据：
+下面是真实运行面板的浅色模式截图。项目身份字段已打码，余额金额为演示值，项目总览和用量趋势展示截图时选中的“全部”汇总：
 
 <table>
   <tr>
@@ -144,7 +144,7 @@ Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果
 - 凭证只通过 DSH 宿主的 `credentials` service 解析，绝不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
 - 账户适配器只允许固定的官方 HTTPS 域名，只发 GET 请求，拒绝重定向，15 秒超时，响应体上限 1 MiB。
 - 不要把真实 API Key、Cookie、Management Key、`auth.json` 或 `.credentials.yaml` 提交到 Git、公开 issue，或粘贴给 Agent。
-- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换，日期、余额和统计数字也均为模拟值。
+- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换。余额金额为演示值，仅保留所选“全部”视图的汇总日期与用量指标。
 
 ## 🎯 数据准确性
 
