@@ -13,10 +13,10 @@ English | [简体中文](README.zh.md)
 `@rongyi7/dsh-stats` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. It uses host-side aggregation when available and falls back to a client-side approximation on older hosts, so the same UI remains useful during upgrades.
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="Project overview with demo projects, token usage, and spend" width="920" />
+  <img src="docs/images/overview.png" alt="Project overview with masked project names and synthetic usage data" width="920" />
 </p>
 
-> **Privacy note:** every screenshot in this README uses sanitized demo data. Project names, paths, dates, balances, and metrics are synthetic; no personal workspace data was used. The plugin never sends API keys, cookies, management tokens, or raw upstream responses to the browser.
+> **Privacy note:** every screenshot uses deterministic demo data. Project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture; dates, balances, and metrics are synthetic. No personal workspace value appears in these images. The plugin never sends API keys, cookies, management tokens, or raw upstream responses to the browser.
 
 ## ✨ At a glance
 
@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.6
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.12
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.6.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.12.tgz
 ```
 
 Verify the bundle registration:
@@ -76,8 +76,8 @@ These are captures from the running panel with all user data replaced by example
 
 <table>
   <tr>
-    <td align="center"><strong>Project overview</strong><br><img src="docs/images/overview.png" alt="Project overview" width="480"></td>
-    <td align="center"><strong>Development timeline</strong><br><img src="docs/images/timeline.png" alt="Development timeline" width="480"></td>
+    <td align="center"><strong>Project overview</strong><br><img src="docs/images/overview.png" alt="Project overview with masked project labels" width="480"></td>
+    <td align="center"><strong>Development timeline</strong><br><img src="docs/images/timeline.png" alt="Development timeline with masked project labels" width="480"></td>
   </tr>
   <tr>
     <td align="center"><strong>Usage trends</strong><br><img src="docs/images/trends.png" alt="Usage trends, heatmap, and model distribution" width="480"></td>
@@ -144,7 +144,7 @@ Account queries run only in the host. The references below are variable names, n
 - Credentials are resolved through the DSH host `credentials` service only; they never enter the client bundle, RPC logs, or CSV/JSON exports.
 - Account adapters allow fixed official HTTPS hosts, issue GET requests only, reject redirects, time out after 15 seconds, and cap responses at 1 MiB.
 - Never commit real API keys, cookies, management keys, `auth.json`, or `.credentials.yaml` to Git, an issue, or an Agent conversation.
-- The screenshots in this repository use `/workspace/...` demo paths and synthetic dates and balances; they are not copies of a user's workspace.
+- The screenshots use `********` project labels, `/workspace/********` paths, replaced session identifiers, and synthetic dates, balances, and metrics; they are not copies of a user's workspace.
 
 ## 🎯 Accuracy and data sources
 

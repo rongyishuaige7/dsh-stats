@@ -13,10 +13,10 @@
 `@rongyi7/dsh-stats` 是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的插件。它同时支持纯客户端回退和宿主侧精确聚合，适合日常复盘，也适合核对账单。
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="项目总览：演示项目卡片与 Token、消费统计" width="920" />
+  <img src="docs/images/overview.png" alt="项目总览：项目名已打码，Token 与消费为演示数据" width="920" />
 </p>
 
-> **隐私说明**：README 中的所有界面图均使用脱敏演示数据。项目名、路径、日期、余额和统计数字均为示例；截图没有读取或展示你的真实工作区信息。插件也不会把 API Key、Cookie、管理令牌或上游原始响应发送到浏览器。
+> **隐私说明**：README 中的所有界面图均使用确定性演示数据。项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换；日期、余额和统计数字均为模拟值。图片中不包含个人工作区数据。插件也不会把 API Key、Cookie、管理令牌或上游原始响应发送到浏览器。
 
 ## ✨ 一眼看懂
 
@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.6
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.12
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.6.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.12.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -76,8 +76,8 @@ dsh --profile web --dump-config
 
 <table>
   <tr>
-    <td align="center"><strong>项目总览</strong><br><img src="docs/images/overview.png" alt="项目总览界面" width="480"></td>
-    <td align="center"><strong>开发时间线</strong><br><img src="docs/images/timeline.png" alt="开发时间线界面" width="480"></td>
+    <td align="center"><strong>项目总览</strong><br><img src="docs/images/overview.png" alt="项目名已打码的项目总览界面" width="480"></td>
+    <td align="center"><strong>开发时间线</strong><br><img src="docs/images/timeline.png" alt="项目名已打码的开发时间线界面" width="480"></td>
   </tr>
   <tr>
     <td align="center"><strong>用量趋势</strong><br><img src="docs/images/trends.png" alt="用量趋势、热力图和模型分布界面" width="480"></td>
@@ -144,7 +144,7 @@ Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果
 - 凭证只通过 DSH 宿主的 `credentials` service 解析，绝不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
 - 账户适配器只允许固定的官方 HTTPS 域名，只发 GET 请求，拒绝重定向，15 秒超时，响应体上限 1 MiB。
 - 不要把真实 API Key、Cookie、Management Key、`auth.json` 或 `.credentials.yaml` 提交到 Git、公开 issue，或粘贴给 Agent。
-- 本仓库的截图仅用于说明布局；演示路径统一使用 `/workspace/...`，演示日期和金额也经过替换。
+- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换，日期、余额和统计数字也均为模拟值。
 
 ## 🎯 数据准确性
 
