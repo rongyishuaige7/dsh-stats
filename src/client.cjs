@@ -12,6 +12,7 @@ var IconCloseOutline16 = primitives.IconCloseOutline16;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var MAX_VISIBLE_PROJECTS = 7;
 var MAX_VISIBLE_TIMELINE_DAYS = 3;
+var MAX_VISIBLE_MODELS = 3;
 
 // ------------------------------------------------------------------
 // 格式化
@@ -516,11 +517,12 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-sortbar-select{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-primary,#e7eaf0);border-radius:7px;padding:4px 8px;font-size:12px}" +
 	".dss-sortbar-dir{background:none;border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11.5px}" +
 	".dss-sortbar-dir:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
-	".dss-pcards-viewport,.dss-timeline-viewport{min-height:0}" +
+	".dss-pcards-viewport,.dss-timeline-viewport,.dss-model-list-viewport{min-height:0}" +
 	".dss-pcards-viewport.scrollable{max-height:501px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
 	".dss-timeline-viewport.scrollable{max-height:var(--dss-timeline-max-height);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
-	".dss-pcards-viewport.scrollable,.dss-timeline-viewport.scrollable,.dss-day-lanes{scrollbar-width:thin;scrollbar-color:rgba(166,173,187,.28) transparent}" +
-	".dss-pcards-viewport.scrollable:hover,.dss-timeline-viewport.scrollable:hover,.dss-day-lanes:hover{scrollbar-color:rgba(166,173,187,.5) transparent}" +
+	".dss-model-list-viewport.scrollable{max-height:204px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
+	".dss-pcards-viewport.scrollable,.dss-timeline-viewport.scrollable,.dss-model-list-viewport.scrollable,.dss-day-lanes{scrollbar-width:thin;scrollbar-color:rgba(166,173,187,.28) transparent}" +
+	".dss-pcards-viewport.scrollable:hover,.dss-timeline-viewport.scrollable:hover,.dss-model-list-viewport.scrollable:hover,.dss-day-lanes:hover{scrollbar-color:rgba(166,173,187,.5) transparent}" +
 	".dss-pcards{display:flex;flex-direction:column;gap:10px}" +
 	".dss-pcard{border:1px solid var(--dsw-alias-border,#2a303c);border-radius:12px;background:var(--dsw-specific-menu,#1d222c);overflow:hidden;cursor:pointer;transition:border-color .15s}" +
 	".dss-pcard:hover{border-color:var(--dsw-alias-label-tertiary,#6b7280)}" +
@@ -719,11 +721,12 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-model-track{height:5px;border-radius:3px;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));overflow:hidden;margin-bottom:5px}" +
 	".dss-model-fill{height:100%;border-radius:3px;transition:width .2s}" +
 	".dss-model-meta{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7280);font-variant-numeric:tabular-nums;line-height:1.4}" +
+	".dss-model-list-viewport.scrollable .dss-model-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	// tooltip 结构化样式
 	".dss-tip-title{font-weight:650;margin-bottom:5px;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-tip-row{display:flex;justify-content:space-between;gap:14px;line-height:1.6;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
-	"@media (max-width:640px){.dss-trends .dss-model-split{grid-template-columns:minmax(0,1fr)}.dss-model-split>.dss-ring-wrap{min-width:0;max-width:100%}.dss-ring-wrap>.dss-ring-legend{width:auto;flex:1;min-width:0}.dss-model-split>.dss-model-list{min-width:0;max-width:100%}}" +
+	"@media (max-width:640px){.dss-trends .dss-model-split{grid-template-columns:minmax(0,1fr)}.dss-model-split>.dss-ring-wrap{min-width:0;max-width:100%}.dss-ring-wrap>.dss-ring-legend{width:auto;flex:1;min-width:0}.dss-model-split>.dss-model-list-viewport{min-width:0;max-width:100%}}" +
 	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head-actions{width:auto;margin-left:auto}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcards-viewport.scrollable{max-height:70vh;padding-right:3px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day.day-mode{grid-template-columns:minmax(0,1fr) 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-day-lane{grid-template-columns:94px minmax(0,1fr)}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{width:100%;flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
 
 // ------------------------------------------------------------------
@@ -1833,6 +1836,10 @@ function showModelTip(model, t, ev) {
 	]), ev);
 }
 
+function modelListNeedsScroll(models) {
+	return Array.isArray(models) && models.length > MAX_VISIBLE_MODELS;
+}
+
 function ModelList(props) {
 	var models = props.models;
 	var t = props.t;
@@ -1840,35 +1847,37 @@ function ModelList(props) {
 
 	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
 
-	return e("div", { className: "dss-model-list" },
-		models.map(function(m, i) {
-			var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
-			var pct = share * 100;
-			var color = modelColor(m.key || m.displayName || m.model || "(unknown)");
-			return e("div", {
-				key: i,
-				className: "dss-model-item",
-				onMouseEnter: function(ev) { showModelTip(m, t, ev); },
-				onMouseLeave: hideTip
-			},
-				e("div", { className: "dss-model-head" },
-					e("span", { className: "dss-model-dot", style: { background: color } }),
-					e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
-					e("span", { className: "dss-model-pct" }, pct.toFixed(1) + "%")
-				),
-				e("div", { className: "dss-model-track" },
-					e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
-				),
-				e("div", { className: "dss-model-meta" },
+	return e("div", { className: "dss-model-list-viewport" + (modelListNeedsScroll(models) ? " scrollable" : "") },
+		e("div", { className: "dss-model-list" },
+			models.map(function(m, i) {
+				var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
+				var pct = share * 100;
+				var color = modelColor(m.key || m.displayName || m.model || "(unknown)");
+				return e("div", {
+					key: i,
+					className: "dss-model-item",
+					onMouseEnter: function(ev) { showModelTip(m, t, ev); },
+					onMouseLeave: hideTip
+				},
+					e("div", { className: "dss-model-head" },
+						e("span", { className: "dss-model-dot", style: { background: color } }),
+						e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
+						e("span", { className: "dss-model-pct" }, pct.toFixed(1) + "%")
+					),
+					e("div", { className: "dss-model-track" },
+						e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
+					),
+					e("div", { className: "dss-model-meta" },
 						t("w.input") + " " + fmtTokens(m.input || 0) +
-						" · " + t("w.output") + " " + fmtTokens(m.output || 0) +
-						" · " + t("trends.totalReasoning") + " " + fmtTokens(m.reasoning || 0) +
-						" · " + t("card.sessions") + " " + fmtN(m.sessions || 0) +
-						" · LLM " + fmtDuration(m.llmMs || 0) +
-						" · " + t("w.tool") + " " + fmtDuration(m.toolMs || 0)
-				)
-			);
-		})
+							" · " + t("w.output") + " " + fmtTokens(m.output || 0) +
+							" · " + t("trends.totalReasoning") + " " + fmtTokens(m.reasoning || 0) +
+							" · " + t("card.sessions") + " " + fmtN(m.sessions || 0) +
+							" · LLM " + fmtDuration(m.llmMs || 0) +
+							" · " + t("w.tool") + " " + fmtDuration(m.toolMs || 0)
+					)
+				);
+			})
+		)
 	);
 }
 
@@ -2658,5 +2667,5 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, projectCsvTable
+	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable
 };
