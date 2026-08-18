@@ -10,6 +10,10 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
+import pricing from "./pricing.cjs";
+import { collectAccounts, providerViews } from "./accounts.js";
+
+const { normalizeIdentity, priceUsage, summarizeCosts, mergeCostSummaries } = pricing;
 
 // ES decorators 运行时（与官方编译产物一致）
 var __runInitializers = function (thisArg, initializers, value) {
@@ -57,6 +61,162 @@ const GAP_MS = 10 * 60 * 1000;
 const MIN_INTERVAL_MS = 60 * 1000;
 const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
+const STATS_SCHEMA_VERSION = 2;
+
+// DeepSeek 余额查询与统计聚合解耦：余额是宿主凭证能力，不应让统计日志
+// 读取失败或网络波动改变现有 stats/aggregate 的语义。
+const DEEPSEEK_BALANCE_API = "https://api.deepseek.com/user/balance";
+const DEEPSEEK_TOP_UP_URL = "https://platform.deepseek.com/top_up";
+const DEEPSEEK_API_KEY_REF = "DEEPSEEK_API_KEY";
+const BALANCE_CACHE_MS = 60 * 1000;
+const BALANCE_TIMEOUT_MS = 15 * 1000;
+
+const BALANCE_ERROR_MESSAGES = {
+	"no-api-key": "未配置 DEEPSEEK_API_KEY",
+	"credential-failed": "读取 DeepSeek 凭证失败",
+	"fetch-unavailable": "当前宿主不支持网络请求",
+	"fetch-timeout": "DeepSeek 余额请求超时",
+	"fetch-failed": "DeepSeek 余额请求失败",
+	"http-401": "DeepSeek 凭证无效或已过期",
+	"http-403": "DeepSeek 凭证没有余额查询权限",
+	"http-429": "DeepSeek 余额请求过于频繁",
+	"http-4xx": "DeepSeek 余额请求被拒绝",
+	"http-5xx": "DeepSeek 服务暂时不可用",
+	"invalid-response": "DeepSeek 返回的余额数据无效",
+	"balance-unavailable": "DeepSeek 余额暂不可用"
+};
+
+class DeepSeekBalanceError extends Error {
+	constructor(code) {
+		super(BALANCE_ERROR_MESSAGES[code] || "DeepSeek 余额查询失败");
+		this.name = "DeepSeekBalanceError";
+		this.code = code;
+	}
+}
+
+function balanceErrorCode(error) {
+	return error?.code && typeof error.code === "string" ? error.code : "fetch-failed";
+}
+
+function parseBalanceAmount(value) {
+	if (value === undefined || value === null || value === "") return null;
+	const number = typeof value === "string" ? Number(value.trim()) : value;
+	return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function normalizeBalanceInfo(info) {
+	if (!info || typeof info !== "object" || Array.isArray(info)) throw new DeepSeekBalanceError("invalid-response");
+	const currency = typeof info.currency === "string" && info.currency.trim() ? info.currency.trim().toUpperCase() : null;
+	const total = parseBalanceAmount(info.total_balance);
+	const toppedUp = parseBalanceAmount(info.topped_up_balance);
+	const granted = parseBalanceAmount(info.granted_balance);
+	if (!currency || total === null || (info.topped_up_balance != null && toppedUp === null) || (info.granted_balance != null && granted === null)) {
+		throw new DeepSeekBalanceError("invalid-response");
+	}
+	return {
+		provider: "deepseek",
+		name: currency === "CNY" ? "DeepSeek" : `DeepSeek ${currency}`,
+		status: "ok",
+		currency,
+		total,
+		toppedUp,
+		granted,
+		fetchedAt: null,
+		topUpUrl: DEEPSEEK_TOP_UP_URL,
+		errorCode: null
+	};
+}
+
+function balancePayload(generatedAt, accounts, warnings = []) {
+	return { generatedAt, accounts, warnings };
+}
+
+function unavailableBalancePayload(now, status, code) {
+	const message = BALANCE_ERROR_MESSAGES[code] || BALANCE_ERROR_MESSAGES["fetch-failed"];
+	return balancePayload(now, [{
+		provider: "deepseek", name: "DeepSeek", status, currency: "CNY",
+		total: null, toppedUp: null, granted: null, fetchedAt: null,
+		topUpUrl: DEEPSEEK_TOP_UP_URL, errorCode: code
+	}], [{ code: `BALANCE_${code.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`, message }]);
+}
+
+function staleBalancePayload(cached, now, error) {
+	const code = balanceErrorCode(error);
+	const message = BALANCE_ERROR_MESSAGES[code] || BALANCE_ERROR_MESSAGES["fetch-failed"];
+	return balancePayload(now, cached.accounts.map((account) => ({ ...account, status: "stale", errorCode: code })), [{
+		code: `BALANCE_${code.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`,
+		message
+	}]);
+}
+
+/**
+ * 请求并校验 DeepSeek 官方余额响应。该函数不缓存、不暴露凭证，便于测试。
+ */
+async function fetchDeepSeekBalance(credentials, fetchImpl = globalThis.fetch, now = Date.now()) {
+	let resolved;
+	if (!credentials || typeof credentials.resolve !== "function") throw new DeepSeekBalanceError("no-api-key");
+	try {
+		resolved = await credentials.resolve(DEEPSEEK_API_KEY_REF);
+	} catch {
+		throw new DeepSeekBalanceError("credential-failed");
+	}
+	const apiKey = typeof resolved === "string" ? resolved : resolved?.value;
+	if (typeof apiKey !== "string" || !apiKey.trim()) throw new DeepSeekBalanceError("no-api-key");
+	if (typeof fetchImpl !== "function") throw new DeepSeekBalanceError("fetch-unavailable");
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), BALANCE_TIMEOUT_MS);
+	try {
+		let response;
+		try {
+			response = await fetchImpl(DEEPSEEK_BALANCE_API, {
+				headers: { authorization: `Bearer ${apiKey}` },
+				signal: controller.signal
+			});
+		} catch (error) {
+			if (error?.name === "AbortError" || error?.name === "TimeoutError" || controller.signal.aborted) {
+				throw new DeepSeekBalanceError("fetch-timeout");
+			}
+			throw new DeepSeekBalanceError("fetch-failed");
+		}
+		if (!response || !response.ok) {
+			const status = Number(response?.status);
+			if (status === 401) throw new DeepSeekBalanceError("http-401");
+			if (status === 403) throw new DeepSeekBalanceError("http-403");
+			if (status === 429) throw new DeepSeekBalanceError("http-429");
+			if (status >= 500) throw new DeepSeekBalanceError("http-5xx");
+			throw new DeepSeekBalanceError("http-4xx");
+		}
+		let body;
+		try { body = await response.json(); } catch { throw new DeepSeekBalanceError("invalid-response"); }
+		if (body?.is_available === false) throw new DeepSeekBalanceError("balance-unavailable");
+		if (!Array.isArray(body?.balance_infos) || body.balance_infos.length === 0) throw new DeepSeekBalanceError("invalid-response");
+		const accounts = body.balance_infos.map(normalizeBalanceInfo).map((account) => ({ ...account, fetchedAt: now }));
+		return balancePayload(now, accounts);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+const balanceStateByService = new WeakMap();
+function balanceState(service) {
+	let state = balanceStateByService.get(service);
+	if (!state) {
+		state = { cache: null, inflight: null };
+		balanceStateByService.set(service, state);
+	}
+	return state;
+}
+
+function credentialsService(ctx) {
+	try {
+		// StatsService deliberately does not require credentials as a class dependency:
+		// a missing credential provider must not disable the existing stats RPC.
+		return ctx?.reflect?.get?.("credentials", false) || ctx?.credentials || null;
+	} catch {
+		return null;
+	}
+}
 
 function dshHome() {
 	return process.env.DSH_HOME || join(homedir(), ".dsh");
@@ -146,6 +306,33 @@ function nonNegativeNumber(value) {
 	return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
+function firstString(...values) {
+	for (const value of values) if (typeof value === "string" && value.trim()) return value.trim();
+	return null;
+}
+
+function accountTypeOf(source, fallback = "api") {
+	return firstString(source?.accountType, source?.account_type, source?.billingMode, source?.billing_mode, fallback) || "api";
+}
+
+function rawIdentity(providerId, modelRaw, accountType, at) {
+	return normalizeIdentity(providerId || "unknown", modelRaw || "(unknown)", accountType || "api", at);
+}
+
+function identityKey(identity) {
+	return [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000");
+}
+
+function identityFields(identity) {
+	return {
+		providerId: identity.providerId,
+		providerFamily: identity.providerFamily,
+		modelRaw: identity.modelRaw,
+		modelCanonical: identity.modelCanonical,
+		accountType: identity.accountType
+	};
+}
+
 // 从事件时间戳提取活跃区间（相邻间隔 <= GAP_MS 归一段；孤立事件计 1 分钟）
 function activityIntervals(times) {
 	if (!times.length) return [];
@@ -213,7 +400,7 @@ const sessionInfoCache = new Map(); // filePath -> { mtimeMs, size, info }
 const SESSION_CACHE_LIMIT = 300; // LRU 上限，防长期运行内存膨胀
 function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
-	if (!file) return { times: [], lastTime: null, model: null, usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true };
+	if (!file) return { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true };
 	const cached = sessionInfoCache.get(file);
 	let snapshot;
 	try { snapshot = readStable(file); } catch (error) {
@@ -231,6 +418,8 @@ function sessionInfo(home, sessionId) {
 	const scanned = scanZstdFrames(buf);
 	const times = [];
 	let currentModel = null; // 最近 request/header 声明的模型（chunk 兜底用）
+	let currentProvider = "unknown";
+	let currentAccountType = "api";
 	let currentServiceTier = "standard";
 	let origin = null, parentSession = null, seedLength = null;
 	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
@@ -278,16 +467,20 @@ function sessionInfo(home, sessionId) {
 					seedLength = ev.seedLength ?? null;
 					if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
 				} else if (ev.type === "request/header") {
-					const config = ev.data?.header?.config;
+					const header = ev.data?.header;
+					const config = header?.config;
 					const m = config?.model;
 					if (m) currentModel = m;
+					const provider = firstString(config?.provider, config?.providerId, config?.provider_id, header?.provider);
+					if (provider) currentProvider = provider;
+					currentAccountType = accountTypeOf(config, currentAccountType);
 					currentServiceTier = config?.serviceTier === "priority" || config?.service_tier === "priority" ? "priority" : "standard";
 				} else if (ev.type === "step/start") {
 					openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
 				} else if (ev.type === "assistant/chunk") {
 					if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
 						const u = ev.data.chunk.usage || {};
-						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel, serviceTier: currentServiceTier,
+						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier,
 							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
 							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
 					} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) {
@@ -297,8 +490,10 @@ function sessionInfo(home, sessionId) {
 					const u = ev.data?.usage;
 					const source = ev.data?.message?.source;
 					const msgModel = source?.model || currentModel;
+					const msgProvider = firstString(source?.provider, source?.providerId, source?.provider_id, currentProvider) || "unknown";
+					const msgAccountType = accountTypeOf(source, currentAccountType);
 					const msgServiceTier = source?.serviceTier === "priority" || source?.service_tier === "priority" ? "priority" : currentServiceTier;
-					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel, serviceTier: msgServiceTier,
+					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel, providerId: msgProvider, accountType: msgAccountType, serviceTier: msgServiceTier,
 						uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
 						cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
 					if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
@@ -330,21 +525,28 @@ function sessionInfo(home, sessionId) {
 		}
 	}
 	times.sort((a, b) => a - b);
-	// session 主要模型 = 按 token 量（cacheRead+output+uncached）加权最大的模型，
-	// 避免会话中途切换模型时整体被错误归到最后一个模型。
+	// 主要路由 = 按 token 量加权最大的 provider/model/accountType。
+	// 同一模型由不同 provider 提供时必须保持分离。
 	const modelTokens = new Map();
 	for (const u of usageByStep.values()) {
-		const mk = u.model || "(unknown)";
+		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
+		const mk = identityKey(identity);
 		const weight = (u.cacheRead || 0) + (u.output || 0) + (u.uncached || 0);
-		modelTokens.set(mk, (modelTokens.get(mk) || 0) + weight);
+		const row = modelTokens.get(mk) || { identity, weight: 0 };
+		row.weight += weight;
+		modelTokens.set(mk, row);
 	}
-	let model = null, modelWeight = -1;
-	for (const [mk, w] of modelTokens) {
-		if (w > modelWeight) { modelWeight = w; model = mk; }
+	let primary = null, modelWeight = -1;
+	for (const row of modelTokens.values()) {
+		if (row.weight > modelWeight) { modelWeight = row.weight; primary = row.identity; }
 	}
-	if (model === null) model = currentModel;
+	if (primary === null) primary = rawIdentity(currentProvider, currentModel, currentAccountType, times[times.length - 1]);
 	const info = {
-		times, lastTime: times.length ? times[times.length - 1] : null, model, usages: [...usageByStep.values()],
+		times, lastTime: times.length ? times[times.length - 1] : null,
+		model: primary.modelRaw === "(unknown)" ? null : primary.modelRaw,
+		providerId: primary.providerId,
+		accountType: primary.accountType,
+		usages: [...usageByStep.values()],
 		origin, parentSession, seedLength, stats: derivedEvents ? derived : null,
 		slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot), partial: scanned.truncated || !snapshot.stable || malformedRecords > 0, stale: false, missing: false
 	};
@@ -379,38 +581,122 @@ function slotDurations(times) {
 	return [...slotMs.entries()].map(([slot, ms]) => ({ slot, ms }));
 }
 
-// 按「模型 + 服务档 + 上下文档 + 30 分钟槽」聚合，既保留 DeepSeek 峰谷时段，
-// 也保留 MiniMax M3 的 priority 与 >512K 输入分档。
+// 按「provider + 模型 + 账户类型 + 服务档 + 上下文 + 30 分钟槽」聚合。
+// 上下文 token 数保留到请求粒度，避免 OpenAI/Gemini/MiniMax 的不同阈值被槽聚合破坏。
 function slotUsages(usages) {
 	const m = new Map();
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
-		const mk = u.model || "(unknown)";
+		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
 		const serviceTier = u.serviceTier === "priority" ? "priority" : "standard";
-		const contextOver512k = u.uncached + u.cacheRead + u.cacheWrite > LONG_CONTEXT_TOKENS;
-		const key = mk + "\u0000" + serviceTier + "\u0000" + (contextOver512k ? "long" : "short") + "\u0000" + k;
-		const cur = m.get(key) || { model: mk, serviceTier, contextOver512k, slot: k, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+		const contextTokens = u.uncached + u.cacheRead + u.cacheWrite;
+		const contextOver512k = contextTokens > LONG_CONTEXT_TOKENS;
+		const key = identityKey(identity) + "\u0000" + serviceTier + "\u0000" + contextTokens + "\u0000" + k;
+		const cur = m.get(key) || {
+			model: identity.modelRaw,
+			...identityFields(identity),
+			serviceTier,
+			contextTokens,
+			contextOver512k,
+			slot: k,
+			uncached: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			reasoning: 0
+		};
 		cur.uncached += u.uncached; cur.output += u.output; cur.cacheRead += u.cacheRead; cur.cacheWrite += u.cacheWrite;
 		cur.reasoning += u.reasoning;
 		m.set(key, cur);
 	}
-	return [...m.values()];
+	return [...m.values()].map((row) => ({ ...row, cost: priceUsage(row, row) }));
+}
+
+function modelUsages(rows) {
+	const grouped = new Map();
+	for (const row of rows) {
+		const identity = rawIdentity(row.providerId, row.modelRaw || row.model, row.accountType, row.slot * SLOT_MS);
+		const key = identityKey(identity);
+		const current = grouped.get(key) || {
+			model: identity.modelRaw,
+			...identityFields(identity),
+			uncached: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			reasoning: 0,
+			_costs: []
+		};
+		current.uncached += row.uncached || 0;
+		current.output += row.output || 0;
+		current.cacheRead += row.cacheRead || 0;
+		current.cacheWrite += row.cacheWrite || 0;
+		current.reasoning += row.reasoning || 0;
+		current._costs.push(row.cost || priceUsage(row, row));
+		grouped.set(key, current);
+	}
+	return [...grouped.values()].map(({ _costs, ...row }) => ({ ...row, cost: summarizeCosts(_costs) }));
+}
+
+function projectionSlotUsage(info, usage, updatedAt) {
+	const identity = rawIdentity(info.providerId, info.model, info.accountType, updatedAt);
+	const contextTokens = usage.uncached + usage.cacheRead + usage.cacheWrite;
+	const row = {
+		model: identity.modelRaw,
+		...identityFields(identity),
+		serviceTier: "standard",
+		contextTokens,
+		contextOver512k: contextTokens > LONG_CONTEXT_TOKENS,
+		slot: Math.floor(updatedAt / SLOT_MS),
+		...usage
+	};
+	return { ...row, cost: priceUsage(row, row) };
 }
 
 let StatsService = (() => {
 	let _classSuper = TypertRemoteService;
 	let _instanceExtraInitializers = [];
 	let _aggregate_decorators;
+	let _current_decorators;
+	let _providers_decorators;
+	let _account_decorators;
 	return class StatsService extends _classSuper {
 		static {
 			const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
 			_aggregate_decorators = [Remote("aggregate")];
+			_current_decorators = [Remote("current")];
+			_providers_decorators = [Remote("providers")];
+			_account_decorators = [Remote("account")];
 			__esDecorate(this, null, _aggregate_decorators, {
 				kind: "method",
 				name: "aggregate",
 				static: false,
 				private: false,
 				access: { has: (obj) => "aggregate" in obj, get: (obj) => obj.aggregate },
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _current_decorators, {
+				kind: "method",
+				name: "current",
+				static: false,
+				private: false,
+				access: { has: (obj) => "current" in obj, get: (obj) => obj.current },
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _providers_decorators, {
+				kind: "method",
+				name: "providers",
+				static: false,
+				private: false,
+				access: { has: (obj) => "providers" in obj, get: (obj) => obj.providers },
+				metadata: _metadata
+			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _account_decorators, {
+				kind: "method",
+				name: "account",
+				static: false,
+				private: false,
+				access: { has: (obj) => "account" in obj, get: (obj) => obj.account },
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
 			if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
@@ -454,7 +740,7 @@ let StatsService = (() => {
 					const message = err?.message || String(err);
 					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（使用 projection cache）:`, message);
 					warnings.push({ code: "SESSION_DECODE_FAILED", sessionId, message });
-					info = { times: [], lastTime: null, model: null, usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
+					info = { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
 				}
 				if (info.missing) warnings.push({ code: "SESSION_LOG_MISSING", sessionId, message: "session log was not found; projection cache was used where available" });
 				if (info.partial) warnings.push({ code: "SESSION_LOG_PARTIAL", sessionId, message: "session log was incomplete or malformed; only valid committed records were used" });
@@ -463,22 +749,12 @@ let StatsService = (() => {
 				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
 				// 子代理继承的父上下文 cacheRead 也计入了，导致总览页与趋势页不一致。
 				let totalUncached = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalReasoning = 0;
-				// 按模型聚合的 token 分布（消息粒度：跨模型会话的各模型 token 各归其位）
-				const modelUsageMap = new Map();
 				for (const u of info.usages) {
 					totalUncached += u.uncached || 0;
 					totalOutput += u.output || 0;
 					totalCacheRead += u.cacheRead || 0;
 					totalCacheWrite += u.cacheWrite || 0;
 					totalReasoning += u.reasoning || 0;
-					const mk = u.model || "(unknown)";
-					const cur = modelUsageMap.get(mk) || { model: mk, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
-					cur.uncached += u.uncached || 0;
-					cur.output += u.output || 0;
-					cur.cacheRead += u.cacheRead || 0;
-					cur.cacheWrite += u.cacheWrite || 0;
-					cur.reasoning += u.reasoning || 0;
-					modelUsageMap.set(mk, cur);
 				}
 				const projectionUsage = {
 					uncached: nonNegativeNumber(usageTotals?.uncachedInputTokens),
@@ -492,10 +768,8 @@ let StatsService = (() => {
 				if (usedProjectionUsage) {
 					totalUncached = projectionUsage.uncached; totalOutput = projectionUsage.output;
 					totalCacheRead = projectionUsage.cacheRead; totalCacheWrite = projectionUsage.cacheWrite;
-					modelUsageMap.set("(unknown)", { model: "(unknown)", ...projectionUsage });
 					warnings.push({ code: "SESSION_USAGE_FALLBACK", sessionId, message: "token usage came from the projection cache and may include inherited fork context" });
 				}
-				const modelUsage = [...modelUsageMap.values()];
 				const eventStats = info.stats || statsRow || {};
 				const raw = {
 					turns: nonNegativeNumber(eventStats.turns), steps: nonNegativeNumber(eventStats.steps),
@@ -508,14 +782,19 @@ let StatsService = (() => {
 				};
 				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
 				let perSlotUsage = slotUsages(info.usages);
-				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [{ model: "(unknown)", serviceTier: "standard", contextOver512k: false, slot: Math.floor(updatedAt / SLOT_MS), ...projectionUsage }];
+				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [projectionSlotUsage(info, projectionUsage, updatedAt)];
+				const modelUsage = modelUsages(perSlotUsage);
+				const primaryIdentity = rawIdentity(info.providerId, info.model, info.accountType, updatedAt);
+				const sessionCost = summarizeCosts(perSlotUsage.map((row) => row.cost));
 				const session = {
 					id: sessionId,
 					title: title ?? null,
 					updatedAt,
 					createdAt,
 					model: info.model ?? null,
+					...identityFields(primaryIdentity),
 					modelUsage,
+					cost: sessionCost,
 					archived,
 					blank: meta?.blank === true,
 					subagent: info.origin === "subagent",
@@ -559,8 +838,9 @@ let StatsService = (() => {
 					sessionCount: sessions.length,
 					subagentCount,
 					lastActiveAt,
-					stats: agg,
-					sessions
+						stats: agg,
+						cost: mergeCostSummaries(sessions.map((session) => session.cost)),
+						sessions
 				});
 			}
 
@@ -588,16 +868,18 @@ let StatsService = (() => {
 					sessions: []
 				};
 				if (!existing) projects.push(target);
-				sessions.forEach((s) => {
+					sessions.forEach((s) => {
 					target.sessions.push(s);
 					if (s.subagent) target.subagentCount++;
 					addRaw(target.stats, s.stats);
 					if (s.updatedAt != null && (target.lastActiveAt == null || s.updatedAt > target.lastActiveAt)) target.lastActiveAt = s.updatedAt;
 				});
 				target.sessionCount = target.sessions.length;
-				target.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-			});
-			projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
+						target.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+						target.cost = mergeCostSummaries(target.sessions.map((session) => session.cost));
+					});
+					projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
+					const cost = mergeCostSummaries(projects.map((project) => project.cost));
 
 			const projectIndex = new Map();
 			projects.forEach((p, i) => projectIndex.set(p.id, i));
@@ -634,12 +916,43 @@ let StatsService = (() => {
 			days.forEach((d) => d.slotBlocks.sort((a, b) => a.slot - b.slot));
 
 			return {
-				projects,
-				timeline: { slotMinutes: SLOT_MINUTES, days },
-				meta: { source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
-			};
+						projects,
+						cost,
+						timeline: { slotMinutes: SLOT_MINUTES, days },
+						meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
+					};
+				}
+
+				async providers() {
+					return providerViews(this, this.ctx || {});
+				}
+
+				async account() {
+					return collectAccounts(this, this.ctx || {});
+				}
+
+		async current() {
+			const state = balanceState(this);
+			const now = Date.now();
+			if (state.cache && now - state.cache.at < BALANCE_CACHE_MS) return state.cache.payload;
+			if (state.inflight) return state.inflight;
+			state.inflight = (async () => {
+				try {
+					const payload = await fetchDeepSeekBalance(credentialsService(this.ctx), globalThis.fetch, Date.now());
+					state.cache = { at: Date.now(), payload };
+					return payload;
+				} catch (error) {
+					const code = balanceErrorCode(error);
+					if (code === "no-api-key") return unavailableBalancePayload(Date.now(), "unconfigured", code);
+					if (state.cache?.payload) return staleBalancePayload(state.cache.payload, Date.now(), error);
+					return unavailableBalancePayload(Date.now(), "error", code);
+				} finally {
+					state.inflight = null;
+				}
+			})();
+			return state.inflight;
 		}
 	};
 })();
 
-export { StatsService, StatsService as default };
+export { StatsService, StatsService as default, fetchDeepSeekBalance, normalizeBalanceInfo };

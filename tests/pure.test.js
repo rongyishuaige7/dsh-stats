@@ -6,7 +6,8 @@ const {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, activityDates, fmtDateCN,
-	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout,
+	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
+	projectCsvTable,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -371,8 +372,15 @@ test('hasTokenUsage excludes activity-only projects from date statistics', () =>
 
 test('timelineLayout shows more projects when the visible range is short', () => {
 	expect(timelineLayout(1)).toMatchObject({ maxBlockH: 200, maxProjects: 6, laneHeight: 72, laneViewportH: 306, rowMinH: 214 });
-	expect(timelineLayout(7)).toMatchObject({ maxBlockH: 112, maxProjects: 5, rowMinH: 153 });
-	expect(timelineLayout(30)).toMatchObject({ maxBlockH: 56, maxProjects: 4, rowMinH: 129 });
+	expect(timelineLayout(7)).toMatchObject({ maxBlockH: 112, maxProjects: 5, rowMinH: 184 });
+	expect(timelineLayout(30)).toMatchObject({ maxBlockH: 56, maxProjects: 4, rowMinH: 160 });
+});
+
+test('timelineDisplayDays puts the newest day first only in all-days mode', () => {
+	const days = [{ date: '2025-03-12' }, { date: '2025-03-15' }, { date: '2025-03-14' }];
+	expect(timelineDisplayDays(days, false).map(day => day.date)).toEqual(['2025-03-15', '2025-03-14', '2025-03-12']);
+	expect(timelineDisplayDays(days, true).map(day => day.date)).toEqual(['2025-03-12', '2025-03-15', '2025-03-14']);
+	expect(days.map(day => day.date)).toEqual(['2025-03-12', '2025-03-15', '2025-03-14']);
 });
 
 test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {
@@ -529,4 +537,27 @@ test('modelAgg fallback gives full duration to single model', () => {
 	const models = modelAgg(sessions);
 	expect(models[0].llmMs).toBe(3000);
 	expect(models[0].toolMs).toBe(1000);
+});
+
+test('project CSV exports provider-scoped pricing audit fields per usage slice', () => {
+	const slot = Math.floor(Date.parse('2026-08-17T09:00:00+08:00') / 1800000);
+	const projects = [{
+		id: 'p1', name: 'Project A', path: '/workspace/a', sessionCount: 1,
+		stats: { turns: 1, steps: 2, llmMs: 30, toolMs: 40, inputTokens: 1100, outputTokens: 100, cacheHitPct: 90.9 },
+		sessions: [{
+			id: 's1', title: 'Pricing check', updatedAt: slot * 1800000, quality: 'exact',
+			providerId: 'deepseek-official', accountType: 'api', model: 'deepseek-v4-pro',
+			slotUsage: [{ slot, providerId: 'deepseek-official', accountType: 'api', model: 'deepseek-v4-pro', serviceTier: 'standard', contextTokens: 1100, uncached: 100, cacheRead: 1000, cacheWrite: 0, output: 100, reasoning: 50 }],
+			stats: { uncached: 100, cacheRead: 1000, cacheWrite: 0, output: 100, reasoning: 50 },
+		}],
+	}];
+	const t = (key) => key;
+	const table = projectCsvTable(projects, t);
+	const row = Object.fromEntries(table[0].map((header, index) => [header, table[1][index]]));
+	expect(table).toHaveLength(2);
+	expect(row).toMatchObject({
+		providerId: 'deepseek-official', providerFamily: 'deepseek', modelRaw: 'deepseek-v4-pro', modelCanonical: 'deepseek-v4-pro', accountType: 'api',
+		currency: 'CNY', costStatus: 'exact', ruleId: 'deepseek/deepseek-v4-pro@2026-08-18', pricingSource: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing',
+	});
+	expect(row.costAmount).toBeCloseTo(0.0039, 8);
 });

@@ -1,5 +1,6 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+let pricing = require("./pricing.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -9,6 +10,8 @@ var Fragment = react.Fragment;
 var IconDataOutline16 = primitives.IconDataOutline16;
 var IconCloseOutline16 = primitives.IconCloseOutline16;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+var MAX_VISIBLE_PROJECTS = 7;
+var MAX_VISIBLE_TIMELINE_DAYS = 3;
 
 // ------------------------------------------------------------------
 // 格式化
@@ -58,55 +61,26 @@ function esc(s) {
 	return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// ------------------------------------------------------------------
-// 定价与成本（元/百万 tokens）
-// DeepSeek: api-docs.deepseek.com/zh-cn/quick_start/pricing
-// MiniMax: platform.minimaxi.com/docs/guides/pricing-paygo
-// ------------------------------------------------------------------
-var PRICING = {
-	"deepseek-v4-pro": {
-		label: "DeepSeek V4 Pro",
-		legacy: { hit: 0.025, miss: 3.0, out: 6.0 },
-		v0817: {
-			offPeak: { hit: 0.15, miss: 4.5, out: 13.5 },
-			peak: { hit: 0.30, miss: 9.0, out: 27.0 }
-		}
-	},
-	"deepseek-v4-flash": {
-		label: "DeepSeek V4 Flash",
-		legacy: { hit: 0.02, miss: 1.0, out: 2.0 },
-		v0817: {
-			offPeak: { hit: 0.05, miss: 1.5, out: 4.5 },
-			peak: { hit: 0.10, miss: 3.0, out: 9.0 }
-		}
-	},
-	"MiniMax-M3": {
-		label: "MiniMax M3",
-		serviceTiers: {
-			standard: {
-				short: { hit: 0.42, miss: 2.1, write: 2.1, out: 8.4 },
-				long: { hit: 0.84, miss: 4.2, write: 4.2, out: 16.8 }
-			},
-			priority: {
-				short: { hit: 0.63, miss: 3.15, write: 3.15, out: 12.6 },
-				long: { hit: 1.26, miss: 6.3, write: 6.3, out: 25.2 }
-			}
-		}
-	},
-	"MiniMax-M2.7": {
-		label: "MiniMax M2.7",
-		fixed: { hit: 0.42, miss: 2.1, write: 2.625, out: 8.4 }
-	},
-	"MiniMax-M2.7-highspeed": {
-		label: "MiniMax M2.7 Highspeed",
-		fixed: { hit: 0.42, miss: 4.2, write: 2.625, out: 16.8 }
-	}
-};
-var PRICING_LOWER = {};
-Object.keys(PRICING).forEach(function (model) { PRICING_LOWER[model.toLowerCase()] = PRICING[model]; });
-function pricingForModel(model) {
-	if (!model) return null;
-	return PRICING[model] || PRICING_LOWER[String(model).toLowerCase()] || null;
+// 宿主与客户端共用同一份 Provider-scoped 计价内核。
+// 纯客户端旧数据没有 Provider 字段时才做有限推断，并由数据源标记为近似。
+var summarizeCosts = pricing.summarizeCosts;
+var mergeCostSummaries = pricing.mergeCostSummaries;
+function inferredOfficialProvider(model) {
+	var id = String(model || "").toLowerCase();
+	if (id.startsWith("deepseek-")) return "deepseek-official";
+	if (id.startsWith("minimax-")) return "minimax-cn";
+	if (id.startsWith("gpt-")) return "openai";
+	if (id.startsWith("claude-")) return "anthropic";
+	if (id.startsWith("gemini-")) return "google";
+	if (id.startsWith("kimi-")) return "moonshotai-cn";
+	if (id.startsWith("glm-")) return "zai";
+	return "unknown";
+}
+function identityForUsage(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
+	var model = usage?.modelRaw || usage?.model || fallbackModel || "(unknown)";
+	var hasProvider = usage && Object.prototype.hasOwnProperty.call(usage, "providerId");
+	var providerId = hasProvider ? usage.providerId : (fallbackProvider || inferredOfficialProvider(model));
+	return pricing.normalizeIdentity(providerId || "unknown", model, usage?.accountType || fallbackAccountType || "api", Number.isFinite(usage?.slot) ? usage.slot * 1800000 : Date.now());
 }
 function costOf(stats, price) {
 	var miss = stats.uncached * price.miss / 1e6;
@@ -122,66 +96,70 @@ function fmtCost(rmb) {
 	if (rmb >= 0.01) return "¥" + rmb.toFixed(2);
 	return "¥" + rmb.toFixed(4);
 }
-
-// 峰谷时段（北京 9:00–12:00 / 14:00–18:00 为高峰）
-function isPeakMinutes(minOfDay) {
-	return (minOfDay >= 9 * 60 && minOfDay < 12 * 60) || (minOfDay >= 14 * 60 && minOfDay < 18 * 60);
+function fmtCurrencyAmount(value, currency) {
+	if (value == null || !Number.isFinite(value)) return "—";
+	var amount = value <= 0 ? "0" : value >= 1000 ? value.toFixed(0) : value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
+	if (currency === "CNY") return "¥" + amount;
+	if (currency === "USD") return "$" + amount;
+	if (currency === "EUR") return "€" + amount;
+	return amount + " " + (currency || "");
 }
-// 8.17 峰谷调价生效时间（北京 00:00）
-var PRICE_CHANGE_AT = Date.parse("2026-08-17T00:00:00+08:00");
+function fmtCostSummary(summary) {
+	if (!summary || !Array.isArray(summary.totals) || summary.totals.length === 0) return "—";
+	var text = summary.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ");
+	if (summary.status === "estimated") return "≈" + text;
+	if (summary.status === "partial") return text + " + ?";
+	return text;
+}
+function fmtBalanceAmount(value, currency) {
+	if (value == null || !Number.isFinite(value)) return "—";
+	var amount = value >= 1000 ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value.toFixed(2);
+	return currency === "CNY" ? "¥" + amount : amount + " " + currency;
+}
 var SLOT_MS = 30 * 60 * 1000;
-// 单个 30 分钟槽的实际价格：8.17 前按平价，之后按该槽实际时段选峰/谷价。
-// 时段判定用北京时间（UTC+8 无夏令时），与宿主机时区无关。
-function priceForSlot(slotIdx, m) {
-	var t = slotIdx * SLOT_MS;
-	if (t < PRICE_CHANGE_AT) return m.legacy;
-	var bj = new Date(t + 8 * 3600 * 1000);
-	var min = bj.getUTCHours() * 60 + bj.getUTCMinutes();
-	return isPeakMinutes(min) ? m.v0817.peak : m.v0817.offPeak;
+function usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
+	if (usage?.cost && typeof usage.cost === "object") return usage.cost;
+	var identity = identityForUsage(usage, fallbackModel, fallbackProvider, fallbackAccountType);
+	return pricing.priceUsage(usage || {}, identity);
 }
-function priceForUsage(slotIdx, m, usage) {
-	if (m.serviceTiers) {
-		var tier = usage && usage.serviceTier === "priority" ? "priority" : "standard";
-		return m.serviceTiers[tier][usage && usage.contextOver512k ? "long" : "short"];
-	}
-	if (m.fixed) return m.fixed;
-	return priceForSlot(slotIdx, m);
+function usageCost(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
+	return usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType).amount;
 }
-function usageCost(usage, fallbackModel) {
-	var m = pricingForModel(usage.model || fallbackModel);
-	if (!m) return null;
-	return costOf(usage, priceForUsage(usage.slot, m, usage));
-}
-// 单个会话成本：按逐槽逐模型精确计价（slotUsage 已带 model 字段，宿主端按模型分槽聚合）。
-function sessionCost(s) {
+function sessionCostSummary(s) {
 	if (s.slotUsage && s.slotUsage.length) {
-		var total = 0;
-		for (var i = 0; i < s.slotUsage.length; i++) {
-			var su = s.slotUsage[i];
-			var cost = usageCost(su, s.model);
-			if (cost == null) return null;
-			total += cost;
-		}
-		return total;
+		return summarizeCosts(s.slotUsage.map(function(usage) {
+			return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
+		}));
 	}
-	// 无逐槽数据（客户端近似）：DeepSeek 按更新时间；MiniMax 保守按 standard/短上下文档。
-	var m = pricingForModel(s.model);
-	if (!m) return null;
-	var price;
-	if (m.serviceTiers) price = m.serviceTiers.standard.short;
-	else if (m.fixed) price = m.fixed;
-	else price = s.updatedAt != null && s.updatedAt < PRICE_CHANGE_AT ? m.legacy : m.v0817.offPeak;
-	return costOf(s.stats, price);
+	if (s.cost && Array.isArray(s.cost.totals)) return s.cost;
+	var st = s.stats || {};
+	var model = s.modelRaw || s.model || "(unknown)";
+	var usage = {
+		model,
+		slot: Math.floor((s.updatedAt || Date.now()) / SLOT_MS),
+		serviceTier: "standard",
+		contextTokens: (st.uncached || 0) + (st.cacheRead || 0) + (st.cacheWrite || 0),
+		uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
+		output: st.output != null ? st.output : (st.outputTokens || 0),
+		cacheRead: st.cacheRead || 0,
+		cacheWrite: st.cacheWrite || 0,
+		reasoning: st.reasoning || 0
+	};
+	if (Object.prototype.hasOwnProperty.call(s, "providerId")) usage.providerId = s.providerId;
+	if (s.accountType) usage.accountType = s.accountType;
+	return summarizeCosts([usageCostDetail(usage, model, undefined, s.accountType)]);
 }
-// 项目成本 = 各会话成本之和
+// 数值返回值仅保留给旧接口/测试；新 UI 始终使用不换算的 cost summary。
+function sessionCost(s) {
+	var summary = sessionCostSummary(s);
+	return summary.status === "exact" && summary.totals.length === 1 ? summary.totals[0].amount : null;
+}
+function projectCostSummary(p) {
+	return mergeCostSummaries((p.sessions || []).map(sessionCostSummary));
+}
 function projectCost(p) {
-	var total = 0;
-	for (var i = 0; i < p.sessions.length; i++) {
-		var cost = sessionCost(p.sessions[i]);
-		if (cost == null) return null;
-		total += cost;
-	}
-	return total;
+	var summary = projectCostSummary(p);
+	return summary.status === "exact" && summary.totals.length === 1 ? summary.totals[0].amount : null;
 }
 
 // 把一组会话的展示统计重新求和（日期范围过滤后重建项目聚合）
@@ -254,12 +232,16 @@ function applyWindow(projects, startMs, endMs) {
 				cacheRead: hasUsageData ? tok.cacheRead : (st.cacheRead || 0), cacheWrite: hasUsageData ? tok.cacheWrite : (st.cacheWrite || 0),
 				reasoning: hasUsageData ? tok.reasoning : (st.reasoning || 0)
 			});
-			return { ...s, slots: activity, slotStats: ss, slotUsage: su, stats: newStats, durMs: newStats.llmMs + newStats.toolMs };
-		});
-		return { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length,
-			lastActiveAt: clipped.reduce(function(max, s) { return Math.max(max || 0, s.updatedAt || 0); }, 0) || null,
-			stats: sumSessionStats(clipped) };
-	}).filter(Boolean);
+				var clippedSession = { ...s, slots: activity, slotStats: ss, slotUsage: su, stats: newStats, durMs: newStats.llmMs + newStats.toolMs };
+				clippedSession.cost = sessionCostSummary(clippedSession);
+				return clippedSession;
+			});
+			var clippedProject = { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length,
+				lastActiveAt: clipped.reduce(function(max, s) { return Math.max(max || 0, s.updatedAt || 0); }, 0) || null,
+				stats: sumSessionStats(clipped) };
+			clippedProject.cost = projectCostSummary(clippedProject);
+			return clippedProject;
+		}).filter(Boolean);
 }
 
 function applyDate(projects, dateKey) {
@@ -503,7 +485,7 @@ const CSS_ID = "@rongyi7/dsh-stats/styles.css";
 const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,12,16,.55);display:flex;align-items:flex-start;justify-content:center;padding:4vh 3vw;overflow:auto}" +
 	".dss-panel{width:min(1180px,100%);background:var(--dsw-specific-menu,#161a21);border:1px solid var(--dsw-alias-border-inverted,#2a303c);border-radius:16px;box-shadow:var(--dsw-shadow-lv3,0 20px 60px rgba(0,0,0,.5));color:var(--dsw-alias-label-primary,#e7eaf0);display:flex;flex-direction:column;overflow:hidden}" +
 	".dss-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border,#2a303c)}" +
-	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1}" +
+	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1;min-width:0}" +
 	".dss-source{display:inline-flex;align-items:center;margin-left:9px;padding:2px 6px;border-radius:5px;font-size:10px;font-weight:600;color:#34d399;background:rgba(52,211,153,.12);vertical-align:1px}" +
 	".dss-source.loading,.dss-source.refreshing{color:#60a5fa;background:rgba(96,165,250,.12)}" +
 	".dss-source.partial,.dss-source.stale{color:#fbbf24;background:rgba(251,191,36,.12)}" +
@@ -513,8 +495,10 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-tabs button.on{background:rgba(79,140,255,.14);color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
 	".dss-close{background:none;border:none;color:var(--dsw-alias-label-secondary,#a6adbb);cursor:pointer;border-radius:8px;width:28px;height:28px;display:grid;place-items:center}" +
 	".dss-close:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}" +
+	".dss-head-actions{width:180px;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:6px}" +
 	".dss-export{background:none;border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);cursor:pointer;border-radius:7px;padding:3px 8px;font-size:11.5px}" +
 	".dss-export:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+	".dss-export:disabled{opacity:.45;cursor:default}" +
 	".dss-body{padding:16px 18px;overflow:auto}" +
 	".dss-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px}" +
 	".dss-card{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:11px;padding:11px 13px}" +
@@ -531,11 +515,16 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-sortbar-select{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-primary,#e7eaf0);border-radius:7px;padding:4px 8px;font-size:12px}" +
 	".dss-sortbar-dir{background:none;border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11.5px}" +
 	".dss-sortbar-dir:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+	".dss-pcards-viewport,.dss-timeline-viewport{min-height:0}" +
+	".dss-pcards-viewport.scrollable{max-height:501px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
+	".dss-timeline-viewport.scrollable{max-height:var(--dss-timeline-max-height);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
+	".dss-pcards-viewport.scrollable,.dss-timeline-viewport.scrollable,.dss-day-lanes{scrollbar-width:thin;scrollbar-color:rgba(166,173,187,.28) transparent}" +
+	".dss-pcards-viewport.scrollable:hover,.dss-timeline-viewport.scrollable:hover,.dss-day-lanes:hover{scrollbar-color:rgba(166,173,187,.5) transparent}" +
 	".dss-pcards{display:flex;flex-direction:column;gap:10px}" +
 	".dss-pcard{border:1px solid var(--dsw-alias-border,#2a303c);border-radius:12px;background:var(--dsw-specific-menu,#1d222c);overflow:hidden;cursor:pointer;transition:border-color .15s}" +
 	".dss-pcard:hover{border-color:var(--dsw-alias-label-tertiary,#6b7280)}" +
 	".dss-pcard.sel{border-color:rgba(79,140,255,.55)}" +
-	".dss-pcard-head{display:flex;align-items:center;gap:18px;padding:13px 16px}" +
+	".dss-pcard-head{display:flex;align-items:center;gap:18px;padding:13px 16px;min-height:61px;box-sizing:border-box}" +
 	".dss-pcard-metrics{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}" +
 	".dss-pm{min-width:58px;text-align:right}" +
 	".dss-pm-l{height:15px;font-size:10px;line-height:15px;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:3px}" +
@@ -548,13 +537,15 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-proj .dot{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
 	".dss-proj .nm{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-size:13px}" +
 	".dss-proj .ph{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-	// 会话详情：grid 固定列宽，让不同会话的同类字段对齐
-	".dss-sess{display:grid;grid-template-columns:minmax(160px,1fr) 104px 112px 78px 92px 88px 148px 104px 64px;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s;min-width:920px}" +
+	// 会话详情：固定指标列，模型与金额各自占据独立的可收缩列，避免长模型名侵入金额。
+	".dss-sess{display:grid;grid-template-columns:minmax(160px,1.4fr) 104px 112px 78px 92px 88px 148px minmax(150px,1.2fr) minmax(84px,max-content);gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s;min-width:1020px}" +
 	".dss-sess:last-child{border-bottom:none}" +
 	".dss-sess:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.04))}" +
 	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums}" +
-	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}" +
+	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
+	".dss-sess-model{text-align:left!important}" +
+	".dss-sess-cost{overflow:visible!important;text-overflow:clip!important;white-space:nowrap}" +
 	".dss-tag{font-size:10px;font-weight:600;color:#4f8cff;background:rgba(79,140,255,.14);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}" +
 	".dss-group{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7280);padding:9px 12px 3px}" +
 	".dss-hint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;margin-bottom:10px}" +
@@ -567,7 +558,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-hours span{text-align:center}" +
 	".dss-hours span:first-child{text-align:left}" +
 	".dss-hours span:last-child{text-align:right}" +
-	".dss-day{display:grid;grid-template-columns:150px 1fr 104px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px}" +
+	".dss-day{display:grid;grid-template-columns:150px 1fr 104px;align-items:stretch;border-bottom:1px solid var(--dsw-alias-border,#2a303c);min-height:56px;box-sizing:border-box}" +
 	// 左侧：项目颜色块列表（总览同款色点）+ 多天模式附加日期
 	".dss-day-projs{display:flex;flex-direction:column;justify-content:center;gap:9px;padding:10px 8px 10px 0;min-width:0}" +
 	".dss-day-date{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary,#a6adbb);margin-bottom:3px;font-variant-numeric:tabular-nums}" +
@@ -731,7 +722,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-tip-title{font-weight:650;margin-bottom:5px;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-tip-row{display:flex;justify-content:space-between;gap:14px;line-height:1.6;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
-	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day.day-mode{grid-template-columns:minmax(0,1fr) 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-day-lane{grid-template-columns:94px minmax(0,1fr)}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{width:100%;flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
+	"@media (max-width:640px){.dss-trends .dss-model-split{grid-template-columns:minmax(0,1fr)}.dss-model-split>.dss-ring-wrap{min-width:0;max-width:100%}.dss-ring-wrap>.dss-ring-legend{width:auto;flex:1;min-width:0}.dss-model-split>.dss-model-list{min-width:0;max-width:100%}}" +
+	"@media (max-width:640px){.dss-overlay{padding:0}.dss-panel{border-radius:0;min-height:100%;width:100%}.dss-head{flex-wrap:wrap;gap:7px;padding:11px 12px}.dss-head h2{flex-basis:100%}.dss-head-actions{width:auto;margin-left:auto}.dss-head .dss-tabs{order:3;width:100%;overflow-x:auto}.dss-head .dss-export{padding:4px 7px}.dss-body{padding:12px}.dss-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dss-card{padding:9px}.dss-card .v{font-size:16px}.dss-pcards-viewport.scrollable{max-height:70vh;padding-right:3px}.dss-pcard-head{align-items:flex-start;flex-direction:column;gap:10px;padding:11px}.dss-pcard-metrics{width:100%;justify-content:flex-start;margin-left:0}.dss-pm{text-align:left;min-width:52px}.dss-axis,.dss-day{grid-template-columns:94px 1fr 70px}.dss-day.day-mode{grid-template-columns:minmax(0,1fr) 70px}.dss-day-projs{gap:6px}.dss-day-pname{font-size:11px}.dss-day-info{padding-left:5px}.dss-day-lane{grid-template-columns:94px minmax(0,1fr)}.dss-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))}.dss-hero{grid-template-columns:1fr}.dss-model-split{grid-template-columns:1fr}.dss-ring-wrap{width:100%;flex-direction:row}.dss-sec-head{align-items:flex-start;flex-direction:column;gap:4px}.dss-sec-hint{text-align:left}.dss-nav{gap:6px}.dss-nav-note{flex-basis:100%;margin-left:0}.dss-tabs button{padding:6px 8px}.dss-track{min-width:480px}.dss-day{overflow-x:auto}.dss-day .dss-track{overflow:hidden}.dss-sortbar{flex-wrap:wrap}}";
 
 // ------------------------------------------------------------------
 // 组件
@@ -759,17 +751,15 @@ function StatsTrigger(props) {
 function SummaryCards(props) {
 	var projects = props.projects;
 	var t = props.t;
-	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, cost: 0, costKnown: true };
+	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0 };
 	var totC = { main: 0, subagent: 0 };
 	projects.forEach(function(p) {
 		addCounts(totC, sessionCounts(p.sessions));
 		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
 		tot.llmMs += p.stats.llmMs; tot.toolMs += p.stats.toolMs;
 		tot.input += p.stats.inputTokens; tot.output += p.stats.outputTokens; tot.cacheRead += p.stats.cacheRead;
-		var cost = projectCost(p);
-		if (cost == null) tot.costKnown = false;
-		else tot.cost += cost;
 	});
+	var cost = mergeCostSummaries(projects.map(projectCostSummary));
 	var cards = [
 		[t("card.projects"), fmtN(projects.length)],
 		[t("card.sessions"), fmtSessionCounts(totC)],
@@ -779,7 +769,7 @@ function SummaryCards(props) {
 		[t("card.input"), fmtTokens(tot.input)],
 		[t("card.output"), fmtTokens(tot.output)],
 		[t("card.cacheHit"), tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
-		[t("card.cost"), fmtCost(tot.costKnown ? tot.cost : null)]
+		[t("card.cost"), fmtCostSummary(cost)]
 	];
 	return e("div", { className: "dss-cards" },
 		cards.map((c, i) => e("div", { className: "dss-card", key: i },
@@ -807,7 +797,7 @@ function Legend(props) {
 
 function sortValue(p, key) {
 	switch (key) {
-		case "cost": { var cost = projectCost(p); return cost == null ? -1 : cost; }
+		case "cost": { var cost = projectCostSummary(p); return cost.totals.length ? cost.totals[0].amount : -1; }
 		case "input": return p.stats.inputTokens;
 		case "output": return p.stats.outputTokens;
 		case "turns": return p.stats.turns;
@@ -883,6 +873,7 @@ function ProjectsTable(props) {
 			var mainSessions = p.sessions.filter(function(sd) { return !sd.subagent; });
 			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
 			var sessRow = function(sd) {
+				var modelName = modelDisplayName(sd);
 				return e("div", { className: "dss-sess", key: sd.id },
 					e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
 					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
@@ -891,8 +882,8 @@ function ProjectsTable(props) {
 					e("span", { className: "st" }, t("w.tool") + " " + fmtDuration(sd.stats.toolMs)),
 					e("span", { className: "st" }, t("w.cacheHit") + " " + fmtPct(sd.stats.cacheHitPct)),
 					e("span", { className: "st" }, t("w.input") + " " + fmtTokens(sd.stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(sd.stats.outputTokens)),
-					e("span", { className: "st" }, sd.model || "?"),
-					e("span", { className: "st dss-cost" }, fmtCost(sessionCost(sd)))
+					e("span", { className: "st dss-sess-model", title: modelName }, modelName),
+					e("span", { className: "st dss-cost dss-sess-cost" }, fmtCostSummary(sessionCostSummary(sd)))
 				);
 			};
 			var detailChildren = mainSessions.map(sessRow);
@@ -922,7 +913,7 @@ function ProjectsTable(props) {
 					pm(fmtPct(s.cacheHitPct), t("th.cacheHit")),
 					pm(fmtTokens(s.inputTokens), t("th.input")),
 					pm(fmtTokens(s.outputTokens), t("th.output")),
-					pm(fmtCost(projectCost(p)), t("th.cost"), "cost"),
+					pm(fmtCostSummary(projectCostSummary(p)), t("th.cost"), "cost"),
 					dayMode ? null : pm(fmtClock(p.lastActiveAt), t("th.lastActive"))
 				)
 			),
@@ -932,7 +923,9 @@ function ProjectsTable(props) {
 
 	return e("div", { className: "dss-pcards-wrap" },
 		toolbar,
-		e("div", { className: "dss-pcards" }, cards)
+		e("div", { className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
+			e("div", { className: "dss-pcards" }, cards)
+		)
 	);
 }
 
@@ -981,8 +974,15 @@ function timelineLayout(dayCount, dayMode) {
 	}
 	var maxBlockH = dayCount <= 7 ? 112 : 56;
 	var maxProjects = dayCount <= 7 ? 5 : 4;
-	var projectListH = maxProjects * 15 + Math.max(0, maxProjects - 1) * 9 + 20 + (dayCount > 1 ? 22 : 0);
+	// 日期行自身、列表首个间距与字体行高需要额外空间，确保三日视口不裁掉第三行。
+	var projectListH = maxProjects * 15 + Math.max(0, maxProjects - 1) * 9 + 51 + (dayCount > 1 ? 22 : 0);
 	return { maxBlockH: maxBlockH, maxProjects: maxProjects, rowMinH: Math.max(maxBlockH + 14, projectListH) };
+}
+
+function timelineDisplayDays(days, dayMode) {
+	var ordered = Array.isArray(days) ? days.slice() : [];
+	if (!dayMode) ordered.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+	return ordered;
 }
 
 function timelineTipRows(blocks) {
@@ -1001,7 +1001,8 @@ function TimelineView(props) {
 	var tt = props.tt;
 	var dayMode = props.dayMode === true;
 
-	var days = timeline.days;
+	var days = timeline.days || [];
+	var displayDays = timelineDisplayDays(days, dayMode);
 	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
 	var layout = timelineLayout(days.length, dayMode);
@@ -1032,7 +1033,10 @@ function TimelineView(props) {
 				e("div", { className: "dss-hours" }, [0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => e("span", { key: h }, h + "h"))),
 				e("div", null)
 			),
-			days.map((d) => {
+			e("div", {
+				className: "dss-timeline-viewport" + (!dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? " scrollable" : ""),
+				style: !dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null
+			}, displayDays.map((d) => {
 				var grouped = groupTimelineBlocks(d, hidden);
 				var projList = grouped.projects;
 				var minSlot = 47, maxSlot = -1;
@@ -1114,7 +1118,7 @@ function TimelineView(props) {
 					e("div", { className: "dss-track" }, cells),
 					rightCol
 				);
-			})
+			}))
 		)
 	);
 }
@@ -1162,18 +1166,159 @@ function csvField(value) {
 	var text = String(value);
 	return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
-function exportCSV(projects, t) {
-	var lines = [[t("th.project"), t("w.path"), t("w.sessionTotal"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"), t("th.input"), t("th.output"), t("th.cacheHit"), t("th.cost")].map(csvField).join(",")];
-	projects.forEach(function (p) {
-		var s = p.stats;
-		var cost = projectCost(p);
-		lines.push([
-			p.name, p.path, p.sessionCount, fmtSessionCounts(sessionCounts(p.sessions)),
-			s.turns, s.steps, Math.round(s.llmMs), Math.round(s.toolMs),
-			s.inputTokens, s.outputTokens, s.cacheHitPct == null ? "" : s.cacheHitPct, cost == null ? "" : cost.toFixed(4)
-		].map(csvField).join(","));
+function sessionExportUsages(session) {
+	if (Array.isArray(session?.slotUsage) && session.slotUsage.length) return session.slotUsage;
+	var stats = session?.stats || {};
+	var usage = {
+		model: session?.modelRaw || session?.model || "(unknown)",
+		slot: Math.floor((session?.updatedAt || session?.createdAt || Date.now()) / SLOT_MS),
+		serviceTier: "standard",
+		contextTokens: (stats.uncached || 0) + (stats.cacheRead || 0) + (stats.cacheWrite || 0),
+		uncached: stats.uncached != null ? stats.uncached : Math.max(0, (stats.inputTokens || 0) - (stats.cacheRead || 0) - (stats.cacheWrite || 0)),
+		cacheRead: stats.cacheRead || 0,
+		cacheWrite: stats.cacheWrite || 0,
+		output: stats.output != null ? stats.output : (stats.outputTokens || 0),
+		reasoning: stats.reasoning || 0
+	};
+	if (Object.prototype.hasOwnProperty.call(session || {}, "providerId")) usage.providerId = session.providerId;
+	if (session?.accountType) usage.accountType = session.accountType;
+	return [usage];
+}
+
+function projectCsvTable(projects, t) {
+	var headers = [
+		t("th.project"), t("w.path"), t("w.sessionTotal"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"),
+		t("th.input"), t("th.output"), t("th.cacheHit"), t("th.cost"),
+		"sessionId", "sessionTitle", "updatedAt", "quality", "slotStart", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType",
+		"serviceTier", "contextTokens", "uncachedInput", "cacheRead", "cacheWrite", "tokenOutput", "reasoning", "currency", "costAmount", "costStatus",
+		"exactAmount", "estimatedAmount", "unpricedTokens", "ruleId", "pricingSource", "pricingRetrievedAt"
+	];
+	var rows = [headers];
+	(projects || []).forEach(function (project) {
+		var stats = project.stats || {};
+		var summary = projectCostSummary(project);
+		var projectFields = [
+			project.name, project.path, project.sessionCount, fmtSessionCounts(sessionCounts(project.sessions)),
+			stats.turns, stats.steps, Math.round(stats.llmMs || 0), Math.round(stats.toolMs || 0),
+			stats.inputTokens, stats.outputTokens, stats.cacheHitPct == null ? "" : stats.cacheHitPct, fmtCostSummary(summary)
+		];
+		if (!project.sessions || !project.sessions.length) {
+			rows.push(projectFields.concat(new Array(19).fill(""), summary.status, "", "", summary.unpricedTokens || 0, "", "", ""));
+			return;
+		}
+		project.sessions.forEach(function (session) {
+			sessionExportUsages(session).forEach(function (usage) {
+				var identity = identityForUsage(usage, session.modelRaw || session.model, session.providerId, session.accountType);
+				var cost = usageCostDetail(usage, session.modelRaw || session.model, session.providerId, session.accountType);
+				var input = (usage.uncached || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0);
+				rows.push(projectFields.concat([
+					session.id, session.title, session.updatedAt == null ? "" : new Date(session.updatedAt).toISOString(), session.quality || "",
+					Number.isFinite(usage.slot) ? new Date(usage.slot * SLOT_MS).toISOString() : "",
+					identity.providerId, identity.providerFamily, identity.modelRaw, usage.modelCanonical || cost.modelCanonical || identity.modelCanonical, identity.accountType,
+					usage.serviceTier || "standard", Number.isFinite(usage.contextTokens) ? usage.contextTokens : input,
+					usage.uncached || 0, usage.cacheRead || 0, usage.cacheWrite || 0, usage.output || 0, usage.reasoning || 0,
+					cost.currency, cost.amount, cost.status, cost.exactAmount, cost.estimatedAmount, cost.unpricedTokens,
+					cost.ruleId, cost.sourceUrl, cost.retrievedAt
+				]));
+			});
+		});
 	});
+	return rows;
+}
+
+function exportCSV(projects, t) {
+	var lines = projectCsvTable(projects, t).map(function(row) { return row.map(csvField).join(","); });
 	download("dsh-stats.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
+}
+
+function exportAccountJSON(data) {
+	download("dsh-accounts.json", JSON.stringify(data || { generatedAt: Date.now(), accounts: [], warnings: [] }, null, 2), "application/json");
+}
+function exportAccountCSV(data) {
+	var lines = [["providerId", "providerFamily", "mode", "status", "stale", "currency", "remaining", "used", "total", "toppedUp", "granted", "plan", "window", "usedPercent", "remainingPercent", "resetsAt", "fetchedAt", "errorCode"].join(",")];
+	(data?.accounts || []).forEach(function(account) {
+		var windows = account.windows && account.windows.length ? account.windows : [null];
+		windows.forEach(function(window) {
+			lines.push([
+				account.id, account.providerFamily, account.mode, account.status, account.stale,
+				account.balance?.currency, account.balance?.remaining, account.balance?.used, account.balance?.total,
+				account.balance?.toppedUp, account.balance?.granted, account.plan, window?.kind,
+				window?.usedPercent, window?.remainingPercent, window?.resetsAt, account.fetchedAt, account.errorCode
+			].map(csvField).join(","));
+		});
+	});
+	download("dsh-accounts.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
+}
+
+function BalanceView(props) {
+	var data = props.data;
+	var state = props.state || { kind: "loading" };
+	var t = props.t;
+	var accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
+	var [selectedId, setSelectedId] = useState(accounts[0]?.id || "");
+	useEffect(function() {
+		if (!accounts.some(function(account) { return account.id === selectedId; })) setSelectedId(accounts[0]?.id || "");
+	}, [data, selectedId]);
+	if (state.kind === "loading" && !data) return e("div", { className: "dss-balance-state loading" }, t("balance.loading"));
+	if (!props.remote) return e("div", { className: "dss-balance-state error" }, t("balance.unavailable"));
+	var account = accounts.find(function(item) { return item.id === selectedId; }) || accounts[0] || null;
+	var visualStatus = account?.stale ? "stale" : account?.status;
+	var ready = account && (account.status === "ok" || account.stale);
+	var metrics = account?.balance ? [
+		account.balance.toppedUp == null ? null : [t("balance.toppedUp"), fmtBalanceAmount(account.balance.toppedUp, account.balance.currency)],
+		account.balance.granted == null ? null : [t("balance.granted"), fmtBalanceAmount(account.balance.granted, account.balance.currency)],
+		account.balance.used == null ? null : [t("balance.used"), fmtBalanceAmount(account.balance.used, account.balance.currency)],
+		account.balance.total == null ? null : [t("balance.limit"), fmtBalanceAmount(account.balance.total, account.balance.currency)]
+	].filter(Boolean) : [];
+	var statusMessage = account?.status === "not-configured"
+		? t("balance.notConfigured") + (account.missingCredential ? " (" + account.missingCredential + ")" : "")
+		: t("balance.message." + (account?.status || "unavailable"));
+	return e("div", { className: "dss-balance" },
+		e("div", { className: "dss-balance-head" },
+			e("div", null,
+				e("div", { className: "dss-section-title" }, t("balance.title")),
+				e("div", { className: "dss-sec-hint" }, data?.generatedAt ? t("source.updated") + " " + fmtClock(data.generatedAt) : t("balance.hint"))
+			),
+			accounts.length > 1 ? e("label", { className: "dss-provider-picker" },
+				e("span", null, t("balance.provider")),
+				e("select", { value: account?.id || "", onChange: function(event) { setSelectedId(event.target.value); } },
+					accounts.map(function(item) { return e("option", { key: item.id, value: item.id }, item.displayName + " · " + t("balance.status." + (item.stale ? "stale" : item.status))); })
+				)
+			) : null
+		),
+		state.error ? e("div", { className: "dss-balance-warning" }, state.error) : null,
+		!account ? e("div", { className: "dss-empty" }, t("balance.empty")) :
+			e("div", { className: "dss-balance-list" },
+				e("section", { className: "dss-balance-account provider-" + account.providerFamily, key: account.id },
+				e("div", { className: "dss-balance-account-head" },
+					e("div", null,
+						e("div", { className: "dss-balance-name" }, account.displayName),
+						e("div", { className: "dss-balance-currency" }, account.mode === "subscription" ? (account.plan || t("balance.subscription")) : (account.balance?.currency || account.providerFamily))
+					),
+					e("span", { className: "dss-balance-status " + visualStatus }, t("balance.status." + visualStatus))
+				),
+				ready && account.mode === "balance" && account.balance ? e(Fragment, null,
+					e("div", { className: "dss-balance-total-label" }, t("balance.total")),
+					e("div", { className: "dss-balance-total" }, fmtBalanceAmount(account.balance.remaining, account.balance.currency)),
+					metrics.length ? e("div", { className: "dss-balance-breakdown" }, metrics.map(function(metric) {
+						return e("div", { className: "dss-balance-metric", key: metric[0] }, e("span", null, metric[0]), e("b", null, metric[1]));
+					})) : null
+				) : ready && account.mode === "subscription" ? e(Fragment, null,
+					e("div", { className: "dss-balance-total-label" }, t("balance.plan")),
+					e("div", { className: "dss-balance-plan" }, account.plan || account.displayName),
+					e("div", { className: "dss-quota-list" }, (account.windows || []).map(function(window) {
+					return e("div", { className: "dss-quota", key: window.kind },
+						e("div", { className: "dss-quota-head" }, e("span", null, t("balance.window." + window.kind)), e("b", null, window.remainingPercent.toFixed(1) + "% " + t("balance.remaining"))),
+						e("div", { className: "dss-quota-track" }, e("i", { style: { width: window.usedPercent + "%" } })),
+						window.resetsAt ? e("div", { className: "dss-quota-reset" }, t("balance.reset") + " " + fmtClock(window.resetsAt)) : null
+					);
+				}))
+				) : e("div", { className: "dss-balance-message" }, statusMessage),
+				account.stale ? e("div", { className: "dss-balance-stale" }, t("balance.staleHint")) : null,
+				account.actionUrl ? e("a", { className: "dss-balance-topup", href: account.actionUrl, target: "_blank", rel: "noreferrer" }, account.mode === "balance" ? t("balance.topUp") : t("balance.manage")) : null
+			)
+		)
+	);
 }
 
 function StatsPanel(props) {
@@ -1183,6 +1328,7 @@ function StatsPanel(props) {
 	var onClose = props.onClose;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
+	var balanceRemote = props.balance;
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
 	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
@@ -1196,6 +1342,9 @@ function StatsPanel(props) {
 	var [remoteData, setRemoteData] = useState(null);
 	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
 	var [refreshTick, setRefreshTick] = useState(0);
+	var [balanceData, setBalanceData] = useState(null);
+	var [balanceState, setBalanceState] = useState({ kind: balanceRemote ? "loading" : "unavailable", error: null });
+	var [balanceRefreshTick, setBalanceRefreshTick] = useState(0);
 
 	useEffect(() => {
 		if (!open || !open.open) return;
@@ -1218,17 +1367,34 @@ function StatsPanel(props) {
 	// 面板打开期间每 60 秒自动刷新一次
 	useEffect(() => {
 		if (!open || !open.open || !aggregateRemote) return;
-		var id = setInterval(() => setRefreshTick((x) => x + 1), 60000);
+		var id = setInterval(() => { setRefreshTick((x) => x + 1); setBalanceRefreshTick((x) => x + 1); }, 60000);
 		return () => clearInterval(id);
 	}, [open, aggregateRemote]);
 
+	useEffect(() => {
+		if (!open || !open.open) return;
+		if (!balanceRemote) { setBalanceState({ kind: "unavailable", error: null }); return; }
+		var cancelled = false;
+		setBalanceState(function(prev) { return { kind: balanceData ? "refreshing" : "loading", error: null }; });
+		balanceRemote().then(function(result) {
+			if (cancelled) return;
+			setBalanceData(result);
+			var first = result.accounts && result.accounts[0];
+			var warning = result.warnings && result.warnings.length ? result.warnings[0].message : null;
+			setBalanceState({ kind: first?.status || "error", error: warning });
+		}).catch(function(error) {
+			if (cancelled) return;
+			setBalanceState({ kind: balanceData ? "stale" : "error", error: error?.message || String(error) });
+		});
+		return function() { cancelled = true; };
+	}, [open, balanceRemote, balanceRefreshTick]);
+
 	var data = useMemo(() => {
-		if (remoteData && remoteData.projects) {
-			var projects = remoteData.projects.map((p) => ({
-				id: p.id, name: p.name, path: p.path, sessionCount: p.sessionCount, subagentCount: p.subagentCount || 0, lastActiveAt: p.lastActiveAt,
-				stats: display(p.stats),
-				sessions: (p.sessions || []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, createdAt: s.createdAt, model: s.model, modelUsage: s.modelUsage, archived: s.archived, subagent: s.subagent === true, stats: display(s.stats), durMs: s.durMs, slots: s.slots, slotStats: s.slotStats, slotUsage: s.slotUsage, quality: s.quality }))
-			}));
+			if (remoteData && remoteData.projects) {
+				var projects = remoteData.projects.map((p) => ({
+					...p, stats: display(p.stats),
+					sessions: (p.sessions || []).map((s) => ({ ...s, subagent: s.subagent === true, stats: display(s.stats) }))
+				}));
 			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true, meta: remoteData.meta };
 		}
 		var summaries = sessionsSnap && sessionsSnap.byId ? Object.values(sessionsSnap.byId) : [];
@@ -1274,6 +1440,13 @@ function StatsPanel(props) {
 	var visibleProjects = statProjects.filter((p) => !hidden[p.id]);
 	var sourceLabel = t("source." + sourceState.kind);
 	var sourceTitle = sourceState.error || (sourceState.at ? t("source.updated") + " " + fmtClock(sourceState.at) : sourceLabel);
+	var isRefreshing = tab === "balance"
+		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
+		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
+	var refreshCurrent = function() {
+		if (tab === "balance") setBalanceRefreshTick((x) => x + 1);
+		else setRefreshTick((x) => x + 1);
+	};
 
 	return e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); } },
 		e("div", { className: "dss-panel" },
@@ -1282,17 +1455,23 @@ function StatsPanel(props) {
 				e("div", { className: "dss-tabs" },
 					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
 					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline")),
-					e("button", { className: tab === "trends" ? "on" : "", onClick: () => setTab("trends") }, t("tab.trends"))
+					e("button", { className: tab === "trends" ? "on" : "", onClick: () => setTab("trends") }, t("tab.trends")),
+					e("button", { className: tab === "balance" ? "on" : "", onClick: () => setTab("balance") }, t("tab.balance"))
 				),
-				e("button", { className: "dss-export", onClick: () => setRefreshTick((x) => x + 1) }, t("refresh")),
-				e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
-				e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON"),
-				e("button", { className: "dss-close", onClick: onClose, title: t("close") },
-					e(IconCloseOutline16, { size: 16 })
+				e("div", { className: "dss-head-actions" },
+					e("button", { className: "dss-export", onClick: refreshCurrent, disabled: isRefreshing }, t("refresh")),
+					tab !== "balance" ? e(Fragment, null,
+						e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
+						e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON")
+					) : null,
+					e("button", { className: "dss-close", onClick: onClose, title: t("close") },
+						e(IconCloseOutline16, { size: 16 })
+					)
 				)
 			),
 			e("div", { className: "dss-body" },
-				e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
+				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
+					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
@@ -1300,6 +1479,7 @@ function StatsPanel(props) {
 					 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate, t })
+				)
 			)
 		)
 	);
@@ -1346,11 +1526,11 @@ function TrendsView(props) {
 		e("div", { className: "dss-hero-side" },
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.totalCost")),
-				e("div", { className: "dss-hero-v dss-cost" }, fmtCost(dg.totalCost))
+				e("div", { className: "dss-hero-v dss-cost" }, fmtCostSummary(dg.totalCost))
 			),
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.mostUsed")),
-				e("div", { className: "dss-hero-v model" }, topModel ? topModel.model : "—")
+				e("div", { className: "dss-hero-v model", title: topModel ? (topModel.displayName || modelDisplayName(topModel)) : "" }, topModel ? (topModel.displayName || modelDisplayName(topModel)) : "—")
 			)
 		)
 	);
@@ -1610,7 +1790,7 @@ function ModelRing(props) {
 		var from = (cum * 360).toFixed(1);
 		cum += v;
 		var to = (cum * 360).toFixed(1);
-		return { color: modelColor(m.model || "(unknown)"), from: from, to: to, label: m.model || "(unknown)", pct: (v * 100).toFixed(1), model: m };
+		return { color: modelColor(m.key || m.displayName || m.model || "(unknown)"), from: from, to: to, label: m.displayName || modelDisplayName(m), pct: (v * 100).toFixed(1), model: m };
 	});
 
 	var gradient = stops.map(function(s) { return s.color + " " + s.from + "deg " + s.to + "deg"; }).join(", ");
@@ -1640,8 +1820,8 @@ function ModelRing(props) {
 }
 
 function showModelTip(model, t, ev) {
-	showTipRaw(tipRows(model.model || "(unknown)", [
-		[t("th.cost"), fmtCost(model.costKnown ? model.cost : null)],
+	showTipRaw(tipRows(model.displayName || modelDisplayName(model), [
+		[t("th.cost"), fmtCostSummary(model.costSummary)],
 		[t("w.input"), fmtTokens(model.input || 0)],
 		[t("w.output"), fmtTokens(model.output || 0)]
 	]), ev);
@@ -1658,7 +1838,7 @@ function ModelList(props) {
 		models.map(function(m, i) {
 			var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
 			var pct = share * 100;
-			var color = modelColor(m.model || "(unknown)");
+			var color = modelColor(m.key || m.displayName || m.model || "(unknown)");
 			return e("div", {
 				key: i,
 				className: "dss-model-item",
@@ -1667,7 +1847,7 @@ function ModelList(props) {
 			},
 				e("div", { className: "dss-model-head" },
 					e("span", { className: "dss-model-dot", style: { background: color } }),
-					e("span", { className: "dss-model-name", title: m.model || "(unknown)" }, m.model || "(unknown)"),
+					e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
 					e("span", { className: "dss-model-pct" }, pct.toFixed(1) + "%")
 				),
 				e("div", { className: "dss-model-track" },
@@ -1823,7 +2003,13 @@ function weeklyFromDays(byDay) {
 	return byWeek;
 }
 
-// 模型分布：session.model -> { sessions, input, output, reasoning, llmMs, cost }
+function modelDisplayName(value) {
+	var model = value?.modelCanonical || value?.modelRaw || value?.model || "(unknown)";
+	var provider = value?.providerId;
+	return provider && provider !== "unknown" ? provider + " · " + model : model;
+}
+
+// 模型分布按 provider + model + accountType 分组，同名模型不跨 Provider 合并。
 function modelAgg(sessions) {
 	var byModel = new Map();
 	sessions.forEach((s) => {
@@ -1833,43 +2019,47 @@ function modelAgg(sessions) {
 		var modelTok = new Map();
 		if (s.slotUsage && s.slotUsage.length) {
 			s.slotUsage.forEach((su) => {
-				var mk = su.model || s.model || "(unknown)";
-				var t = modelTok.get(mk) || { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: 0, costKnown: true };
+				var identity = identityForUsage(su, s.modelRaw || s.model, s.providerId, s.accountType);
+				var mk = [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000");
+				var t = modelTok.get(mk) || { key: mk, model: identity.modelRaw, providerId: identity.providerId, providerFamily: identity.providerFamily, modelRaw: identity.modelRaw, modelCanonical: identity.modelCanonical, accountType: identity.accountType, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, costs: [] };
 				t.uncached += su.uncached || 0;
 				t.output += su.output || 0;
 				t.cacheRead += su.cacheRead || 0;
 				t.cacheWrite += su.cacheWrite || 0;
 				t.reasoning += su.reasoning || 0;
-				var rowCost = usageCost(su, s.model);
-				if (rowCost == null) t.costKnown = false;
-				else t.cost += rowCost;
+				t.costs.push(usageCostDetail(su, s.modelRaw || s.model, s.providerId, s.accountType));
 				modelTok.set(mk, t);
 			});
 		}
-		var fallbackCost = modelTok.size ? null : sessionCost(s);
 		var entries = modelTok.size
-			? Array.from(modelTok.entries()).map(([m, t]) => ({ model: m, uncached: t.uncached, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, reasoning: t.reasoning, cost: t.cost, costKnown: t.costKnown }))
-			: [{
-				model: s.model || "(unknown)",
+			? Array.from(modelTok.values()).map(function(t) { return { ...t, costSummary: summarizeCosts(t.costs) }; })
+			: (function() {
+				var usage = { model: s.modelRaw || s.model || "(unknown)", slot: Math.floor((s.updatedAt || Date.now()) / SLOT_MS) };
+				if (Object.prototype.hasOwnProperty.call(s, "providerId")) usage.providerId = s.providerId;
+				if (s.accountType) usage.accountType = s.accountType;
+				var identity = identityForUsage(usage, usage.model, undefined, s.accountType);
+				return [{
+				key: [identity.providerId, identity.modelRaw, identity.accountType].join("\u0000"), model: identity.modelRaw,
+				providerId: identity.providerId, providerFamily: identity.providerFamily, modelRaw: identity.modelRaw, modelCanonical: identity.modelCanonical, accountType: identity.accountType,
 				uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
 				output: st.output != null ? st.output : (st.outputTokens || 0),
 				cacheRead: st.cacheRead || 0, cacheWrite: st.cacheWrite || 0, reasoning: st.reasoning || 0,
-				cost: fallbackCost || 0, costKnown: fallbackCost != null
+				costSummary: sessionCostSummary(s)
 			}];
+			})();
 		// 会话总 token（用于 LLM/工具时长按占比分摊到各模型）
 		var sessTok = 0;
 		entries.forEach((e) => { sessTok += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0); });
 		entries.forEach((e) => {
-			var m = e.model || "(unknown)";
-			var cur = byModel.get(m) || { model: m, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0, cost: 0, costKnown: true };
+			var m = e.key;
+			var cur = byModel.get(m) || { key: m, model: e.model, providerId: e.providerId, providerFamily: e.providerFamily, modelRaw: e.modelRaw, modelCanonical: e.modelCanonical, accountType: e.accountType, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, llmMs: 0, toolMs: 0, costSummaries: [] };
 			cur.sessions += 1;
 			cur.input += (e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0);
 			cur.output += e.output || 0;
 			cur.cacheRead += e.cacheRead || 0;
 			cur.cacheWrite += e.cacheWrite || 0;
 			cur.reasoning += e.reasoning || 0;
-			if (!e.costKnown) cur.costKnown = false;
-			else cur.cost += e.cost || 0;
+			cur.costSummaries.push(e.costSummary);
 			// DSH 无逐模型时长数据：按 token 占比分摊会话 LLM/工具时长（近似合理）
 			var share = sessTok > 0 ? ((e.uncached || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0) + (e.output || 0)) / sessTok : 0;
 			cur.llmMs += Math.round((st.llmMs || 0) * share);
@@ -1877,7 +2067,11 @@ function modelAgg(sessions) {
 			byModel.set(m, cur);
 		});
 	});
-	return Array.from(byModel.values()).sort((a, b) => b.input + b.output - (a.input + a.output));
+	return Array.from(byModel.values()).map(function(model) {
+		var costSummary = mergeCostSummaries(model.costSummaries);
+		var single = costSummary.totals.length === 1 ? costSummary.totals[0].amount : 0;
+		return { ...model, displayName: modelDisplayName(model), costSummary, cost: single, costKnown: costSummary.status === "exact" && costSummary.totals.length === 1 };
+	}).sort((a, b) => b.input + b.output - (a.input + a.output));
 }
 
 // 连续天数与活跃天数：以 byDay 为输入（key 为 YYYY-MM-DD）。
@@ -1912,19 +2106,13 @@ function buildGlobals(projects) {
 	var sa = streakAndActive(byDay);
 	var totals = emptyBucket();
 	byDay.forEach(function(b) { addBucket(totals, b); });
-	// 全局总费用（按会话逐个计算，用 slotUsage 或 stats 兜底）
-	var totalCost = 0, costKnown = true;
-	for (var k = 0; k < all.length; k++) {
-		var cost = sessionCost(all[k]);
-		if (cost == null) costKnown = false;
-		else totalCost += cost;
-	}
+	var totalCost = mergeCostSummaries(all.map(sessionCostSummary));
 	return {
 		sessions: all,
 		byDay, models, totals,
 		streak: sa.currentStreak, longestStreak: sa.longestStreak, activeDays: sa.activeDays,
 		firstDay: sa.firstDay, lastDay: sa.lastDay,
-		totalCost: costKnown ? totalCost : null
+		totalCost
 	};
 }
 const inject = ["slots", "locale", "remote"];
@@ -1935,6 +2123,7 @@ const zh = {
 	"tab.overview": "项目总览",
 	"tab.timeline": "开发时间线",
 	"tab.trends": "用量趋势",
+	"tab.balance": "账户余额",
 	"close": "关闭",
 	"empty": "暂无数据",
 	"refresh": "刷新",
@@ -2005,6 +2194,7 @@ const zh = {
 	"trends.heatmapHint": "左侧：当月按实际天数 · 右侧：近 7 天每日 Token", "trends.dailyTrend": "每日 Token（近 7 天）", "trends.modelHint": "按输入 + 输出 token 占比",
 	"trends.activity": "活动", "trends.futureDate": "未来日期", "trends.none": "无", "trends.less": "少", "trends.more": "多", "trends.today": "今天", "trends.cacheRead": "缓存读取", "trends.outputIncludesReasoning": "输出（含思考）", "trends.inputOutput": "输入 + 输出",
 	"trends.modelDist": "模型分布",
+	"balance.title": "账户余额与额度", "balance.hint": "官方账户数据，凭证仅在宿主侧使用", "balance.loading": "正在读取账户数据…", "balance.unavailable": "账户服务不可用", "balance.empty": "暂无账户数据", "balance.provider": "Provider", "balance.total": "可用总余额", "balance.toppedUp": "充值余额", "balance.granted": "赠送余额", "balance.used": "已使用", "balance.limit": "总额度", "balance.plan": "当前套餐", "balance.subscription": "订阅额度", "balance.remaining": "剩余", "balance.reset": "重置时间", "balance.topUp": "前往充值", "balance.manage": "管理账户", "balance.notConfigured": "未配置所需凭证", "balance.staleHint": "本次刷新失败，当前显示上次成功结果", "balance.status.ok": "正常", "balance.status.stale": "已过期", "balance.status.not-configured": "未配置", "balance.status.unauthorized": "未授权", "balance.status.rate-limited": "请求受限", "balance.status.unavailable": "不可用", "balance.status.invalid-response": "响应异常", "balance.status.blocked": "已拦截", "balance.status.unsupported": "不支持", "balance.message.unauthorized": "凭证无效或没有查询权限", "balance.message.rate-limited": "Provider 限流，请稍后刷新", "balance.message.unavailable": "Provider 账户服务暂不可用", "balance.message.invalid-response": "Provider 返回了无法识别的账户数据", "balance.message.blocked": "账户端点不符合安全白名单", "balance.message.unsupported": "该 Provider 没有可用的官方账户查询端点", "balance.window.session": "本时段", "balance.window.weekly": "本周", "balance.window.billing": "计费周期", "balance.window.daily": "今日", "balance.window.monthly": "本月",
 	"trends.days": "天",
 	"trends.weekdays": "日,一,二,三,四,五,六"
 };
@@ -2014,6 +2204,7 @@ const en = {
 	"tab.overview": "Overview",
 	"tab.timeline": "Timeline",
 	"tab.trends": "Usage Trends",
+	"tab.balance": "Account Balance",
 	"close": "Close",
 	"empty": "No data",
 	"refresh": "Refresh",
@@ -2084,6 +2275,7 @@ const en = {
 	"trends.heatmapHint": "Calendar days this month · daily tokens for the last 7 days", "trends.dailyTrend": "Daily tokens (last 7 days)", "trends.modelHint": "Share of input + output tokens",
 	"trends.activity": "Activity", "trends.futureDate": "Future date", "trends.none": "None", "trends.less": "Less", "trends.more": "More", "trends.today": "Today", "trends.cacheRead": "Cache read", "trends.outputIncludesReasoning": "Output (incl. reasoning)", "trends.inputOutput": "Input + output",
 	"trends.modelDist": "Model distribution",
+	"balance.title": "Accounts and quotas", "balance.hint": "Official account data; credentials stay on the host", "balance.loading": "Reading account data…", "balance.unavailable": "Account service unavailable", "balance.empty": "No account data", "balance.provider": "Provider", "balance.total": "Total available", "balance.toppedUp": "Top-up balance", "balance.granted": "Granted balance", "balance.used": "Used", "balance.limit": "Total limit", "balance.plan": "Current plan", "balance.subscription": "Subscription quota", "balance.remaining": "remaining", "balance.reset": "Resets", "balance.topUp": "Top up", "balance.manage": "Manage account", "balance.notConfigured": "Required credential is not configured", "balance.staleHint": "Refresh failed; showing the last successful result", "balance.status.ok": "OK", "balance.status.stale": "Stale", "balance.status.not-configured": "Not configured", "balance.status.unauthorized": "Unauthorized", "balance.status.rate-limited": "Rate limited", "balance.status.unavailable": "Unavailable", "balance.status.invalid-response": "Invalid response", "balance.status.blocked": "Blocked", "balance.status.unsupported": "Unsupported", "balance.message.unauthorized": "The credential is invalid or lacks account permissions", "balance.message.rate-limited": "The provider rate limit was reached; refresh later", "balance.message.unavailable": "The provider account service is temporarily unavailable", "balance.message.invalid-response": "The provider returned unrecognized account data", "balance.message.blocked": "The account endpoint is outside the safety allowlist", "balance.message.unsupported": "This provider has no supported official account endpoint", "balance.window.session": "Current window", "balance.window.weekly": "This week", "balance.window.billing": "Billing period", "balance.window.daily": "Today", "balance.window.monthly": "This month",
 	"trends.days": "days",
 	"trends.weekdays": "S,M,T,W,T,F,S"
 };
@@ -2107,24 +2299,52 @@ function parseAggregateResult(value) {
 		object(stats, path, numberFields);
 		numberFields.forEach(function(k) { number(stats[k], path + "." + k, false); });
 	};
-	object(value, "stats/aggregate", ["projects", "timeline", "meta"]);
+	var checkCostSummary = function(cost, path) {
+		object(cost, path, ["status", "totals", "unpricedTokens", "unknownRows"]);
+		if (["exact", "estimated", "partial", "unsupported"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
+		array(cost.totals, path + ".totals").forEach(function(total, index) {
+			var tp = path + ".totals[" + index + "]";
+			object(total, tp, ["currency", "amount", "exactAmount", "estimatedAmount"]); string(total.currency, tp + ".currency");
+			["amount", "exactAmount", "estimatedAmount"].forEach(function(key) { number(total[key], tp + "." + key, false); });
+		});
+		number(cost.unpricedTokens, path + ".unpricedTokens", false); number(cost.unknownRows, path + ".unknownRows", true);
+	};
+	var checkCost = function(cost, path) {
+		object(cost, path, ["status", "amount", "currency", "exactAmount", "estimatedAmount", "unpricedTokens", "ruleId", "sourceUrl", "retrievedAt", "providerId", "providerFamily", "modelCanonical"]);
+		if (["exact", "estimated", "free", "subscription", "unsupported", "ambiguous"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
+		nullableNumber(cost.amount, path + ".amount"); nullableString(cost.currency, path + ".currency");
+		["exactAmount", "estimatedAmount", "unpricedTokens"].forEach(function(key) { number(cost[key], path + "." + key, false); });
+		["ruleId", "sourceUrl", "retrievedAt"].forEach(function(key) { nullableString(cost[key], path + "." + key); });
+		["providerId", "providerFamily", "modelCanonical"].forEach(function(key) { string(cost[key], path + "." + key); });
+	};
+	object(value, "stats/aggregate", ["projects", "cost", "timeline", "meta"]);
+	var schemaVersion = value.meta?.schemaVersion || 1;
+	if (schemaVersion >= 2) checkCostSummary(value.cost, "cost");
 	array(value.projects, "projects");
 	value.projects.forEach(function(p, pi) {
 		var pp = "projects[" + pi + "]";
-		object(p, pp, ["id", "name", "path", "sessionCount", "subagentCount", "lastActiveAt", "stats", "sessions"]);
+		object(p, pp, ["id", "name", "path", "sessionCount", "subagentCount", "lastActiveAt", "stats", "cost", "sessions"]);
 		string(p.id, pp + ".id"); string(p.name, pp + ".name"); string(p.path, pp + ".path");
 		number(p.sessionCount, pp + ".sessionCount", true); number(p.subagentCount, pp + ".subagentCount", true); nullableNumber(p.lastActiveAt, pp + ".lastActiveAt");
-		checkStats(p.stats, pp + ".stats"); array(p.sessions, pp + ".sessions");
+		checkStats(p.stats, pp + ".stats"); if (schemaVersion >= 2) checkCostSummary(p.cost, pp + ".cost"); array(p.sessions, pp + ".sessions");
 		p.sessions.forEach(function(s, si) {
 			var sp = pp + ".sessions[" + si + "]";
-			object(s, sp, ["id", "title", "updatedAt", "createdAt", "model", "modelUsage", "archived", "blank", "subagent", "origin", "parentSession", "seedLength", "calls", "stats", "durMs", "slots", "slotStats", "slotUsage", "quality", "cwd"]);
+			object(s, sp, ["id", "title", "updatedAt", "createdAt", "model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "modelUsage", "cost", "archived", "blank", "subagent", "origin", "parentSession", "seedLength", "calls", "stats", "durMs", "slots", "slotStats", "slotUsage", "quality", "cwd"]);
 			string(s.id, sp + ".id"); nullableString(s.title, sp + ".title"); nullableNumber(s.updatedAt, sp + ".updatedAt"); nullableNumber(s.createdAt, sp + ".createdAt"); nullableString(s.model, sp + ".model");
+			if (schemaVersion >= 2) {
+				["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(s[key], sp + "." + key); });
+				checkCostSummary(s.cost, sp + ".cost");
+			}
 			boolean(s.archived, sp + ".archived"); boolean(s.blank, sp + ".blank"); boolean(s.subagent, sp + ".subagent"); nullableString(s.origin, sp + ".origin"); nullableString(s.parentSession, sp + ".parentSession"); nullableNumber(s.seedLength, sp + ".seedLength");
 			number(s.calls, sp + ".calls", true); checkStats(s.stats, sp + ".stats"); number(s.durMs, sp + ".durMs", false); nullableString(s.cwd, sp + ".cwd");
 			if (["exact", "partial", "stale"].indexOf(s.quality) < 0) throw new TypeError(sp + ".quality: invalid value");
 			array(s.modelUsage, sp + ".modelUsage").forEach(function(u, ui) {
 				var up = sp + ".modelUsage[" + ui + "]";
-				object(u, up, ["model", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(u.model, up + ".model");
+				object(u, up, ["model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "uncached", "output", "cacheRead", "cacheWrite", "reasoning", "cost"]); string(u.model, up + ".model");
+				if (schemaVersion >= 2) {
+					["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(u[key], up + "." + key); });
+					checkCostSummary(u.cost, up + ".cost");
+				}
 				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(u[k], up + "." + k, false); });
 			});
 			array(s.slots, sp + ".slots").forEach(function(row, ri) {
@@ -2135,7 +2355,11 @@ function parseAggregateResult(value) {
 				["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"].forEach(function(k) { number(row[k], rp + "." + k, false); });
 			});
 			array(s.slotUsage, sp + ".slotUsage").forEach(function(row, ri) {
-				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "serviceTier", "contextOver512k", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"]); string(row.model, rp + ".model");
+				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "serviceTier", "contextTokens", "contextOver512k", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning", "cost"]); string(row.model, rp + ".model");
+				if (schemaVersion >= 2) {
+					["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(row[key], rp + "." + key); });
+					number(row.contextTokens, rp + ".contextTokens", false); checkCost(row.cost, rp + ".cost");
+				}
 				if (["standard", "priority"].indexOf(row.serviceTier) < 0) throw new TypeError(rp + ".serviceTier: invalid value"); boolean(row.contextOver512k, rp + ".contextOver512k"); number(row.slot, rp + ".slot", true);
 				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(row[k], rp + "." + k, false); });
 			});
@@ -2148,11 +2372,120 @@ function parseAggregateResult(value) {
 			var bp = dp + ".slotBlocks[" + bi + "]"; object(block, bp, ["slot", "projectId", "name", "colorIndex", "ms"]); number(block.slot, bp + ".slot", true); string(block.projectId, bp + ".projectId"); string(block.name, bp + ".name"); number(block.colorIndex, bp + ".colorIndex", true); number(block.ms, bp + ".ms", false);
 		});
 	});
-	object(value.meta, "meta", ["source", "generatedAt", "degraded", "warnings"]); if (value.meta.source !== "host") throw new TypeError("meta.source: expected host"); number(value.meta.generatedAt, "meta.generatedAt", false); boolean(value.meta.degraded, "meta.degraded");
+	object(value.meta, "meta", ["schemaVersion", "source", "generatedAt", "degraded", "warnings"]); if (value.meta.source !== "host") throw new TypeError("meta.source: expected host"); if (value.meta.schemaVersion !== undefined) number(value.meta.schemaVersion, "meta.schemaVersion", true); number(value.meta.generatedAt, "meta.generatedAt", false); boolean(value.meta.degraded, "meta.degraded");
 	array(value.meta.warnings, "meta.warnings").forEach(function(warning, wi) {
 		var wp = "meta.warnings[" + wi + "]"; object(warning, wp, ["code", "message", "sessionId"]); string(warning.code, wp + ".code"); string(warning.message, wp + ".message"); if (warning.sessionId !== undefined) string(warning.sessionId, wp + ".sessionId");
 	});
 	return value;
+}
+
+function parseBalanceResult(value) {
+	var object = function(input, path, keys) {
+		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
+		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
+		return input;
+	};
+	var array = function(input, path) { if (!Array.isArray(input)) throw new TypeError(path + ": expected array"); return input; };
+	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
+	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
+	var nullableNumber = function(input, path) { if (input !== null && (!Number.isFinite(input) || input < 0)) throw new TypeError(path + ": expected non-negative number or null"); };
+	object(value, "balance/current", ["generatedAt", "accounts", "warnings"]);
+	if (!Number.isFinite(value.generatedAt) || value.generatedAt < 0) throw new TypeError("generatedAt: expected non-negative number");
+	array(value.accounts, "accounts").forEach(function(account, index) {
+		var path = "accounts[" + index + "]";
+		object(account, path, ["provider", "name", "status", "currency", "total", "toppedUp", "granted", "fetchedAt", "topUpUrl", "errorCode"]);
+		if (account.provider !== "deepseek") throw new TypeError(path + ".provider: expected deepseek");
+		string(account.name, path + ".name");
+		if (["ok", "stale", "unconfigured", "error"].indexOf(account.status) < 0) throw new TypeError(path + ".status: invalid value");
+		string(account.currency, path + ".currency");
+		nullableNumber(account.total, path + ".total"); nullableNumber(account.toppedUp, path + ".toppedUp"); nullableNumber(account.granted, path + ".granted"); nullableNumber(account.fetchedAt, path + ".fetchedAt");
+		string(account.topUpUrl, path + ".topUpUrl"); nullableString(account.errorCode, path + ".errorCode");
+	});
+	array(value.warnings, "warnings").forEach(function(warning, index) {
+		var path = "warnings[" + index + "]"; object(warning, path, ["code", "message"]); string(warning.code, path + ".code"); string(warning.message, path + ".message");
+	});
+	return value;
+}
+
+function parseAccountResult(value) {
+	var object = function(input, path, keys) {
+		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
+		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
+	};
+	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
+	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
+	var number = function(input, path, nullable) { if (nullable && input === null) return; if (!Number.isFinite(input) || input < 0) throw new TypeError(path + ": expected non-negative number" + (nullable ? " or null" : "")); };
+	var statuses = ["ok", "not-configured", "unauthorized", "rate-limited", "unavailable", "invalid-response", "blocked", "unsupported"];
+	object(value, "stats/account", ["generatedAt", "accounts", "warnings"]); number(value.generatedAt, "generatedAt", false);
+	if (!Array.isArray(value.accounts)) throw new TypeError("accounts: expected array");
+	value.accounts.forEach(function(account, index) {
+		var path = "accounts[" + index + "]";
+		object(account, path, ["id", "displayName", "providerFamily", "mode", "adapter", "status", "stale", "fetchedAt", "lastSuccessAt", "errorCode", "missingCredential", "actionUrl", "balance", "plan", "windows"]);
+		["id", "displayName", "providerFamily"].forEach(function(key) { string(account[key], path + "." + key); });
+		if (["balance", "subscription", "unsupported"].indexOf(account.mode) < 0) throw new TypeError(path + ".mode: invalid value");
+		if (statuses.indexOf(account.status) < 0) throw new TypeError(path + ".status: invalid value");
+		nullableString(account.adapter, path + ".adapter"); nullableString(account.errorCode, path + ".errorCode"); nullableString(account.missingCredential, path + ".missingCredential"); nullableString(account.actionUrl, path + ".actionUrl"); nullableString(account.plan, path + ".plan");
+		if (typeof account.stale !== "boolean") throw new TypeError(path + ".stale: expected boolean");
+		number(account.fetchedAt, path + ".fetchedAt", false); number(account.lastSuccessAt, path + ".lastSuccessAt", true);
+		if (account.balance !== null) {
+			var bp = path + ".balance";
+			object(account.balance, bp, ["currency", "remaining", "used", "total", "toppedUp", "granted", "unlimited"]); string(account.balance.currency, bp + ".currency");
+			["remaining"].forEach(function(key) { number(account.balance[key], bp + "." + key, false); });
+			["used", "total", "toppedUp", "granted"].forEach(function(key) { number(account.balance[key], bp + "." + key, true); });
+			if (typeof account.balance.unlimited !== "boolean") throw new TypeError(bp + ".unlimited: expected boolean");
+		}
+		if (!Array.isArray(account.windows)) throw new TypeError(path + ".windows: expected array");
+		account.windows.forEach(function(window, wi) {
+			var wp = path + ".windows[" + wi + "]"; object(window, wp, ["kind", "usedPercent", "remainingPercent", "resetsAt"]); string(window.kind, wp + ".kind");
+			number(window.usedPercent, wp + ".usedPercent", false); number(window.remainingPercent, wp + ".remainingPercent", false); number(window.resetsAt, wp + ".resetsAt", true);
+			if (window.usedPercent > 100 || window.remainingPercent > 100) throw new TypeError(wp + ": percentage exceeds 100");
+		});
+	});
+	if (!Array.isArray(value.warnings)) throw new TypeError("warnings: expected array");
+	value.warnings.forEach(function(warning, index) { var path = "warnings[" + index + "]"; object(warning, path, ["providerId", "code", "message"]); ["providerId", "code", "message"].forEach(function(key) { string(warning[key], path + "." + key); }); });
+	return value;
+}
+
+function parseProvidersResult(value) {
+	var keys = ["id", "displayName", "providerFamily", "accountMode", "adapter", "configured", "status", "fetchedAt"];
+	if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(function(key) { return ["generatedAt", "providers"].indexOf(key) < 0; })) throw new TypeError("stats/providers: expected strict object");
+	if (!Number.isFinite(value.generatedAt) || value.generatedAt < 0 || !Array.isArray(value.providers)) throw new TypeError("stats/providers: invalid result");
+	value.providers.forEach(function(provider, index) {
+		var path = "providers[" + index + "]";
+		if (!provider || typeof provider !== "object" || Array.isArray(provider) || Object.keys(provider).some(function(key) { return keys.indexOf(key) < 0; })) throw new TypeError(path + ": expected strict object");
+		["id", "displayName", "providerFamily", "accountMode", "status"].forEach(function(key) { if (typeof provider[key] !== "string") throw new TypeError(path + "." + key + ": expected string"); });
+		if (provider.adapter !== null && typeof provider.adapter !== "string") throw new TypeError(path + ".adapter: expected string or null");
+		if (typeof provider.configured !== "boolean") throw new TypeError(path + ".configured: expected boolean");
+		if (provider.fetchedAt !== null && (!Number.isFinite(provider.fetchedAt) || provider.fetchedAt < 0)) throw new TypeError(path + ".fetchedAt: invalid value");
+	});
+	return value;
+}
+
+function adaptLegacyBalance(value) {
+	return {
+		generatedAt: value.generatedAt,
+		accounts: (value.accounts || []).map(function(account, index) {
+			var stale = account.status === "stale";
+			return {
+				id: index ? "deepseek-official-" + account.currency.toLowerCase() : "deepseek-official",
+				displayName: account.name,
+				providerFamily: "deepseek",
+				mode: "balance",
+				adapter: "deepseek-balance",
+				status: account.status === "ok" ? "ok" : account.status === "unconfigured" ? "not-configured" : "unavailable",
+				stale,
+				fetchedAt: account.fetchedAt || value.generatedAt,
+				lastSuccessAt: account.fetchedAt,
+				errorCode: account.errorCode,
+				missingCredential: account.status === "unconfigured" ? "DEEPSEEK_API_KEY" : null,
+				actionUrl: account.topUpUrl,
+				balance: account.total == null ? null : { currency: account.currency, remaining: account.total, used: null, total: null, toppedUp: account.toppedUp, granted: account.granted, unlimited: false },
+				plan: null,
+				windows: []
+			};
+		}),
+		warnings: (value.warnings || []).map(function(warning) { return { providerId: "deepseek-official", code: warning.code, message: warning.message }; })
+	};
 }
 
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，
@@ -2164,20 +2497,84 @@ const STATS_REMOTE_CONTRIBUTION = {
 		service: "stats",
 		namespace: "stats",
 		method: "aggregate",
-		invocation: { kind: "direct" },
-		parameters: [],
-		result: {
-			mode: "strict",
-			typeSymbol: "@rongyi7/dsh-stats#stats/aggregate:result",
+			invocation: { kind: "direct" },
+			parameters: [],
+			result: {
+				mode: "strict",
+				typeSymbol: "@rongyi7/dsh-stats#stats/aggregate:result",
 				schema: { parse: parseAggregateResult }
-		},
-		sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
-	}]
+			},
+			sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
+		}, {
+			id: "@rongyi7/dsh-stats#stats/current",
+			service: "stats",
+			namespace: "stats",
+			method: "current",
+			invocation: { kind: "direct" },
+			parameters: [],
+			result: {
+				mode: "strict",
+				typeSymbol: "@rongyi7/dsh-stats#stats/current:result",
+				schema: { parse: parseBalanceResult }
+			},
+				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
+			}, {
+				id: "@rongyi7/dsh-stats#stats/providers", service: "stats", namespace: "stats", method: "providers", invocation: { kind: "direct" }, parameters: [],
+				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/providers:result", schema: { parse: parseProvidersResult } },
+				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
+			}, {
+				id: "@rongyi7/dsh-stats#stats/account", service: "stats", namespace: "stats", method: "account", invocation: { kind: "direct" }, parameters: [],
+				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:result", schema: { parse: parseAccountResult } },
+				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
+			}]
 };
 
 async function apply(ctx) {
 	// 附加 CSS — 必须在 CSS 注入前定义
-	var _phaseDCSS = "\n\t.dss-tc-val.dss-tc-cost{color:#ff922b}\n\t.dss-ml-row .dss-ml-reasoning{color:#cc5de8}\n\t";
+	var _phaseDCSS = "\n\t.dss-tc-val.dss-tc-cost{color:#ff922b}" +
+		"\n\t.dss-ml-row .dss-ml-reasoning{color:#cc5de8}" +
+		"\n\t.dss-balance{display:flex;flex-direction:column;gap:14px}" +
+		".dss-balance-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}" +
+		".dss-section-title{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+		".dss-balance-head .dss-sec-hint{margin-top:4px}" +
+		".dss-provider-picker{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:11px;white-space:nowrap}" +
+		".dss-provider-picker select{min-width:190px;height:30px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border,#2a303c);border-radius:7px;background:var(--dsw-specific-menu,#1d222c);color:var(--dsw-alias-label-primary,#e7eaf0);font-size:12px;outline:none}" +
+		".dss-provider-picker select:focus{border-color:#60a5fa}" +
+		".dss-balance-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}" +
+		".dss-balance-account{--dss-balance-text:var(--dsw-alias-label-primary,#e7eaf0);--dss-balance-muted:var(--dsw-alias-label-secondary,#a6adbb);--dss-balance-metric-bg:rgba(255,255,255,.42);--dss-balance-metric-border:rgba(37,99,235,.28);background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:10px;padding:18px;overflow:hidden}" +
+		".dss-balance-account.provider-deepseek{--dss-balance-text:#0f172a;--dss-balance-muted:#1d4ed8;--dss-balance-metric-bg:rgba(255,255,255,.42);--dss-balance-metric-border:rgba(37,99,235,.28);background:linear-gradient(135deg,#dbeafe 0%,#e0f2fe 54%,#f8fafc 100%);border-color:#93c5fd;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}" +
+		"body[data-ds-dark-theme] .dss-balance-account.provider-deepseek{--dss-balance-text:#f8fbff;--dss-balance-muted:#bfdbfe;--dss-balance-metric-bg:rgba(15,23,42,.22);--dss-balance-metric-border:rgba(147,197,253,.34);background:linear-gradient(135deg,rgba(37,99,235,.28) 0%,rgba(14,165,233,.13) 54%,rgba(15,23,42,.04) 100%),var(--dsw-specific-menu,#1d222c);border-color:rgba(96,165,250,.44);box-shadow:inset 0 1px 0 rgba(191,219,254,.08)}" +
+		".dss-balance-account-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}" +
+		".dss-balance-name{font-size:15px;font-weight:700;color:var(--dss-balance-text)}" +
+		".dss-balance-currency{font-size:11px;color:var(--dss-balance-muted);margin-top:3px}" +
+		".dss-balance-status{font-size:11px;font-weight:600;padding:3px 7px;border:1px solid transparent;border-radius:5px;background:rgba(96,165,250,.12);color:#60a5fa}" +
+		".dss-balance-status.ok{color:#6ee7b7;background:rgba(16,185,129,.12);border-color:rgba(52,211,153,.18)}" +
+		".dss-balance-status.stale{color:#fde68a;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.18)}" +
+		".dss-balance-status.not-configured,.dss-balance-status.unauthorized,.dss-balance-status.invalid-response,.dss-balance-status.blocked{color:#fca5a5;background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.18)}" +
+		".dss-balance-status.rate-limited,.dss-balance-status.unavailable{color:#fde68a;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.18)}" +
+		".dss-balance-status.unsupported{color:var(--dsw-alias-label-secondary,#a6adbb);background:rgba(148,163,184,.1);border-color:rgba(148,163,184,.18)}" +
+		".dss-balance-total-label{margin-top:24px;font-size:11.5px;color:var(--dss-balance-muted)}" +
+		".dss-balance-total{font-size:34px;font-weight:750;line-height:1.08;margin-top:5px;color:var(--dss-balance-text);font-variant-numeric:tabular-nums}" +
+		".dss-balance-plan{font-size:24px;font-weight:720;line-height:1.2;margin-top:6px;color:var(--dss-balance-text)}" +
+		".dss-balance-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid rgba(37,99,235,.18);font-variant-numeric:tabular-nums}" +
+		".dss-balance-metric{display:flex;flex-direction:column;gap:4px;min-width:0;padding:9px 11px;border:1px solid var(--dss-balance-metric-border);border-radius:7px;background:var(--dss-balance-metric-bg);box-sizing:border-box}" +
+		".dss-balance-metric+.dss-balance-metric{padding-left:11px;padding-right:11px;border-left:1px solid var(--dss-balance-metric-border)}" +
+		".dss-balance-metric span{font-size:11px;color:var(--dss-balance-muted)}" +
+		".dss-balance-metric b{font-size:14px;color:var(--dss-balance-text);white-space:nowrap}" +
+		".dss-quota-list{display:flex;flex-direction:column;gap:14px;margin-top:20px;padding-top:16px;border-top:1px solid var(--dsw-alias-border,#2a303c)}" +
+		".dss-quota-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:var(--dss-balance-muted)}" +
+		".dss-quota-head b{color:var(--dss-balance-text);font-variant-numeric:tabular-nums}" +
+		".dss-quota-track{height:7px;margin-top:7px;overflow:hidden;border-radius:4px;background:rgba(148,163,184,.2)}" +
+		".dss-quota-track i{display:block;height:100%;border-radius:4px;background:#3b82f6}" +
+		".dss-quota-reset{margin-top:5px;font-size:10.5px;color:var(--dss-balance-muted)}" +
+		".dss-balance-stale{margin-top:10px;color:#fde68a;font-size:11.5px}" +
+		".dss-balance-message{margin-top:24px;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:12px;line-height:1.5}" +
+		".dss-balance-topup{display:inline-flex;align-items:center;justify-content:center;margin-top:18px;min-height:30px;padding:0 12px;border:1px solid #2563eb;border-radius:7px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;text-decoration:none}" +
+		".dss-balance-topup:hover{background:#1d4ed8;border-color:#1d4ed8}" +
+		".dss-balance-state{padding:42px 0;text-align:center;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
+		".dss-balance-state.error{color:#fbbf24}" +
+		".dss-balance-warning{border:1px solid rgba(251,191,36,.22);background:rgba(251,191,36,.08);border-radius:8px;padding:9px 11px;color:#fbbf24;font-size:12px}" +
+		"@media (max-width:640px){.dss-balance-head{flex-direction:column}.dss-provider-picker{width:100%;justify-content:space-between}.dss-provider-picker select{min-width:0;max-width:72%;flex:1}.dss-balance-account{padding:15px}.dss-balance-total{font-size:30px}.dss-balance-breakdown{gap:8px}}\n\t";
 
 	var ownedStyle = null;
 	if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(CSS_ID) + "]") === null) {
@@ -2192,6 +2589,7 @@ async function apply(ctx) {
 	const openStore = createOpenStore();
 
 	let aggregateRemote = null;
+	let balanceRemote = null;
 	let remoteError = null;
 	let disposeRemote = () => {};
 	try {
@@ -2203,6 +2601,17 @@ async function apply(ctx) {
 				const answered = await childCtx.remote.stats.aggregate();
 				if (!answered.ok) throw new Error(answered.error?.message || "stats/aggregate failed");
 				return answered.value;
+			};
+			balanceRemote = async () => {
+				try {
+					const answered = await childCtx.remote.stats.account();
+					if (answered.ok) return answered.value;
+					throw new Error(answered.error?.message || "stats/account failed");
+				} catch (accountError) {
+					const legacy = await childCtx.remote.stats.current();
+					if (!legacy.ok) throw accountError;
+					return adaptLegacyBalance(legacy.value);
+				}
 			};
 		});
 	} catch (err) {
@@ -2221,7 +2630,7 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote, remoteError })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote, balance: balanceRemote, remoteError })
 	}, StatsPanel));
 
 	return () => {
@@ -2238,5 +2647,6 @@ module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
-	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
+	sessionCostSummary, projectCostSummary, fmtCostSummary, modelDisplayName, projectCsvTable
 };

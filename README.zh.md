@@ -1,141 +1,270 @@
-# @rongyi7/dsh-stats — DSH 项目统计插件
+# @rongyi7/dsh-stats
 
 [English](README.md) | 简体中文
 
-[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![npm downloads](https://img.shields.io/npm/dm/@rongyi7/dsh-stats)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
-[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats)](https://nodejs.org)
+[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&label=npm)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
+[![npm downloads](https://img.shields.io/npm/dm/@rongyi7/dsh-stats?color=22c55e&label=downloads)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
+[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats?color=339933)](https://nodejs.org)
 [![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
 
-把「项目级 Token 消耗统计 + 每日开发时间线 + 消费金额」集成进 DeepSeek Harness（DSH）Web 侧边栏。
+> 把 DSH 里分散的会话记录，整理成一眼就能读懂的项目仪表盘：Token、开发时间线、模型分布、消费金额和账户余额，全部在侧边栏里完成。 `(｡•̀ᴗ-)✧`
 
-> Tier 2 架构：宿主侧 Typert RPC 聚合持久化会话日志，客户端 React UI 渲染面板；RPC 不可用时自动降级为纯客户端近似。
+`@rongyi7/dsh-stats` 是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的插件。它同时支持纯客户端回退和宿主侧精确聚合，适合日常复盘，也适合核对账单。
 
-## 结构
+<p align="center">
+  <img src="docs/images/overview.png" alt="项目总览：演示项目卡片与 Token、消费统计" width="920" />
+</p>
 
-```
-src/                       # 源文件
-  index.js                 #   宿主半体：StatsService（stats/aggregate Typert RPC）
-  client.cjs               #   客户端半体：$mount + ctx.inject + React UI
-  typert-host.js           #   宿主 Typert manifest（strict 描述符 + zod schema）
-  typert-remote-client.js  #   客户端描述符（参考；运行时由 client.cjs 内联并 $mount）
-scripts/build.mjs          # esbuild 构建脚本（node scripts/build.mjs）
-lib/                       # 构建产物（随包发布，勿手改）
-  index.js / client.js / typert.host.js / typert.remote-client.js
-reference/server.mjs       # 第一版独立面板后端（活跃区间切槽算法参考）
-DESIGN.md                  # 完整集成设计（Tier 1 + Tier 2）
-```
+> **隐私说明**：README 中的所有界面图均使用脱敏演示数据。项目名、路径、日期、余额和统计数字均为示例；截图没有读取或展示你的真实工作区信息。插件也不会把 API Key、Cookie、管理令牌或上游原始响应发送到浏览器。
 
-## 构建与发布
+## ✨ 一眼看懂
 
-```bash
-npm run build              # esbuild 产出 lib/（client 打成 __ModuleLoader__ 包装产物）
-npm publish                # prepublishOnly 自动重新构建（需先 npm login）
-```
+| | 能力 | 你能得到什么 |
+| --- | --- | --- |
+| 📊 | 项目总览 | 按项目查看会话、轮次、Token、缓存命中率、速度和消费；今天没有活动的项目不会挤占列表。 |
+| ⏱️ | 开发时间线 | 以 30 分钟为粒度还原每天的开发区间；同一时间并行开发多个项目时仍能分辨颜色和时长。 |
+| 📈 | 用量趋势 | 近 7 天输入/输出 Token、活动热力图、模型分布，以及悬停时的模型消费金额。 |
+| 💳 | Provider 级计价 | 根据真实 `Provider + 模型 + 账户类型 + 时间槽` 自动选价，不要求手动挑模型。 |
+| 👤 | 账户余额与额度 | 查看 DeepSeek 等 API 余额，以及 Kimi、Z.ai、MiniMax Coding Plan 窗口额度。 |
+| 🔒 | 宿主侧凭证安全 | 余额请求只在 DSH 宿主侧执行，浏览器只拿到脱敏后的余额和状态。 |
 
-`npm pack --dry-run` 可预览发布内容（LICENSE/README*/lib/*/cordis.patch.yml/package.json，~25KB）。
+项目卡片最多完整展示 7 个项目，开发时间线最多完整展示最近 3 天；更多内容可在面板内部滚动查看，页面布局不会被撑开。 `(ง •̀_•́)ง`
 
-## 安装到 DSH profile
+## 🚀 30 秒安装
 
-> ⚠️ **切勿用 `npm install --prefix ~/.dsh/profiles/web ...` 等方式直接操作 profile 目录**。
-> DSH profile 由 **pnpm** 管理（workspace + 虚拟存储 + 供应链策略）。npm 会写入自己的
-> `package-lock.json`、以扁平结构重写 `node_modules`，并自动安装本包的 peerDependencies，
-> 导致 `@deepseek-ai/dsh-*` 内部包出现多份副本、cordis 上下文分裂，重启后会话恢复报
-> `agent-presets: refusing to compose an unscoped context`。修复只能删掉
-> `node_modules`/`package-lock.json` 后 `pnpm install`。
-> 更新插件请一律走官方命令 `dsh plugin`（内部转发给 pnpm）。
+### 前置条件
+
+- 已安装 DeepSeek Harness，并拥有 `web` profile。
+- Node.js `>= 22`。
+
+### 从 npm 安装
 
 ```bash
-# 方式 A（从 npm registry 安装/升级）
-dsh plugin --profile web add @rongyi7/dsh-stats            # 最新版
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.3     # 指定版本
-# 方式 B（从本地 tarball）
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.3.tgz
+dsh plugin --profile web add @rongyi7/dsh-stats
 ```
 
-即可，无需手动加 patch 行——本包已声明 `dsh.bundle`（带 `cordis.patch.yml`，其中 insert 了插件行），
-`dsh plugin add` 会自动把它加入 `dsh.profile.bundles` 并加载。
-
-验证：`dsh --profile web --dump-config`（应看到 `- id: stats` 与 bundle 列表中的 `@rongyi7/dsh-stats`）。
-
-## 激活
-
-`dsh-client-modules` / `dsh-typert-loader` 的扫描按包缓存、**重启才生效**：
+然后重启正在运行的 DSH Web：
 
 ```bash
 dsh web
 ```
 
-重启后侧边栏底栏出现「统计」按钮。面板标题右侧显示「精确（宿主）」即 Tier 2 生效；
-显示「近似（客户端）」表示回退（tooltip 里有具体错误）。
-
-## 功能
-
-- **项目总览**：汇总卡（含消费金额）+ 每项目统计行 + 会话明细（含每会话模型/消费/归档标记）。
-- **开发时间线**：30 分钟槽精确时间线（宿主读事件时间戳切活跃区间）+ 每日总量热力条。
-- **成本计算**：按实际模型与官方规则自动计价；DeepSeek 按逐槽生效价，MiniMax M3 按请求的
-  服务档和输入上下文档计价，无需手动选择模型。
-- **日期范围**：可在单个活动日与全部记录之间切换，总览与时间线保持同步。
-- **数据质量**：面板明确显示「精确（宿主）」「部分精确」「已过期」或「近似（客户端）」；日志不完整或缺失时会在数据源提示中告警，不会伪装成精确结果。
-- **打磨**：选项持久化（localStorage）、列排序、CSV/JSON 导出、图例过滤、60s 自动刷新 + 手动刷新。
-
-当前支持的按量计费模型：
-
-| 模型 | 规则 |
-|---|---|
-| `deepseek-v4-pro`、`deepseek-v4-flash` | 官方历史价与 2026-08-17 后峰谷价，按北京时间槽计费 |
-| `MiniMax-M3` | 官方 standard/priority 与输入 `≤512K`/`>512K` 四档价格 |
-| `MiniMax-M2.7`、`MiniMax-M2.7-highspeed` | 官方输入、输出、缓存读取、缓存写入价格 |
-
-MiniMax 单价来自[官方按量计费页面](https://platform.minimaxi.com/docs/guides/pricing-paygo)。模型名匹配忽略大小写，但不会把带供应商前缀或未知模型静默映射到相近模型。
-
-## 数据流（Tier 2）
-
-```
-浏览器 client.cjs:
-  apply() → ctx.remote.$mount(内联 STATS_REMOTE_CONTRIBUTION)
-         → ctx.inject(["remote","remote.stats"], childCtx)
-           （不能直接 ctx.remote.stats：本 fiber 未注入会报 without inject，
-             而注入又死锁——提供者正是本次 $mount；子 ctx 注入绕过）
-         → aggregateRemote = () => childCtx.remote.stats.aggregate()
-宿主 index.js:
-  StatsService extends TypertRemoteService（@Remote("aggregate")）
-    constructor: __runInitializers 触发 @Remote 标记注册（漏掉会导致 SRC 派发失效）
-    aggregate(): 读 workspace.json + session_projcache.json（tokenUsage/sessionStats 聚合）
-               + 解码 session.jsonl.zstd（时间戳/模型/usage 按 turn:step 去重）
-               → { projects, timeline, meta }（会话带 model / slots / slotStats / slotUsage / quality）
-```
-
-要点（踩过的坑）：
-
-1. **DSH 不自动挂载第三方 `./remote`** —— 客户端必须内联描述符并手动 `$mount`。
-2. **`ctx.remote.stats` 不能直接访问** —— traceable 代理会转发成 `ctx["remote.stats"]` 解析，
-   本 fiber 未注入就报 `without inject`；注入又死锁。用 `ctx.inject` 子 ctx 解决。
-3. **`@Remote` 装饰器的 initializer 要手动触发** —— 手写 ESM 没有实例字段的
-   `__runInitializers(this, _instanceExtraInitializers)`，要在 constructor 里调用。
-4. **客户端 `$mount` 的 result schema 只需 `.parse`** —— 客户端解码只调 `schema.parse(value)`，
-   可用 `{ parse: v => v }` 透传；但宿主 `typert.host.js` 的 schema 必须是真 zod（`_zod`）。
-
-## 修改迭代（本地开发）
+重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-# 改 src/ 后重新构建 + 重新打包 + 重装进 profile，再重启
-npm run build && npm pack
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.3.tgz   # pnpm 重装
-# 重启 dsh web
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.5
 ```
 
-## 已知限制
+### 从本地 tarball 安装
 
-| 项 | 说明 |
-|---|---|
-| 归档会话 | 统计中保留但打「（已归档）」标记，未排除 |
-| 实时性 | 当前会话投影缓存秒级滞后，60s 自动刷新兜底 |
-| 解码开销 | 会话很多时宿主每次 RPC 全量解码（已加 mtime 缓存，跨请求不重复解码；首次仍慢） |
-| 调价边界 | DeepSeek 在 8.17 调价后按会话「发生时的价格」计价（正是预期行为），无历史价格回填 |
-| 未知模型 | 无法识别的模型成本显示「—」，不会猜测价格 |
-| 时长口径 | 项目 LLM/工具时长是工作量累计；同一项目并发会话在时间线中合并为墙钟区间 |
-| 存储不完整 | 日志缺失、损坏或正写入时会标记为「部分精确/已过期」，必要时使用 projection cache token 总量并提示告警 |
+```bash
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.5.tgz
+```
 
-说明：时间线切天、峰谷时段、计价均已按显式北京时间（UTC+8）处理，与宿主机时区无关。
+验证插件是否被 profile 注册：
+
+```bash
+dsh --profile web --dump-config
+```
+
+输出中应能看到 `stats` 和 `@rongyi7/dsh-stats`。**不要**用 `npm install --prefix ~/.dsh/profiles/web ...` 直接改写 DSH profile；profile 由 pnpm 管理，官方 `dsh plugin` 命令会处理依赖和 bundle 注册。
+
+## 🖼️ 界面导览
+
+下面的图片来自真实运行中的 DSH 面板，但内容全部替换成了演示数据：
+
+<table>
+  <tr>
+    <td align="center"><strong>项目总览</strong><br><img src="docs/images/overview.png" alt="项目总览界面" width="480"></td>
+    <td align="center"><strong>开发时间线</strong><br><img src="docs/images/timeline.png" alt="开发时间线界面" width="480"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>用量趋势</strong><br><img src="docs/images/trends.png" alt="用量趋势、热力图和模型分布界面" width="480"></td>
+    <td align="center"><strong>账户余额</strong><br><img src="docs/images/balance.png" alt="DeepSeek 账户余额界面" width="480"></td>
+  </tr>
+</table>
+
+### 你会看到什么？
+
+1. **项目总览**：上方汇总卡展示项目数、会话数、Token、LLM/工具时长和消费；下方项目卡可排序、筛选并展开会话明细。
+2. **开发时间线**：每行对应一天，颜色代表项目；条块会显示活跃区间，重叠项目仍保持各自颜色。
+3. **用量趋势**：输入和输出使用不同颜色；输出量较小时柱子仍保留最小可见高度，鼠标悬停可以查看精确数值。
+4. **模型分布**：圆环和右侧列表共享固定布局；悬停模型行即可查看该模型的 Token、占比和消费金额。
+5. **账户余额**：DeepSeek 使用蓝色渐变卡片，同时展示可用余额、充值余额、赠送余额和官方充值入口。
+
+统计页支持 CSV/JSON 导出；账户余额页只保留刷新和关闭操作，因为余额是实时快照，不属于历史统计导出数据。
+
+## 💰 计价规则
+
+所有价格按“每百万 Token”计算，币种分开汇总（例如 `¥... + $...`），不做隐式汇率换算。计价内核会同时考虑上下文长度、服务档、缓存类型和生效时间，并把规则来源写入导出字段，方便复核。
+
+| Provider | 当前内置模型 | 计价特点 |
+| --- | --- | --- |
+| [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`、`deepseek-v4-flash` | CNY；按北京时间 30 分钟槽区分历史价、峰时价和非峰时价。 |
+| [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`、`MiniMax-M2.7`、`MiniMax-M2.7-highspeed` | CNY；M3 区分 standard/priority 与 `<=512K`/`>512K` 上下文。 |
+| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.6-cyber` | USD；支持 `272K` 上下文分档。 |
+| [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5、Sonnet 5、Sonnet 4.6、Haiku 4.5 | USD；缓存写入时长不可得时明确标记为估算。 |
+| [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash、3.1 Pro Preview、2.5 Pro/Flash | USD；支持 `200K` 上下文分档，缓存存储时长缺失时标记为估算。 |
+| [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3、K2.7 Code/Highspeed、K2.6 | CNY；按官方模型规则计价。 |
+| [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2、5.1、5、5 Turbo、4.7、4.7 FlashX/Flash | USD；按官方模型规则计价。 |
+| [OpenRouter](https://openrouter.ai/api/v1/models) | 主流 OpenAI、Anthropic、Google、Kimi、GLM 路由快照 | USD；目录价格是带日期的快照，因此状态为 estimated。 |
+
+计价是 **Provider-scoped**：只有明确识别为官方 Provider 的请求才会套用对应官方价。中转、`local`、未知 Provider、仅模型名相似的请求，以及订阅/Token Plan 用量，都不会被伪装成 API 消费。
+
+### 消费状态怎么读
+
+| 状态 | 含义 |
+| --- | --- |
+| `exact` | 每一条有价用量都命中确定的内置规则。 |
+| `estimated` | 有金额，但至少一条记录来自动态价格快照，或缺少会影响价格的元数据。 |
+| `partial` | 一部分用量可计价，另一部分无法安全计价；已知金额保留，并显示 `+ ?`。 |
+| `unsupported` | 没有足够可靠的规则，显示 `—`，不猜价格。 |
+
+单条用量还可能标记为 `free`（免费规则）、`subscription`（订阅/Token Plan）或 `ambiguous`（规则冲突）；汇总层仍遵循上表的四种可解释状态。
+
+## 👤 账户余额与订阅额度
+
+账户查询只在宿主侧执行。下表中的“凭证引用”是变量名，不是需要粘贴到 README 或聊天窗口的密钥值：
+
+| 账户 | 官方接口 | 默认凭证引用 |
+| --- | --- | --- |
+| DeepSeek 余额 | `/user/balance` | `DEEPSEEK_API_KEY` |
+| OpenRouter Credits | `/api/v1/credits` | `OPENROUTER_MANAGEMENT_KEY`（必须是 Management Key） |
+| Moonshot 余额 | `/v1/users/me/balance` | `MOONSHOT_API_KEY` |
+| Z.ai 余额 | `/api/paas/v4/balance` | `ZAI_API_KEY` |
+| Kimi For Coding | `/coding/v1/usages` | `KIMI_API_KEY` |
+| Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
+| MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise)（含官方兼容路径） | `MINIMAX_API_KEY` |
+
+Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求；遇到网络错误、限流或异常响应时，会保留上一次成功快照并标记为“已过期”。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
+
+## 🔐 凭证与隐私边界
+
+- 凭证只通过 DSH 宿主的 `credentials` service 解析，绝不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
+- 账户适配器只允许固定的官方 HTTPS 域名，只发 GET 请求，拒绝重定向，15 秒超时，响应体上限 1 MiB。
+- 不要把真实 API Key、Cookie、Management Key、`auth.json` 或 `.credentials.yaml` 提交到 Git、公开 issue，或粘贴给 Agent。
+- 本仓库的截图仅用于说明布局；演示路径统一使用 `/workspace/...`，演示日期和金额也经过替换。
+
+## 🎯 数据准确性
+
+面板标题会明确标注当前数据来源：
+
+- **精确（宿主）**：宿主 RPC 读取持久化会话日志和投影数据，时间线按事件时间戳切成 30 分钟槽。
+- **部分精确/已过期**：日志缺失、正在写入或账户接口暂时失败；界面会保留已知值并给出提示。
+- **近似（客户端）**：旧版宿主不提供 RPC 时，使用浏览器可见的投影值估算；适合快速浏览，不应当作审计结果。
+
+时间线、峰谷时段和日期范围都使用显式北京时间（UTC+8），不受宿主机系统时区影响。
+
+## ❓ 常见问题
+
+<details>
+<summary><strong>为什么显示“近似（客户端）”？</strong></summary>
+
+当前 DSH 宿主没有成功加载 Tier 2 RPC，或仍在使用旧版插件。重启 `dsh web` 并确认 `dsh --profile web --dump-config` 中存在 `stats`；如果仍回退，tooltip 会给出具体错误。
+</details>
+
+<details>
+<summary><strong>为什么最常用模型显示 `(unknown)`？</strong></summary>
+
+原始会话日志可能没有保存 Provider/模型字段，或者 Provider 尚未纳入安全计价目录。插件不会把相似模型名强行映射到官方模型；这样宁可显示未知，也不会制造虚假的消费金额。
+</details>
+
+<details>
+<summary><strong>为什么总消费后面有 `+ ?`？</strong></summary>
+
+这表示已知模型的金额已经算出，但仍有一部分 Token 无法安全计价（例如未知 Provider、中转或订阅用量）。导出的项目 CSV 会保留 `costStatus`、`ruleId`、`pricingSource`、Provider 和模型身份，便于逐条定位。
+</details>
+
+<details>
+<summary><strong>为什么余额页没有 CSV/JSON 按钮？</strong></summary>
+
+CSV/JSON 是历史统计导出功能，只出现在项目、时间线和用量趋势视图。余额页展示的是带缓存状态的实时快照，因此保留刷新和关闭按钮，避免把瞬时账户状态误当成历史账单。
+</details>
+
+<details>
+<summary><strong>为什么输出柱子看起来比输入小很多？</strong></summary>
+
+很多代码会话的输入上下文远大于输出 Token。图表仍会保留输出的最小可见高度，悬停柱子可以查看精确数值；图例中的“输出（含思考）”位于图表下方居中位置。
+</details>
+
+<details>
+<summary><strong>安装后为什么侧边栏没有入口？</strong></summary>
+
+DSH 会缓存客户端模块和 Typert 描述符。确认安装命令成功后，完整重启 `dsh web`，必要时对浏览器做一次硬刷新。
+</details>
+
+## 🧩 Tier 2 数据流（给贡献者）
+
+<details>
+<summary><strong>展开架构细节</strong></summary>
+
+```text
+浏览器 client.cjs
+  apply()
+    -> ctx.remote.$mount(内联 STATS_REMOTE_CONTRIBUTION)
+    -> ctx.inject(["remote", "remote.stats"], childCtx)
+    -> childCtx.remote.stats.aggregate()
+    -> childCtx.remote.stats.account()
+
+宿主 index.js
+  StatsService
+    aggregate(): workspace + projection + session.jsonl.zstd
+               -> 项目汇总、30 分钟时间线、模型/计价明细
+    account(): 余额与订阅额度适配器，统一状态并提供 stale fallback
+    providers(): 只返回能力元数据，不返回凭证值
+    current(): 旧版 DeepSeek 余额兼容 RPC
+```
+
+关键实现原因和完整数据契约见 [DESIGN.md](DESIGN.md)。`lib/` 是发布产物，请修改 `src/` 后再构建，不要手工编辑 `lib/`。
+</details>
+
+## 🛠️ 本地开发与验证
+
+```bash
+npm install
+npm run build
+npm test
+npm pack --dry-run
+```
+
+源码结构：
+
+```text
+src/index.js              # 宿主 StatsService 与 aggregate/account RPC
+src/client.cjs            # 客户端入口、React UI 与 fallback
+src/pricing.cjs           # Provider 级、按生效时间的计价内核
+src/accounts.js           # 官方余额/额度适配器（仅宿主使用凭证）
+src/typert-host.js        # 宿主 Typert manifest 与 zod schema
+src/typert-remote-client.js # 客户端 RPC 描述符
+scripts/build.mjs         # esbuild 构建脚本
+lib/                      # 构建产物（随包发布）
+```
+
+修改 `src/` 后，执行 `npm run build`；发布前 `prepublishOnly` 会自动重建。更多集成背景、性能权衡和已知踩坑见 [DESIGN.md](DESIGN.md)。
+
+发布前检查：
+
+```bash
+npm run build
+npm test
+npm pack --dry-run
+npm publish
+```
+
+## ⚠️ 已知限制
+
+- 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新。
+- 首次读取大量会话时，宿主需要解码日志；随后会使用 mtime 缓存减少重复开销。
+- 归档会话仍会保留在统计中，并标注“已归档”。
+- OpenRouter 使用带日期的模型目录快照；这类金额会标记为 `estimated`。
+- 不同币种不会自动换算；未知模型、relay、local 和订阅用量不会猜价。
+- 同一项目的并发会话在时间线中合并为墙钟区间，项目 LLM/工具时长仍是累计工作量指标。
+
+## 🙌 参考与许可
+
+README 的信息组织和账户说明参考了 [Ychris12138/dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 的公开文档；本项目只记录自己实际实现的能力，不包含该项目特有的安装器或自定义 monitor 功能。
+
+欢迎提交 Issue 和 Pull Request。项目采用 [MIT License](LICENSE)。
+
+`╰(*°▽°*)╯` 祝你每次打开统计面板，都能更快看懂自己的开发节奏。

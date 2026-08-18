@@ -2,16 +2,94 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
-import { StatsService } from '../src/index.js';
+import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { TYPERT } from '../src/typert-host.js';
 
 const createdHomes = [];
 const previousDshHome = process.env.DSH_HOME;
+const previousFetch = globalThis.fetch;
 
 afterEach(() => {
+	globalThis.fetch = previousFetch;
 	if (previousDshHome === undefined) delete process.env.DSH_HOME;
 	else process.env.DSH_HOME = previousDshHome;
 	while (createdHomes.length) rmSync(createdHomes.pop(), { recursive: true, force: true });
+});
+
+function credentials(value = 'sk-test') {
+	return { resolve: async (ref) => ref === 'DEEPSEEK_API_KEY' ? { value, source: 'test' } : undefined };
+}
+
+function balanceResponse(balanceInfos, isAvailable = true) {
+	return { ok: true, status: 200, json: async () => ({ is_available: isAvailable, balance_infos: balanceInfos }) };
+}
+
+test('DeepSeek balance maps all currencies and keeps the key host-side', async () => {
+	let requested;
+	const result = await fetchDeepSeekBalance(credentials(), async (url, init) => {
+		requested = { url, init };
+		return balanceResponse([
+			{ currency: 'CNY', total_balance: '18.64', topped_up_balance: '10.00', granted_balance: '8.64' },
+			{ currency: 'USD', total_balance: '2.5', topped_up_balance: '2', granted_balance: '0.5' },
+		]);
+	}, 1234);
+
+	expect(requested.url).toBe('https://api.deepseek.com/user/balance');
+	expect(requested.init.headers.authorization).toBe('Bearer sk-test');
+	expect(result.accounts).toEqual([
+		expect.objectContaining({ currency: 'CNY', total: 18.64, toppedUp: 10, granted: 8.64, fetchedAt: 1234 }),
+		expect.objectContaining({ currency: 'USD', total: 2.5 }),
+	]);
+	expect(result.accounts[0]).not.toHaveProperty('apiKey');
+});
+
+test('DeepSeek balance normalizes missing credentials and invalid responses', async () => {
+	await expect(fetchDeepSeekBalance({ resolve: async () => undefined }, async () => balanceResponse([]))).rejects.toMatchObject({ code: 'no-api-key' });
+	await expect(fetchDeepSeekBalance(credentials(), async () => balanceResponse([{ currency: 'CNY', total_balance: 'not-a-number' }]))).rejects.toMatchObject({ code: 'invalid-response' });
+});
+
+test('StatsService balance current caches and deduplicates requests', async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls++;
+		return balanceResponse([{ currency: 'CNY', total_balance: '18.64', topped_up_balance: '10', granted_balance: '8.64' }]);
+	};
+	const service = { ctx: { reflect: { get: () => credentials() } } };
+	const [first, second] = await Promise.all([StatsService.prototype.current.call(service), StatsService.prototype.current.call(service)]);
+	expect(calls).toBe(1);
+	expect(first).toBe(second);
+	expect(first.accounts[0].total).toBe(18.64);
+	const cached = await StatsService.prototype.current.call(service);
+	expect(calls).toBe(1);
+	expect(cached).toBe(first);
+	const descriptor = TYPERT.invocations.find((invocation) => invocation.method === 'current');
+	descriptor.result.schema.parse(cached);
+});
+
+test('StatsService balance returns explicit unconfigured and error states', async () => {
+	const unconfigured = await StatsService.prototype.current.call({});
+	expect(unconfigured.accounts[0]).toMatchObject({ status: 'unconfigured', total: null, errorCode: 'no-api-key' });
+	TYPERT.invocations.find((invocation) => invocation.method === 'current').result.schema.parse(unconfigured);
+	globalThis.fetch = async () => ({ ok: false, status: 503 });
+	const failed = await StatsService.prototype.current.call({ ctx: { reflect: { get: () => credentials() } } });
+	expect(failed.accounts[0]).toMatchObject({ status: 'error', total: null, errorCode: 'http-5xx' });
+});
+
+test('StatsService balance keeps the last successful value as stale on refresh failure', async () => {
+	const previousNow = Date.now;
+	let now = 1_000_000;
+	Date.now = () => now;
+	try {
+		globalThis.fetch = async () => balanceResponse([{ currency: 'CNY', total_balance: '18.64' }]);
+		const service = { ctx: { reflect: { get: () => credentials() } } };
+		const fresh = await StatsService.prototype.current.call(service);
+		now += 60_001;
+		globalThis.fetch = async () => ({ ok: false, status: 503 });
+		const stale = await StatsService.prototype.current.call(service);
+		expect(stale.accounts[0]).toMatchObject({ status: 'stale', total: 18.64, errorCode: 'http-5xx' });
+	} finally {
+		Date.now = previousNow;
+	}
 });
 
 function projection(createdAt, overrides = {}) {
@@ -122,6 +200,30 @@ test('slot usage preserves MiniMax service and 512k context pricing tiers', asyn
 		expect.objectContaining({ serviceTier: 'priority', contextOver512k: true, uncached: 1001 }),
 	]));
 	TYPERT.invocations[0].result.schema.parse(await aggregate());
+});
+
+test('host aggregation separates providers and keeps known spend when a relay is unpriced', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ s1: projection(now) });
+	writeLog(home, 's1', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'request/header', seq: 1, time: now + 10, data: { header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } } } },
+		{ type: 'request/header', seq: 3, time: now + 200, data: { header: { config: { provider: 'nbdeepseek', model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 4, time: now + 300, data: { turn: 1, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'nbdeepseek', model: 'deepseek-v4-pro' } } } },
+	]);
+
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(session.modelUsage).toHaveLength(2);
+	expect(session.modelUsage.map((row) => row.providerId).sort()).toEqual(['deepseek-official', 'nbdeepseek']);
+	expect(session.cost.status).toBe('partial');
+	expect(session.cost.totals).toEqual([expect.objectContaining({ currency: 'CNY', amount: 0.0117 })]);
+	expect(session.cost.unpricedTokens).toBe(1100);
+	expect(result.projects[0].cost.status).toBe('partial');
+	expect(result.cost.status).toBe('partial');
+	expect(result.meta.schemaVersion).toBe(2);
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
 });
 
 test('a truncated active tail keeps committed frames and reports partial quality', async () => {
