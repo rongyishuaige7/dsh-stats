@@ -132,6 +132,7 @@ test('Z.ai Coding Plan sorts quota windows by duration and reads plan metadata',
 test('MiniMax Coding Plan preserves exhausted/unlimited windows and duration resets', async () => {
 	const now = Date.parse('2026-08-18T00:00:00Z');
 	const spec = accountSpec({ id: 'minimax-cn', apiKeyRef: 'MINIMAX_CUSTOM', baseURL: 'https://api.minimaxi.com' });
+	expect(spec.actionUrl).toBe('https://platform.minimaxi.com/console/usage');
 	const account = await queryProviderAccount(spec, credentials(), {
 		now: () => now,
 		fetch: async () => jsonResponse({ base_resp: { status_code: 0 }, model_remains: [{

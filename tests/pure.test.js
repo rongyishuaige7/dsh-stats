@@ -7,12 +7,18 @@ const {
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	modelNameOnly, modelDisplayName, projectCsvTable,
+	modelNameOnly, modelDisplayName, providerPickerLabel, projectCsvTable,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
 // localDayKey
 // ---------------------------------------------------------------------------
+test('providerPickerLabel uses the canonical provider family without status text', () => {
+	expect(providerPickerLabel({ providerFamily: 'deepseek', displayName: 'DeepSeek', status: 'ok' })).toBe('deepseek');
+	expect(providerPickerLabel({ providerFamily: 'minimax', displayName: 'MiniMax', status: 'stale' })).toBe('minimax');
+	expect(providerPickerLabel({ displayName: 'Custom Provider', status: 'ok' })).toBe('Custom Provider');
+});
+
 test('localDayKey returns YYYY-MM-DD', () => {
 	expect(localDayKey(Date.parse('2025-03-15T14:30:00+08:00'))).toBe('2025-03-15');
 	expect(localDayKey(Date.parse('2026-01-01T00:00:00+08:00'))).toBe('2026-01-01');

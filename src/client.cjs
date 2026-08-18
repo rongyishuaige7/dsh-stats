@@ -1251,6 +1251,11 @@ function exportAccountCSV(data) {
 	download("dsh-accounts.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
+function providerPickerLabel(account) {
+	var family = account && typeof account.providerFamily === "string" ? account.providerFamily.trim() : "";
+	return family || (account && typeof account.displayName === "string" ? account.displayName : "unknown");
+}
+
 function BalanceView(props) {
 	var data = props.data;
 	var state = props.state || { kind: "loading" };
@@ -1283,7 +1288,7 @@ function BalanceView(props) {
 			accounts.length > 1 ? e("label", { className: "dss-provider-picker" },
 				e("span", null, t("balance.provider")),
 				e("select", { value: account?.id || "", onChange: function(event) { setSelectedId(event.target.value); } },
-					accounts.map(function(item) { return e("option", { key: item.id, value: item.id }, item.displayName + " · " + t("balance.status." + (item.stale ? "stale" : item.status))); })
+					accounts.map(function(item) { return e("option", { key: item.id, value: item.id }, providerPickerLabel(item)); })
 				)
 			) : null
 		),
@@ -2543,7 +2548,7 @@ async function apply(ctx) {
 		".dss-section-title{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 		".dss-balance-head .dss-sec-hint{margin-top:4px}" +
 		".dss-provider-picker{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:11px;white-space:nowrap}" +
-		".dss-provider-picker select{min-width:190px;height:30px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border,#2a303c);border-radius:7px;background:var(--dsw-specific-menu,#1d222c);color:var(--dsw-alias-label-primary,#e7eaf0);font-size:12px;outline:none}" +
+		".dss-provider-picker select{width:128px;min-width:128px;height:30px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border,#2a303c);border-radius:7px;background:var(--dsw-specific-menu,#1d222c);color:var(--dsw-alias-label-primary,#e7eaf0);font-size:12px;outline:none}" +
 		".dss-provider-picker select:focus{border-color:#60a5fa}" +
 		".dss-balance-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}" +
 		".dss-balance-account{--dss-balance-text:var(--dsw-alias-label-primary,#e7eaf0);--dss-balance-muted:var(--dsw-alias-label-secondary,#a6adbb);--dss-balance-metric-bg:rgba(255,255,255,.42);--dss-balance-metric-border:rgba(37,99,235,.28);background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:10px;padding:18px;overflow:hidden}" +
@@ -2653,5 +2658,5 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, projectCsvTable
+	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, projectCsvTable
 };
