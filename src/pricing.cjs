@@ -25,7 +25,10 @@ var SOURCES = {
 };
 
 var OFFICIAL_PROVIDER_IDS = {
-	deepseek: new Set(["deepseek", "deepseek-official"]),
+	// These routes preserve DeepSeek's official API billing while exposing a
+	// distinct provider id in DSH. Keep the allowlist explicit: model names alone
+	// are still insufficient to trust an arbitrary relay's pricing.
+	deepseek: new Set(["deepseek", "deepseek-official", "deepseek-modlens", "nbdeepseek"]),
 	minimax: new Set(["minimax", "minimax-cn", "minimaxi", "minimax-global", "minimax-coding"]),
 	openai: new Set(["openai", "openai-official", "openai-codex"]),
 	anthropic: new Set(["anthropic", "anthropic-official", "claude"]),

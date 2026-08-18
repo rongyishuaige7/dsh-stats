@@ -18,28 +18,36 @@ function usage(overrides = {}) {
 	};
 }
 
-test('provider identity keeps the same model on different routes distinct', () => {
+test('trusted DeepSeek aliases keep distinct route ids while using the official family', () => {
 	const official = normalizeIdentity('deepseek-official', 'deepseek-v4-pro', 'api', slot * 1800000);
-	const relay = normalizeIdentity('nbdeepseek', 'deepseek-v4-pro', 'api', slot * 1800000);
+	const nbdeepseek = normalizeIdentity('nbdeepseek', 'deepseek-v4-pro', 'api', slot * 1800000);
+	const modlens = normalizeIdentity('deepseek-modlens', 'deepseek-v4-flash', 'api', slot * 1800000);
+	const relay = normalizeIdentity('custom-relay', 'deepseek-v4-pro', 'api', slot * 1800000);
 
 	expect(official).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-pro' });
+	expect(nbdeepseek).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-pro' });
+	expect(modlens).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-flash' });
 	expect(relay).toMatchObject({ providerFamily: 'unknown', modelCanonical: 'deepseek-v4-pro' });
-	expect(official.providerId).not.toBe(relay.providerId);
+	expect(new Set([official.providerId, nbdeepseek.providerId, modlens.providerId])).toHaveProperty('size', 3);
 });
 
-test('relay and unknown providers never inherit first-party list pricing', () => {
-	const relay = priceUsage(usage({ providerId: 'nbdeepseek' }));
+test('trusted DeepSeek aliases inherit official pricing but arbitrary relays do not', () => {
+	const nbdeepseek = priceUsage(usage({ providerId: 'nbdeepseek' }));
+	const modlens = priceUsage(usage({ providerId: 'deepseek-modlens', model: 'deepseek-v4-flash' }));
+	const relay = priceUsage(usage({ providerId: 'custom-relay' }));
 	const unknown = priceUsage(usage({ providerId: 'unknown' }));
 	const official = priceUsage(usage());
 
 	expect(official).toMatchObject({ status: 'exact', currency: 'CNY' });
+	expect(nbdeepseek).toMatchObject({ status: 'exact', currency: 'CNY', amount: official.amount });
+	expect(modlens).toMatchObject({ status: 'exact', currency: 'CNY' });
 	expect(relay).toMatchObject({ status: 'unsupported', amount: null, currency: null, unpricedTokens: 1100 });
 	expect(unknown).toMatchObject({ status: 'unsupported', amount: null });
 });
 
 test('known cost survives alongside unknown rows as a partial summary', () => {
 	const official = priceUsage(usage());
-	const relay = priceUsage(usage({ providerId: 'deepseek-modlens', model: 'deepseek-v4-flash' }));
+	const relay = priceUsage(usage({ providerId: 'custom-relay', model: 'deepseek-v4-flash' }));
 	const summary = summarizeCosts([official, relay]);
 
 	expect(summary.status).toBe('partial');

@@ -202,7 +202,7 @@ test('slot usage preserves MiniMax service and 512k context pricing tiers', asyn
 	TYPERT.invocations[0].result.schema.parse(await aggregate());
 });
 
-test('host aggregation separates providers and keeps known spend when a relay is unpriced', async () => {
+test('host aggregation prices trusted DeepSeek aliases while keeping unknown relays unpriced', async () => {
 	const now = Date.parse('2026-08-17T10:00:00+08:00');
 	const home = fixture({ s1: projection(now) });
 	writeLog(home, 's1', [
@@ -211,14 +211,18 @@ test('host aggregation separates providers and keeps known spend when a relay is
 		{ type: 'assistant/message', seq: 2, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } } } },
 		{ type: 'request/header', seq: 3, time: now + 200, data: { header: { config: { provider: 'nbdeepseek', model: 'deepseek-v4-pro' } } } },
 		{ type: 'assistant/message', seq: 4, time: now + 300, data: { turn: 1, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'nbdeepseek', model: 'deepseek-v4-pro' } } } },
+		{ type: 'request/header', seq: 5, time: now + 400, data: { header: { config: { provider: 'custom-relay', model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 6, time: now + 500, data: { turn: 2, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'custom-relay', model: 'deepseek-v4-pro' } } } },
 	]);
 
 	const result = await aggregate();
 	const session = result.projects[0].sessions[0];
-	expect(session.modelUsage).toHaveLength(2);
-	expect(session.modelUsage.map((row) => row.providerId).sort()).toEqual(['deepseek-official', 'nbdeepseek']);
+	expect(session.modelUsage).toHaveLength(3);
+	expect(session.modelUsage.map((row) => row.providerId).sort()).toEqual(['custom-relay', 'deepseek-official', 'nbdeepseek']);
 	expect(session.cost.status).toBe('partial');
-	expect(session.cost.totals).toEqual([expect.objectContaining({ currency: 'CNY', amount: 0.0117 })]);
+	expect(session.cost.totals).toHaveLength(1);
+	expect(session.cost.totals[0].currency).toBe('CNY');
+	expect(session.cost.totals[0].amount).toBeCloseTo(0.0234, 10);
 	expect(session.cost.unpricedTokens).toBe(1100);
 	expect(result.projects[0].cost.status).toBe('partial');
 	expect(result.cost.status).toBe('partial');

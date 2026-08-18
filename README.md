@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.5
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.6
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.5.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.6.tgz
 ```
 
 Verify the bundle registration:
@@ -110,7 +110,7 @@ All rates are calculated per million tokens. Currencies are reported separately 
 | [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2, 5.1, 5, 5 Turbo, 4.7, 4.7 FlashX/Flash | USD; official model rules. |
 | [OpenRouter](https://openrouter.ai/api/v1/models) | Dated routes for mainstream OpenAI, Anthropic, Google, Kimi, and GLM models | USD; catalog snapshots are marked `estimated`. |
 
-Pricing is **provider-scoped**. A first-party list price is applied only when the provider is explicitly recognized as that official family. Relays, `local`, unknown providers, look-alike model names, and subscription/token-plan usage are never presented as API spend.
+Pricing is **provider-scoped**. A first-party list price is applied only when the provider is explicitly recognized as that official family. The DSH pass-through routes `nbdeepseek` and `deepseek-modlens` explicitly inherit DeepSeek's official API pricing; other relays, `local`, unknown providers, look-alike model names, and subscription/token-plan usage are never presented as API spend.
 
 ### Cost status guide
 

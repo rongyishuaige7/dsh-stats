@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.5
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.6
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.5.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.6.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -110,7 +110,7 @@ dsh --profile web --dump-config
 | [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2、5.1、5、5 Turbo、4.7、4.7 FlashX/Flash | USD；按官方模型规则计价。 |
 | [OpenRouter](https://openrouter.ai/api/v1/models) | 主流 OpenAI、Anthropic、Google、Kimi、GLM 路由快照 | USD；目录价格是带日期的快照，因此状态为 estimated。 |
 
-计价是 **Provider-scoped**：只有明确识别为官方 Provider 的请求才会套用对应官方价。中转、`local`、未知 Provider、仅模型名相似的请求，以及订阅/Token Plan 用量，都不会被伪装成 API 消费。
+计价是 **Provider-scoped**：只有明确识别为官方 Provider 的请求才会套用对应官方价。DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价；其他中转、`local`、未知 Provider、仅模型名相似的请求，以及订阅/Token Plan 用量，都不会被伪装成 API 消费。
 
 ### 消费状态怎么读
 
