@@ -43,6 +43,10 @@ function fmtClock(ms) {
 function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : tps.toFixed(1)); }
 function fmtPct(p) { return p == null || !Number.isFinite(p) ? "—" : `${p}%`; }
+function fmtSharePct(pct) {
+	if (pct == null || !Number.isFinite(pct) || pct <= 0) return "0%";
+	return pct < 0.1 ? "<0.1%" : pct.toFixed(1) + "%";
+}
 function fmtN(n) { return n == null || !Number.isFinite(n) ? "—" : n.toLocaleString("en-US"); }
 function sessionCounts(sessions) {
 	var c = { main: 0, subagent: 0 };
@@ -106,7 +110,8 @@ function fmtCurrencyAmount(value, currency) {
 	return amount + " " + (currency || "");
 }
 function fmtCostSummary(summary) {
-	if (!summary || !Array.isArray(summary.totals) || summary.totals.length === 0) return "—";
+	if (!summary || !Array.isArray(summary.totals)) return "—";
+	if (summary.totals.length === 0) return summary.status === "free" ? "0" : "—";
 	var text = summary.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ");
 	if (summary.status === "estimated") return "≈" + text;
 	if (summary.status === "partial") return text + " + ?";
@@ -192,10 +197,11 @@ function applyWindow(projects, startMs, endMs) {
 	if (startMs == null || endMs == null) return projects;
 	return projects.map((p) => {
 		var sessions = p.sessions.filter(function(s) {
+			var usageTimestamp = s.updatedAt != null ? s.updatedAt : s.createdAt;
 			var detailedRows = (s.slots || []).concat(s.slotStats || [], s.slotUsage || []);
 			if (detailedRows.length) return detailedRows.some(function(x) { return slotInWindow(x.slot, startMs, endMs); });
-			// 无逐槽数据（客户端近似）：退回按 updatedAt 判断
-			return s.updatedAt != null && s.updatedAt >= startMs && s.updatedAt < endMs;
+			// 无逐槽数据（客户端近似）：退回按会话时间戳判断
+			return usageTimestamp != null && usageTimestamp >= startMs && usageTimestamp < endMs;
 		});
 		if (!sessions.length) return null;
 		// 裁剪每个会话到当天
@@ -215,6 +221,10 @@ function applyWindow(projects, startMs, endMs) {
 			});
 			var st = s.stats || {};
 			var hasUsageData = Array.isArray(s.slotUsage) && s.slotUsage.length > 0;
+			var hasStatData = Array.isArray(s.slotStats) && s.slotStats.length > 0;
+			var usageTimestamp = s.updatedAt != null ? s.updatedAt : s.createdAt;
+			var fallbackUsageInWindow = !hasUsageData && usageTimestamp != null && usageTimestamp >= startMs && usageTimestamp < endMs;
+			var fallbackStatsInWindow = !hasStatData && usageTimestamp != null && usageTimestamp >= startMs && usageTimestamp < endMs;
 			var timed = ss.reduce(function(acc, row) {
 				acc.turns += row.turns || 0; acc.steps += row.steps || 0;
 				acc.llmMs += row.llmMs || 0; acc.toolMs += row.toolMs || 0;
@@ -222,27 +232,37 @@ function applyWindow(projects, startMs, endMs) {
 				acc.decodeMs += row.decodeMs || 0; acc.decodeTokens += row.decodeTokens || 0;
 				return acc;
 			}, { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 });
-			// 旧宿主或降级会话没有有效 slotStats 时，保留会话级时间指标。
-			var useTimed = Array.isArray(s.slotStats) && s.slotStats.length > 0;
+			// 旧宿主或降级会话没有有效 slotStats 时，将会话级时间指标
+			// 只归到时间戳所在窗口，避免跨日活动重复整段耗时。
 			var newStats = display({
-				turns: useTimed ? timed.turns : (st.turns || 0), steps: useTimed ? timed.steps : (st.steps || 0),
-				llmMs: useTimed ? timed.llmMs : (st.llmMs || 0), toolMs: useTimed ? timed.toolMs : (st.toolMs || 0),
-				ttftMs: useTimed ? timed.ttftMs : (st.ttftMs || 0), ttftSteps: useTimed ? timed.ttftSteps : (st.ttftSteps || 0),
-				decodeMs: useTimed ? timed.decodeMs : (st.decodeMs || 0), decodeTokens: useTimed ? timed.decodeTokens : (st.decodeTokens || 0),
-				uncached: hasUsageData ? tok.uncached : (st.uncached || 0), output: hasUsageData ? tok.output : (st.output || st.outputTokens || 0),
-				cacheRead: hasUsageData ? tok.cacheRead : (st.cacheRead || 0), cacheWrite: hasUsageData ? tok.cacheWrite : (st.cacheWrite || 0),
-				reasoning: hasUsageData ? tok.reasoning : (st.reasoning || 0)
+				turns: hasStatData ? timed.turns : fallbackStatsInWindow ? (st.turns || 0) : 0,
+				steps: hasStatData ? timed.steps : fallbackStatsInWindow ? (st.steps || 0) : 0,
+				llmMs: hasStatData ? timed.llmMs : fallbackStatsInWindow ? (st.llmMs || 0) : 0,
+				toolMs: hasStatData ? timed.toolMs : fallbackStatsInWindow ? (st.toolMs || 0) : 0,
+				ttftMs: hasStatData ? timed.ttftMs : fallbackStatsInWindow ? (st.ttftMs || 0) : 0,
+				ttftSteps: hasStatData ? timed.ttftSteps : fallbackStatsInWindow ? (st.ttftSteps || 0) : 0,
+				decodeMs: hasStatData ? timed.decodeMs : fallbackStatsInWindow ? (st.decodeMs || 0) : 0,
+				decodeTokens: hasStatData ? timed.decodeTokens : fallbackStatsInWindow ? (st.decodeTokens || 0) : 0,
+				uncached: hasUsageData ? tok.uncached : fallbackUsageInWindow ? (st.uncached || 0) : 0,
+				output: hasUsageData ? tok.output : fallbackUsageInWindow ? (st.output || st.outputTokens || 0) : 0,
+				cacheRead: hasUsageData ? tok.cacheRead : fallbackUsageInWindow ? (st.cacheRead || 0) : 0,
+				cacheWrite: hasUsageData ? tok.cacheWrite : fallbackUsageInWindow ? (st.cacheWrite || 0) : 0,
+				reasoning: hasUsageData ? tok.reasoning : fallbackUsageInWindow ? (st.reasoning || 0) : 0
 			});
-				var clippedSession = { ...s, slots: activity, slotStats: ss, slotUsage: su, stats: newStats, durMs: newStats.llmMs + newStats.toolMs };
-				clippedSession.cost = sessionCostSummary(clippedSession);
-				return clippedSession;
-			});
-			var clippedProject = { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length,
-				lastActiveAt: clipped.reduce(function(max, s) { return Math.max(max || 0, s.updatedAt || 0); }, 0) || null,
-				stats: sumSessionStats(clipped) };
-			clippedProject.cost = projectCostSummary(clippedProject);
-			return clippedProject;
-		}).filter(Boolean);
+			var clippedSession = { ...s, slots: activity, slotStats: ss, slotUsage: su, stats: newStats, durMs: newStats.llmMs + newStats.toolMs };
+			// 宿主逐槽费用必须和当前窗口使用同一批 usage；粗粒度费用
+			// 只归到会话时间戳所在的窗口，不能在每个活动日重复出现。
+			clippedSession.cost = hasUsageData
+				? summarizeCosts(su.map(function(usage) { return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType); }))
+				: fallbackUsageInWindow ? sessionCostSummary(clippedSession) : summarizeCosts([]);
+			return clippedSession;
+		});
+		var clippedProject = { ...p, sessions: clipped, sessionCount: clipped.length, subagentCount: clipped.filter((s) => s.subagent).length,
+			lastActiveAt: clipped.reduce(function(max, s) { return Math.max(max || 0, s.updatedAt || 0); }, 0) || null,
+			stats: sumSessionStats(clipped) };
+		clippedProject.cost = projectCostSummary(clippedProject);
+		return clippedProject;
+	}).filter(Boolean);
 }
 
 function applyDate(projects, dateKey) {
@@ -707,7 +727,9 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-ring-total{font-size:15px;font-weight:700;color:var(--dsw-alias-label-primary,#e7eaf0);font-variant-numeric:tabular-nums}" +
 	".dss-ring-label{font-size:9.5px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-top:2px}" +
 	".dss-ring-legend{display:flex;flex-direction:column;gap:5px;width:100%;min-width:0}" +
-	".dss-ring-item{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
+	".dss-ring-legend.scrollable{max-height:58px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px;scrollbar-width:thin;scrollbar-color:rgba(166,173,187,.28) transparent}" +
+	".dss-ring-legend.scrollable:hover{scrollbar-color:rgba(166,173,187,.5) transparent}" +
+	".dss-ring-item{display:flex;align-items:center;gap:7px;height:16px;line-height:16px;flex:none;font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-ring-swatch{width:10px;height:10px;border-radius:3px;flex:none}" +
 	".dss-ring-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-ring-pct{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
@@ -801,7 +823,6 @@ function Legend(props) {
 
 function sortValue(p, key) {
 	switch (key) {
-		case "cost": { var cost = projectCostSummary(p); return cost.totals.length ? cost.totals[0].amount : -1; }
 		case "input": return p.stats.inputTokens;
 		case "output": return p.stats.outputTokens;
 		case "turns": return p.stats.turns;
@@ -812,6 +833,23 @@ function sortValue(p, key) {
 		case "lastActive": return p.lastActiveAt || 0;
 		default: return 0;
 	}
+}
+
+function projectCostSortData(project) {
+	var totals = projectCostSummary(project).totals || [];
+	var ordered = totals.slice().sort(function(a, b) { return a.currency.localeCompare(b.currency); });
+	return { signature: ordered.map(function(total) { return total.currency; }).join("|") , amounts: ordered.map(function(total) { return total.amount; }) };
+}
+
+// 不做隐式汇率换算：不同币种组合先稳定分组，仅在相同组合内比较金额向量。
+function compareProjectCost(a, b) {
+	var ca = projectCostSortData(a), cb = projectCostSortData(b);
+	if (ca.signature !== cb.signature) return ca.signature.localeCompare(cb.signature);
+	for (var i = 0; i < Math.max(ca.amounts.length, cb.amounts.length); i++) {
+		var va = ca.amounts[i] ?? -1, vb = cb.amounts[i] ?? -1;
+		if (va !== vb) return va > vb ? 1 : -1;
+	}
+	return 0;
 }
 
 function ProjectsTable(props) {
@@ -828,6 +866,7 @@ function ProjectsTable(props) {
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
 	var sorted = projects.filter((p) => !hidden[p.id]);
 	sorted.sort((a, b) => {
+		if (effSortKey === "cost") return compareProjectCost(a, b) * sort.dir;
 		var va = sortValue(a, effSortKey), vb = sortValue(b, effSortKey);
 		return (va > vb ? 1 : (va < vb ? -1 : 0)) * sort.dir;
 	});
@@ -1353,7 +1392,7 @@ function StatsPanel(props) {
 	var [refreshTick, setRefreshTick] = useState(0);
 	var [balanceData, setBalanceData] = useState(null);
 	var [balanceState, setBalanceState] = useState({ kind: balanceRemote ? "loading" : "unavailable", error: null });
-	var [balanceRefreshTick, setBalanceRefreshTick] = useState(0);
+	var [balanceRefreshRequest, setBalanceRefreshRequest] = useState({ tick: 0, force: false });
 
 	useEffect(() => {
 		if (!open || !open.open) return;
@@ -1376,7 +1415,10 @@ function StatsPanel(props) {
 	// 面板打开期间每 60 秒自动刷新一次
 	useEffect(() => {
 		if (!open || !open.open || !aggregateRemote) return;
-		var id = setInterval(() => { setRefreshTick((x) => x + 1); setBalanceRefreshTick((x) => x + 1); }, 60000);
+		var id = setInterval(() => {
+			setRefreshTick((x) => x + 1);
+			setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: false }));
+		}, 60000);
 		return () => clearInterval(id);
 	}, [open, aggregateRemote]);
 
@@ -1385,7 +1427,7 @@ function StatsPanel(props) {
 		if (!balanceRemote) { setBalanceState({ kind: "unavailable", error: null }); return; }
 		var cancelled = false;
 		setBalanceState(function(prev) { return { kind: balanceData ? "refreshing" : "loading", error: null }; });
-		balanceRemote().then(function(result) {
+		balanceRemote(balanceRefreshRequest.force).then(function(result) {
 			if (cancelled) return;
 			setBalanceData(result);
 			var first = result.accounts && result.accounts[0];
@@ -1396,7 +1438,7 @@ function StatsPanel(props) {
 			setBalanceState({ kind: balanceData ? "stale" : "error", error: error?.message || String(error) });
 		});
 		return function() { cancelled = true; };
-	}, [open, balanceRemote, balanceRefreshTick]);
+	}, [open, balanceRemote, balanceRefreshRequest.tick]);
 
 	var data = useMemo(() => {
 			if (remoteData && remoteData.projects) {
@@ -1453,7 +1495,7 @@ function StatsPanel(props) {
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
 	var refreshCurrent = function() {
-		if (tab === "balance") setBalanceRefreshTick((x) => x + 1);
+		if (tab === "balance") setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: true }));
 		else setRefreshTick((x) => x + 1);
 	};
 
@@ -1483,7 +1525,7 @@ function StatsPanel(props) {
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
-					e(Legend, { projects: data.projects, hidden, onToggle: toggle }),
+					e(Legend, { projects: statProjects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 					 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
@@ -1799,7 +1841,7 @@ function ModelRing(props) {
 		var from = (cum * 360).toFixed(1);
 		cum += v;
 		var to = (cum * 360).toFixed(1);
-		return { color: modelColor(m.key || m.displayName || m.model || "(unknown)"), from: from, to: to, label: m.displayName || modelDisplayName(m), pct: (v * 100).toFixed(1), model: m };
+		return { color: modelColor(m.key || m.displayName || m.model || "(unknown)"), from: from, to: to, label: m.displayName || modelDisplayName(m), pct: v * 100, model: m };
 	});
 
 	var gradient = stops.map(function(s) { return s.color + " " + s.from + "deg " + s.to + "deg"; }).join(", ");
@@ -1811,7 +1853,7 @@ function ModelRing(props) {
 				e("div", { className: "dss-ring-label" }, t("trends.inputOutput"))
 			)
 		),
-		e("div", { className: "dss-ring-legend" },
+		e("div", { className: "dss-ring-legend" + (modelListNeedsScroll(models) ? " scrollable" : "") },
 			stops.map(function(s, i) {
 				return e("div", {
 					key: i,
@@ -1821,7 +1863,7 @@ function ModelRing(props) {
 				},
 					e("span", { className: "dss-ring-swatch", style: { background: s.color } }),
 					e("span", { className: "dss-ring-name", title: s.label }, s.label),
-					e("span", { className: "dss-ring-pct" }, s.pct + "%")
+					e("span", { className: "dss-ring-pct" }, fmtSharePct(s.pct))
 				);
 			})
 		)
@@ -1862,7 +1904,7 @@ function ModelList(props) {
 					e("div", { className: "dss-model-head" },
 						e("span", { className: "dss-model-dot", style: { background: color } }),
 						e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
-						e("span", { className: "dss-model-pct" }, pct.toFixed(1) + "%")
+						e("span", { className: "dss-model-pct" }, fmtSharePct(pct))
 					),
 					e("div", { className: "dss-model-track" },
 						e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
@@ -1939,9 +1981,11 @@ function sessionDayTokens(sessions) {
 	};
 	sessions.forEach(function(s) {
 		var st = s.stats || {};
-		var detailed = false;
-		if (s.slotUsage && s.slotUsage.length) {
-			detailed = true;
+		var hasUsageSlots = !!(s.slotUsage && s.slotUsage.length);
+		var hasStatSlots = !!(s.slotStats && s.slotStats.length);
+		var hasActivitySlots = !!(s.slots && s.slots.length);
+		var detailed = hasUsageSlots || hasStatSlots || hasActivitySlots;
+		if (hasUsageSlots) {
 			s.slotUsage.forEach(function(su) {
 				var k = localDayKey(su.slot * 1800000);
 				var b = getDay(k);
@@ -1953,8 +1997,7 @@ function sessionDayTokens(sessions) {
 				b.input += (su.uncached || 0) + (su.cacheRead || 0) + (su.cacheWrite || 0);
 			});
 		}
-		if (s.slotStats && s.slotStats.length) {
-			detailed = true;
+		if (hasStatSlots) {
 			(s.slotStats || []).forEach(function(ss) {
 				var b = getDay(localDayKey(ss.slot * SLOT_MS));
 				b.turns += ss.turns || 0; b.steps += ss.steps || 0;
@@ -1963,11 +2006,10 @@ function sessionDayTokens(sessions) {
 				b.decodeMs += ss.decodeMs || 0; b.decodeTokens += ss.decodeTokens || 0;
 			});
 		}
-		if (s.slots && s.slots.length) {
-			detailed = true;
+		if (hasActivitySlots) {
 			s.slots.forEach(function(slot) { getDay(localDayKey(slot.slot * SLOT_MS)); });
 		}
-		if (detailed && !(s.slotStats && s.slotStats.length)) {
+		if (detailed && !hasStatSlots) {
 			var legacyTs = s.updatedAt || s.createdAt;
 			if (legacyTs) {
 				var legacy = getDay(localDayKey(legacyTs));
@@ -1975,18 +2017,23 @@ function sessionDayTokens(sessions) {
 				legacy.llmMs += st.llmMs || 0; legacy.toolMs += st.toolMs || 0;
 			}
 		}
-		if (detailed) return;
 		var ts = s.updatedAt || s.createdAt;
 		if (!ts) return;
 		var b = getDay(localDayKey(ts));
-		b.turns += st.turns || 0; b.steps += st.steps || 0;
-		b.llmMs += st.llmMs || 0; b.toolMs += st.toolMs || 0;
-		b.output += st.outputTokens || 0;
-		b.uncached += st.uncached || 0;
-		b.cacheRead += st.cacheRead || 0;
-		b.cacheWrite += st.cacheWrite || 0;
-		b.reasoning += st.reasoning || 0;
-		b.input += st.inputTokens || 0;
+		if (!detailed) {
+			b.turns += st.turns || 0; b.steps += st.steps || 0;
+			b.llmMs += st.llmMs || 0; b.toolMs += st.toolMs || 0;
+		}
+		if (!hasUsageSlots) {
+			var output = st.output != null ? st.output : st.outputTokens || 0;
+			var input = st.inputTokens != null ? st.inputTokens : (st.uncached || 0) + (st.cacheRead || 0) + (st.cacheWrite || 0);
+			b.output += output;
+			b.uncached += st.uncached || 0;
+			b.cacheRead += st.cacheRead || 0;
+			b.cacheWrite += st.cacheWrite || 0;
+			b.reasoning += st.reasoning || 0;
+			b.input += input;
+		}
 	});
 	return byDay;
 }
@@ -2329,7 +2376,7 @@ function parseAggregateResult(value) {
 	};
 	var checkCostSummary = function(cost, path) {
 		object(cost, path, ["status", "totals", "unpricedTokens", "unknownRows"]);
-		if (["exact", "estimated", "partial", "unsupported"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
+		if (["exact", "estimated", "free", "partial", "unsupported"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
 		array(cost.totals, path + ".totals").forEach(function(total, index) {
 			var tp = path + ".totals[" + index + "]";
 			object(total, tp, ["currency", "amount", "exactAmount", "estimatedAmount"]); string(total.currency, tp + ".currency");
@@ -2393,7 +2440,7 @@ function parseAggregateResult(value) {
 			});
 		});
 	});
-	object(value.timeline, "timeline", ["slotMinutes", "days"]); number(value.timeline.slotMinutes, "timeline.slotMinutes", true);
+	object(value.timeline, "timeline", ["slotMinutes", "days"]); number(value.timeline.slotMinutes, "timeline.slotMinutes", true); if (value.timeline.slotMinutes <= 0) throw new TypeError("timeline.slotMinutes: expected positive integer");
 	array(value.timeline.days, "timeline.days").forEach(function(day, di) {
 		var dp = "timeline.days[" + di + "]"; object(day, dp, ["date", "dayTotalMs", "slotBlocks"]); string(day.date, dp + ".date"); number(day.dayTotalMs, dp + ".dayTotalMs", false);
 		array(day.slotBlocks, dp + ".slotBlocks").forEach(function(block, bi) {
@@ -2551,7 +2598,9 @@ const STATS_REMOTE_CONTRIBUTION = {
 				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/providers:result", schema: { parse: parseProvidersResult } },
 				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
 			}, {
-				id: "@rongyi7/dsh-stats#stats/account", service: "stats", namespace: "stats", method: "account", invocation: { kind: "direct" }, parameters: [],
+				id: "@rongyi7/dsh-stats#stats/account", service: "stats", namespace: "stats", method: "account", invocation: { kind: "direct" }, parameters: [{
+					name: "force", wire: "force", source: "json", codec: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:force", schema: { parse: function(value) { if (value !== undefined && typeof value !== "boolean") throw new TypeError("force: expected boolean"); return value; } } }
+				}],
 				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:result", schema: { parse: parseAccountResult } },
 				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
 			}]
@@ -2630,9 +2679,9 @@ async function apply(ctx) {
 				if (!answered.ok) throw new Error(answered.error?.message || "stats/aggregate failed");
 				return answered.value;
 			};
-			balanceRemote = async () => {
+			balanceRemote = async (force) => {
 				try {
-					const answered = await childCtx.remote.stats.account();
+					const answered = await childCtx.remote.stats.account(force === true);
 					if (answered.ok) return answered.value;
 					throw new Error(answered.error?.message || "stats/account failed");
 				} catch (accountError) {
@@ -2674,7 +2723,7 @@ module.exports = { apply, inject };
 module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
+	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable
+	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable
 };

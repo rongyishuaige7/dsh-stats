@@ -7,7 +7,7 @@
 
 import pricing from "./pricing.cjs";
 
-const { providerFamilyOf } = pricing;
+const { normalizeAccountType, providerFamilyOf } = pricing;
 const CACHE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15 * 1000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -120,7 +120,7 @@ async function configuredProviders(ctx) {
 				apiKeyRef: nonEmpty(profile.apiKeyEnv),
 				accountApiKeyRef: nonEmpty(profile.accountApiKeyEnv),
 				baseURL: nonEmpty(profile.baseURL),
-				accountType: nonEmpty(profile.accountType) || nonEmpty(profile.billingMode) || "api"
+				accountType: nonEmpty(profile.accountType) || nonEmpty(profile.billingMode)
 			});
 		}
 	}
@@ -132,7 +132,9 @@ async function configuredProviders(ctx) {
 function accountSpec(provider) {
 	const id = String(provider.id || "unknown").toLowerCase();
 	const family = providerFamilyOf(id);
-	const subscription = /subscription|token-plan|coding-plan/i.test(provider.accountType || "");
+	const configuredAccountType = nonEmpty(provider.accountType);
+	const accountType = normalizeAccountType(configuredAccountType || (family === "minimax" ? "token-plan" : "api"));
+	const subscription = accountType === "subscription" || accountType === "token-plan";
 	let adapter = null, mode = "unsupported", defaults = null;
 	if (id === "deepseek" || id === "deepseek-official") { adapter = "deepseek-balance"; mode = "balance"; defaults = DEFAULTS.deepseek; }
 	else if (id === "openrouter") { adapter = "openrouter-balance"; mode = "balance"; defaults = DEFAULTS.openrouter; }
@@ -140,7 +142,10 @@ function accountSpec(provider) {
 	else if (["kimi-coding", "kimi-for-coding"].includes(id) || family === "moonshot" && subscription) { adapter = "kimi-token-plan"; mode = "subscription"; defaults = DEFAULTS.kimi; }
 	else if (["zai-coding-cn", "zai-coding"].includes(id) || family === "zai" && subscription) { adapter = "zai-token-plan"; mode = "subscription"; defaults = DEFAULTS.zai; }
 	else if (family === "zai") { adapter = "zai-balance"; mode = "balance"; defaults = DEFAULTS.zai; }
-	else if (family === "minimax") { adapter = "minimax-token-plan"; mode = "subscription"; defaults = DEFAULTS.minimax; }
+	else if (family === "minimax") {
+		defaults = DEFAULTS.minimax;
+		if (subscription) { adapter = "minimax-token-plan"; mode = "subscription"; }
+	}
 	// OpenRouter's credits endpoint requires a Management Key. Keep its
 	// account-specific reference separate from the normal inference API key.
 	const apiKeyRef = adapter === "openrouter-balance"
@@ -155,7 +160,7 @@ function accountSpec(provider) {
 		apiKeyRef,
 		baseURL: nonEmpty(provider.baseURL) || defaults?.baseURL || null,
 		actionUrl: defaults?.actionUrl || null,
-		accountType: provider.accountType || "api"
+		accountType
 	};
 }
 
@@ -405,9 +410,14 @@ async function querySubscription(spec, key, deps, now) {
 		for (let index = 0; index < hosts.length; index++) {
 			try {
 				const body = await requestJson(hosts[index], { authorization: `Bearer ${key}` }, deps);
-				windows = parseMiniMax(body, now);
-				lastError = null;
-				break;
+				const parsed = parseMiniMax(body, now);
+				if (parsed.length) {
+					windows = parsed;
+					lastError = null;
+					break;
+				}
+				lastError = new AccountError("invalid-response", "quota-windows-missing");
+				if (index === hosts.length - 1) throw lastError;
 			} catch (error) {
 				lastError = error;
 				if (index === hosts.length - 1 || !["unsupported", "invalid-response"].includes(error?.status)) throw error;
@@ -463,15 +473,23 @@ function credentialsFrom(ctx) {
 }
 
 async function refreshOne(state, spec, credentials, deps) {
-	if (state.inflight.has(spec.id)) return state.inflight.get(spec.id);
 	const signature = JSON.stringify(spec);
-	const promise = queryProviderAccount(spec, credentials, deps).then((current) => {
-		const previous = state.cache.get(spec.id)?.account;
+	const active = state.inflight.get(spec.id);
+	if (active?.signature === signature) return active.promise;
+
+	let promise;
+	promise = queryProviderAccount(spec, credentials, deps).then((current) => {
+		const cached = state.cache.get(spec.id);
+		const previous = cached?.signature === signature ? cached.account : null;
 		const account = staleResult(previous, current);
-		state.cache.set(spec.id, { signature, account });
+		if (state.inflight.get(spec.id)?.promise === promise) {
+			state.cache.set(spec.id, { signature, account });
+		}
 		return account;
-	}).finally(() => state.inflight.delete(spec.id));
-	state.inflight.set(spec.id, promise);
+	}).finally(() => {
+		if (state.inflight.get(spec.id)?.promise === promise) state.inflight.delete(spec.id);
+	});
+	state.inflight.set(spec.id, { signature, promise });
 	return promise;
 }
 
@@ -485,7 +503,7 @@ async function collectAccounts(owner, ctx, options = {}) {
 		const signature = JSON.stringify(spec);
 		const hit = state.cache.get(spec.id);
 		const age = now - (hit?.account?.fetchedAt || 0);
-		if (!options.force && hit?.signature === signature && age >= 0 && age < (deps.cacheMs || CACHE_MS)) return hit.account;
+		if (!options.force && hit?.signature === signature && age >= 0 && age < (deps.cacheMs ?? CACHE_MS)) return hit.account;
 		return refreshOne(state, spec, credentials, deps);
 	}));
 	const warnings = accounts.filter((account) => account.status !== "ok" && account.status !== "unsupported" && account.status !== "not-configured").map((account) => ({
@@ -502,7 +520,9 @@ async function providerViews(owner, ctx) {
 	const credentials = credentialsFrom(ctx);
 	const specs = (await configuredProviders(ctx)).map(accountSpec);
 	const providers = await Promise.all(specs.map(async (spec) => {
-		const cached = state.cache.get(spec.id)?.account;
+		const signature = JSON.stringify(spec);
+		const hit = state.cache.get(spec.id);
+		const cached = hit?.signature === signature ? hit.account : null;
 		const configured = spec.adapter !== null && (cached ? cached.status !== "not-configured" : !!(await resolveCredential(credentials, spec.apiKeyRef)));
 		return {
 			id: spec.id,

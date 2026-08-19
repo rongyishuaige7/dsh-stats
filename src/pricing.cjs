@@ -189,7 +189,8 @@ function matchingRules(family, modelRaw, at) {
 }
 
 function normalizeAccountType(value) {
-	var type = String(value || "api").trim().toLowerCase();
+	var type = String(value || "api").trim().toLowerCase().replace(/_/g, "-");
+	if (["coding-plan", "subscription-plan", "paid-plan"].indexOf(type) >= 0) type = "token-plan";
 	return ["api", "subscription", "token-plan", "relay", "local", "free", "unknown"].indexOf(type) >= 0 ? type : "unknown";
 }
 
@@ -277,12 +278,13 @@ function priceUsage(usage, identityInput) {
 	);
 	var tokens = tokenCounts(usage);
 	if (identity.accountType === "free") {
-		return { ...emptyCost("free", identity, tokens), amount: 0, currency: null, unpricedTokens: 0 };
+		var freeMatches = matchingRules(identity.providerFamily, identity.modelRaw, at);
+		return { ...emptyCost("free", identity, tokens), amount: 0, currency: freeMatches.length === 1 ? freeMatches[0].currency : null, unpricedTokens: 0 };
 	}
 	if (identity.accountType === "subscription" || identity.accountType === "token-plan") {
 		return emptyCost("subscription", identity, tokens);
 	}
-	if (identity.providerFamily === "unknown" || identity.accountType === "relay" || identity.accountType === "local") {
+	if (identity.providerFamily === "unknown" || identity.accountType === "unknown" || identity.accountType === "relay" || identity.accountType === "local") {
 		return emptyCost("unsupported", identity, tokens);
 	}
 	var matches = matchingRules(identity.providerFamily, identity.modelRaw, at);
@@ -323,8 +325,10 @@ function summarizeCosts(costs) {
 	var unknownRows = 0;
 	var pricedRows = 0;
 	var estimatedRows = 0;
+	var freeRows = 0;
 	for (var cost of costs || []) {
 		if (!cost || typeof cost !== "object") continue;
+		if (cost.status === "free") freeRows++;
 		unpricedTokens += Number.isFinite(cost.unpricedTokens) ? cost.unpricedTokens : 0;
 		if (cost.amount == null || !cost.currency) {
 			if ((cost.unpricedTokens || 0) > 0) unknownRows++;
@@ -339,9 +343,11 @@ function summarizeCosts(costs) {
 		totals.set(cost.currency, row);
 	}
 	var status = "unsupported";
-	if (pricedRows > 0 && (unknownRows > 0 || unpricedTokens > 0)) status = "partial";
+	if ((pricedRows > 0 || freeRows > 0) && (unknownRows > 0 || unpricedTokens > 0)) status = "partial";
 	else if (pricedRows > 0 && estimatedRows > 0) status = "estimated";
+	else if (freeRows > 0 && pricedRows === freeRows) status = "free";
 	else if (pricedRows > 0) status = "exact";
+	else if (freeRows > 0) status = "free";
 	return { status: status, totals: Array.from(totals.values()).sort(function(a, b) { return a.currency.localeCompare(b.currency); }), unpricedTokens: unpricedTokens, unknownRows: unknownRows };
 }
 
@@ -351,7 +357,7 @@ function mergeCostSummaries(summaries) {
 		if (!summary) continue;
 		for (var total of summary.totals || []) {
 			pseudoCosts.push({
-				status: total.estimatedAmount > 0 ? "estimated" : "exact",
+				status: summary.status === "free" ? "free" : total.estimatedAmount > 0 ? "estimated" : "exact",
 				amount: total.amount,
 				currency: total.currency,
 				exactAmount: total.exactAmount,
@@ -361,6 +367,8 @@ function mergeCostSummaries(summaries) {
 		}
 		if ((summary.unpricedTokens || 0) > 0 || (summary.unknownRows || 0) > 0) {
 			pseudoCosts.push({ status: "unsupported", amount: null, currency: null, exactAmount: 0, estimatedAmount: 0, unpricedTokens: summary.unpricedTokens || 0 });
+		} else if (summary.status === "free" && !(summary.totals || []).length) {
+			pseudoCosts.push({ status: "free", amount: 0, currency: null, exactAmount: 0, estimatedAmount: 0, unpricedTokens: 0 });
 		}
 	}
 	var result = summarizeCosts(pseudoCosts);
@@ -387,6 +395,7 @@ module.exports = {
 	SOURCES: SOURCES,
 	RULES: RULES,
 	providerFamilyOf: providerFamilyOf,
+	normalizeAccountType: normalizeAccountType,
 	normalizeIdentity: normalizeIdentity,
 	priceUsage: priceUsage,
 	summarizeCosts: summarizeCosts,

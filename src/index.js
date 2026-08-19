@@ -6,8 +6,8 @@
 // 避免对注入服务名的耦合；数据格式已由 reference/server.mjs 验证。
 
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
@@ -280,7 +280,10 @@ function readStable(file, attempts = 3) {
 		const before = statSync(file);
 		const buf = readFileSync(file);
 		const after = statSync(file);
-		last = { buf, mtimeMs: after.mtimeMs, size: after.size, stable: before.mtimeMs === after.mtimeMs && before.size === after.size };
+		last = {
+			buf, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs, size: after.size, ino: after.ino,
+			stable: before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs && before.size === after.size && before.ino === after.ino
+		};
 		if (last.stable) return last;
 	}
 	return last;
@@ -300,6 +303,10 @@ function minutesOfDay(ms) {
 }
 function basename(p) {
 	return (p || "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "";
+}
+
+function objectRecord(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
 function nonNegativeNumber(value) {
@@ -358,9 +365,18 @@ function sessionDirs(home) {
 	return sessionsDirCache.dirs;
 }
 function findSessionFile(home, sessionId) {
+	if (typeof sessionId !== "string" || !sessionId || sessionId === "." || sessionId === ".." || /[/\\\0]/.test(sessionId)) return null;
+	let root;
+	try { root = realpathSync(join(home, "sessions")); } catch { return null; }
 	for (const enc of sessionDirs(home)) {
-		const cand = join(home, "sessions", enc, sessionId, "session.jsonl.zstd");
-		if (existsSync(cand)) return cand;
+		const cand = join(root, enc, sessionId, "session.jsonl.zstd");
+		try {
+			const stat = lstatSync(cand);
+			if (!stat.isFile() || stat.isSymbolicLink()) continue;
+			const real = realpathSync(cand);
+			const rel = relative(root, real);
+			if (rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel)) return real;
+		} catch { /* Missing or unsafe candidate. */ }
 	}
 	return null;
 }
@@ -396,7 +412,7 @@ function isTokenDelta(chunk) {
 // 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本和逐槽统计。
 // seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
 // 读取使用 stat/read/stat 稳定快照，并只消费完整 zstd frame；活跃尾部会标记 partial。
-const sessionInfoCache = new Map(); // filePath -> { mtimeMs, size, info }
+const sessionInfoCache = new Map(); // filePath -> { mtimeMs, ctimeMs, size, ino, info }
 const SESSION_CACHE_LIMIT = 300; // LRU 上限，防长期运行内存膨胀
 function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
@@ -407,8 +423,8 @@ function sessionInfo(home, sessionId) {
 		if (cached) return { ...cached.info, stale: true, readError: error.message };
 		throw error;
 	}
-	const { mtimeMs, size } = snapshot;
-	if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+	const { mtimeMs, ctimeMs, size, ino } = snapshot;
+	if (cached && cached.mtimeMs === mtimeMs && cached.ctimeMs === ctimeMs && cached.size === size && cached.ino === ino) {
 		// LRU 提升：命中后移到最新
 		sessionInfoCache.delete(file);
 		sessionInfoCache.set(file, cached);
@@ -421,9 +437,28 @@ function sessionInfo(home, sessionId) {
 	let currentProvider = "unknown";
 	let currentAccountType = "api";
 	let currentServiceTier = "standard";
-	let origin = null, parentSession = null, seedLength = null;
+	let sessionHeader = null;
+	headerScan: for (const frame of scanned.frames) {
+		const text = zstdDecompressSync(buf.subarray(frame.start, frame.end)).toString("utf8");
+		for (const line of text.split("\n")) {
+			if (!line) continue;
+			try {
+				for (const ev of expandStorageRecord(JSON.parse(line))) {
+					if (ev?.type === "session") { sessionHeader = ev; break headerScan; }
+				}
+			} catch { /* The main pass records malformed rows. */ }
+		}
+	}
+	let origin = typeof sessionHeader?.origin === "string" ? sessionHeader.origin : null;
+	let parentSession = typeof sessionHeader?.parentSession === "string" ? sessionHeader.parentSession : null;
+	let seedLength = Number.isInteger(sessionHeader?.seedLength) && sessionHeader.seedLength >= 0 ? sessionHeader.seedLength : null;
+	const invalidSessionHeader = !!sessionHeader && (
+		(sessionHeader.origin !== undefined && sessionHeader.origin !== null && typeof sessionHeader.origin !== "string")
+		|| (sessionHeader.parentSession !== undefined && sessionHeader.parentSession !== null && typeof sessionHeader.parentSession !== "string")
+		|| (sessionHeader.seedLength !== undefined && sessionHeader.seedLength !== null && seedLength === null)
+	);
 	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
-	let firstOwnSeq = 0;
+	let firstOwnSeq = parentSession !== null ? (Number.isInteger(seedLength) && seedLength >= 0 ? seedLength : 0) : 0;
 	const usageByStep = new Map();
 	const derived = emptyRaw();
 	const slotStats = new Map();
@@ -446,7 +481,9 @@ function sessionInfo(home, sessionId) {
 	let lastTurn = null;
 	const pendingCalls = new Map();
 	let derivedEvents = 0;
-	let malformedRecords = 0;
+	let malformedRecords = invalidSessionHeader ? 1 : 0;
+	let decodedEvents = sessionHeader ? 1 : 0;
+	let usageFallbackIndex = 0;
 	for (const frame of scanned.frames) {
 		const text = zstdDecompressSync(buf.subarray(frame.start, frame.end)).toString("utf8");
 		for (const line of text.split("\n")) {
@@ -457,14 +494,20 @@ function sessionInfo(home, sessionId) {
 			try { events = expandStorageRecord(record); } catch { malformedRecords++; continue; }
 			for (const ev of events) {
 				const evSeq = ev?.seq;
+				if (evSeq !== undefined && (!Number.isInteger(evSeq) || evSeq < 0)) { malformedRecords++; continue; }
 				if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
 				const t = ev?.time;
+				if (ev && Object.prototype.hasOwnProperty.call(ev, "time") && (!Number.isFinite(t) || t < 0)) { malformedRecords++; continue; }
 				if (Number.isFinite(t)) times.push(t);
 				if (!ev || typeof ev !== "object") continue;
+				decodedEvents++;
 				if (ev.type === "session") {
-					origin = ev.origin ?? null;
-					parentSession = ev.parentSession ?? null;
-					seedLength = ev.seedLength ?? null;
+					if (ev.origin !== undefined && ev.origin !== null && typeof ev.origin !== "string") malformedRecords++;
+					if (ev.parentSession !== undefined && ev.parentSession !== null && typeof ev.parentSession !== "string") malformedRecords++;
+					origin = typeof ev.origin === "string" ? ev.origin : null;
+					parentSession = typeof ev.parentSession === "string" ? ev.parentSession : null;
+					if (ev.seedLength !== undefined && ev.seedLength !== null && (!Number.isInteger(ev.seedLength) || ev.seedLength < 0)) malformedRecords++;
+					seedLength = Number.isInteger(ev.seedLength) && ev.seedLength >= 0 ? ev.seedLength : null;
 					if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
 				} else if (ev.type === "request/header") {
 					const header = ev.data?.header;
@@ -480,7 +523,10 @@ function sessionInfo(home, sessionId) {
 				} else if (ev.type === "assistant/chunk") {
 					if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
 						const u = ev.data.chunk.usage || {};
-						usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier,
+						const hasStepIdentity = ev.data?.turn !== undefined && ev.data?.step !== undefined;
+						if (!hasStepIdentity) malformedRecords++;
+						const usageKey = hasStepIdentity ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? "missing"}:${usageFallbackIndex++}`;
+						usageByStep.set(usageKey, { time: t, model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier,
 							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
 							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
 					} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) {
@@ -493,9 +539,14 @@ function sessionInfo(home, sessionId) {
 					const msgProvider = firstString(source?.provider, source?.providerId, source?.provider_id, currentProvider) || "unknown";
 					const msgAccountType = accountTypeOf(source, currentAccountType);
 					const msgServiceTier = source?.serviceTier === "priority" || source?.service_tier === "priority" ? "priority" : currentServiceTier;
-					if (u !== undefined && Number.isFinite(t)) usageByStep.set(`${ev.data.turn}:${ev.data.step}`, { time: t, model: msgModel, providerId: msgProvider, accountType: msgAccountType, serviceTier: msgServiceTier,
-						uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
-						cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
+					if (u !== undefined && Number.isFinite(t)) {
+						const hasStepIdentity = ev.data?.turn !== undefined && ev.data?.step !== undefined;
+						if (!hasStepIdentity) malformedRecords++;
+						const usageKey = hasStepIdentity ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? "missing"}:${usageFallbackIndex++}`;
+						usageByStep.set(usageKey, { time: t, model: msgModel, providerId: msgProvider, accountType: msgAccountType, serviceTier: msgServiceTier,
+							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
+							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
+					}
 					if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
 						const llm = Math.max(0, t - openStep.startTime);
 						derived.llmMs += llm; addInterval("llmMs", openStep.startTime, t);
@@ -531,7 +582,7 @@ function sessionInfo(home, sessionId) {
 	for (const u of usageByStep.values()) {
 		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
 		const mk = identityKey(identity);
-		const weight = (u.cacheRead || 0) + (u.output || 0) + (u.uncached || 0);
+		const weight = (u.cacheRead || 0) + (u.cacheWrite || 0) + (u.output || 0) + (u.uncached || 0);
 		const row = modelTokens.get(mk) || { identity, weight: 0 };
 		row.weight += weight;
 		modelTokens.set(mk, row);
@@ -548,9 +599,9 @@ function sessionInfo(home, sessionId) {
 		accountType: primary.accountType,
 		usages: [...usageByStep.values()],
 		origin, parentSession, seedLength, stats: derivedEvents ? derived : null,
-		slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot), partial: scanned.truncated || !snapshot.stable || malformedRecords > 0, stale: false, missing: false
+		slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot), partial: scanned.truncated || !snapshot.stable || malformedRecords > 0 || decodedEvents === 0, stale: false, missing: false
 	};
-	sessionInfoCache.set(file, { mtimeMs, size, info });
+	sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, info });
 	// LRU 淘汰：超限删除最旧条目
 	while (sessionInfoCache.size > SESSION_CACHE_LIMIT) {
 		const oldest = sessionInfoCache.keys().next().value;
@@ -715,22 +766,78 @@ let StatsService = (() => {
 			if (!wsRead.ok) warnings.push({ code: "WORKSPACE_READ_FAILED", message: wsRead.error?.message || "workspace storage read failed" });
 			if (!sessionsRead.ok) warnings.push({ code: "SESSION_CACHE_READ_FAILED", message: sessionsRead.error?.message || "session projection cache read failed" });
 			const wsJson = wsRead.value;
-			const workspaces = wsJson?.tables?.workspaces ?? {};
-			const archivedSet = new Set(wsJson?.global?.archivedSessionIds ?? []);
-			const sessionsTable = sessionsRead.value?.tables?.sessions ?? {};
+			const rawWorkspaces = wsJson?.tables?.workspaces;
+			const workspaces = objectRecord(rawWorkspaces) || {};
+			if (wsRead.ok && !objectRecord(rawWorkspaces)) warnings.push({ code: "WORKSPACE_SHAPE_INVALID", message: "workspace table was missing or not an object; invalid entries were ignored" });
+			const rawArchivedIds = wsJson?.global?.archivedSessionIds;
+			if (wsRead.ok && rawArchivedIds !== undefined && !Array.isArray(rawArchivedIds)) warnings.push({ code: "ARCHIVED_IDS_SHAPE_INVALID", message: "archivedSessionIds was not an array; the value was ignored" });
+			const archivedSet = new Set((Array.isArray(rawArchivedIds) ? rawArchivedIds : []).filter((id) => typeof id === "string" && id));
+			const rawSessionsTable = sessionsRead.value?.tables?.sessions;
+			const sessionsTable = objectRecord(rawSessionsTable) || {};
+			if (sessionsRead.ok && !objectRecord(rawSessionsTable)) warnings.push({ code: "SESSION_TABLE_SHAPE_INVALID", message: "session projection table was missing or not an object; the value was ignored" });
 			const seen = new Set();
+
+			const workspaceEntries = [];
+			for (const [wsId, ws] of Object.entries(workspaces)) {
+				if (!objectRecord(ws)) {
+					warnings.push({ code: "WORKSPACE_ENTRY_INVALID", message: `workspace ${wsId} was not an object and was ignored` });
+					continue;
+				}
+				const rawSessionIds = ws.sessionIds;
+				if (rawSessionIds !== undefined && !Array.isArray(rawSessionIds)) warnings.push({ code: "SESSION_IDS_SHAPE_INVALID", message: `workspace ${wsId} sessionIds was not an array; the value was ignored` });
+				const sessionIds = [];
+				const localIds = new Set();
+				for (const id of Array.isArray(rawSessionIds) ? rawSessionIds : []) {
+					if (typeof id !== "string" || !id) {
+						warnings.push({ code: "SESSION_ID_INVALID", message: `workspace ${wsId} contained an invalid session id` });
+						continue;
+					}
+					if (localIds.has(id)) {
+						warnings.push({ code: "SESSION_ID_DUPLICATE", sessionId: id, message: `session ${id} appeared more than once in workspace ${wsId}` });
+						continue;
+					}
+					localIds.add(id);
+					sessionIds.push(id);
+				}
+				const title = typeof ws.title === "string" ? ws.title : "";
+				const path = typeof ws.path === "string" ? ws.path : "";
+				if (ws.title !== undefined && typeof ws.title !== "string") warnings.push({ code: "WORKSPACE_METADATA_INVALID", message: `workspace ${wsId} title was not a string` });
+				if (ws.path !== undefined && typeof ws.path !== "string") warnings.push({ code: "WORKSPACE_METADATA_INVALID", message: `workspace ${wsId} path was not a string` });
+				workspaceEntries.push({ wsId, ws: { title, path }, sessionIds });
+			}
+
+			const memberships = new Map();
+			for (const entry of workspaceEntries) for (const sessionId of entry.sessionIds) {
+				const owners = memberships.get(sessionId) || [];
+				owners.push(entry);
+				memberships.set(sessionId, owners);
+			}
+			const ownerBySession = new Map();
+			for (const [sessionId, owners] of memberships) {
+				const cwd = sessionsTable[sessionId]?.identity?.cwd;
+				const owner = owners.find((entry) => typeof cwd === "string" && cwd && entry.ws.path === cwd) || owners[0];
+				ownerBySession.set(sessionId, owner.wsId);
+				if (owners.length > 1) warnings.push({ code: "SESSION_MULTIPLE_WORKSPACES", sessionId, message: `session ${sessionId} belonged to multiple workspaces and was counted only in ${owner.wsId}` });
+			}
 
 			// 处理一个会话：容错（坏日志不拖垮整体），返回会话记录或 null
 			const processSession = (sessionId, cwdFallback) => {
 				seen.add(sessionId);
 				const entry = sessionsTable[sessionId];
-				const statsRow = entry?.rows?.sessionStats?.val;
-				const usageTotals = entry?.rows?.tokenUsage?.val?.totals;
-				const title = entry?.rows?.title?.val;
-				const meta = entry?.rows?.sessionListMetadata?.val;
-				const createdAt = entry?.identity?.createdAt ?? null;
-				const lastPromptAt = meta?.lastPromptAt ?? null;
-				const cwd = entry?.identity?.cwd ?? cwdFallback ?? null;
+				const statsRow = objectRecord(entry?.rows?.sessionStats?.val);
+				const usageTotals = objectRecord(entry?.rows?.tokenUsage?.val?.totals);
+				const rawTitle = entry?.rows?.title?.val;
+				const title = typeof rawTitle === "string" ? rawTitle : null;
+				const meta = objectRecord(entry?.rows?.sessionListMetadata?.val) || {};
+				const rawCreatedAt = entry?.identity?.createdAt;
+				const rawLastPromptAt = meta.lastPromptAt;
+				const createdAt = Number.isFinite(rawCreatedAt) && rawCreatedAt >= 0 ? rawCreatedAt : null;
+				const lastPromptAt = Number.isFinite(rawLastPromptAt) && rawLastPromptAt >= 0 ? rawLastPromptAt : null;
+				const cwd = firstString(entry?.identity?.cwd, cwdFallback);
+				const projectionInvalid = (rawTitle !== undefined && rawTitle !== null && typeof rawTitle !== "string")
+					|| (rawCreatedAt !== undefined && rawCreatedAt !== null && createdAt === null)
+					|| (rawLastPromptAt !== undefined && rawLastPromptAt !== null && lastPromptAt === null)
+					|| (entry?.identity?.cwd !== undefined && entry?.identity?.cwd !== null && typeof entry.identity.cwd !== "string");
 				const archived = archivedSet.has(sessionId);
 
 				let info;
@@ -745,6 +852,7 @@ let StatsService = (() => {
 				if (info.missing) warnings.push({ code: "SESSION_LOG_MISSING", sessionId, message: "session log was not found; projection cache was used where available" });
 				if (info.partial) warnings.push({ code: "SESSION_LOG_PARTIAL", sessionId, message: "session log was incomplete or malformed; only valid committed records were used" });
 				if (info.stale) warnings.push({ code: "SESSION_LOG_STALE", sessionId, message: info.readError || "cached session snapshot was used" });
+				if (projectionInvalid) warnings.push({ code: "SESSION_METADATA_INVALID", sessionId, message: "invalid projection metadata was ignored" });
 				// token 口径统一走日志 usages（已按 seedLength 过滤 fork 继承、按 turn:step 去重），
 				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
 				// 子代理继承的父上下文 cacheRead 也计入了，导致总览页与趋势页不一致。
@@ -807,7 +915,7 @@ let StatsService = (() => {
 					slots: slotDurations(info.times),
 					slotStats: info.slotStats || [],
 					slotUsage: perSlotUsage,
-					quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || usedProjectionUsage) ? "partial" : "exact",
+					quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || usedProjectionUsage || projectionInvalid) ? "partial" : "exact",
 					cwd
 				};
 				Object.defineProperty(session, "_intervals", { value: activityIntervals(info.times), enumerable: false });
@@ -815,13 +923,14 @@ let StatsService = (() => {
 			};
 
 			const projects = [];
-			for (const [wsId, ws] of Object.entries(workspaces)) {
+			for (const { wsId, ws, sessionIds } of workspaceEntries) {
 				const sessions = [];
 				const agg = emptyRaw();
 				let lastActiveAt = null;
 				let subagentCount = 0;
 
-				for (const sessionId of ws.sessionIds ?? []) {
+				for (const sessionId of sessionIds) {
+					if (ownerBySession.get(sessionId) !== wsId) continue;
 					const s = processSession(sessionId, ws.path);
 					if (s.blank) continue;
 					addRaw(agg, s.stats);
@@ -838,9 +947,9 @@ let StatsService = (() => {
 					sessionCount: sessions.length,
 					subagentCount,
 					lastActiveAt,
-						stats: agg,
-						cost: mergeCostSummaries(sessions.map((session) => session.cost)),
-						sessions
+					stats: agg,
+					cost: mergeCostSummaries(sessions.map((session) => session.cost)),
+					sessions
 				});
 			}
 
@@ -868,18 +977,18 @@ let StatsService = (() => {
 					sessions: []
 				};
 				if (!existing) projects.push(target);
-					sessions.forEach((s) => {
+				sessions.forEach((s) => {
 					target.sessions.push(s);
 					if (s.subagent) target.subagentCount++;
 					addRaw(target.stats, s.stats);
 					if (s.updatedAt != null && (target.lastActiveAt == null || s.updatedAt > target.lastActiveAt)) target.lastActiveAt = s.updatedAt;
 				});
 				target.sessionCount = target.sessions.length;
-						target.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-						target.cost = mergeCostSummaries(target.sessions.map((session) => session.cost));
-					});
-					projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
-					const cost = mergeCostSummaries(projects.map((project) => project.cost));
+				target.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+				target.cost = mergeCostSummaries(target.sessions.map((session) => session.cost));
+			});
+			projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
+			const cost = mergeCostSummaries(projects.map((project) => project.cost));
 
 			const projectIndex = new Map();
 			projects.forEach((p, i) => projectIndex.set(p.id, i));
@@ -903,33 +1012,33 @@ let StatsService = (() => {
 					}
 				}
 				for (const [slot, ms] of projectSlots) {
-						const slotStartMs = slot * SLOT_MS;
-						const date = localDayKey(slotStartMs);
-						const slotOfDay = Math.floor(minutesOfDay(slotStartMs) / SLOT_MINUTES);
-						let day = daysMap.get(date);
-						if (!day) { day = { date, dayTotalMs: 0, slotBlocks: [] }; daysMap.set(date, day); }
-						day.dayTotalMs += ms;
-						day.slotBlocks.push({ slot: slotOfDay, projectId: p.id, name: p.name, colorIndex: projectIndex.get(p.id), ms });
+					const slotStartMs = slot * SLOT_MS;
+					const date = localDayKey(slotStartMs);
+					const slotOfDay = Math.floor(minutesOfDay(slotStartMs) / SLOT_MINUTES);
+					let day = daysMap.get(date);
+					if (!day) { day = { date, dayTotalMs: 0, slotBlocks: [] }; daysMap.set(date, day); }
+					day.dayTotalMs += ms;
+					day.slotBlocks.push({ slot: slotOfDay, projectId: p.id, name: p.name, colorIndex: projectIndex.get(p.id), ms });
 				}
 			}
 			const days = [...daysMap.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 			days.forEach((d) => d.slotBlocks.sort((a, b) => a.slot - b.slot));
 
 			return {
-						projects,
-						cost,
-						timeline: { slotMinutes: SLOT_MINUTES, days },
-						meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
-					};
-				}
+				projects,
+				cost,
+				timeline: { slotMinutes: SLOT_MINUTES, days },
+				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
+			};
+		}
 
-				async providers() {
-					return providerViews(this, this.ctx || {});
-				}
+		async providers() {
+			return providerViews(this, this.ctx || {});
+		}
 
-				async account() {
-					return collectAccounts(this, this.ctx || {});
-				}
+		async account(force = false) {
+			return collectAccounts(this, this.ctx || {}, { force: force === true });
+		}
 
 		async current() {
 			const state = balanceState(this);

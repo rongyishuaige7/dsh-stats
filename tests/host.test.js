@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { TYPERT } from '../src/typert-host.js';
+import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
 const createdHomes = [];
 const previousDshHome = process.env.DSH_HOME;
@@ -258,4 +259,143 @@ test('timeline merges overlapping sessions within one project', async () => {
 
 	const result = await aggregate();
 	expect(result.timeline.days[0].dayTotalMs).toBe(420000);
+});
+
+test('malformed storage shapes degrade the snapshot instead of crashing aggregate', async () => {
+	const home = fixture({});
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+		tables: { workspaces: { nullEntry: null, badIds: { title: 'Bad', path: '/tmp/bad', sessionIds: {} } } },
+		global: { archivedSessionIds: {} },
+	}));
+	const result = await aggregate();
+	expect(result.projects).toEqual([expect.objectContaining({ id: 'badIds', sessionCount: 0 })]);
+	expect(result.meta.degraded).toBe(true);
+	expect(result.meta.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining([
+		'ARCHIVED_IDS_SHAPE_INVALID', 'WORKSPACE_ENTRY_INVALID', 'SESSION_IDS_SHAPE_INVALID',
+	]));
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
+test('missing storage tables degrade an otherwise valid JSON snapshot', async () => {
+	const home = fixture({});
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({}));
+	writeFileSync(join(home, 'storages', 'session_projcache.json'), JSON.stringify({}));
+	const result = await aggregate();
+	expect(result.projects).toEqual([]);
+	expect(result.meta).toMatchObject({ degraded: true });
+	expect(result.meta.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining([
+		'WORKSPACE_SHAPE_INVALID', 'SESSION_TABLE_SHAPE_INVALID',
+	]));
+});
+
+test('a session referenced by multiple workspaces is counted exactly once', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ same: projection(now, { usage: { uncachedInputTokens: 100 } }) });
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+		tables: { workspaces: {
+			a: { title: 'A', path: '/tmp/fixture', sessionIds: ['same'] },
+			b: { title: 'B', path: '/tmp/other', sessionIds: ['same'] },
+		} },
+		global: { archivedSessionIds: [] },
+	}));
+	const result = await aggregate();
+	expect(result.projects.map((project) => project.sessionCount)).toEqual([1, 0]);
+	expect(result.projects.reduce((sum, project) => sum + project.stats.uncached, 0)).toBe(100);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_MULTIPLE_WORKSPACES', sessionId: 'same' })]));
+});
+
+test('empty logs, duplicate fallback seqs, and malformed timestamps report partial quality safely', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const emptyHome = fixture({ empty: projection(now) });
+	const emptyDir = join(emptyHome, 'sessions', 'workspace', 'empty');
+	mkdirSync(emptyDir, { recursive: true });
+	writeFileSync(join(emptyDir, 'session.jsonl.zstd'), Buffer.alloc(0));
+	let result = await aggregate();
+	expect(result.projects[0].sessions[0].quality).toBe('partial');
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_PARTIAL' })]));
+
+	const malformedHome = fixture({ malformed: projection(now) });
+	writeLog(malformedHome, 'malformed', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'request/header', seq: 1, time: now + 10, data: { header: { config: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 100, data: { usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 200, data: { usage: { inputTokens: 20, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 4, time: -1, data: { usage: { inputTokens: 999, outputTokens: 999 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+	]);
+	result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(session).toMatchObject({ quality: 'partial', calls: 2, stats: { uncached: 30, output: 3 } });
+	expect(session.slotUsage.every((row) => row.slot >= 0)).toBe(true);
+	expect(session.slots.every((row) => row.slot >= 0)).toBe(true);
+});
+
+test('fork metadata is applied before inherited events even when the session row is later', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ child: projection(now) });
+	writeLog(home, 'child', [
+		{ type: 'assistant/message', seq: 1, time: now + 10, data: { turn: 0, step: 0, usage: { inputTokens: 999, outputTokens: 99 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'session', seq: 0, time: now, origin: 'subagent', parentSession: 'parent', seedLength: 3 },
+		{ type: 'request/header', seq: 3, time: now + 20, data: { header: { config: { model: 'deepseek-v4-flash' } } } },
+		{ type: 'assistant/message', seq: 4, time: now + 30, data: { turn: 1, step: 0, usage: { inputTokens: 10, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+	]);
+	const session = (await aggregate()).projects[0].sessions[0];
+	expect(session).toMatchObject({ subagent: true, calls: 1, stats: { uncached: 10, output: 2 } });
+});
+
+test('a valid fork containing only inherited events is not reported as a malformed empty log', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ child: projection(now) });
+	writeLog(home, 'child', [
+		{ type: 'session', seq: 0, time: now, origin: 'subagent', parentSession: 'parent', seedLength: 3 },
+		{ type: 'assistant/message', seq: 1, time: now + 10, data: { turn: 0, step: 0, usage: { inputTokens: 999, outputTokens: 99 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+	]);
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(session).toMatchObject({ subagent: true, calls: 0, quality: 'exact', stats: { uncached: 0, output: 0 } });
+	expect(result.meta.warnings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_PARTIAL' })]));
+});
+
+test('session ids cannot escape the sessions directory', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const id = '../../outside';
+	const home = fixture({ [id]: projection(now, { usage: { uncachedInputTokens: 5 } }) }, [id]);
+	writeLog(home, id, [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 10, data: { turn: 0, step: 0, usage: { inputTokens: 999, outputTokens: 99 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+	]);
+	const result = await aggregate();
+	expect(result.projects[0].sessions[0].stats.uncached).toBe(5);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_MISSING', sessionId: id })]));
+});
+
+test('primary model weighting includes cache-write tokens', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ s1: projection(now) });
+	writeLog(home, 's1', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'request/header', seq: 1, time: now + 10, data: { header: { config: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 20, data: { turn: 0, step: 0, usage: { inputTokens: 2 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'request/header', seq: 3, time: now + 30, data: { header: { config: { model: 'deepseek-v4-flash' } } } },
+		{ type: 'assistant/message', seq: 4, time: now + 40, data: { turn: 1, step: 0, usage: { cacheWriteTokens: 100 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+	]);
+	expect((await aggregate()).projects[0].sessions[0].model).toBe('deepseek-v4-flash');
+});
+
+test('host and remote RPC contracts require the same aggregate fields and force parameter', async () => {
+	fixture({});
+	const result = await aggregate();
+	const hostAggregate = TYPERT.invocations.find((invocation) => invocation.method === 'aggregate');
+	const remoteAggregate = TYPERT_REMOTE.descriptors.find((descriptor) => descriptor.method === 'aggregate');
+	expect(hostAggregate.result.schema.parse(result)).toEqual(result);
+	expect(remoteAggregate.result.schema.parse(result)).toEqual(result);
+	const withoutSlotMinutes = { ...result, timeline: { days: result.timeline.days } };
+	expect(() => hostAggregate.result.schema.parse(withoutSlotMinutes)).toThrow();
+	expect(() => remoteAggregate.result.schema.parse(withoutSlotMinutes)).toThrow();
+
+	const hostAccount = TYPERT.invocations.find((invocation) => invocation.method === 'account');
+	const remoteAccount = TYPERT_REMOTE.descriptors.find((descriptor) => descriptor.method === 'account');
+	expect(hostAccount.parameters).toHaveLength(1);
+	expect(remoteAccount.parameters).toHaveLength(1);
+	expect(hostAccount.parameters[0].codec.schema.parse(true)).toBe(true);
+	expect(remoteAccount.parameters[0].codec.schema.parse(undefined)).toBeUndefined();
 });

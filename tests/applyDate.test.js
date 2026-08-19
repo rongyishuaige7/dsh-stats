@@ -118,3 +118,48 @@ test('applyDate 裁剪 slotUsage 时保留 model 字段（供逐模型计价）'
 	expect(clipped.stats.cacheRead).toBe(50000);
 	expect(clipped.stats.uncached).toBe(100);
 });
+
+test('applyDate 不会把窗口外的整段会话费用带入活动日', () => {
+	const dayKey = '2026-08-17';
+	const dayStart = Date.parse(dayKey + 'T00:00:00+08:00');
+	const session = makeSession(dayStart + 60_000, [{
+		slot: Math.floor((dayStart - 1800000) / SLOT_MS),
+		model: 'deepseek-v4-pro', providerId: 'deepseek-official', accountType: 'api',
+		serviceTier: 'standard', contextTokens: 1000, contextOver512k: false,
+		uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0,
+	}]);
+	session.slots = [{ slot: Math.floor(dayStart / SLOT_MS), ms: 60_000 }];
+	session.cost = { status: 'exact', totals: [{ currency: 'CNY', amount: 3, exactAmount: 3, estimatedAmount: 0 }], unpricedTokens: 0, unknownRows: 0 };
+
+	const clipped = applyDate([makeProject([session])], dayKey)[0].sessions[0];
+	expect(clipped.slotUsage).toEqual([]);
+	expect(clipped.cost).toEqual({ status: 'unsupported', totals: [], unpricedTokens: 0, unknownRows: 0 });
+});
+
+test('applyDate 将粗粒度跨日会话的 Token、耗时和费用只归入时间戳所在日', () => {
+	const firstDay = '2026-08-17';
+	const secondDay = '2026-08-18';
+	const firstStart = Date.parse(firstDay + 'T00:00:00+08:00');
+	const secondStart = Date.parse(secondDay + 'T00:00:00+08:00');
+	const session = makeSession(firstStart + 60_000, null);
+	session.slots = [
+		{ slot: Math.floor((firstStart + 60_000) / SLOT_MS), ms: 60_000 },
+		{ slot: Math.floor((secondStart + 60_000) / SLOT_MS), ms: 60_000 },
+	];
+	session.stats = {
+		...session.stats,
+		uncached: 100,
+		output: 20,
+		cacheRead: 30,
+	};
+	session.cost = { status: 'exact', totals: [{ currency: 'CNY', amount: 1.23, exactAmount: 1.23, estimatedAmount: 0 }], unpricedTokens: 0, unknownRows: 0 };
+
+	const first = applyDate([makeProject([session])], firstDay)[0].sessions[0];
+	const second = applyDate([makeProject([session])], secondDay)[0].sessions[0];
+	expect(first.stats).toMatchObject({ turns: 10, steps: 20, llmMs: 1000, toolMs: 2000, uncached: 100, output: 20, cacheRead: 30 });
+	expect(first.durMs).toBe(3000);
+	expect(first.cost).toMatchObject({ status: 'exact', totals: [{ currency: 'CNY', amount: 1.23 }] });
+	expect(second.stats).toMatchObject({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, uncached: 0, output: 0, cacheRead: 0 });
+	expect(second.durMs).toBe(0);
+	expect(second.cost).toEqual({ status: 'unsupported', totals: [], unpricedTokens: 0, unknownRows: 0 });
+});

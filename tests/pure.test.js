@@ -4,10 +4,10 @@ const client = require('../src/client.cjs');
 const {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps,
+	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
+	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,24 @@ test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
+});
+
+test('tiny non-zero model shares never render as 0.0%', () => {
+	expect(fmtSharePct(0)).toBe('0%');
+	expect(fmtSharePct(0.049)).toBe('<0.1%');
+	expect(fmtSharePct(0.1)).toBe('0.1%');
+	expect(fmtSharePct(82.34)).toBe('82.3%');
+});
+
+test('cost sorting groups currencies instead of comparing unrelated numeric amounts', () => {
+	const project = (currency, amount) => ({ sessions: [{ cost: {
+		status: 'exact', totals: [{ currency, amount, exactAmount: amount, estimatedAmount: 0 }], unpricedTokens: 0, unknownRows: 0,
+	} }] });
+	const cnyLow = project('CNY', 1);
+	const cnyHigh = project('CNY', 10);
+	const usd = project('USD', 2);
+	expect(compareProjectCost(cnyLow, cnyHigh)).toBeLessThan(0);
+	expect(compareProjectCost(cnyHigh, usd)).toBe('CNY'.localeCompare('USD'));
 });
 
 test('localDayKey returns YYYY-MM-DD', () => {
@@ -131,6 +149,19 @@ test('sessionDayTokens distributes slotUsage tokens across actual days', () => {
 	expect(byDay.get(k2).llmMs).toBe(60000);
 	// 另一天没有 turns（避免重复计）
 	expect(byDay.get(k1).turns).toBe(0);
+});
+
+test('sessionDayTokens keeps session tokens when only activity/stat slots exist', () => {
+	const at = Date.parse('2026-08-17T10:00:00+08:00');
+	const slot = Math.floor(at / 1800000);
+	const byDay = sessionDayTokens([{
+		updatedAt: at,
+		slots: [{ slot, ms: 60_000 }],
+		slotStats: [{ slot, turns: 1, steps: 1, llmMs: 100, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }],
+		stats: { uncached: 70, output: 20, cacheRead: 10, cacheWrite: 5, reasoning: 2, inputTokens: 85 },
+	}]);
+	const row = byDay.get(localDayKey(at));
+	expect(row).toMatchObject({ input: 85, output: 20, uncached: 70, cacheRead: 10, cacheWrite: 5, reasoning: 2 });
 });
 
 // ---------------------------------------------------------------------------
@@ -553,6 +584,7 @@ test('fallback timeline gives zero-duration sessions a forward one-minute activi
 test('client aggregate parser validates nested RPC data', () => {
 	const valid = { projects: [], timeline: { slotMinutes: 30, days: [] }, meta: { source: 'host', generatedAt: 1, degraded: false, warnings: [] } };
 	expect(parseAggregateResult(valid)).toBe(valid);
+	expect(() => parseAggregateResult({ ...valid, timeline: { days: [] } })).toThrow(/timeline\.slotMinutes/);
 	expect(() => parseAggregateResult({ ...valid, timeline: { slotMinutes: 30, days: [{ date: '2025-03-15', dayTotalMs: 1, slotBlocks: [{ slot: 0, projectId: 'p', name: 'P', colorIndex: 0, ms: NaN }] }] } })).toThrow(/timeline\.days\[0\]\.slotBlocks\[0\]\.ms/);
 });
 

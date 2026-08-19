@@ -1,4 +1,4 @@
-import { accountSpec, collectAccounts, configuredProviders, queryProviderAccount } from '../src/accounts.js';
+import { accountSpec, collectAccounts, configuredProviders, providerViews, queryProviderAccount } from '../src/accounts.js';
 
 function jsonResponse(body, status = 200) {
 	return {
@@ -23,6 +23,23 @@ function context() {
 			},
 		},
 		credentials: credentials(),
+	};
+}
+
+function configurableContext(initialRef = 'ACCOUNT_KEY_A') {
+	let apiKeyRef = initialRef;
+	return {
+		ctx: {
+			settings: {
+				get(name) {
+					if (name === 'llm-deepseek') return { apiKeyEnv: apiKeyRef, baseURL: 'https://api.deepseek.com' };
+					if (name === 'llm-pi-ai') return { providers: {} };
+					return null;
+				},
+			},
+			credentials: { resolve: async (ref) => ({ value: ref }) },
+		},
+		setApiKeyRef(ref) { apiKeyRef = ref; },
 	};
 }
 
@@ -136,7 +153,7 @@ test('MiniMax Coding Plan preserves exhausted/unlimited windows and duration res
 	const account = await queryProviderAccount(spec, credentials(), {
 		now: () => now,
 		fetch: async () => jsonResponse({ base_resp: { status_code: 0 }, model_remains: [{
-			model_name: 'MiniMax-M3', current_interval_status: 3, current_weekly_status: 2,
+			model_name: 'MiniMax-M3', current_interval_status: 3, current_weekly_status: 1, current_weekly_remaining_percent: 0,
 			remains_time: 60_000, weekly_remains_time: 120_000,
 		}] }),
 	});
@@ -145,6 +162,46 @@ test('MiniMax Coding Plan preserves exhausted/unlimited windows and duration res
 		{ kind: 'session', usedPercent: 0, remainingPercent: 100, resetsAt: now + 60_000 },
 		{ kind: 'weekly', usedPercent: 100, remainingPercent: 0, resetsAt: now + 120_000 },
 	] });
+});
+
+test('explicit MiniMax API accounts are not presented as Coding Plan subscriptions', async () => {
+	const spec = accountSpec({ id: 'minimax-cn', apiKeyRef: 'MINIMAX_CUSTOM', baseURL: 'https://api.minimaxi.com', accountType: 'api' });
+	expect(spec).toMatchObject({ providerFamily: 'minimax', accountType: 'api', adapter: null, mode: 'unsupported' });
+	const account = await queryProviderAccount(spec, credentials(), { fetch: async () => { throw new Error('must not fetch'); } });
+	expect(account).toMatchObject({ status: 'unsupported', mode: 'unsupported' });
+});
+
+test('MiniMax retries a compatibility endpoint after a valid but unusable response', async () => {
+	const spec = accountSpec({ id: 'minimax-cn', apiKeyRef: 'MINIMAX_CUSTOM', accountType: 'coding-plan' });
+	const urls = [];
+	const account = await queryProviderAccount(spec, credentials(), {
+		now: () => 1000,
+		fetch: async (url) => {
+			urls.push(url);
+			if (urls.length === 1) return jsonResponse({ base_resp: { status_code: 0 }, model_remains: [] });
+			return jsonResponse({ base_resp: { status_code: 0 }, model_remains: [{ model_name: 'general', current_interval_remaining_percent: 75 }] });
+		},
+	});
+	expect(urls).toHaveLength(2);
+	expect(account).toMatchObject({ status: 'ok', windows: [{ kind: 'session', usedPercent: 25, remainingPercent: 75 }] });
+});
+
+test.each([
+	['exhausted', 2, undefined, 0],
+	['unlimited', 3, undefined, 100],
+	['explicit percentage', 2, 50, 50],
+])('MiniMax weekly %s status remains visible', async (_label, status, explicitPercentage, expectedRemaining) => {
+	const spec = accountSpec({ id: 'minimax-cn', apiKeyRef: 'MINIMAX_CUSTOM' });
+	const account = await queryProviderAccount(spec, credentials(), {
+		fetch: async () => jsonResponse({ base_resp: { status_code: 0 }, model_remains: [{
+			model_name: 'general', current_interval_remaining_percent: 80,
+			current_weekly_status: status, current_weekly_remaining_percent: explicitPercentage,
+		}] }),
+	});
+	expect(account.windows.find((window) => window.kind === 'weekly')).toMatchObject({
+		remainingPercent: expectedRemaining,
+		usedPercent: 100 - expectedRemaining,
+	});
 });
 
 test('account collection deduplicates concurrent refreshes and serves the TTL cache', async () => {
@@ -171,6 +228,9 @@ test('account collection deduplicates concurrent refreshes and serves the TTL ca
 	const cached = await collectAccounts(owner, ctx, { deps });
 	expect(calls).toBe(1);
 	expect(cached.accounts[0]).toBe(first.accounts[0]);
+	const forced = await collectAccounts(owner, ctx, { deps, force: true });
+	expect(calls).toBe(2);
+	expect(forced.accounts[0]).not.toBe(first.accounts[0]);
 });
 
 test('failed refresh preserves the last successful account snapshot as stale', async () => {
@@ -190,4 +250,63 @@ test('failed refresh preserves the last successful account snapshot as stale', a
 	const stale = await collectAccounts(owner, context(), { deps });
 	expect(stale.accounts[0]).toMatchObject({ status: 'unavailable', stale: true, lastSuccessAt: 20_000, balance: { remaining: 18.64 } });
 	expect(stale.warnings[0]).toMatchObject({ providerId: 'deepseek-official' });
+});
+
+test('changing an account credential reference cannot reuse the previous snapshot', async () => {
+	let now = 30_000;
+	const owner = {};
+	const configurable = configurableContext();
+	const deps = {
+		now: () => now,
+		cacheMs: 10_000,
+		fetch: async (_url, init) => init.headers.authorization === 'Bearer ACCOUNT_KEY_A'
+			? jsonResponse({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '18.64' }] })
+			: jsonResponse({}, 503),
+	};
+	const first = await collectAccounts(owner, configurable.ctx, { deps });
+	expect(first.accounts[0]).toMatchObject({ status: 'ok', balance: { remaining: 18.64 } });
+
+	configurable.setApiKeyRef('ACCOUNT_KEY_B');
+	const views = await providerViews(owner, configurable.ctx);
+	expect(views.providers[0]).toMatchObject({ configured: true, status: 'pending', fetchedAt: null });
+	now++;
+	const changed = await collectAccounts(owner, configurable.ctx, { deps });
+	expect(changed.accounts[0]).toMatchObject({ status: 'unavailable', stale: false, balance: null });
+});
+
+test('a slower request for an old account config cannot overwrite the new cache', async () => {
+	const owner = {};
+	const configurable = configurableContext();
+	let resolveOld, resolveNew, markOldStarted, markNewStarted;
+	const oldStarted = new Promise((resolve) => { markOldStarted = resolve; });
+	const newStarted = new Promise((resolve) => { markNewStarted = resolve; });
+	let calls = 0;
+	const deps = {
+		now: () => 40_000,
+		cacheMs: 10_000,
+		fetch: async (_url, init) => {
+			calls++;
+			if (init.headers.authorization === 'Bearer ACCOUNT_KEY_A') {
+				markOldStarted();
+				return new Promise((resolve) => { resolveOld = () => resolve(jsonResponse({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '1.00' }] })); });
+			}
+			markNewStarted();
+			return new Promise((resolve) => { resolveNew = () => resolve(jsonResponse({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '2.00' }] })); });
+		},
+	};
+
+	const oldRequest = collectAccounts(owner, configurable.ctx, { deps });
+	await oldStarted;
+	configurable.setApiKeyRef('ACCOUNT_KEY_B');
+	const newRequest = collectAccounts(owner, configurable.ctx, { deps });
+	await newStarted;
+	resolveNew();
+	const current = await newRequest;
+	expect(current.accounts[0].balance.remaining).toBe(2);
+	resolveOld();
+	await oldRequest;
+
+	const cached = await collectAccounts(owner, configurable.ctx, { deps });
+	expect(calls).toBe(2);
+	expect(cached.accounts[0].balance.remaining).toBe(2);
 });

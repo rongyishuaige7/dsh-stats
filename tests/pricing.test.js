@@ -71,3 +71,31 @@ test('subscription usage is reported as unpriced instead of pretending to be API
 	const result = priceUsage(usage({ providerId: 'minimax-cn', model: 'MiniMax-M3', accountType: 'token-plan' }));
 	expect(result).toMatchObject({ status: 'subscription', amount: null, currency: null, unpricedTokens: 1100 });
 });
+
+test.each(['coding-plan', 'coding_plan', 'subscription-plan'])('%s is normalized as subscription usage', (accountType) => {
+	const result = priceUsage(usage({ accountType }));
+	expect(result).toMatchObject({ status: 'subscription', amount: null, currency: null, unpricedTokens: 1100 });
+});
+
+test('unknown account types never inherit official API pricing', () => {
+	const result = priceUsage(usage({ accountType: 'future-plan' }));
+	expect(result).toMatchObject({ status: 'unsupported', amount: null, currency: null, unpricedTokens: 1100 });
+});
+
+test('free usage remains free after summary and merge', () => {
+	const row = priceUsage(usage({ accountType: 'free' }));
+	const summary = summarizeCosts([row]);
+	const merged = mergeCostSummaries([summary]);
+	expect(row).toMatchObject({ status: 'free', amount: 0, currency: 'CNY' });
+	expect(summary).toMatchObject({ status: 'free', totals: [{ currency: 'CNY', amount: 0 }] });
+	expect(merged).toMatchObject({ status: 'free', totals: [{ currency: 'CNY', amount: 0 }] });
+});
+
+test('currency-less free usage mixed with unpriced usage is partial, not free', () => {
+	const free = priceUsage(usage({ providerId: 'custom-relay', model: 'future-free-model', accountType: 'free' }));
+	const unpriced = priceUsage(usage({ providerId: 'custom-relay', model: 'future-paid-model' }));
+	const summary = summarizeCosts([free, unpriced]);
+
+	expect(free).toMatchObject({ status: 'free', amount: 0, currency: null, unpricedTokens: 0 });
+	expect(summary).toMatchObject({ status: 'partial', totals: [], unpricedTokens: 1100, unknownRows: 1 });
+});

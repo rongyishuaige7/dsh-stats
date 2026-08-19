@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.15
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.16
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.15.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.16.tgz
 ```
 
 Verify the bundle registration:
@@ -118,10 +118,11 @@ Pricing is **provider-scoped**. A first-party list price is applied only when th
 | --- | --- |
 | `exact` | Every priced usage row matched a deterministic built-in rule. |
 | `estimated` | An amount is available, but a dynamic snapshot or missing price-affecting metadata is involved. |
+| `free` | All matched usage is free; the summary keeps a zero amount instead of displaying an unknown cost. |
 | `partial` | Known and unpriced usage coexist; known totals remain visible with `+ ?`. |
 | `unsupported` | No safe rule applies, so the amount is shown as `—` rather than guessed. |
 
-Individual usage rows may also be marked `free`, `subscription`, or `ambiguous`; the summary layer keeps the four auditable statuses above.
+Individual usage rows may also be marked `subscription` or `ambiguous`. Subscription aliases such as `coding-plan` and `coding_plan` are normalized before pricing and are never presented as API spend.
 
 ## 👤 Balances and subscription quotas
 
@@ -137,7 +138,7 @@ Account queries run only in the host. The references below are variable names, n
 | Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
 | MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise) plus official compatibility paths | `MINIMAX_API_KEY` |
 
-`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated. A transient network, rate-limit, or response error keeps the last successful snapshot and marks it stale. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
+`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps the last successful snapshot and marks it stale. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
 
 ## 🔐 Credential and privacy boundary
 

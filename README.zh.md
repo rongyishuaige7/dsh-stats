@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.15
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.16
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.15.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.16.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -118,10 +118,11 @@ dsh --profile web --dump-config
 | --- | --- |
 | `exact` | 每一条有价用量都命中确定的内置规则。 |
 | `estimated` | 有金额，但至少一条记录来自动态价格快照，或缺少会影响价格的元数据。 |
+| `free` | 命中的用量全部免费；汇总会保留零金额，不会误显示为未知消费。 |
 | `partial` | 一部分用量可计价，另一部分无法安全计价；已知金额保留，并显示 `+ ?`。 |
 | `unsupported` | 没有足够可靠的规则，显示 `—`，不猜价格。 |
 
-单条用量还可能标记为 `free`（免费规则）、`subscription`（订阅/Token Plan）或 `ambiguous`（规则冲突）；汇总层仍遵循上表的四种可解释状态。
+单条用量还可能标记为 `subscription`（订阅/Token Plan）或 `ambiguous`（规则冲突）。`coding-plan`、`coding_plan` 等订阅别名会在计价前统一归一化，绝不会伪装成 API 消费。
 
 ## 👤 账户余额与订阅额度
 
@@ -137,7 +138,7 @@ dsh --profile web --dump-config
 | Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
 | MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise)（含官方兼容路径） | `MINIMAX_API_KEY` |
 
-Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求；遇到网络错误、限流或异常响应时，会保留上一次成功快照并标记为“已过期”。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
+Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求，点击刷新会明确绕过这层缓存；遇到网络错误、限流或异常响应时，会保留同一配置的上一次成功快照并标记为“已过期”。未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api` 时不会当作订阅额度查询。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
 
 ## 🔐 凭证与隐私边界
 
