@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.27
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.28
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.27.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.28.tgz
 ```
 
 Verify the bundle registration:
