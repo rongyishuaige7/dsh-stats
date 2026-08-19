@@ -8,6 +8,7 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
+	subagentAddressFor, openStatsSession,
 } = client.__test;
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,31 @@ test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
+});
+
+test('openStatsSession opens a regular session through the DSH sessions service', async () => {
+	const sessions = { open: vi.fn() };
+	await openStatsSession(sessions, { id: 'session-main', subagent: false });
+	expect(sessions.open).toHaveBeenCalledOnce();
+	expect(sessions.open).toHaveBeenCalledWith('session-main');
+});
+
+test('openStatsSession resolves and opens a catalog-backed subagent when direct open fails', async () => {
+	const snapshot = { subagentsByParent: {} };
+	const sessions = {
+		open: vi.fn(() => { throw new Error('unknown session'); }),
+		openSubagent: vi.fn(),
+		subagentAddress: vi.fn(() => undefined),
+		refreshSubagents: vi.fn(async () => {
+			snapshot.subagentsByParent.parent = { entries: [{ kind: 'child', id: 'session-child', mode: 'continuable' }] };
+		}),
+		list: { getSnapshot: () => snapshot },
+	};
+	const session = { id: 'session-child', subagent: true, parentSession: 'parent' };
+	await openStatsSession(sessions, session);
+	expect(sessions.refreshSubagents).toHaveBeenCalledWith('parent');
+	expect(subagentAddressFor(sessions, session)).toEqual({ parentSessionId: 'parent', childSessionId: 'session-child', mode: 'continuable' });
+	expect(sessions.openSubagent).toHaveBeenCalledWith({ parentSessionId: 'parent', childSessionId: 'session-child', mode: 'continuable' });
 });
 
 test('tiny non-zero model shares never render as 0.0%', () => {

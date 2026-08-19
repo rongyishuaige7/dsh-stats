@@ -544,10 +544,11 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-pcards-viewport.scrollable,.dss-timeline-viewport.scrollable,.dss-model-list-viewport.scrollable,.dss-day-lanes{scrollbar-width:thin;scrollbar-color:rgba(166,173,187,.28) transparent}" +
 	".dss-pcards-viewport.scrollable:hover,.dss-timeline-viewport.scrollable:hover,.dss-model-list-viewport.scrollable:hover,.dss-day-lanes:hover{scrollbar-color:rgba(166,173,187,.5) transparent}" +
 	".dss-pcards{display:flex;flex-direction:column;gap:10px}" +
-	".dss-pcard{border:1px solid var(--dsw-alias-border,#2a303c);border-radius:12px;background:var(--dsw-specific-menu,#1d222c);overflow:hidden;cursor:pointer;transition:border-color .15s}" +
+	".dss-pcard{border:1px solid var(--dsw-alias-border,#2a303c);border-radius:12px;background:var(--dsw-specific-menu,#1d222c);overflow:hidden;transition:border-color .15s}" +
 	".dss-pcard:hover{border-color:var(--dsw-alias-label-tertiary,#6b7280)}" +
 	".dss-pcard.sel{border-color:rgba(79,140,255,.55)}" +
-	".dss-pcard-head{display:flex;align-items:center;gap:18px;padding:13px 16px;min-height:61px;box-sizing:border-box}" +
+	".dss-pcard-head{display:flex;align-items:center;gap:18px;padding:13px 16px;min-height:61px;box-sizing:border-box;cursor:pointer}" +
+	".dss-pcard-head:focus-visible{outline:2px solid rgba(79,140,255,.8);outline-offset:-2px}" +
 	".dss-pcard-metrics{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}" +
 	".dss-pm{min-width:58px;text-align:right}" +
 	".dss-pm-l{height:15px;font-size:10px;line-height:15px;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:3px}" +
@@ -565,6 +566,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-sess:last-child{border-bottom:none}" +
 	".dss-sess:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.04))}" +
 	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:16px;box-sizing:border-box}" +
+	".dss-sess-title{display:block;width:100%;border:0;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;padding:0 16px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+	".dss-sess-title:focus-visible{outline:2px solid rgba(79,140,255,.8);outline-offset:2px;border-radius:3px}" +
 	".dss-sess>:nth-child(n+2){transform:translateX(var(--dss-data-shift))}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
@@ -860,6 +863,7 @@ function ProjectsTable(props) {
 	var hidden = props.hidden;
 	var selected = props.selected;
 	var onSelect = props.onSelect;
+	var onOpenSession = props.onOpenSession;
 	var t = props.t;
 	var dayMode = props.dayMode === true; // 按日模式：隐藏"最近活跃"（项目级元数据与单日切片语义冲突）
 	var sortPair = useState({ key: "cost", dir: -1 });
@@ -922,8 +926,15 @@ function ProjectsTable(props) {
 				var modelName = modelNameOnly(sd);
 				var sessionTitle = sd.title || t("w.untitled");
 				var sessionCost = fmtCostSummary(sessionCostSummary(sd));
+				var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null];
 				return e("div", { className: "dss-sess", key: sd.id },
-					e("span", { className: "ti", title: sessionTitle }, sessionTitle, sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
+					onOpenSession ? e("button", {
+						type: "button",
+						className: "ti dss-sess-title",
+						title: t("openSession") + ": " + sessionTitle,
+						"aria-label": t("openSession") + ": " + sessionTitle,
+						onClick: function(ev) { ev.stopPropagation(); onOpenSession(sd); }
+					}, titleContent) : e("span", { className: "ti", title: sessionTitle }, titleContent),
 					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
 					e("span", { className: "st" }, fmtN(sd.stats.turns) + " " + t("w.turns") + " · " + fmtN(sd.stats.steps) + " " + t("w.steps")),
 					e("span", { className: "st" }, "LLM " + fmtDuration(sd.stats.llmMs)),
@@ -942,8 +953,20 @@ function ProjectsTable(props) {
 			detail = e("div", { className: "dss-pcard-detail" }, detailChildren);
 		}
 
-		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16), onClick: function() { onSelect(p.id); } },
-			e("div", { className: "dss-pcard-head" },
+		var toggleProject = function() { onSelect(p.id); };
+		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16) },
+			e("div", {
+				className: "dss-pcard-head",
+				role: "button",
+				tabIndex: 0,
+				"aria-expanded": isSel,
+				onClick: toggleProject,
+				onKeyDown: function(ev) {
+					if (ev.key !== "Enter" && ev.key !== " ") return;
+					ev.preventDefault();
+					toggleProject();
+				}
+			},
 				e("div", { className: "dss-proj" },
 					e("span", { className: "dot" }),
 					e("span", { className: "dss-proj-txt" },
@@ -1379,6 +1402,7 @@ function StatsPanel(props) {
 	var sessionsSnap = props.useSessions((s) => s);
 	var workspacesSnap = props.useWorkspaces((w) => w);
 	var onClose = props.onClose;
+	var onOpenSession = props.onOpenSession;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
 	var balanceRemote = props.balance;
@@ -1532,7 +1556,7 @@ function StatsPanel(props) {
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: statProjects, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-					 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+						 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate, t })
 				)
@@ -2195,7 +2219,7 @@ function buildGlobals(projects) {
 		totalCost
 	};
 }
-const inject = ["slots", "locale", "remote"];
+const inject = ["slots", "locale", "remote", "sessions"];
 const NS = "stats";
 const zh = {
 	"trigger": "统计",
@@ -2205,6 +2229,7 @@ const zh = {
 	"tab.trends": "用量趋势",
 	"tab.balance": "账户余额",
 	"close": "关闭",
+	"openSession": "打开对话",
 	"empty": "暂无数据",
 	"refresh": "刷新",
 	"source.loading": "加载中",
@@ -2286,6 +2311,7 @@ const en = {
 	"tab.trends": "Usage Trends",
 	"tab.balance": "Account Balance",
 	"close": "Close",
+	"openSession": "Open conversation",
 	"empty": "No data",
 	"refresh": "Refresh",
 	"source.loading": "Loading",
@@ -2611,6 +2637,40 @@ const STATS_REMOTE_CONTRIBUTION = {
 			}]
 };
 
+function subagentAddressFor(sessions, session) {
+	if (!sessions || !session?.subagent || typeof session.id !== "string") return null;
+	try {
+		var retained = typeof sessions.subagentAddress === "function" ? sessions.subagentAddress(session.id) : null;
+		if (retained) return retained;
+		if (typeof session.parentSession !== "string" || !session.parentSession) return null;
+		var snapshot = sessions.list?.getSnapshot?.();
+		var catalog = snapshot?.subagentsByParent?.[session.parentSession];
+		var entry = catalog?.entries?.find(function(candidate) { return candidate.kind === "child" && candidate.id === session.id; });
+		if (!entry || (entry.mode !== "one-shot" && entry.mode !== "continuable")) return null;
+		return { parentSessionId: session.parentSession, childSessionId: session.id, mode: entry.mode };
+	} catch {
+		return null;
+	}
+}
+
+async function openStatsSession(sessions, session) {
+	if (!sessions || typeof sessions.open !== "function") throw new Error("sessions.open is unavailable");
+	if (!session || typeof session.id !== "string" || !session.id) throw new Error("session id is unavailable");
+	try {
+		sessions.open(session.id);
+		return;
+	} catch (openError) {
+		if (!session.subagent || typeof sessions.openSubagent !== "function") throw openError;
+		var address = subagentAddressFor(sessions, session);
+		if (!address && typeof session.parentSession === "string" && session.parentSession && typeof sessions.refreshSubagents === "function") {
+			await sessions.refreshSubagents(session.parentSession);
+			address = subagentAddressFor(sessions, session);
+		}
+		if (!address) throw openError;
+		sessions.openSubagent(address);
+	}
+}
+
 async function apply(ctx) {
 	// 附加 CSS — 必须在 CSS 注入前定义
 	var _phaseDCSS = "\n\t.dss-tc-val.dss-tc-cost{color:#ff922b}" +
@@ -2669,6 +2729,14 @@ async function apply(ctx) {
 	}
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-stats: dictionaries");
 	const openStore = createOpenStore();
+	const onOpenSession = async (session) => {
+		try {
+			await openStatsSession(ctx.sessions, session);
+			openStore.close();
+		} catch (error) {
+			console.warn("[dsh-stats] 无法打开会话 " + (session?.id || "(unknown)") + ":", error);
+		}
+	};
 
 	let aggregateRemote = null;
 	let balanceRemote = null;
@@ -2712,7 +2780,7 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), aggregate: aggregateRemote, balance: balanceRemote, remoteError })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), onOpenSession, aggregate: aggregateRemote, balance: balanceRemote, remoteError })
 	}, StatsPanel));
 
 	return () => {
@@ -2730,5 +2798,6 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable
+	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
+	subagentAddressFor, openStatsSession
 };
