@@ -1,6 +1,6 @@
 {
   "name": "@rongyi7/dsh-stats",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "description": "工作区 Token 消耗统计 + 开发时间线 + 消费金额（DSH 插件：Tier 2 宿主 RPC + 客户端 UI）",
   "type": "module",
   "main": "lib/index.js",
