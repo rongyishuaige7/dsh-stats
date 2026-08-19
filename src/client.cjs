@@ -508,10 +508,6 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-panel{width:min(1180px,100%);background:var(--dsw-specific-menu,#161a21);border:1px solid var(--dsw-alias-border-inverted,#2a303c);border-radius:16px;box-shadow:var(--dsw-shadow-lv3,0 20px 60px rgba(0,0,0,.5));color:var(--dsw-alias-label-primary,#e7eaf0);display:flex;flex-direction:column;overflow:hidden}" +
 	".dss-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1;min-width:0}" +
-	".dss-source{display:inline-flex;align-items:center;margin-left:9px;padding:2px 6px;border-radius:5px;font-size:10px;font-weight:600;color:#34d399;background:rgba(52,211,153,.12);vertical-align:1px}" +
-	".dss-source.loading,.dss-source.refreshing{color:#60a5fa;background:rgba(96,165,250,.12)}" +
-	".dss-source.partial,.dss-source.stale{color:#fbbf24;background:rgba(251,191,36,.12)}" +
-	".dss-source.fallback{color:#f87171;background:rgba(248,113,113,.12)}" +
 	".dss-tabs{display:flex;gap:4px}" +
 	".dss-tabs button{background:none;border:none;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}" +
 	".dss-tabs button.on{background:rgba(79,140,255,.14);color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
@@ -1536,8 +1532,6 @@ function StatsPanel(props) {
 
 	var toggle = (id) => setHidden((h) => ({ ...h, [id]: !h[id] }));
 	var visibleProjects = statProjects.filter((p) => !hidden[p.id]);
-	var sourceLabel = t("source." + sourceState.kind);
-	var sourceTitle = sourceState.error || (sourceState.at ? t("source.updated") + " " + fmtClock(sourceState.at) : sourceLabel);
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
@@ -1549,7 +1543,7 @@ function StatsPanel(props) {
 	return e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); } },
 		e("div", { className: "dss-panel" },
 			e("div", { className: "dss-head" },
-				e("h2", null, t("title"), e("span", { className: "dss-source " + sourceState.kind, title: sourceTitle }, sourceLabel)),
+				e("h2", null, t("title")),
 				e("div", { className: "dss-tabs" },
 					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
 					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline")),
@@ -2261,12 +2255,6 @@ const zh = {
 	"openSession": "打开对话",
 	"empty": "暂无数据",
 	"refresh": "刷新",
-	"source.loading": "加载中",
-	"source.refreshing": "刷新中",
-	"source.exact": "精确（宿主）",
-	"source.partial": "部分精确",
-	"source.stale": "已过期",
-	"source.fallback": "近似（客户端）",
 	"source.updated": "更新时间",
 	"nav.day": "按日", "nav.days7": "7日", "nav.days30": "30日", "nav.days90": "90日", "nav.all": "全部", "nav.previous": "前一天", "nav.next": "后一天",
 	"sort.label": "排序", "sort.toggle": "切换升降序", "sort.asc": "升序", "sort.desc": "降序",
@@ -2343,12 +2331,6 @@ const en = {
 	"openSession": "Open conversation",
 	"empty": "No data",
 	"refresh": "Refresh",
-	"source.loading": "Loading",
-	"source.refreshing": "Refreshing",
-	"source.exact": "Exact (host)",
-	"source.partial": "Partial",
-	"source.stale": "Stale",
-	"source.fallback": "Approx. (client)",
 	"source.updated": "Updated",
 	"nav.day": "Day", "nav.days7": "7D", "nav.days30": "30D", "nav.days90": "90D", "nav.all": "All", "nav.previous": "Previous day", "nav.next": "Next day",
 	"sort.label": "Sort", "sort.toggle": "Toggle sort direction", "sort.asc": "Ascending", "sort.desc": "Descending",
