@@ -1,65 +1,61 @@
-# @rongyi7/dsh-stats
+<h1 align="center">DSH Stats</h1>
 
-English | [简体中文](README.md)
-
-[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&label=npm)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![npm downloads](https://img.shields.io/npm/dm/@rongyi7/dsh-stats?color=22c55e&label=downloads)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats?color=339933)](https://nodejs.org)
-[![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
-
-> Turn scattered DSH sessions into a dashboard you can understand at a glance: tokens, development time, model mix, spend, balances, and quotas in one sidebar panel. `(｡•̀ᴗ-)✧`
-
-`@rongyi7/dsh-stats` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. It uses host-side aggregation when available and falls back to a client-side approximation on older hosts, so the same UI remains useful during upgrades.
+<p align="center"><strong>Understand every project's tokens, development time, and cost.</strong></p>
+<p align="center">Turn scattered DSH sessions into a project overview, development timeline, usage trends, balances, and quotas.</p>
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="Light-mode project overview with masked project names and an all-time usage summary" width="920" />
+  <a href="README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-> **Privacy note:** project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture. Balance amounts and MiniMax quota values use demo values; aggregate dates, tokens, durations, and spend reflect the all-time view at capture. No API key, cookie, management token, raw session content, or upstream response appears in these images. The plugin also never sends those credentials or raw upstream responses to the browser.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@rongyi7/dsh-stats"><img src="https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&amp;label=npm" alt="npm version"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml"><img src="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6" alt="license"></a>
+</p>
 
-## ✨ At a glance
+> **DSH tells you what happened in a session. DSH Stats tells you which project it belonged to and how much time, token usage, and cost it accumulated.** `(｡•̀ᴗ-)✧`
 
-| | Capability | What it gives you |
-| --- | --- | --- |
-| 📊 | Project overview | Per-project sessions, turns, tokens, cache hit rate, speed, and spend; inactive zero-usage projects stay out of the list. |
-| ⏱️ | Development timeline | Event-based 30-minute activity slots, with colors and durations that remain readable when projects overlap. |
-| 📈 | Usage trends | Seven-day input/output tokens, activity heatmap, model distribution, and per-model spend on hover. |
-| 💳 | Provider-scoped pricing | Selects a rule from the real `provider + model + account type + time slot`; there is no manual model picker. |
-| 👤 | Balances and quotas | DeepSeek, OpenRouter, Moonshot, and Z.ai API balances plus Kimi, Z.ai, and MiniMax Coding Plan windows. |
-| 🔒 | Host-side credential boundary | Account requests run in the DSH host; the browser receives normalized balances and statuses only. |
+`@rongyi7/dsh-stats` is a local-first [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. Host RPC aggregates persisted session logs; when that RPC is unavailable on an older host, the UI falls back to a client-side approximation.
 
-The overview keeps up to seven project cards fully visible. The timeline keeps the most recent three days visible. Additional content scrolls inside the panel, so the surrounding layout stays stable. `(ง •̀_•́)ง`
+<p align="center"><strong>Project-level analytics</strong> · <strong>Provider-scoped pricing</strong> · <strong>Host-side credentials</strong> · <strong>CSV/JSON exports</strong></p>
 
-## 🚀 Install in 30 seconds
+<p align="center">
+  <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="Light-mode project overview with masked identity fields and aggregate metrics" width="100%"></a>
+  <br>
+  <sub>Light mode · masked project identity · click for the complete project overview</sub>
+</p>
 
-### Requirements
+> Screenshots contain no API keys, cookies, management tokens, or session content. Project identities are masked, and balances and quotas use demo values. Costs are derived from public API pricing rules; the provider's bill remains authoritative.
 
-- A DeepSeek Harness `web` profile.
-- Node.js `>= 22`.
+## 🚀 Quick start
 
-### Install from npm
+Requires a DeepSeek Harness `web` profile and Node.js `>= 22`.
 
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
 ```
 
-Restart the running DSH Web process:
+After installation, fully restart the running DSH Web process:
 
 ```bash
 dsh web
 ```
 
-The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
+Reopen the page. The “Stats” entry will appear at the bottom of the sidebar.
+
+<details>
+<summary><strong>Pin a version, install a tarball, or verify registration</strong></summary>
+
+Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.36
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.37
 ```
 
-### Install a local tarball
+Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.36.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.37.tgz
 ```
 
 Verify the bundle registration:
@@ -69,31 +65,61 @@ dsh --profile web --dump-config
 ```
 
 You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **Do not** use `npm install --prefix ~/.dsh/profiles/web ...` to mutate a DSH profile: profiles are managed by pnpm, and the official `dsh plugin` command keeps the dependency graph and bundle registration intact.
+</details>
+
+## ✨ Core capabilities
+
+| Capability | Question it answers |
+| --- | --- |
+| 📊 Project overview | Per-project sessions, turns, tokens, cache hit rate, speed, and spend; inactive projects stay out of the day view. |
+| ⏱️ Development timeline | Event-based 30-minute activity slots whose project colors and durations remain readable when work overlaps. |
+| 📈 Usage trends | Seven-day input/output tokens, an interactive activity heatmap, model distribution, and per-model spend on hover. |
+| 💳 Provider-scoped pricing | Selects a rule from the real `provider + model + account type + time slot` instead of trusting a look-alike model name. |
+| 👤 Balances and quotas | DeepSeek, OpenRouter, Moonshot, and Z.ai API balances plus Kimi, Z.ai, and MiniMax Coding Plan windows. |
+| 🔒 Host-side credential boundary | Account requests run in the DSH host; the browser receives normalized balances and statuses only. |
+
+The overview keeps up to seven projects visible, the timeline keeps the latest three days visible, and model distribution keeps three models visible. Additional content scrolls inside its own region, so the panel itself does not keep growing. `(ง •̀_•́)ง`
 
 ## 🖼️ Interface tour
 
-These light-mode captures come from the running panel. Project identity fields are masked, balance and quota values are examples, and the overview and trends show the all-time aggregate selected at capture. The account section includes both DeepSeek and MiniMax Coding Plan:
+These are light-mode captures of the running UI. Dense views use the full README width; click any image to inspect it at its original resolution.
+
+### Project overview
+
+Summary cards cover projects, sessions, tokens, LLM/tool time, and spend. Project rows support sorting, filtering, and expandable session details.
+
+<p align="center">
+  <a href="docs/images/overview.png"><img src="docs/images/overview.png" alt="Complete project overview with masked project identity fields" width="100%"></a>
+</p>
+
+### Development timeline
+
+Each row is one day and each color is one project. Overlapping activity shares the same time slot, while hover reveals each project's duration.
+
+<p align="center">
+  <a href="docs/images/timeline.png"><img src="docs/images/timeline.png" alt="Development timeline with masked project identity fields" width="100%"></a>
+</p>
+
+### Usage trends
+
+Input and output use separate colors. The activity heatmap is date-selectable, while model distribution combines tokens, share, and cost.
+
+<p align="center">
+  <a href="docs/images/trends.png"><img src="docs/images/trends.png" alt="Usage trends, activity heatmap, and model distribution" width="100%"></a>
+</p>
+
+### Balances and quotas
+
+DeepSeek shows available, topped-up, and gifted balances. MiniMax shows the current-window and weekly Coding Plan quotas. The account view keeps refresh and close actions only because account data is a current snapshot, not historical export data.
 
 <table>
   <tr>
-    <td align="center"><strong>Project overview</strong><br><img src="docs/images/overview.png" alt="Project overview with masked project labels" width="480"></td>
-    <td align="center"><strong>Development timeline</strong><br><img src="docs/images/timeline.png" alt="Development timeline with masked project labels" width="480"></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>Usage trends</strong><br><img src="docs/images/trends.png" alt="Usage trends, heatmap, and model distribution" width="480"></td>
-    <td align="center"><strong>Account balance</strong><br><img src="docs/images/balance.png" alt="DeepSeek account balance" width="480"><br><small>DeepSeek</small><br><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan quota" width="480"><br><small>MiniMax Coding Plan</small></td>
+    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="docs/images/balance.png"><img src="docs/images/balance.png" alt="DeepSeek demo balance screen" width="100%"></a></td>
+    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="docs/images/balance-minimax.png"><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan demo quota screen" width="100%"></a></td>
   </tr>
 </table>
 
-### What is on each screen?
-
-1. **Project overview** — summary cards for projects, sessions, tokens, LLM/tool time, and spend; sortable project rows expand into session details.
-2. **Development timeline** — one row per day, with project colors and activity blocks; overlapping work remains distinguishable.
-3. **Usage trends** — input and output use separate colors. Small output values keep a visible minimum bar, and hover reveals the exact value.
-4. **Model distribution** — the donut and model list use a stable layout; hovering a model shows its tokens, share, and spend.
-5. **Account balance** — DeepSeek uses a blue gradient card with available, topped-up, gifted, and recharge actions; MiniMax shows the current Coding Plan quota windows.
-
-CSV and JSON exports are available on the statistical views. The balance view intentionally keeps refresh and close actions only: it is a cached account snapshot, not a historical ledger.
+Project overview, development timeline, and usage trends support CSV and JSON exports.
 
 ## 💰 Pricing
 

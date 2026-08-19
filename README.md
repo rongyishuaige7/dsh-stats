@@ -1,99 +1,125 @@
-# @rongyi7/dsh-stats
+<h1 align="center">DSH Stats</h1>
 
-[English](README.en.md) | 简体中文
-
-[![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&label=npm)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![npm downloads](https://img.shields.io/npm/dm/@rongyi7/dsh-stats?color=22c55e&label=downloads)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
-[![node](https://img.shields.io/node/v/@rongyi7/dsh-stats?color=339933)](https://nodejs.org)
-[![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
-
-> 把 DSH 里分散的会话记录，整理成一眼就能读懂的项目仪表盘：Token、开发时间线、模型分布、消费金额和账户余额，全部在侧边栏里完成。 `(｡•̀ᴗ-)✧`
-
-`@rongyi7/dsh-stats` 是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的插件。它同时支持纯客户端回退和宿主侧精确聚合，适合日常复盘，也适合核对账单。
+<p align="center"><strong>看清每个项目用了多少 Token、开发时间和费用。</strong></p>
+<p align="center">把 DSH 中分散的会话记录，整理成项目总览、开发时间线、用量趋势与账户余额。</p>
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="浅色模式项目总览：项目名已打码，展示全部时间汇总" width="920" />
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
-> **隐私说明**：项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换。余额金额和 MiniMax 额度使用演示值；日期、Token、时长和消费为截图时的“全部”汇总。图片中不包含 API Key、Cookie、管理令牌、原始会话内容或上游原始响应；插件也不会把这些凭证或原始响应发送到浏览器。
+<p align="center">
+  <a href="https://www.npmjs.com/package/@rongyi7/dsh-stats"><img src="https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&amp;label=npm" alt="npm version"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml"><img src="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6" alt="license"></a>
+</p>
 
-## ✨ 一眼看懂
+> **DSH 告诉你聊了什么，DSH Stats 告诉你这些会话属于哪个项目，以及花了多少时间、Token 和费用。** `(｡•̀ᴗ-)✧`
 
-| | 能力 | 你能得到什么 |
-| --- | --- | --- |
-| 📊 | 项目总览 | 按项目查看会话、轮次、Token、缓存命中率、速度和消费；今天没有活动的项目不会挤占列表。 |
-| ⏱️ | 开发时间线 | 以 30 分钟为粒度还原每天的开发区间；同一时间并行开发多个项目时仍能分辨颜色和时长。 |
-| 📈 | 用量趋势 | 近 7 天输入/输出 Token、活动热力图、模型分布，以及悬停时的模型消费金额。 |
-| 💳 | Provider 级计价 | 根据真实 `Provider + 模型 + 账户类型 + 时间槽` 自动选价，不要求手动挑模型。 |
-| 👤 | 账户余额与额度 | 查看 DeepSeek 等 API 余额，以及 Kimi、Z.ai、MiniMax Coding Plan 窗口额度。 |
-| 🔒 | 宿主侧凭证安全 | 余额请求只在 DSH 宿主侧执行，浏览器只拿到脱敏后的余额和状态。 |
+`@rongyi7/dsh-stats` 是面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的本地统计插件。宿主侧 RPC 会聚合持久化会话日志；旧版宿主不可用时，界面自动回退到客户端近似统计。
 
-项目卡片最多完整展示 7 个项目，开发时间线最多完整展示最近 3 天；更多内容可在面板内部滚动查看，页面布局不会被撑开。 `(ง •̀_•́)ง`
+<p align="center"><strong>项目维度统计</strong> · <strong>Provider 级计价</strong> · <strong>宿主侧凭证</strong> · <strong>CSV/JSON 导出</strong></p>
 
-## 🚀 30 秒安装
+<p align="center">
+  <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="浅色模式项目总览：汇总指标与项目身份均已脱敏" width="100%"></a>
+  <br>
+  <sub>浅色模式 · 项目身份已打码 · 点击查看完整项目总览</sub>
+</p>
 
-### 前置条件
+> 截图不包含 API Key、Cookie、管理令牌或会话内容；项目身份已打码，余额与额度使用演示值。费用依据公开 API 计价规则推算，最终以 Provider 账单为准。
 
-- 已安装 DeepSeek Harness，并拥有 `web` profile。
-- Node.js `>= 22`。
+## 🚀 快速开始
 
-### 从 npm 安装
+需要已安装的 DeepSeek Harness `web` profile，以及 Node.js `>= 22`。
 
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
 ```
 
-然后重启正在运行的 DSH Web：
+安装后完整重启正在运行的 DSH Web：
 
 ```bash
 dsh web
 ```
 
-重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
+重新打开页面，侧边栏底部会出现「统计」入口。
+
+<details>
+<summary><strong>固定版本、本地 tarball 与注册验证</strong></summary>
+
+固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.36
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.37
 ```
 
-### 从本地 tarball 安装
+安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.36.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.37.tgz
 ```
 
-验证插件是否被 profile 注册：
+验证插件是否已注册：
 
 ```bash
 dsh --profile web --dump-config
 ```
 
 输出中应能看到 `stats` 和 `@rongyi7/dsh-stats`。**不要**用 `npm install --prefix ~/.dsh/profiles/web ...` 直接改写 DSH profile；profile 由 pnpm 管理，官方 `dsh plugin` 命令会处理依赖和 bundle 注册。
+</details>
+
+## ✨ 核心能力
+
+| 能力 | 解决的问题 |
+| --- | --- |
+| 📊 项目总览 | 按项目查看会话、轮次、Token、缓存命中率、速度和消费；没有活动的项目不会挤占“按日”列表。 |
+| ⏱️ 开发时间线 | 以 30 分钟为粒度还原每天的开发区间；同一时段并行开发多个项目时仍能分辨颜色和时长。 |
+| 📈 用量趋势 | 查看近 7 天输入/输出 Token、活动热力图和模型分布；悬停即可核对精确用量与模型消费。 |
+| 💳 Provider 级计价 | 根据真实 `Provider + 模型 + 账户类型 + 时间槽` 自动选价，不会仅凭相似模型名套用官方价格。 |
+| 👤 账户余额与额度 | 查看 DeepSeek 等 API 余额，以及 Kimi、Z.ai、MiniMax Coding Plan 窗口额度。 |
+| 🔒 宿主侧凭证安全 | 余额请求只在 DSH 宿主侧执行，浏览器仅接收脱敏后的余额与状态。 |
+
+项目总览最多同时展示 7 个项目，开发时间线最多同时展示最近 3 天，模型分布最多同时展示 3 个模型；更多内容在各自区域内滚动，不会撑开整个面板。 `(ง •̀_•́)ง`
 
 ## 🖼️ 界面导览
 
-下面是真实运行面板的浅色模式截图。项目身份字段已打码，余额金额和额度为演示值，项目总览和用量趋势展示截图时选中的“全部”汇总；账户余额同时展示 DeepSeek 和 MiniMax Coding Plan：
+以下均为真实运行界面的浅色模式截图。复杂视图改为全宽展示，点击图片可以查看原始尺寸。
+
+### 项目总览
+
+汇总项目数、会话、Token、LLM/工具时长和消费；项目卡支持排序、筛选和展开会话明细。
+
+<p align="center">
+  <a href="docs/images/overview.png"><img src="docs/images/overview.png" alt="项目身份已打码的完整项目总览界面" width="100%"></a>
+</p>
+
+### 开发时间线
+
+每行对应一天，颜色对应项目；重叠活动按同一时间槽合并显示，悬停可以查看各项目时长。
+
+<p align="center">
+  <a href="docs/images/timeline.png"><img src="docs/images/timeline.png" alt="项目身份已打码的开发时间线界面" width="100%"></a>
+</p>
+
+### 用量趋势
+
+输入与输出使用不同颜色；活动热力图可按日期查看，模型分布会同时呈现 Token、占比和消费金额。
+
+<p align="center">
+  <a href="docs/images/trends.png"><img src="docs/images/trends.png" alt="用量趋势、活动热力图和模型分布界面" width="100%"></a>
+</p>
+
+### 账户余额与额度
+
+DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当前时段与本周额度。账户页只保留刷新和关闭，因为余额属于实时快照，不属于历史统计导出数据。
 
 <table>
   <tr>
-    <td align="center"><strong>项目总览</strong><br><img src="docs/images/overview.png" alt="项目名已打码的项目总览界面" width="480"></td>
-    <td align="center"><strong>开发时间线</strong><br><img src="docs/images/timeline.png" alt="项目名已打码的开发时间线界面" width="480"></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>用量趋势</strong><br><img src="docs/images/trends.png" alt="用量趋势、热力图和模型分布界面" width="480"></td>
-    <td align="center"><strong>账户余额</strong><br><img src="docs/images/balance.png" alt="DeepSeek 账户余额界面" width="480"><br><small>DeepSeek</small><br><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan 额度界面" width="480"><br><small>MiniMax Coding Plan</small></td>
+    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="docs/images/balance.png"><img src="docs/images/balance.png" alt="DeepSeek 演示余额界面" width="100%"></a></td>
+    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="docs/images/balance-minimax.png"><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan 演示额度界面" width="100%"></a></td>
   </tr>
 </table>
 
-### 你会看到什么？
-
-1. **项目总览**：上方汇总卡展示项目数、会话数、Token、LLM/工具时长和消费；下方项目卡可排序、筛选并展开会话明细。
-2. **开发时间线**：每行对应一天，颜色代表项目；条块会显示活跃区间，重叠项目仍保持各自颜色。
-3. **用量趋势**：输入和输出使用不同颜色；输出量较小时柱子仍保留最小可见高度，鼠标悬停可以查看精确数值。
-4. **模型分布**：圆环和右侧列表共享固定布局；悬停模型行即可查看该模型的 Token、占比和消费金额。
-5. **账户余额**：DeepSeek 使用蓝色渐变卡片，同时展示可用余额、充值余额、赠送余额和官方充值入口；MiniMax 展示 Coding Plan 当前时段和本周额度窗口。
-
-统计页支持 CSV/JSON 导出；账户余额页只保留刷新和关闭操作，因为余额是实时快照，不属于历史统计导出数据。
+项目总览、开发时间线和用量趋势支持 CSV/JSON 导出。
 
 ## 💰 计价规则
 
