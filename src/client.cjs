@@ -560,15 +560,15 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-proj .dot{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 22%,transparent)}" +
 	".dss-proj .nm{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-size:13px}" +
 	".dss-proj .ph{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-	// 会话详情：标题列吸收剩余空间；模型按内容收缩且限宽，金额列紧随其后。
-	".dss-sess{display:grid;grid-template-columns:minmax(160px,1fr) 104px 112px 78px 92px 88px 148px fit-content(180px) max-content;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s;min-width:1020px}" +
+	// 会话详情：所有行使用同一组固定数据列；标题列吸收剩余空间并负责省略。
+	".dss-sess{display:grid;grid-template-columns:minmax(160px,1fr) 104px 112px 78px 92px 88px 148px 150px 110px;gap:10px;align-items:center;width:100%;box-sizing:border-box;min-width:1146px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s}" +
 	".dss-sess:last-child{border-bottom:none}" +
 	".dss-sess:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.04))}" +
 	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums}" +
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
 	".dss-sess-model{text-align:left!important}" +
-	".dss-sess-cost{overflow:visible!important;text-overflow:clip!important;white-space:nowrap}" +
+	".dss-sess-cost{text-align:right!important}" +
 	".dss-tag{font-size:10px;font-weight:600;color:#4f8cff;background:rgba(79,140,255,.14);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}" +
 	".dss-group{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7280);padding:9px 12px 3px}" +
 	".dss-hint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;margin-bottom:10px}" +
@@ -917,8 +917,10 @@ function ProjectsTable(props) {
 			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
 			var sessRow = function(sd) {
 				var modelName = modelNameOnly(sd);
+				var sessionTitle = sd.title || t("w.untitled");
+				var sessionCost = fmtCostSummary(sessionCostSummary(sd));
 				return e("div", { className: "dss-sess", key: sd.id },
-					e("span", { className: "ti" }, sd.title || t("w.untitled"), sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
+					e("span", { className: "ti", title: sessionTitle }, sessionTitle, sd.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag" }, t("w.archivedTag")) : null),
 					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
 					e("span", { className: "st" }, fmtN(sd.stats.turns) + " " + t("w.turns") + " · " + fmtN(sd.stats.steps) + " " + t("w.steps")),
 					e("span", { className: "st" }, "LLM " + fmtDuration(sd.stats.llmMs)),
@@ -926,7 +928,7 @@ function ProjectsTable(props) {
 					e("span", { className: "st" }, t("w.cacheHit") + " " + fmtPct(sd.stats.cacheHitPct)),
 					e("span", { className: "st" }, t("w.input") + " " + fmtTokens(sd.stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(sd.stats.outputTokens)),
 					e("span", { className: "st dss-sess-model", title: modelName }, modelName),
-					e("span", { className: "st dss-cost dss-sess-cost" }, fmtCostSummary(sessionCostSummary(sd)))
+					e("span", { className: "st dss-cost dss-sess-cost", title: sessionCost }, sessionCost)
 				);
 			};
 			var detailChildren = mainSessions.map(sessRow);
