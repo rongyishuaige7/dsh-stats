@@ -1,6 +1,6 @@
 # @rongyi7/dsh-stats
 
-English | [简体中文](README.zh.md)
+[English](README.en.md) | 简体中文
 
 [![npm version](https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&label=npm)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
 [![npm downloads](https://img.shields.io/npm/dm/@rongyi7/dsh-stats?color=22c55e&label=downloads)](https://www.npmjs.com/package/@rongyi7/dsh-stats)
@@ -8,219 +8,219 @@ English | [简体中文](README.zh.md)
 [![CI](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6)](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE)
 
-> Turn scattered DSH sessions into a dashboard you can understand at a glance: tokens, development time, model mix, spend, balances, and quotas in one sidebar panel. `(｡•̀ᴗ-)✧`
+> 把 DSH 里分散的会话记录，整理成一眼就能读懂的项目仪表盘：Token、开发时间线、模型分布、消费金额和账户余额，全部在侧边栏里完成。 `(｡•̀ᴗ-)✧`
 
-`@rongyi7/dsh-stats` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. It uses host-side aggregation when available and falls back to a client-side approximation on older hosts, so the same UI remains useful during upgrades.
+`@rongyi7/dsh-stats` 是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的插件。它同时支持纯客户端回退和宿主侧精确聚合，适合日常复盘，也适合核对账单。
 
 <p align="center">
-  <img src="docs/images/overview.png" alt="Light-mode project overview with masked project names and an all-time usage summary" width="920" />
+  <img src="docs/images/overview.png" alt="浅色模式项目总览：项目名已打码，展示全部时间汇总" width="920" />
 </p>
 
-> **Privacy note:** project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture. Balance amounts use demo values; aggregate dates, tokens, durations, and spend reflect the all-time view at capture. No API key, cookie, management token, raw session content, or upstream response appears in these images. The plugin also never sends those credentials or raw upstream responses to the browser.
+> **隐私说明**：项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换。余额金额使用演示值；日期、Token、时长和消费为截图时的“全部”汇总。图片中不包含 API Key、Cookie、管理令牌、原始会话内容或上游原始响应；插件也不会把这些凭证或原始响应发送到浏览器。
 
-## ✨ At a glance
+## ✨ 一眼看懂
 
-| | Capability | What it gives you |
+| | 能力 | 你能得到什么 |
 | --- | --- | --- |
-| 📊 | Project overview | Per-project sessions, turns, tokens, cache hit rate, speed, and spend; inactive zero-usage projects stay out of the list. |
-| ⏱️ | Development timeline | Event-based 30-minute activity slots, with colors and durations that remain readable when projects overlap. |
-| 📈 | Usage trends | Seven-day input/output tokens, activity heatmap, model distribution, and per-model spend on hover. |
-| 💳 | Provider-scoped pricing | Selects a rule from the real `provider + model + account type + time slot`; there is no manual model picker. |
-| 👤 | Balances and quotas | DeepSeek, OpenRouter, Moonshot, and Z.ai API balances plus Kimi, Z.ai, and MiniMax Coding Plan windows. |
-| 🔒 | Host-side credential boundary | Account requests run in the DSH host; the browser receives normalized balances and statuses only. |
+| 📊 | 项目总览 | 按项目查看会话、轮次、Token、缓存命中率、速度和消费；今天没有活动的项目不会挤占列表。 |
+| ⏱️ | 开发时间线 | 以 30 分钟为粒度还原每天的开发区间；同一时间并行开发多个项目时仍能分辨颜色和时长。 |
+| 📈 | 用量趋势 | 近 7 天输入/输出 Token、活动热力图、模型分布，以及悬停时的模型消费金额。 |
+| 💳 | Provider 级计价 | 根据真实 `Provider + 模型 + 账户类型 + 时间槽` 自动选价，不要求手动挑模型。 |
+| 👤 | 账户余额与额度 | 查看 DeepSeek 等 API 余额，以及 Kimi、Z.ai、MiniMax Coding Plan 窗口额度。 |
+| 🔒 | 宿主侧凭证安全 | 余额请求只在 DSH 宿主侧执行，浏览器只拿到脱敏后的余额和状态。 |
 
-The overview keeps up to seven project cards fully visible. The timeline keeps the most recent three days visible. Additional content scrolls inside the panel, so the surrounding layout stays stable. `(ง •̀_•́)ง`
+项目卡片最多完整展示 7 个项目，开发时间线最多完整展示最近 3 天；更多内容可在面板内部滚动查看，页面布局不会被撑开。 `(ง •̀_•́)ง`
 
-## 🚀 Install in 30 seconds
+## 🚀 30 秒安装
 
-### Requirements
+### 前置条件
 
-- A DeepSeek Harness `web` profile.
-- Node.js `>= 22`.
+- 已安装 DeepSeek Harness，并拥有 `web` profile。
+- Node.js `>= 22`。
 
-### Install from npm
+### 从 npm 安装
 
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
 ```
 
-Restart the running DSH Web process:
+然后重启正在运行的 DSH Web：
 
 ```bash
 dsh web
 ```
 
-The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
+重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.16
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.17
 ```
 
-### Install a local tarball
+### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.16.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.17.tgz
 ```
 
-Verify the bundle registration:
+验证插件是否被 profile 注册：
 
 ```bash
 dsh --profile web --dump-config
 ```
 
-You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **Do not** use `npm install --prefix ~/.dsh/profiles/web ...` to mutate a DSH profile: profiles are managed by pnpm, and the official `dsh plugin` command keeps the dependency graph and bundle registration intact.
+输出中应能看到 `stats` 和 `@rongyi7/dsh-stats`。**不要**用 `npm install --prefix ~/.dsh/profiles/web ...` 直接改写 DSH profile；profile 由 pnpm 管理，官方 `dsh plugin` 命令会处理依赖和 bundle 注册。
 
-## 🖼️ Interface tour
+## 🖼️ 界面导览
 
-These light-mode captures come from the running panel. Project identity fields are masked, balance amounts are examples, and the overview and trends show the all-time aggregate selected at capture:
+下面是真实运行面板的浅色模式截图。项目身份字段已打码，余额金额为演示值，项目总览和用量趋势展示截图时选中的“全部”汇总：
 
 <table>
   <tr>
-    <td align="center"><strong>Project overview</strong><br><img src="docs/images/overview.png" alt="Project overview with masked project labels" width="480"></td>
-    <td align="center"><strong>Development timeline</strong><br><img src="docs/images/timeline.png" alt="Development timeline with masked project labels" width="480"></td>
+    <td align="center"><strong>项目总览</strong><br><img src="docs/images/overview.png" alt="项目名已打码的项目总览界面" width="480"></td>
+    <td align="center"><strong>开发时间线</strong><br><img src="docs/images/timeline.png" alt="项目名已打码的开发时间线界面" width="480"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Usage trends</strong><br><img src="docs/images/trends.png" alt="Usage trends, heatmap, and model distribution" width="480"></td>
-    <td align="center"><strong>Account balance</strong><br><img src="docs/images/balance.png" alt="DeepSeek account balance" width="480"></td>
+    <td align="center"><strong>用量趋势</strong><br><img src="docs/images/trends.png" alt="用量趋势、热力图和模型分布界面" width="480"></td>
+    <td align="center"><strong>账户余额</strong><br><img src="docs/images/balance.png" alt="DeepSeek 账户余额界面" width="480"></td>
   </tr>
 </table>
 
-### What is on each screen?
+### 你会看到什么？
 
-1. **Project overview** — summary cards for projects, sessions, tokens, LLM/tool time, and spend; sortable project rows expand into session details.
-2. **Development timeline** — one row per day, with project colors and activity blocks; overlapping work remains distinguishable.
-3. **Usage trends** — input and output use separate colors. Small output values keep a visible minimum bar, and hover reveals the exact value.
-4. **Model distribution** — the donut and model list use a stable layout; hovering a model shows its tokens, share, and spend.
-5. **Account balance** — DeepSeek uses a blue gradient card with available, topped-up, gifted, and recharge actions.
+1. **项目总览**：上方汇总卡展示项目数、会话数、Token、LLM/工具时长和消费；下方项目卡可排序、筛选并展开会话明细。
+2. **开发时间线**：每行对应一天，颜色代表项目；条块会显示活跃区间，重叠项目仍保持各自颜色。
+3. **用量趋势**：输入和输出使用不同颜色；输出量较小时柱子仍保留最小可见高度，鼠标悬停可以查看精确数值。
+4. **模型分布**：圆环和右侧列表共享固定布局；悬停模型行即可查看该模型的 Token、占比和消费金额。
+5. **账户余额**：DeepSeek 使用蓝色渐变卡片，同时展示可用余额、充值余额、赠送余额和官方充值入口。
 
-CSV and JSON exports are available on the statistical views. The balance view intentionally keeps refresh and close actions only: it is a cached account snapshot, not a historical ledger.
+统计页支持 CSV/JSON 导出；账户余额页只保留刷新和关闭操作，因为余额是实时快照，不属于历史统计导出数据。
 
-## 💰 Pricing
+## 💰 计价规则
 
-All rates are calculated per million tokens. Currencies are reported separately (for example `¥... + $...`) with no implicit FX conversion. The pricing engine considers context length, service tier, cache type, and effective time, and includes rule metadata in project exports for auditing.
+所有价格按“每百万 Token”计算，币种分开汇总（例如 `¥... + $...`），不做隐式汇率换算。计价内核会同时考虑上下文长度、服务档、缓存类型和生效时间，并把规则来源写入导出字段，方便复核。
 
-| Provider | Built-in models | Pricing notes |
+| Provider | 当前内置模型 | 计价特点 |
 | --- | --- | --- |
-| [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`, `deepseek-v4-flash` | CNY; Beijing-time 30-minute slots select historical, peak, or off-peak rates. |
-| [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` | CNY; M3 separates standard/priority and `<=512K`/`>512K` context. |
-| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber` | USD; includes the `272K` context tier. |
-| [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5, Sonnet 5, Sonnet 4.6, Haiku 4.5 | USD; cache-write duration gaps are explicitly estimated. |
-| [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash, 3.1 Pro Preview, 2.5 Pro/Flash | USD; includes the `200K` context tier; missing cache-storage duration is estimated. |
-| [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3, K2.7 Code/Highspeed, K2.6 | CNY; official model rules. |
-| [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2, 5.1, 5, 5 Turbo, 4.7, 4.7 FlashX/Flash | USD; official model rules. |
-| [OpenRouter](https://openrouter.ai/api/v1/models) | Dated routes for mainstream OpenAI, Anthropic, Google, Kimi, and GLM models | USD; catalog snapshots are marked `estimated`. |
+| [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`、`deepseek-v4-flash` | CNY；按北京时间 30 分钟槽区分历史价、峰时价和非峰时价。 |
+| [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`、`MiniMax-M2.7`、`MiniMax-M2.7-highspeed` | CNY；M3 区分 standard/priority 与 `<=512K`/`>512K` 上下文。 |
+| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.6-cyber` | USD；支持 `272K` 上下文分档。 |
+| [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5、Sonnet 5、Sonnet 4.6、Haiku 4.5 | USD；缓存写入时长不可得时明确标记为估算。 |
+| [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash、3.1 Pro Preview、2.5 Pro/Flash | USD；支持 `200K` 上下文分档，缓存存储时长缺失时标记为估算。 |
+| [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3、K2.7 Code/Highspeed、K2.6 | CNY；按官方模型规则计价。 |
+| [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2、5.1、5、5 Turbo、4.7、4.7 FlashX/Flash | USD；按官方模型规则计价。 |
+| [OpenRouter](https://openrouter.ai/api/v1/models) | 主流 OpenAI、Anthropic、Google、Kimi、GLM 路由快照 | USD；目录价格是带日期的快照，因此状态为 estimated。 |
 
-Pricing is **provider-scoped**. A first-party list price is applied only when the provider is explicitly recognized as that official family. The DSH pass-through routes `nbdeepseek` and `deepseek-modlens` explicitly inherit DeepSeek's official API pricing; other relays, `local`, unknown providers, look-alike model names, and subscription/token-plan usage are never presented as API spend.
+计价是 **Provider-scoped**：只有明确识别为官方 Provider 的请求才会套用对应官方价。DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价；其他中转、`local`、未知 Provider、仅模型名相似的请求，以及订阅/Token Plan 用量，都不会被伪装成 API 消费。
 
-### Cost status guide
+### 消费状态怎么读
 
-| Status | Meaning |
+| 状态 | 含义 |
 | --- | --- |
-| `exact` | Every priced usage row matched a deterministic built-in rule. |
-| `estimated` | An amount is available, but a dynamic snapshot or missing price-affecting metadata is involved. |
-| `free` | All matched usage is free; the summary keeps a zero amount instead of displaying an unknown cost. |
-| `partial` | Known and unpriced usage coexist; known totals remain visible with `+ ?`. |
-| `unsupported` | No safe rule applies, so the amount is shown as `—` rather than guessed. |
+| `exact` | 每一条有价用量都命中确定的内置规则。 |
+| `estimated` | 有金额，但至少一条记录来自动态价格快照，或缺少会影响价格的元数据。 |
+| `free` | 命中的用量全部免费；汇总会保留零金额，不会误显示为未知消费。 |
+| `partial` | 一部分用量可计价，另一部分无法安全计价；已知金额保留，并显示 `+ ?`。 |
+| `unsupported` | 没有足够可靠的规则，显示 `—`，不猜价格。 |
 
-Individual usage rows may also be marked `subscription` or `ambiguous`. Subscription aliases such as `coding-plan` and `coding_plan` are normalized before pricing and are never presented as API spend.
+单条用量还可能标记为 `subscription`（订阅/Token Plan）或 `ambiguous`（规则冲突）。`coding-plan`、`coding_plan` 等订阅别名会在计价前统一归一化，绝不会伪装成 API 消费。
 
-## 👤 Balances and subscription quotas
+## 👤 账户余额与订阅额度
 
-Account queries run only in the host. The references below are variable names, never secret values to paste into a README or chat:
+账户查询只在宿主侧执行。下表中的“凭证引用”是变量名，不是需要粘贴到 README 或聊天窗口的密钥值：
 
-| Account | Official endpoint | Default credential reference |
+| 账户 | 官方接口 | 默认凭证引用 |
 | --- | --- | --- |
-| DeepSeek balance | `/user/balance` | `DEEPSEEK_API_KEY` |
-| OpenRouter credits | `/api/v1/credits` | `OPENROUTER_MANAGEMENT_KEY` (Management Key required) |
-| Moonshot balance | `/v1/users/me/balance` | `MOONSHOT_API_KEY` |
-| Z.ai balance | `/api/paas/v4/balance` | `ZAI_API_KEY` |
+| DeepSeek 余额 | `/user/balance` | `DEEPSEEK_API_KEY` |
+| OpenRouter Credits | `/api/v1/credits` | `OPENROUTER_MANAGEMENT_KEY`（必须是 Management Key） |
+| Moonshot 余额 | `/v1/users/me/balance` | `MOONSHOT_API_KEY` |
+| Z.ai 余额 | `/api/paas/v4/balance` | `ZAI_API_KEY` |
 | Kimi For Coding | `/coding/v1/usages` | `KIMI_API_KEY` |
 | Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
-| MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise) plus official compatibility paths | `MINIMAX_API_KEY` |
+| MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise)（含官方兼容路径） | `MINIMAX_API_KEY` |
 
-`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps the last successful snapshot and marks it stale. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
+Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求，点击刷新会明确绕过这层缓存；遇到网络错误、限流或异常响应时，会保留同一配置的上一次成功快照并标记为“已过期”。未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api` 时不会当作订阅额度查询。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
 
-## 🔐 Credential and privacy boundary
+## 🔐 凭证与隐私边界
 
-- Credentials are resolved through the DSH host `credentials` service only; they never enter the client bundle, RPC logs, or CSV/JSON exports.
-- Account adapters allow fixed official HTTPS hosts, issue GET requests only, reject redirects, time out after 15 seconds, and cap responses at 1 MiB.
-- Never commit real API keys, cookies, management keys, `auth.json`, or `.credentials.yaml` to Git, an issue, or an Agent conversation.
-- The screenshots use `********` project labels, `/workspace/********` paths, and replaced session identifiers. Balance amounts are demo values; only aggregate dates and usage metrics from the selected all-time view remain.
+- 凭证只通过 DSH 宿主的 `credentials` service 解析，绝不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
+- 账户适配器只允许固定的官方 HTTPS 域名，只发 GET 请求，拒绝重定向，15 秒超时，响应体上限 1 MiB。
+- 不要把真实 API Key、Cookie、Management Key、`auth.json` 或 `.credentials.yaml` 提交到 Git、公开 issue，或粘贴给 Agent。
+- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换。余额金额为演示值，仅保留所选“全部”视图的汇总日期与用量指标。
 
-## 🎯 Accuracy and data sources
+## 🎯 数据准确性
 
-The panel labels its current data source instead of silently implying precision:
+面板标题会明确标注当前数据来源：
 
-- **Host exact** — the host RPC reads durable session logs and projections; the timeline uses event timestamps and 30-minute slots.
-- **Partial/stale** — a log is missing, being written, or an account endpoint failed; known values remain visible with a warning.
-- **Client approximate** — an older host does not expose the RPC, so the browser estimates from projection values. Useful for a quick glance, not an audit.
+- **精确（宿主）**：宿主 RPC 读取持久化会话日志和投影数据，时间线按事件时间戳切成 30 分钟槽。
+- **部分精确/已过期**：日志缺失、正在写入或账户接口暂时失败；界面会保留已知值并给出提示。
+- **近似（客户端）**：旧版宿主不提供 RPC 时，使用浏览器可见的投影值估算；适合快速浏览，不应当作审计结果。
 
-Dates, timeline slots, and DeepSeek peak/off-peak windows use explicit Beijing time (UTC+8), independent of the host machine timezone.
+时间线、峰谷时段和日期范围都使用显式北京时间（UTC+8），不受宿主机系统时区影响。
 
-## ❓ FAQ
+## ❓ 常见问题
 
 <details>
-<summary><strong>Why does the panel say “Client approximate”?</strong></summary>
+<summary><strong>为什么显示“近似（客户端）”？</strong></summary>
 
-Tier 2 RPC did not load, or the host is still running an older plugin. Restart `dsh web` and confirm `stats` appears in `dsh --profile web --dump-config`. The source tooltip includes the concrete fallback error.
+当前 DSH 宿主没有成功加载 Tier 2 RPC，或仍在使用旧版插件。重启 `dsh web` 并确认 `dsh --profile web --dump-config` 中存在 `stats`；如果仍回退，tooltip 会给出具体错误。
 </details>
 
 <details>
-<summary><strong>Why is the most-used model `(unknown)`?</strong></summary>
+<summary><strong>为什么最常用模型显示 `(unknown)`？</strong></summary>
 
-The source session may not contain provider/model metadata, or that provider is not in the safe pricing catalog yet. The plugin refuses to map a similar-looking name to a first-party price; an explicit unknown is safer than a fabricated bill.
+原始会话日志可能没有保存 Provider/模型字段，或者 Provider 尚未纳入安全计价目录。插件不会把相似模型名强行映射到官方模型；这样宁可显示未知，也不会制造虚假的消费金额。
 </details>
 
 <details>
-<summary><strong>Why does total spend end with `+ ?`?</strong></summary>
+<summary><strong>为什么总消费后面有 `+ ?`？</strong></summary>
 
-Known model rows were priced, but some tokens came from an unknown provider, a relay, or a subscription plan. Project CSV exports preserve `costStatus`, `ruleId`, `pricingSource`, provider, and model identity so the missing part can be audited.
+这表示已知模型的金额已经算出，但仍有一部分 Token 无法安全计价（例如未知 Provider、中转或订阅用量）。导出的项目 CSV 会保留 `costStatus`、`ruleId`、`pricingSource`、Provider 和模型身份，便于逐条定位。
 </details>
 
 <details>
-<summary><strong>Why does the balance tab have no CSV/JSON buttons?</strong></summary>
+<summary><strong>为什么余额页没有 CSV/JSON 按钮？</strong></summary>
 
-CSV/JSON are historical statistics exports and remain on the overview, timeline, and trends views. The balance tab is a cached account snapshot, so it keeps refresh and close actions only.
+CSV/JSON 是历史统计导出功能，只出现在项目、时间线和用量趋势视图。余额页展示的是带缓存状态的实时快照，因此保留刷新和关闭按钮，避免把瞬时账户状态误当成历史账单。
 </details>
 
 <details>
-<summary><strong>Why is the output bar much smaller than the input bar?</strong></summary>
+<summary><strong>为什么输出柱子看起来比输入小很多？</strong></summary>
 
-Code sessions often send a much larger context than they generate. Output bars retain a minimum visible height, and hovering reveals the exact value. The “Output (incl. reasoning)” legend is centered below the seven-day chart.
+很多代码会话的输入上下文远大于输出 Token。图表仍会保留输出的最小可见高度，悬停柱子可以查看精确数值；图例中的“输出（含思考）”位于图表下方居中位置。
 </details>
 
 <details>
-<summary><strong>Why is the Stats entry missing after installation?</strong></summary>
+<summary><strong>安装后为什么侧边栏没有入口？</strong></summary>
 
-DSH caches client modules and Typert descriptors. Confirm the install completed, fully restart `dsh web`, and hard-refresh the browser if necessary.
+DSH 会缓存客户端模块和 Typert 描述符。确认安装命令成功后，完整重启 `dsh web`，必要时对浏览器做一次硬刷新。
 </details>
 
-## 🧩 Tier 2 data flow (contributors)
+## 🧩 Tier 2 数据流（给贡献者）
 
 <details>
-<summary><strong>Show the architecture</strong></summary>
+<summary><strong>展开架构细节</strong></summary>
 
 ```text
-browser client.cjs
+浏览器 client.cjs
   apply()
-    -> ctx.remote.$mount(inlined STATS_REMOTE_CONTRIBUTION)
+    -> ctx.remote.$mount(内联 STATS_REMOTE_CONTRIBUTION)
     -> ctx.inject(["remote", "remote.stats"], childCtx)
     -> childCtx.remote.stats.aggregate()
     -> childCtx.remote.stats.account()
 
-host index.js
+宿主 index.js
   StatsService
     aggregate(): workspace + projection + session.jsonl.zstd
-               -> project totals, 30-minute timeline, model/pricing detail
-    account(): balance and quota adapters with normalized stale fallback
-    providers(): capability metadata only; credential values are never returned
-    current(): legacy DeepSeek balance compatibility RPC
+               -> 项目汇总、30 分钟时间线、模型/计价明细
+    account(): 余额与订阅额度适配器，统一状态并提供 stale fallback
+    providers(): 只返回能力元数据，不返回凭证值
+    current(): 旧版 DeepSeek 余额兼容 RPC
 ```
 
-See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and hard-won Typert details. `lib/` is generated output: edit `src/`, then rebuild.
+关键实现原因和完整数据契约见 [DESIGN.md](DESIGN.md)。`lib/` 是发布产物，请修改 `src/` 后再构建，不要手工编辑 `lib/`。
 </details>
 
-## 🛠️ Local development
+## 🛠️ 本地开发与验证
 
 ```bash
 npm install
@@ -229,20 +229,22 @@ npm test
 npm pack --dry-run
 ```
 
+源码结构：
+
 ```text
-src/index.js                # host StatsService and aggregate/account RPC
-src/client.cjs              # client entry, React UI, and fallback
-src/pricing.cjs             # provider-scoped, effective-dated pricing
-src/accounts.js             # official balance/quota adapters (host only)
-src/typert-host.js          # host Typert manifest and zod schema
-src/typert-remote-client.js # client RPC descriptor
-scripts/build.mjs           # esbuild build script
-lib/                        # generated files shipped in the package
+src/index.js              # 宿主 StatsService 与 aggregate/account RPC
+src/client.cjs            # 客户端入口、React UI 与 fallback
+src/pricing.cjs           # Provider 级、按生效时间的计价内核
+src/accounts.js           # 官方余额/额度适配器（仅宿主使用凭证）
+src/typert-host.js        # 宿主 Typert manifest 与 zod schema
+src/typert-remote-client.js # 客户端 RPC 描述符
+scripts/build.mjs         # esbuild 构建脚本
+lib/                      # 构建产物（随包发布）
 ```
 
-`prepublishOnly` rebuilds automatically before `npm publish`. For profile installation and iteration, always use the official `dsh plugin` command.
+修改 `src/` 后，执行 `npm run build`；发布前 `prepublishOnly` 会自动重建。更多集成背景、性能权衡和已知踩坑见 [DESIGN.md](DESIGN.md)。
 
-Release checklist:
+发布前检查：
 
 ```bash
 npm run build
@@ -251,17 +253,17 @@ npm pack --dry-run
 npm publish
 ```
 
-## ⚠️ Known limitations
+## ⚠️ 已知限制
 
-- The current session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
-- The first request over many sessions may decode logs on the host; mtime caching reduces repeat work.
-- Archived sessions remain in statistics and are marked archived.
-- OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.
-- Currencies are not converted. Unknown models, relays, local providers, and subscription usage are not guessed.
-- Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool durations remain cumulative work metrics.
+- 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新。
+- 首次读取大量会话时，宿主需要解码日志；随后会使用 mtime 缓存减少重复开销。
+- 归档会话仍会保留在统计中，并标注“已归档”。
+- OpenRouter 使用带日期的模型目录快照；这类金额会标记为 `estimated`。
+- 不同币种不会自动换算；未知模型、relay、local 和订阅用量不会猜价。
+- 同一项目的并发会话在时间线中合并为墙钟区间，项目 LLM/工具时长仍是累计工作量指标。
 
-## 🙌 Contributing and license
+## 🙌 参与与许可
 
-Issues and pull requests are welcome. Licensed under the [MIT License](LICENSE).
+欢迎提交 Issue 和 Pull Request。项目采用 [MIT License](LICENSE)。
 
-`╰(*°▽°*)╯` May every stats panel make your development rhythm a little easier to see.
+`╰(*°▽°*)╯` 祝你每次打开统计面板，都能更快看懂自己的开发节奏。
