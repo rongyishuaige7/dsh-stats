@@ -561,10 +561,10 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-proj .nm{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-size:13px}" +
 	".dss-proj .ph{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	// 会话详情：所有行使用同一组固定数据列；标题列吸收剩余空间并负责省略。
-	".dss-sess{display:grid;grid-template-columns:minmax(168px,1fr) 104px 112px 78px 92px 88px 148px 150px 102px;gap:8px;align-items:center;width:100%;box-sizing:border-box;min-width:1130px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s}" +
+	".dss-sess{display:grid;grid-template-columns:minmax(184px,1fr) 104px 112px 78px 92px 88px 148px 150px 86px;gap:8px;align-items:center;width:100%;box-sizing:border-box;min-width:1130px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s}" +
 	".dss-sess:last-child{border-bottom:none}" +
 	".dss-sess:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.04))}" +
-	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;box-sizing:border-box}" +
+	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:24px;box-sizing:border-box}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums}" +
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
 	".dss-sess-model{text-align:right!important}" +
