@@ -16,7 +16,7 @@ English | [简体中文](README.md)
   <img src="docs/images/overview.png" alt="Light-mode project overview with masked project names and an all-time usage summary" width="920" />
 </p>
 
-> **Privacy note:** project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture. Balance amounts use demo values; aggregate dates, tokens, durations, and spend reflect the all-time view at capture. No API key, cookie, management token, raw session content, or upstream response appears in these images. The plugin also never sends those credentials or raw upstream responses to the browser.
+> **Privacy note:** project names are rendered as `********`, paths as `/workspace/********`, and session identifiers are replaced before capture. Balance amounts and MiniMax quota values use demo values; aggregate dates, tokens, durations, and spend reflect the all-time view at capture. No API key, cookie, management token, raw session content, or upstream response appears in these images. The plugin also never sends those credentials or raw upstream responses to the browser.
 
 ## ✨ At a glance
 
@@ -53,13 +53,13 @@ dsh web
 The “Stats” entry will appear at the bottom of the sidebar. Pin a release when you need a reproducible install:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.34
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.35
 ```
 
 ### Install a local tarball
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.34.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.35.tgz
 ```
 
 Verify the bundle registration:
@@ -72,7 +72,7 @@ You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **
 
 ## 🖼️ Interface tour
 
-These light-mode captures come from the running panel. Project identity fields are masked, balance amounts are examples, and the overview and trends show the all-time aggregate selected at capture:
+These light-mode captures come from the running panel. Project identity fields are masked, balance and quota values are examples, and the overview and trends show the all-time aggregate selected at capture. The account section includes both DeepSeek and MiniMax Coding Plan:
 
 <table>
   <tr>
@@ -81,7 +81,7 @@ These light-mode captures come from the running panel. Project identity fields a
   </tr>
   <tr>
     <td align="center"><strong>Usage trends</strong><br><img src="docs/images/trends.png" alt="Usage trends, heatmap, and model distribution" width="480"></td>
-    <td align="center"><strong>Account balance</strong><br><img src="docs/images/balance.png" alt="DeepSeek account balance" width="480"></td>
+    <td align="center"><strong>Account balance</strong><br><img src="docs/images/balance.png" alt="DeepSeek account balance" width="480"><br><small>DeepSeek</small><br><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan quota" width="480"><br><small>MiniMax Coding Plan</small></td>
   </tr>
 </table>
 
@@ -91,7 +91,7 @@ These light-mode captures come from the running panel. Project identity fields a
 2. **Development timeline** — one row per day, with project colors and activity blocks; overlapping work remains distinguishable.
 3. **Usage trends** — input and output use separate colors. Small output values keep a visible minimum bar, and hover reveals the exact value.
 4. **Model distribution** — the donut and model list use a stable layout; hovering a model shows its tokens, share, and spend.
-5. **Account balance** — DeepSeek uses a blue gradient card with available, topped-up, gifted, and recharge actions.
+5. **Account balance** — DeepSeek uses a blue gradient card with available, topped-up, gifted, and recharge actions; MiniMax shows the current Coding Plan quota windows.
 
 CSV and JSON exports are available on the statistical views. The balance view intentionally keeps refresh and close actions only: it is a cached account snapshot, not a historical ledger.
 
@@ -145,7 +145,7 @@ Account queries run only in the host. The references below are variable names, n
 - Credentials are resolved through the DSH host `credentials` service only; they never enter the client bundle, RPC logs, or CSV/JSON exports.
 - Account adapters allow fixed official HTTPS hosts, issue GET requests only, reject redirects, time out after 15 seconds, and cap responses at 1 MiB.
 - Never commit real API keys, cookies, management keys, `auth.json`, or `.credentials.yaml` to Git, an issue, or an Agent conversation.
-- The screenshots use `********` project labels, `/workspace/********` paths, and replaced session identifiers. Balance amounts are demo values; only aggregate dates and usage metrics from the selected all-time view remain.
+- The screenshots use `********` project labels, `/workspace/********` paths, and replaced session identifiers. Balance amounts and MiniMax quota values are demo values; only aggregate dates and usage metrics from the selected all-time view remain.
 
 ## 🎯 Accuracy and data sources
 

@@ -16,7 +16,7 @@
   <img src="docs/images/overview.png" alt="浅色模式项目总览：项目名已打码，展示全部时间汇总" width="920" />
 </p>
 
-> **隐私说明**：项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换。余额金额使用演示值；日期、Token、时长和消费为截图时的“全部”汇总。图片中不包含 API Key、Cookie、管理令牌、原始会话内容或上游原始响应；插件也不会把这些凭证或原始响应发送到浏览器。
+> **隐私说明**：项目名统一显示为 `********`，路径显示为 `/workspace/********`，会话标识也会在截图前替换。余额金额和 MiniMax 额度使用演示值；日期、Token、时长和消费为截图时的“全部”汇总。图片中不包含 API Key、Cookie、管理令牌、原始会话内容或上游原始响应；插件也不会把这些凭证或原始响应发送到浏览器。
 
 ## ✨ 一眼看懂
 
@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.34
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.35
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.34.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.35.tgz
 ```
 
 验证插件是否被 profile 注册：
@@ -72,7 +72,7 @@ dsh --profile web --dump-config
 
 ## 🖼️ 界面导览
 
-下面是真实运行面板的浅色模式截图。项目身份字段已打码，余额金额为演示值，项目总览和用量趋势展示截图时选中的“全部”汇总：
+下面是真实运行面板的浅色模式截图。项目身份字段已打码，余额金额和额度为演示值，项目总览和用量趋势展示截图时选中的“全部”汇总；账户余额同时展示 DeepSeek 和 MiniMax Coding Plan：
 
 <table>
   <tr>
@@ -81,7 +81,7 @@ dsh --profile web --dump-config
   </tr>
   <tr>
     <td align="center"><strong>用量趋势</strong><br><img src="docs/images/trends.png" alt="用量趋势、热力图和模型分布界面" width="480"></td>
-    <td align="center"><strong>账户余额</strong><br><img src="docs/images/balance.png" alt="DeepSeek 账户余额界面" width="480"></td>
+    <td align="center"><strong>账户余额</strong><br><img src="docs/images/balance.png" alt="DeepSeek 账户余额界面" width="480"><br><small>DeepSeek</small><br><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan 额度界面" width="480"><br><small>MiniMax Coding Plan</small></td>
   </tr>
 </table>
 
@@ -91,7 +91,7 @@ dsh --profile web --dump-config
 2. **开发时间线**：每行对应一天，颜色代表项目；条块会显示活跃区间，重叠项目仍保持各自颜色。
 3. **用量趋势**：输入和输出使用不同颜色；输出量较小时柱子仍保留最小可见高度，鼠标悬停可以查看精确数值。
 4. **模型分布**：圆环和右侧列表共享固定布局；悬停模型行即可查看该模型的 Token、占比和消费金额。
-5. **账户余额**：DeepSeek 使用蓝色渐变卡片，同时展示可用余额、充值余额、赠送余额和官方充值入口。
+5. **账户余额**：DeepSeek 使用蓝色渐变卡片，同时展示可用余额、充值余额、赠送余额和官方充值入口；MiniMax 展示 Coding Plan 当前时段和本周额度窗口。
 
 统计页支持 CSV/JSON 导出；账户余额页只保留刷新和关闭操作，因为余额是实时快照，不属于历史统计导出数据。
 
@@ -145,7 +145,7 @@ Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果
 - 凭证只通过 DSH 宿主的 `credentials` service 解析，绝不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
 - 账户适配器只允许固定的官方 HTTPS 域名，只发 GET 请求，拒绝重定向，15 秒超时，响应体上限 1 MiB。
 - 不要把真实 API Key、Cookie、Management Key、`auth.json` 或 `.credentials.yaml` 提交到 Git、公开 issue，或粘贴给 Agent。
-- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换。余额金额为演示值，仅保留所选“全部”视图的汇总日期与用量指标。
+- 本仓库的截图仅用于说明布局；项目名统一为 `********`，路径为 `/workspace/********`，会话标识已替换。余额金额和 MiniMax 额度为演示值，仅保留所选“全部”视图的汇总日期与用量指标。
 
 ## 🎯 数据准确性
 
