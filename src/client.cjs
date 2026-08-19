@@ -814,19 +814,31 @@ function SummaryCards(props) {
 	);
 }
 
+function projectColorIndexes(projects) {
+	var indexes = new Map();
+	(projects || []).forEach(function(project, index) { indexes.set(project.id, index % 16); });
+	return indexes;
+}
+
+function projectColorIndex(project, indexes, fallbackIndex) {
+	var index = indexes && indexes.get(project.id);
+	var value = Number.isInteger(index) ? index : Number.isInteger(fallbackIndex) ? fallbackIndex : 0;
+	return ((value % 16) + 16) % 16;
+}
+
 function Legend(props) {
 	var projects = props.projects;
 	var hidden = props.hidden;
 	var onToggle = props.onToggle;
 	return e("div", { className: "dss-legend" },
-		projects.map((p, i) =>
-			e("span", {
+		projects.map(function(p, i) {
+			return e("span", {
 				key: p.id, className: "dss-chip" + (hidden[p.id] ? " off" : ""),
-				"data-color": String(i % 16), onClick: () => onToggle(p.id)
+				"data-color": String(projectColorIndex(p, props.colorIndexes, i)), onClick: () => onToggle(p.id)
 			},
 				e("span", { className: "sw" }), p.name
-			)
-		)
+			);
+		})
 	);
 }
 
@@ -872,7 +884,7 @@ function ProjectsTable(props) {
 	var sortPair = useState({ key: "cost", dir: -1 });
 	var sort = sortPair[0], setSort = sortPair[1];
 
-	var idxOf = new Map(projects.map((p, i) => [p.id, i]));
+	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
 	var sorted = projects.filter((p) => !hidden[p.id]);
 	sorted.sort((a, b) => {
@@ -910,7 +922,7 @@ function ProjectsTable(props) {
 	);
 
 	var cards = sorted.map(function(p) {
-		var i = idxOf.get(p.id);
+		var i = projectColorIndex(p, props.colorIndexes, fallbackColorIndexes.get(p.id));
 		var s = p.stats;
 		var isSel = selected === p.id;
 
@@ -1488,6 +1500,9 @@ function StatsPanel(props) {
 	}, [remoteData, sessionsSnap, workspacesSnap]);
 
 	// hooks 必须在早退之前调用（React 规则：每次渲染 hooks 数量一致）
+	// 颜色基于全量项目顺序分配；按日过滤只筛数据，不得让同一项目重新编号。
+	var colorIndexes = useMemo(() => projectColorIndexes(data.projects), [data.projects]);
+
 	// 活动日列表（timeline 中有活动的日期）
 	var dates = useMemo(() => activityDates(data.timeline), [data.timeline]);
 
@@ -1557,9 +1572,9 @@ function StatsPanel(props) {
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
-					e(Legend, { projects: statProjects, hidden, onToggle: toggle }),
+					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-						 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, {
 					globals,
@@ -2813,5 +2828,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
-	subagentAddressFor, openStatsSession, CalendarHeatmap
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex
 };

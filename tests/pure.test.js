@@ -8,7 +8,7 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
-	subagentAddressFor, openStatsSession, CalendarHeatmap,
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex,
 } = client.__test;
 
 function findElementByTitle(node, title) {
@@ -35,6 +35,16 @@ test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
+});
+
+test('project colors stay stable when date filtering removes earlier projects', () => {
+	const allProjects = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+	const colors = projectColorIndexes(allProjects);
+	const firstDate = [allProjects[0], allProjects[2]];
+	const secondDate = [allProjects[1], allProjects[2]];
+
+	expect(firstDate.map((project, index) => projectColorIndex(project, colors, index))).toEqual([0, 2]);
+	expect(secondDate.map((project, index) => projectColorIndex(project, colors, index))).toEqual([1, 2]);
 });
 
 test('CalendarHeatmap only selects past or current dates with token usage', () => {
