@@ -8,8 +8,19 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
-	subagentAddressFor, openStatsSession,
+	subagentAddressFor, openStatsSession, CalendarHeatmap,
 } = client.__test;
+
+function findElementByTitle(node, title) {
+	if (!node || typeof node !== 'object') return null;
+	if (node.props?.title === title) return node;
+	const children = node.props?.children;
+	for (const child of Array.isArray(children) ? children : [children]) {
+		const found = findElementByTitle(child, title);
+		if (found) return found;
+	}
+	return null;
+}
 
 // ---------------------------------------------------------------------------
 // localDayKey
@@ -24,6 +35,32 @@ test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
+});
+
+test('CalendarHeatmap only selects past or current dates with token usage', () => {
+	const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-19T12:00:00+08:00'));
+	try {
+		const byDay = new Map([
+			['2026-08-18', { input: 120, output: 30 }],
+			['2026-08-20', { input: 80, output: 20 }],
+		]);
+		const onSelectDate = vi.fn();
+		const tree = CalendarHeatmap({ byDay, selectedDate: '2026-08-18', onSelectDate, t: (key) => key === 'trends.weekdays' ? 'Sun,Mon,Tue,Wed,Thu,Fri,Sat' : key });
+		const active = findElementByTitle(tree, '2026-08-18');
+		const empty = findElementByTitle(tree, '2026-08-19');
+		const future = findElementByTitle(tree, '2026-08-20');
+
+		expect(active.type).toBe('button');
+		expect(active.props['aria-pressed']).toBe(true);
+		active.props.onClick();
+		expect(onSelectDate).toHaveBeenCalledWith('2026-08-18');
+		expect(empty.type).toBe('span');
+		expect(empty.props.onClick).toBeUndefined();
+		expect(future.type).toBe('span');
+		expect(future.props.onClick).toBeUndefined();
+	} finally {
+		now.mockRestore();
+	}
 });
 
 test('openStatsSession opens a regular session through the DSH sessions service', async () => {

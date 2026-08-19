@@ -671,7 +671,8 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-cal-dow span{text-align:center}" +
 	".dss-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}" +
 	".dss-cal-cell,.dss-cal-pad{aspect-ratio:1;width:min(100%,22px);justify-self:center;border-radius:3px}" +
-	".dss-cal-cell{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c);cursor:default}" +
+	".dss-cal-cell{display:block;padding:0;appearance:none;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c);cursor:default}" +
+	".dss-cal-cell.interactive{cursor:pointer}" +
 	// 4 档分位色阶（lvl0 = 无活动底色；对比拉大，最低档也清晰可见）
 	".dss-cal-cell.lvl1.has{background:rgba(79,140,255,.35);border-color:transparent}" +
 	".dss-cal-cell.lvl2.has{background:rgba(79,140,255,.58);border-color:transparent}" +
@@ -680,7 +681,9 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-cal-cell.today{outline:1.5px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:1px}" +
 	".dss-cal-cell.selected{outline:2px solid #ff922b;outline-offset:1px;z-index:1}" +
 	".dss-cal-cell.future{opacity:.35;border-style:dashed}" +
-	".dss-cal-cell.has:hover{outline:1.5px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:1px}" +
+	".dss-cal-cell.interactive:hover{outline:1.5px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:1px}" +
+	".dss-cal-cell.interactive:focus-visible{outline:2px solid var(--dsw-alias-label-primary,#e7eaf0);outline-offset:2px}" +
+	".dss-cal-cell.interactive.selected:focus-visible{outline-color:#ff922b}" +
 	".dss-cal-legend{display:flex;align-items:center;gap:3px;font-size:10px;color:var(--dsw-alias-label-tertiary,#6b7280);justify-content:center}" +
 	".dss-hm-lg{width:10px;height:10px;border-radius:2px;display:inline-block;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));border:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-hm-lg.lvl1{background:rgba(79,140,255,.35);border-color:transparent}" +
@@ -1558,7 +1561,13 @@ function StatsPanel(props) {
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 						 e(ProjectsTable, { projects: statProjects, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
-				: e(TrendsView, { globals, dateGlobals, selectedDate: effectiveDate, t })
+				: e(TrendsView, {
+					globals,
+					dateGlobals,
+					selectedDate: effectiveDate,
+					onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
+					t
+				})
 				)
 			)
 		)
@@ -1636,7 +1645,7 @@ function TrendsView(props) {
 		e(Section, { title: props.t("trends.heatmap"), hint: props.t("trends.heatmapHint") },
 			e("div", { className: "dss-trend-duo" },
 				e("div", { className: "dss-duo-cell" },
-					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, t: props.t })
+					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, onSelectDate: props.onSelectDate, t: props.t })
 				),
 				e("div", { className: "dss-duo-cell grow" },
 						e("div", { className: "dss-duo-title" }, props.t("trends.dailyTrend")),
@@ -1719,10 +1728,15 @@ function CalendarHeatmap(props) {
 		let isToday = dk === todayKey;
 		let isFuture = dk > todayKey;
 		let isSel = props.selectedDate != null && dk === props.selectedDate;
-		cells.push(e("div", {
+		let canSelect = tot > 0 && !isFuture && typeof props.onSelectDate === "function";
+		cells.push(e(canSelect ? "button" : "span", {
 			key: dk,
-			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (isToday ? " today" : "") + (isFuture ? " future" : "") + (isSel ? " selected" : ""),
+			type: canSelect ? "button" : undefined,
+			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (canSelect ? " interactive" : "") + (isToday ? " today" : "") + (isFuture ? " future" : "") + (isSel ? " selected" : ""),
 			title: dk,
+			"aria-label": canSelect ? dk : undefined,
+			"aria-pressed": canSelect ? isSel : undefined,
+			onClick: canSelect ? function() { props.onSelectDate(dk); } : undefined,
 			onMouseEnter: function(ev) {
 				var bbb = byDay.get(dk);
 				if (!bbb) { showTipRaw(tipRows(dk, [[t("trends.activity"), isFuture ? t("trends.futureDate") : t("trends.none")]]), ev); return; }
@@ -2799,5 +2813,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
-	subagentAddressFor, openStatsSession
+	subagentAddressFor, openStatsSession, CalendarHeatmap
 };
