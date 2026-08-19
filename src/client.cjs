@@ -57,7 +57,7 @@ function sessionCounts(sessions) {
 	return c;
 }
 function addCounts(a, b) { a.main += b.main; a.subagent += b.subagent; return a; }
-// 紧凑格式：仅主对话 → "3"；有子对话 → "1+9"（表头标明 主+子）
+// 紧凑格式：仅主对话 → "3"；有子对话 → "1+9"。
 function fmtSessionCounts(c) {
 	if (c.subagent > 0) return `${fmtN(c.main)}+${fmtN(c.subagent)}`;
 	return fmtN(c.main);
@@ -561,14 +561,14 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-proj .nm{font-weight:650;color:var(--dsw-alias-label-primary,#e7eaf0);font-size:13px}" +
 	".dss-proj .ph{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	// 会话详情：所有行使用同一组固定数据列；标题列吸收剩余空间并负责省略。
-	".dss-sess{display:grid;grid-template-columns:minmax(160px,1fr) 104px 112px 78px 92px 88px 148px 150px 110px;gap:10px;align-items:center;width:100%;box-sizing:border-box;min-width:1146px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s}" +
+	".dss-sess{display:grid;grid-template-columns:minmax(160px,1fr) 104px 112px 78px 92px 88px 148px 150px 110px;gap:8px;align-items:center;width:100%;box-sizing:border-box;min-width:1130px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border,#2a303c);font-size:12.5px;transition:background .12s}" +
 	".dss-sess:last-child{border-bottom:none}" +
 	".dss-sess:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.04))}" +
 	".dss-sess .ti{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
 	".dss-sess .me{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums}" +
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
-	".dss-sess-model{text-align:left!important}" +
-	".dss-sess-cost{text-align:right!important}" +
+	".dss-sess-model{text-align:right!important}" +
+	".dss-sess-cost{text-align:left!important}" +
 	".dss-tag{font-size:10px;font-weight:600;color:#4f8cff;background:rgba(79,140,255,.14);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}" +
 	".dss-group{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7280);padding:9px 12px 3px}" +
 	".dss-hint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;margin-bottom:10px}" +
@@ -2223,7 +2223,7 @@ const zh = {
 	"card.cacheHit": "平均缓存命中",
 	"card.cost": "消费金额",
 	"th.project": "项目",
-	"th.sessions": "会话（主+子）",
+	"th.sessions": "会话",
 	"th.turns": "轮",
 	"th.steps": "步",
 	"th.llm": "LLM",
@@ -2304,7 +2304,7 @@ const en = {
 	"card.cacheHit": "Avg cache hit",
 	"card.cost": "Cost",
 	"th.project": "Project",
-	"th.sessions": "Sessions (main+sub)",
+	"th.sessions": "Sessions",
 	"th.turns": "Turns",
 	"th.steps": "Steps",
 	"th.llm": "LLM",

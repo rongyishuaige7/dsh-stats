@@ -53,13 +53,13 @@ dsh web
 重启后，侧边栏底部会出现「统计」入口。若希望固定版本，可使用：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.17
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.19
 ```
 
 ### 从本地 tarball 安装
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.17.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.19.tgz
 ```
 
 验证插件是否被 profile 注册：
