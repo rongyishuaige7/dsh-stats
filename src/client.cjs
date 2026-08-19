@@ -505,6 +505,13 @@ function createOpenStore() {
 const CSS_ID = "@rongyi7/dsh-stats/styles.css";
 const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,12,16,.55);display:flex;align-items:flex-start;justify-content:center;padding:4vh 3vw;overflow:auto}" +
 	".dss-panel button,.dss-trigger{-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none}" +
+	".dss-trigger{box-sizing:border-box;cursor:pointer;color:var(--dsw-alias-label-primary,#f9fafb);background:transparent;border:0;display:flex;align-items:center;flex:0 0 auto;font-family:inherit;overflow:hidden;transition:background-color 140ms ease,color 140ms ease}" +
+	".dss-trigger.wide{width:calc(100% + 8px);height:34px;margin:4px -4px;padding:6px 2px 6px 10px;gap:8px;border-radius:12px;justify-content:flex-start;font-size:14px;line-height:22px}" +
+	".dss-trigger.rail{width:36px;height:36px;margin:0;padding:0;gap:0;border-radius:50%;justify-content:center}" +
+	".dss-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}" +
+	".dss-trigger:active{background:var(--dsw-alias-interactive-bg-active,rgba(255,255,255,.12))}" +
+	".dss-trigger:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#60a5fa);outline-offset:2px}" +
+	".dss-trigger-label{white-space:nowrap;overflow:hidden}" +
 	".dss-panel{width:min(1180px,100%);background:var(--dsw-specific-menu,#161a21);border:1px solid var(--dsw-alias-border-inverted,#2a303c);border-radius:16px;box-shadow:var(--dsw-shadow-lv3,0 20px 60px rgba(0,0,0,.5));color:var(--dsw-alias-label-primary,#e7eaf0);display:flex;flex-direction:column;overflow:hidden}" +
 	".dss-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border,#2a303c)}" +
 	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1;min-width:0}" +
@@ -764,18 +771,15 @@ function StatsTrigger(props) {
 	var t = props.t;
 	var onOpen = props.onOpen;
 	return e("button", {
-		className: "dss-trigger",
+		type: "button",
+		className: "dss-trigger " + (wide ? "wide" : "rail"),
 		onClick: () => onOpen(),
 		title: t("trigger"),
-		style: {
-			background: "none", border: "none", cursor: "pointer",
-			color: "var(--dsw-alias-label-secondary,#a6adbb)", borderRadius: "999px",
-			display: "inline-flex", alignItems: "center", gap: "6px",
-			padding: "6px 10px", fontSize: "13px"
-		}
+		"aria-label": t("trigger"),
+		"aria-haspopup": "dialog"
 	},
-		e(IconDataOutline16, { size: wide ? 16 : 18 }),
-		wide ? e("span", null, t("trigger")) : null
+		e(IconDataOutline16, { size: 16 }),
+		wide ? e("span", { className: "dss-trigger-label" }, t("trigger")) : null
 	);
 }
 
