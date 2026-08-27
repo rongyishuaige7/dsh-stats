@@ -9,6 +9,7 @@ const {
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex,
+	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
 
 function findElementByTitle(node, title) {
@@ -36,6 +37,69 @@ test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
+});
+
+test('client fallback restores the weighted primary model from statsRoute projection', () => {
+	const at = Date.parse('2026-08-17T10:00:00+08:00');
+	const session = {
+		id: 'projection-session', updatedAt: at,
+		projectionValues: {
+			tokenUsage: { totals: { uncachedInputTokens: 160, outputTokens: 16, cacheReadTokens: 40, cacheWriteTokens: 0 } },
+			statsRoute: {
+				current: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+				routes: [
+					{ providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot: 10, time: at, uncached: 10, output: 1, cacheRead: 0, cacheWrite: 0 },
+					{ providerId: 'yi-api', model: 'gpt-5.6-sol', accountType: 'api', serviceTier: 'priority', slot: 11, time: at + 1, uncached: 150, output: 15, cacheRead: 40, cacheWrite: 0 },
+				]
+			}
+		}
+	};
+	const identity = projectionIdentityOf(session);
+	expect(identity).toMatchObject({ model: 'gpt-5.6-sol', modelRaw: 'gpt-5.6-sol', providerId: 'yi-api', accountType: 'api' });
+	const enriched = enrichSessionProjection(session);
+	expect(enriched).toMatchObject({ model: 'gpt-5.6-sol', providerId: 'yi-api' });
+	expect(enriched.slotUsage).toHaveLength(2);
+	expect(enriched.slotUsage[1]).toMatchObject({ model: 'gpt-5.6-sol', providerId: 'yi-api', serviceTier: 'priority', contextTokens: 190 });
+
+	const projects = aggregate([session], [{ workspaceId: 'projection', title: 'Projection', path: '/tmp/projection', sessionIds: [session.id] }], (key) => key, []);
+	const view = projects[0].sessions[0];
+	expect(view.model).toBe('gpt-5.6-sol');
+	expect(view.providerId).toBe('yi-api');
+	expect(view.stats.inputTokens).toBe(200);
+	expect(modelAgg(projects[0].sessions).map((row) => row.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-luna']);
+});
+
+test('client fallback uses current route when statsRoute has no token rows', () => {
+	const session = {
+		id: 'current-only', updatedAt: Date.parse('2026-08-17T10:00:00+08:00'),
+		projectionValues: {
+			statsRoute: { current: { providerId: 'deepseek-official', model: 'deepseek-v4-pro', accountType: 'api', serviceTier: 'standard' }, routes: [] },
+			tokenUsage: { totals: { uncachedInputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 } }
+		}
+	};
+	expect(projectionIdentityOf(session)).toMatchObject({ model: 'deepseek-v4-pro', providerId: 'deepseek-official' });
+	expect(projectionSlotUsageOf(session, projectionIdentityOf(session))).toEqual([]);
+	expect(aggregate([session], [{ workspaceId: 'current', path: '/tmp/current', sessionIds: [session.id] }], (key) => key, [])[0].sessions[0].model).toBe('deepseek-v4-pro');
+});
+
+test('client fallback preserves unknown when no projection route is available', () => {
+	const session = { id: 'no-route', projectionValues: { tokenUsage: { totals: { uncachedInputTokens: 1, outputTokens: 1 } } } };
+	expect(projectionIdentityOf(session)).toMatchObject({ model: null, modelRaw: '(unknown)', providerId: 'unknown' });
+	const view = aggregate([session], [{ workspaceId: 'unknown', path: '/tmp/unknown', sessionIds: [session.id] }], (key) => key, [])[0].sessions[0];
+	expect(view.model).toBeNull();
+});
+
+test('client fallback unwraps legacy persisted projection rows', () => {
+	const session = {
+		id: 'legacy-rows', updatedAt: 1_700_000_000_000,
+		rows: {
+			tokenUsage: { ver: 1, seq: 3, val: { totals: { uncachedInputTokens: 4, outputTokens: 2 } } },
+			statsRoute: { ver: 1, seq: 3, val: { current: { providerId: 'deepseek-official', model: 'deepseek-v4-flash', accountType: 'api', serviceTier: 'standard' }, routes: {} } }
+		}
+	};
+	const projects = aggregate([session], [{ workspaceId: 'legacy', path: '/tmp/legacy', sessionIds: [session.id] }], (key) => key, []);
+	expect(projects[0].sessions[0]).toMatchObject({ model: 'deepseek-v4-flash', providerId: 'deepseek-official' });
+	expect(projects[0].stats).toMatchObject({ inputTokens: 4, outputTokens: 2 });
 });
 
 test('project colors stay stable when date filtering removes earlier projects', () => {

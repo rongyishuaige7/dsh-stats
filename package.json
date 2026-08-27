@@ -1,6 +1,6 @@
 {
   "name": "@rongyi7/dsh-stats",
-  "version": "0.2.42",
+  "version": "0.2.43",
   "description": "DSH Usage：按项目查看 Token、开发时间和费用，并查询账户余额",
   "type": "module",
   "main": "lib/index.js",

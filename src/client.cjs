@@ -303,10 +303,160 @@ function usePref(key, def) {
 // ------------------------------------------------------------------
 // 聚合（数据源：session.list 的 projectionValues）
 // ------------------------------------------------------------------
+function isRecord(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function usableString(value) {
+	if (typeof value !== "string") return null;
+	var text = value.trim();
+	return text && text !== "(unknown)" ? text : null;
+}
+function usableProvider(value) {
+	var text = usableString(value);
+	return text && text !== "unknown" ? text : null;
+}
+function nonNegativeFinite(value) {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+function unwrapProjectionValue(value) {
+	// The browser normally receives the projection view directly. A few rc6
+	// bridges expose the persisted { ver, seq, val } row instead, so unwrap it
+	// without requiring a second host round trip.
+	if (isRecord(value) && Object.prototype.hasOwnProperty.call(value, "val") &&
+		(Object.prototype.hasOwnProperty.call(value, "ver") || Object.prototype.hasOwnProperty.call(value, "seq"))) return value.val;
+	return value;
+}
+function projectionValuesOf(s) {
+	var direct = s && s.projectionValues;
+	if (isRecord(direct)) return direct;
+	var block = s && s.projections;
+	if (isRecord(block?.values)) return block.values;
+	var rows = s && s.rows;
+	if (!isRecord(rows)) return {};
+	var values = {};
+	Object.keys(rows).forEach(function(key) { values[key] = unwrapProjectionValue(rows[key]); });
+	return values;
+}
+function projectionValueOf(s, key) {
+	var direct = s && s.projectionValues;
+	if (isRecord(direct) && Object.prototype.hasOwnProperty.call(direct, key)) return unwrapProjectionValue(direct[key]);
+	var block = s && s.projections;
+	if (isRecord(block?.values) && Object.prototype.hasOwnProperty.call(block.values, key)) return unwrapProjectionValue(block.values[key]);
+	var rows = s && s.rows;
+	if (isRecord(rows) && Object.prototype.hasOwnProperty.call(rows, key)) return unwrapProjectionValue(rows[key]);
+	var values = projectionValuesOf(s);
+	if (Object.prototype.hasOwnProperty.call(values, key)) return unwrapProjectionValue(values[key]);
+	return undefined;
+}
+function routeRowsOf(route) {
+	if (!isRecord(route)) return [];
+	if (Array.isArray(route.routes)) return route.routes.slice();
+	if (isRecord(route.routes)) return Object.values(route.routes);
+	return [];
+}
+function routeRowWeight(row) {
+	return nonNegativeFinite(row?.uncached) + nonNegativeFinite(row?.output) +
+		nonNegativeFinite(row?.cacheRead) + nonNegativeFinite(row?.cacheWrite);
+}
+function compareRouteRows(a, b) {
+	return (nonNegativeFinite(a?.slot) - nonNegativeFinite(b?.slot)) ||
+		String(a?.providerId || "").localeCompare(String(b?.providerId || "")) ||
+		String(a?.model || "").localeCompare(String(b?.model || ""));
+}
+function projectionIdentityOf(s) {
+	var route = projectionValueOf(s, "statsRoute");
+	var current = isRecord(route?.current) ? route.current : {};
+	var rows = routeRowsOf(route).filter(function(row) { return isRecord(row) && usableString(row.model); }).sort(compareRouteRows);
+	var primary = null;
+	var primaryWeight = -1;
+	rows.forEach(function(row) {
+		var weight = routeRowWeight(row);
+		if (weight > primaryWeight) { primary = row; primaryWeight = weight; }
+	});
+	var topModel = usableString(s?.modelRaw) || usableString(s?.model);
+	var source = topModel ? { model: topModel, providerId: usableProvider(s?.providerId) || current.providerId, accountType: usableString(s?.accountType) || current.accountType } : primary || current;
+	var modelRaw = topModel || usableString(source.model) || "(unknown)";
+	var providerId = usableProvider(s?.providerId) || usableProvider(source.providerId) || usableProvider(primary?.providerId) || "unknown";
+	var accountType = usableString(s?.accountType) || usableString(source.accountType) || "api";
+	var at = Number.isFinite(s?.updatedAt) ? s.updatedAt : Date.now();
+	var normalized = pricing.normalizeIdentity(providerId, modelRaw, accountType, at);
+	return {
+		model: modelRaw === "(unknown)" ? null : modelRaw,
+		modelRaw: normalized.modelRaw,
+		modelCanonical: usableString(s?.modelCanonical) || normalized.modelCanonical,
+		providerId: normalized.providerId,
+		providerFamily: usableProvider(s?.providerFamily) || normalized.providerFamily,
+		accountType: normalized.accountType
+	};
+}
+function projectionSlotUsageOf(s, identity) {
+	var route = projectionValueOf(s, "statsRoute");
+	return routeRowsOf(route).filter(function(row) {
+		return isRecord(row) && usableString(row.model) && routeRowWeight(row) > 0;
+	}).map(function(row) {
+		var modelRaw = usableString(row.model) || identity.modelRaw;
+		var providerId = usableProvider(row.providerId) || identity.providerId;
+		var accountType = usableString(row.accountType) || identity.accountType;
+		var normalized = pricing.normalizeIdentity(providerId, modelRaw, accountType,
+			Number.isFinite(row.time) ? row.time : Date.now());
+		var uncached = nonNegativeFinite(row.uncached);
+		var output = nonNegativeFinite(row.output);
+		var cacheRead = nonNegativeFinite(row.cacheRead);
+		var cacheWrite = nonNegativeFinite(row.cacheWrite);
+		var contextTokens = uncached + cacheRead + cacheWrite;
+		var slot = Number.isSafeInteger(row.slot) && row.slot >= 0 ? row.slot :
+			Number.isFinite(row.time) && row.time >= 0 ? Math.floor(row.time / SLOT_MS) : null;
+		if (slot === null) return null;
+		return {
+			model: normalized.modelRaw,
+			providerId: normalized.providerId,
+			providerFamily: normalized.providerFamily,
+			modelRaw: normalized.modelRaw,
+			modelCanonical: normalized.modelCanonical,
+			accountType: normalized.accountType,
+			serviceTier: row.serviceTier === "priority" ? "priority" : "standard",
+			contextTokens,
+			contextOver512k: contextTokens > 512000,
+			slot,
+			uncached,
+			output,
+			cacheRead,
+			cacheWrite,
+			reasoning: nonNegativeFinite(row.reasoning)
+		};
+	}).filter(Boolean);
+}
+function enrichSessionProjection(s) {
+	if (!isRecord(s)) return s;
+	var identity = projectionIdentityOf(s);
+	var slots = projectionSlotUsageOf(s, identity);
+	var next = s;
+	var updates = {};
+	if (!usableString(s.model) && identity.model) updates.model = identity.model;
+	if (!usableString(s.modelRaw) && identity.modelRaw !== "(unknown)") updates.modelRaw = identity.modelRaw;
+	if (!usableString(s.modelCanonical) && identity.modelCanonical !== "(unknown)") updates.modelCanonical = identity.modelCanonical;
+	if (!usableProvider(s.providerId) && identity.providerId !== "unknown") updates.providerId = identity.providerId;
+	if (!usableProvider(s.providerFamily) && identity.providerFamily !== "unknown") updates.providerFamily = identity.providerFamily;
+	if (!usableString(s.accountType)) updates.accountType = identity.accountType;
+	if ((!Array.isArray(s.slotUsage) || !s.slotUsage.length) && slots.length) updates.slotUsage = slots;
+	if (Object.keys(updates).length) next = { ...s, ...updates };
+	return next;
+}
+function clientSessionIdentityFields(s) {
+	var model = usableString(s?.model) || usableString(s?.modelRaw);
+	return {
+		model: model || null,
+		providerId: usableProvider(s?.providerId) || "unknown",
+		providerFamily: usableProvider(s?.providerFamily) || "unknown",
+		modelRaw: usableString(s?.modelRaw) || model || "(unknown)",
+		modelCanonical: usableString(s?.modelCanonical) || model || "(unknown)",
+		accountType: usableString(s?.accountType) || "api"
+	};
+}
 function rawOf(s) {
-	var pv = s.projectionValues || {};
-	var b = pv.tokenUsage ? (pv.tokenUsage.totals || pv.tokenUsage) : {};
-	var st = pv.sessionStats || {};
+	var b = projectionValueOf(s, "tokenUsage");
+	b = b ? (b.totals || b) : {};
+	var st = projectionValueOf(s, "sessionStats") || {};
 	return {
 		turns: st.turns || 0, steps: st.steps || 0,
 		llmMs: st.llmMs || 0, toolMs: st.toolMs || 0,
@@ -349,11 +499,13 @@ function basename(p) {
 }
 
 function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
+	sessionSummaries = (sessionSummaries || []).map(enrichSessionProjection).filter(isRecord);
 	var byId = new Map();
 	sessionSummaries.forEach((s) => byId.set(s.id, s));
 	var archivedSet = new Set(archivedIds || []);
 	var isBlank = function(s) {
-		return s.blank === true || s.sessionListMetadata?.blank === true || s.projectionValues?.sessionListMetadata?.blank === true;
+		var metadata = projectionValueOf(s, "sessionListMetadata");
+		return s.blank === true || metadata?.blank === true;
 	};
 	var isArchived = function(s) { return s.archived === true || archivedSet.has(s.id); };
 	var projects = [];
@@ -378,7 +530,8 @@ function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 				id: s.id,
 				title: s.title || s.displayTitle || null,
 				updatedAt: s.updatedAt || null,
-				model: s.model || null,
+				...clientSessionIdentityFields(s),
+				...(Array.isArray(s.slotUsage) && s.slotUsage.length ? { slotUsage: s.slotUsage } : {}),
 				subagent: s.origin === "subagent",
 				archived: isArchived(s),
 				stats: display(raw),
@@ -416,7 +569,7 @@ function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 			if (isBlank(s)) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
-			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, model: s.model || null, subagent: s.origin === "subagent", archived: isArchived(s), stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, ...clientSessionIdentityFields(s), ...(Array.isArray(s.slotUsage) && s.slotUsage.length ? { slotUsage: s.slotUsage } : {}), subagent: s.origin === "subagent", archived: isArchived(s), stats: display(raw), durMs: raw.llmMs + raw.toolMs });
 			if (s.origin === "subagent") subagentCount++;
 			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
 		});
@@ -2830,7 +2983,7 @@ module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
-	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex
 };

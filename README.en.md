@@ -51,13 +51,13 @@ Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.42
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.43
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.42.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.43.tgz
 ```
 
 Verify the bundle registration:
