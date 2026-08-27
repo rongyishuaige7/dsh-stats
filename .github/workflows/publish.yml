@@ -22,6 +22,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify release tag and artifacts
+        run: |
+          release_version=$(node --print "require('./package.json').version")
+          test "v${release_version}" = "$GITHUB_REF_NAME"
+          npm run build
+          npm test
+          TZ=UTC npm test
+          node --check lib/client.js
+          node --check lib/index.js
+          node --check lib/typert.host.js
+          node --check lib/typert.remote-client.js
+          npm pack --dry-run
+
       # prepublishOnly 会自动重新构建
       - name: Publish
         run: npm publish --access public

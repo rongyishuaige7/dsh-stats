@@ -51,13 +51,13 @@ dsh web
 固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.43
+dsh plugin --profile web add @rongyi7/dsh-stats@0.3.0
 ```
 
 安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.43.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.0.tgz
 ```
 
 验证插件是否已注册：

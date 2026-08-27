@@ -294,15 +294,54 @@ test('route projection cache avoids reopening a cold log and keeps model pricing
 	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
 });
 
+test('cold projection accepts persisted statsRoute state objects and weights the primary route', async () => {
+	const now = Date.parse('2026-08-17T12:00:00+08:00');
+	const slot = Math.floor(now / (30 * 60 * 1000));
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['stateRoutes'] }] },
+		sessionProjectionCache: { coldSnapshot: async () => ({ asOfSeq: 8, values: {
+			sessionStats: { turns: 2, steps: 2, llmMs: 20, toolMs: 4, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+			tokenUsage: { totals: { uncachedInputTokens: 2100, outputTokens: 110, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+			sessionListMetadata: { blank: false, lastPromptAt: now + 500 },
+			statsRoute: {
+				origin: null,
+				parentSession: null,
+				seedLength: null,
+				// This is the rc2/rc6 persisted state shape. `current` is the
+				// latest route, while the largest bucket is the primary route.
+				current: { providerId: 'yi-api', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+				routes: {
+					openai: { providerId: 'openai', model: 'gpt-5.6-sol', accountType: 'api', serviceTier: 'standard', slot, time: now + 100, uncached: 2000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+					yi: { providerId: 'yi-api', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot, time: now + 500, uncached: 100, output: 10, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+					bad: { providerId: 'ignored', model: 'bad-row', serviceTier: 'standard', slot, time: 'invalid', uncached: 999999 }
+				},
+				samples: {}
+			}
+		} }) }
+	} });
+	const session = result.projects[0].sessions[0];
+	expect(session.model).toBe('gpt-5.6-sol');
+	expect(session.providerId).toBe('openai');
+	expect(session.stats).toMatchObject({ uncached: 2100, output: 110 });
+	expect(session.modelUsage).toEqual(expect.arrayContaining([
+		expect.objectContaining({ providerId: 'openai', model: 'gpt-5.6-sol', uncached: 2000, output: 100 }),
+		expect.objectContaining({ providerId: 'yi-api', model: 'gpt-5.6-luna', uncached: 100, output: 10 })
+	]));
+	expect(session.modelUsage).toHaveLength(2);
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
 function projection(createdAt, overrides = {}) {
+	const rows = {
+		title: { val: overrides.title || 'Fixture session' },
+		sessionListMetadata: { val: { blank: false, lastPromptAt: overrides.lastPromptAt ?? createdAt } },
+		sessionStats: { val: { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, ...overrides.stats } },
+		tokenUsage: { val: { totals: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, ...overrides.usage } } },
+	};
+	if (overrides.route) rows.statsRoute = { val: overrides.route };
 	return {
 		identity: { createdAt, cwd: '/tmp/fixture' },
-		rows: {
-			title: { val: overrides.title || 'Fixture session' },
-			sessionListMetadata: { val: { blank: false, lastPromptAt: overrides.lastPromptAt ?? createdAt } },
-			sessionStats: { val: { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, ...overrides.stats } },
-			tokenUsage: { val: { totals: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, ...overrides.usage } } },
-		},
+		rows,
 	};
 }
 
@@ -377,6 +416,59 @@ test('missing logs use projection totals and report partial quality', async () =
 	expect(result.meta.degraded).toBe(true);
 	expect(result.meta.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(['SESSION_LOG_MISSING', 'SESSION_USAGE_FALLBACK']));
 	TYPERT.invocations[0].result.schema.parse(result);
+});
+
+test('legacy cache-only missing logs recover model routes from the persisted state shape', async () => {
+	const now = Date.parse('2026-08-17T10:30:00+08:00');
+	const slot = Math.floor(now / (30 * 60 * 1000));
+	const route = {
+		origin: null,
+		parentSession: null,
+		seedLength: null,
+		current: { providerId: 'yi-api', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+		routes: {
+			openai: { providerId: 'openai', model: 'gpt-5.6-sol', accountType: 'api', serviceTier: 'standard', slot, time: now + 100, uncached: 2000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			yi: { providerId: 'yi-api', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot, time: now + 500, uncached: 100, output: 10, cacheRead: 0, cacheWrite: 0, reasoning: 0 }
+		},
+		samples: {}
+	};
+	fixture({ missingRoute: projection(now, {
+		usage: { uncachedInputTokens: 2100, outputTokens: 110 },
+		route
+	}) });
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(session.model).toBe('gpt-5.6-sol');
+	expect(session.providerId).toBe('openai');
+	expect(session.modelUsage).toHaveLength(2);
+	expect(session.stats).toMatchObject({ uncached: 2100, output: 110 });
+	expect(session.quality).toBe('partial');
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_ROUTE_PROJECTION_FALLBACK', sessionId: 'missingRoute' }),
+		expect.objectContaining({ code: 'SESSION_LOG_MISSING', sessionId: 'missingRoute' })
+	]));
+});
+
+test('archived cache-only forks with route buckets are still excluded without a log', async () => {
+	const now = Date.parse('2026-08-17T10:45:00+08:00');
+	const slot = Math.floor(now / (30 * 60 * 1000));
+	fixture({ orphanRoute: projection(now, {
+		usage: { uncachedInputTokens: 20, outputTokens: 2 },
+		route: {
+			origin: 'subagent', parentSession: 'parent', seedLength: 3,
+			current: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+			routes: {
+				main: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot, time: now, uncached: 20, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0 }
+			},
+			samples: {}
+		}
+	}) }, ['orphanRoute'], ['orphanRoute']);
+	const result = await aggregate();
+	expect(result.projects[0].sessions).toHaveLength(0);
+	expect(result.projects[0].stats.uncached).toBe(0);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_ORPHAN_FORK_DISCARDED', sessionId: 'orphanRoute' })
+	]));
 });
 
 test('invalid event timestamps and token values cannot inject NaN into RPC stats', async () => {
