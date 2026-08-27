@@ -67,24 +67,17 @@ function esc(s) {
 }
 
 // 宿主与客户端共用同一份 Provider-scoped 计价内核。
-// 纯客户端旧数据没有 Provider 字段时才做有限推断，并由数据源标记为近似。
-var summarizeCosts = pricing.summarizeCosts;
-var mergeCostSummaries = pricing.mergeCostSummaries;
-function inferredOfficialProvider(model) {
-	var id = String(model || "").toLowerCase();
-	if (id.startsWith("deepseek-")) return "deepseek-official";
-	if (id.startsWith("minimax-")) return "minimax-cn";
-	if (id.startsWith("gpt-")) return "openai";
-	if (id.startsWith("claude-")) return "anthropic";
-	if (id.startsWith("gemini-")) return "google";
-	if (id.startsWith("kimi-")) return "moonshotai-cn";
-	if (id.startsWith("glm-")) return "zai";
-	return "unknown";
-}
+// 纯客户端旧数据缺少 Provider 字段时保留 unknown，由计价内核按唯一
+// 官方模型匹配给出 estimated，而不是把模型前缀当成官方路由。
+// 所有消费展示统一为人民币；转换函数对已经是 CNY 的宿主数据幂等。
+var summarizeCosts = pricing.summarizeCostsCny;
+var mergeCostSummaries = pricing.mergeCostSummariesCny;
+var convertCostToCny = pricing.convertCostToCny;
+var convertCostSummaryToCny = pricing.convertCostSummaryToCny;
 function identityForUsage(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
 	var model = usage?.modelRaw || usage?.model || fallbackModel || "(unknown)";
 	var hasProvider = usage && Object.prototype.hasOwnProperty.call(usage, "providerId");
-	var providerId = hasProvider ? usage.providerId : (fallbackProvider || inferredOfficialProvider(model));
+	var providerId = hasProvider ? usage.providerId : fallbackProvider;
 	return pricing.normalizeIdentity(providerId || "unknown", model, usage?.accountType || fallbackAccountType || "api", Number.isFinite(usage?.slot) ? usage.slot * 1800000 : Date.now());
 }
 function costOf(stats, price) {
@@ -103,19 +96,18 @@ function fmtCost(rmb) {
 }
 function fmtCurrencyAmount(value, currency) {
 	if (value == null || !Number.isFinite(value)) return "—";
+	if (currency !== "CNY") return "—";
 	var amount = value <= 0 ? "0" : value >= 1000 ? value.toFixed(0) : value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
-	if (currency === "CNY") return "¥" + amount;
-	if (currency === "USD") return "$" + amount;
-	if (currency === "EUR") return "€" + amount;
-	return amount + " " + (currency || "");
+	return "¥" + amount;
 }
 function fmtCostSummary(summary) {
 	if (!summary || !Array.isArray(summary.totals)) return "—";
-	if (summary.totals.length === 0) return summary.status === "free" ? "0" : "—";
-	var text = summary.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ");
-	if (summary.status === "estimated") return "≈" + text;
-	if (summary.status === "partial") return text + " + ?";
-	return text;
+	var display = convertCostSummaryToCny(summary);
+	if (!display || !Array.isArray(display.totals)) return "—";
+	if (display.totals.length === 0) return display.status === "free" ? "¥0" : "—";
+	// 主汇总只展示已纳入统计的 CNY 金额。未计价会话及其原因通过
+	// meta.warnings/详情呈现，避免在金额旁混入“？”造成误导。
+	return display.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ");
 }
 function fmtBalanceAmount(value, currency) {
 	if (value == null || !Number.isFinite(value)) return "—";
@@ -124,9 +116,9 @@ function fmtBalanceAmount(value, currency) {
 }
 var SLOT_MS = 30 * 60 * 1000;
 function usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
-	if (usage?.cost && typeof usage.cost === "object") return usage.cost;
+	if (usage?.cost && typeof usage.cost === "object") return convertCostToCny(usage.cost);
 	var identity = identityForUsage(usage, fallbackModel, fallbackProvider, fallbackAccountType);
-	return pricing.priceUsage(usage || {}, identity);
+	return convertCostToCny(pricing.priceUsage(usage || {}, identity));
 }
 function usageCost(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
 	return usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType).amount;
@@ -137,7 +129,7 @@ function sessionCostSummary(s) {
 			return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
 		}));
 	}
-	if (s.cost && Array.isArray(s.cost.totals)) return s.cost;
+	if (s.cost && Array.isArray(s.cost.totals)) return convertCostSummaryToCny(s.cost);
 	var st = s.stats || {};
 	var model = s.modelRaw || s.model || "(unknown)";
 	var usage = {
@@ -155,17 +147,17 @@ function sessionCostSummary(s) {
 	if (s.accountType) usage.accountType = s.accountType;
 	return summarizeCosts([usageCostDetail(usage, model, undefined, s.accountType)]);
 }
-// 数值返回值仅保留给旧接口/测试；新 UI 始终使用不换算的 cost summary。
+// 数值返回值仅保留给旧接口/测试；新 UI 与兼容路径都使用 CNY summary。
 function sessionCost(s) {
 	var summary = sessionCostSummary(s);
-	return summary.status === "exact" && summary.totals.length === 1 ? summary.totals[0].amount : null;
+	return (summary.status === "exact" || summary.status === "estimated") && summary.totals.length === 1 ? summary.totals[0].amount : null;
 }
 function projectCostSummary(p) {
 	return mergeCostSummaries((p.sessions || []).map(sessionCostSummary));
 }
 function projectCost(p) {
 	var summary = projectCostSummary(p);
-	return summary.status === "exact" && summary.totals.length === 1 ? summary.totals[0].amount : null;
+	return (summary.status === "exact" || summary.status === "estimated") && summary.totals.length === 1 ? summary.totals[0].amount : null;
 }
 
 // 把一组会话的展示统计重新求和（日期范围过滤后重建项目聚合）
@@ -862,7 +854,7 @@ function projectCostSortData(project) {
 	return { signature: ordered.map(function(total) { return total.currency; }).join("|") , amounts: ordered.map(function(total) { return total.amount; }) };
 }
 
-// 不做隐式汇率换算：不同币种组合先稳定分组，仅在相同组合内比较金额向量。
+// 消费汇总已统一为 CNY，排序直接比较同一币种的金额向量。
 function compareProjectCost(a, b) {
 	var ca = projectCostSortData(a), cb = projectCostSortData(b);
 	if (ca.signature !== cb.signature) return ca.signature.localeCompare(cb.signature);
@@ -937,11 +929,13 @@ function ProjectsTable(props) {
 		if (isSel) {
 			var mainSessions = p.sessions.filter(function(sd) { return !sd.subagent; });
 			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
-			var sessRow = function(sd) {
-				var modelName = modelNameOnly(sd);
-				var sessionTitle = sd.title || t("w.untitled");
-				var sessionCost = fmtCostSummary(sessionCostSummary(sd));
-				var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null];
+				var sessRow = function(sd) {
+					var modelName = modelNameOnly(sd);
+					var sessionTitle = sd.title || t("w.untitled");
+					var costDetail = sessionCostSummary(sd);
+					var sessionCost = fmtCostSummary(costDetail);
+					var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null, sd.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : sd.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null,
+						costDetail.status === "unsupported" ? e("span", { className: "dss-tag", key: "cost-excluded", title: t("w.costExcludedHint") }, t("w.costExcludedTag")) : costDetail.status === "partial" ? e("span", { className: "dss-tag", key: "cost-partial", title: t("w.costPartialHint") }, t("w.costPartialTag")) : costDetail.status === "estimated" ? e("span", { className: "dss-tag", key: "estimated", title: t("w.estimatedHint") }, t("w.estimatedTag")) : null];
 				return e("div", { className: "dss-sess", key: sd.id },
 					onOpenSession ? e("button", {
 						type: "button",
@@ -1338,7 +1332,11 @@ function exportAccountCSV(data) {
 
 function providerPickerLabel(account) {
 	var family = account && typeof account.providerFamily === "string" ? account.providerFamily.trim() : "";
-	return family || (account && typeof account.displayName === "string" ? account.displayName : "unknown");
+	var displayName = account && typeof account.displayName === "string" ? account.displayName.trim() : "";
+	// Pricing keeps untrusted routes in the `unknown` family deliberately. The
+	// account selector should still use the configured route name (for example
+	// `yi-api`) instead of exposing that internal classification to users.
+	return !family || family === "unknown" ? (displayName || family || "unknown") : family;
 }
 
 function BalanceView(props) {
@@ -1384,7 +1382,7 @@ function BalanceView(props) {
 				e("div", { className: "dss-balance-account-head" },
 					e("div", null,
 						e("div", { className: "dss-balance-name" }, account.displayName),
-						e("div", { className: "dss-balance-currency" }, account.mode === "subscription" ? (account.plan || t("balance.subscription")) : (account.balance?.currency || account.providerFamily))
+						e("div", { className: "dss-balance-currency" }, account.mode === "subscription" ? (account.plan || t("balance.subscription")) : (account.balance?.currency || providerPickerLabel(account)))
 					),
 					e("span", { className: "dss-balance-status " + visualStatus }, t("balance.status." + visualStatus))
 				),
@@ -2293,6 +2291,16 @@ const zh = {
 	"w.output": "输出",
 	"w.subagentTag": "子对话",
 	"w.archivedTag": "已归档",
+	"w.partialTag": "不完整",
+	"w.partialHint": "日志或缓存校验未通过，仅显示已确认数据",
+	"w.costExcludedTag": "未计价",
+	"w.costExcludedHint": "无法确认价格，该会话未计入主费用汇总",
+	"w.costPartialTag": "费用部分确认",
+	"w.costPartialHint": "仅可确认的人民币金额计入主汇总",
+	"w.estimatedTag": "估算",
+	"w.estimatedHint": "按公开模型价格与固定汇率换算，仅供估算，不等同 Provider 账单",
+	"w.staleTag": "过期",
+	"w.staleHint": "读取失败，显示最近一次有效快照",
 	"w.subagentGroup": "子对话",
 	"w.untitled": "（未命名会话）",
 	"w.duration": "开发时长",
@@ -2306,7 +2314,7 @@ const zh = {
 	"hint.timeline.day": "按项目分泳道；块高 = 该 30 分钟时段开发时长占比",
 	"hint.timeline.all": "同一时段的多个项目合并显示，悬停查看各项目时长",
 	"hint.rangeEmpty": "该范围内暂无开发活动",
-	"hint.cost": "成本按实际模型与时段自动计价",
+	"hint.cost": "按公开模型价格与固定汇率估算，仅供参考",
 	"trends.activeDays": "活跃天数",
 	"trends.streak": "当前连续",
 	"trends.longestStreak": "最长连续",
@@ -2369,6 +2377,16 @@ const en = {
 	"w.output": "Output",
 	"w.subagentTag": "sub-agent",
 	"w.archivedTag": "archived",
+	"w.partialTag": "partial",
+	"w.partialHint": "Log or cache validation failed; only confirmed data is shown",
+	"w.costExcludedTag": "unpriced",
+	"w.costExcludedHint": "Price could not be confirmed; this session is excluded from the primary spend total",
+	"w.costPartialTag": "partially priced",
+	"w.costPartialHint": "Only confirmed RMB is included in the primary total",
+	"w.estimatedTag": "estimated",
+	"w.estimatedHint": "Converted from public model prices and a fixed FX snapshot; not the provider bill",
+	"w.staleTag": "stale",
+	"w.staleHint": "Read failed; showing the last valid snapshot",
 	"w.subagentGroup": "Sub-agent sessions",
 	"w.untitled": " (untitled)",
 	"w.duration": "Duration",
@@ -2382,7 +2400,7 @@ const en = {
 	"hint.timeline.day": "Projects use separate lanes; block height = share of development time in that 30-min slot",
 	"hint.timeline.all": "Overlapping projects are combined; hover to see each project duration",
 	"hint.rangeEmpty": "No activity in this range",
-	"hint.cost": "Cost auto-priced by actual model & time slot",
+	"hint.cost": "Estimated from public model prices and a fixed FX rate; for reference only",
 	"trends.activeDays": "Active days",
 	"trends.streak": "Current streak",
 	"trends.longestStreak": "Longest streak",
@@ -2811,7 +2829,7 @@ module.exports = { apply, inject };
 module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, usageCost, sessionCost, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
+	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex

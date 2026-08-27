@@ -31,6 +31,92 @@ const DEFAULTS = {
 	minimax: { apiKeyRef: "MINIMAX_API_KEY", baseURL: "https://www.minimax.io", actionUrl: "https://platform.minimaxi.com/console/usage" }
 };
 
+// cc-switch's common account script is intentionally represented as a
+// declarative request plus a local extractor. The built-in template places the
+// key only in the Authorization header; explicitly configured templates may
+// opt into other header/body fields. The response is reduced to the fields the
+// account schema exposes, so provider-specific usage details never cross RPC.
+function defaultUsageExtractor(response) {
+	const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+	const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+	return {
+		isValid: response?.is_active ?? response?.isValid ?? true,
+		remaining,
+		unit,
+		total: response?.total ?? response?.quota?.total,
+		used: response?.used ?? response?.quota?.used
+	};
+}
+
+const DEFAULT_GENERIC_USAGE_TEMPLATE = Object.freeze({
+	request: Object.freeze({
+		url: "{{baseUrl}}/v1/usage",
+		method: "GET",
+		headers: Object.freeze({ Authorization: "Bearer {{apiKey}}" })
+	}),
+	extractor: defaultUsageExtractor
+});
+
+function firstNonEmpty(...values) {
+	for (const value of values) {
+		const hit = nonEmpty(value);
+		if (hit) return hit;
+	}
+	return null;
+}
+
+function objectRecord(value) {
+	return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function profileBaseURL(profile) {
+	return firstNonEmpty(profile?.baseURL, profile?.baseUrl, profile?.base_url);
+}
+
+function profileApiKeyRef(profile) {
+	return firstNonEmpty(profile?.apiKeyEnv, profile?.apiKeyRef, profile?.api_key_env, profile?.api_key_ref);
+}
+
+function profileAccountApiKeyRef(profile) {
+	return firstNonEmpty(profile?.accountApiKeyEnv, profile?.accountApiKeyRef, profile?.account_api_key_env, profile?.account_api_key_ref);
+}
+
+function profileUsageTemplate(profile) {
+	for (const key of ["accountUsage", "account_usage", "usageTemplate", "usage_template"]) {
+		if (Object.prototype.hasOwnProperty.call(profile || {}, key)) {
+			const value = objectRecord(profile[key]);
+			return value;
+		}
+	}
+	return null;
+}
+
+function validTemplateBase(baseURL) {
+	try {
+		const url = new URL(baseURL);
+		return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+	} catch {
+		return false;
+	}
+}
+
+function defaultUsageTemplateFor(baseURL) {
+	// OpenAI settings commonly include `/v1` in baseURL. Keep the default
+	// endpoint at exactly `/v1/usage` instead of producing `/v1/v1/usage`.
+	let url;
+	try { url = new URL(baseURL); } catch { return DEFAULT_GENERIC_USAGE_TEMPLATE; }
+	const path = url.pathname.replace(/\/+$/, "");
+	if (!/\/v1$/i.test(path)) return DEFAULT_GENERIC_USAGE_TEMPLATE;
+	return Object.freeze({
+		request: Object.freeze({
+			url: "{{baseUrl}}/usage",
+			method: "GET",
+			headers: Object.freeze({ Authorization: "Bearer {{apiKey}}" })
+		}),
+		extractor: defaultUsageExtractor
+	});
+}
+
 class AccountError extends Error {
 	constructor(status, code = status) {
 		super(STATUS_MESSAGES[status] || "provider account query failed");
@@ -105,10 +191,12 @@ async function configuredProviders(ctx) {
 	const providers = [{
 		id: "deepseek-official",
 		displayName: "DeepSeek",
-		apiKeyRef: nonEmpty(deepseek?.apiKeyEnv),
-		accountApiKeyRef: nonEmpty(deepseek?.accountApiKeyEnv),
-		baseURL: nonEmpty(deepseek?.baseURL) || DEFAULTS.deepseek.baseURL,
-		accountType: nonEmpty(deepseek?.accountType) || "api"
+		apiKeyRef: profileApiKeyRef(deepseek),
+		accountApiKeyRef: profileAccountApiKeyRef(deepseek),
+		baseURL: profileBaseURL(deepseek) || DEFAULTS.deepseek.baseURL,
+		accountType: nonEmpty(deepseek?.accountType) || "api",
+		accountUsage: profileUsageTemplate(deepseek),
+		source: "deepseek"
 	}];
 	const pi = await setting(settings, "llm-pi-ai");
 	if (pi && typeof pi === "object" && pi.providers && typeof pi.providers === "object") {
@@ -117,10 +205,13 @@ async function configuredProviders(ctx) {
 			providers.push({
 				id,
 				displayName: displayName(id, profile.displayName),
-				apiKeyRef: nonEmpty(profile.apiKeyEnv),
-				accountApiKeyRef: nonEmpty(profile.accountApiKeyEnv),
-				baseURL: nonEmpty(profile.baseURL),
-				accountType: nonEmpty(profile.accountType) || nonEmpty(profile.billingMode)
+				apiKeyRef: profileApiKeyRef(profile),
+				accountApiKeyRef: profileAccountApiKeyRef(profile),
+				baseURL: profileBaseURL(profile),
+				accountType: nonEmpty(profile.accountType) || nonEmpty(profile.billingMode),
+				accountUsage: profileUsageTemplate(profile),
+				api: firstNonEmpty(profile.api, profile.protocol),
+				source: "pi-ai"
 			});
 		}
 	}
@@ -135,8 +226,15 @@ function accountSpec(provider) {
 	const configuredAccountType = nonEmpty(provider.accountType);
 	const accountType = normalizeAccountType(configuredAccountType || (family === "minimax" ? "token-plan" : "api"));
 	const subscription = accountType === "subscription" || accountType === "token-plan";
+	const configuredBaseURL = firstNonEmpty(provider.baseURL, provider.baseUrl, provider.base_url);
+	const configuredApiKeyRef = firstNonEmpty(provider.apiKeyRef, provider.apiKeyEnv, provider.api_key_ref, provider.api_key_env);
+	const configuredAccountApiKeyRef = firstNonEmpty(provider.accountApiKeyRef, provider.accountApiKeyEnv, provider.account_api_key_ref, provider.account_api_key_env);
 	let adapter = null, mode = "unsupported", defaults = null;
-	if (id === "deepseek" || id === "deepseek-official") { adapter = "deepseek-balance"; mode = "balance"; defaults = DEFAULTS.deepseek; }
+	const usageTemplate = objectRecord(provider.accountUsage);
+	if (usageTemplate?.request && typeof usageTemplate.request === "object") {
+		adapter = "generic-usage";
+		mode = "balance";
+	} else if (id === "deepseek" || id === "deepseek-official") { adapter = "deepseek-balance"; mode = "balance"; defaults = DEFAULTS.deepseek; }
 	else if (id === "openrouter") { adapter = "openrouter-balance"; mode = "balance"; defaults = DEFAULTS.openrouter; }
 	else if (["moonshotai", "moonshotai-cn", "kimi", "kimi-api"].includes(id) && !subscription) { adapter = "moonshot-balance"; mode = "balance"; defaults = DEFAULTS.moonshot; }
 	else if (["kimi-coding", "kimi-for-coding"].includes(id) || family === "moonshot" && subscription) { adapter = "kimi-token-plan"; mode = "subscription"; defaults = DEFAULTS.kimi; }
@@ -146,11 +244,23 @@ function accountSpec(provider) {
 		defaults = DEFAULTS.minimax;
 		if (subscription) { adapter = "minimax-token-plan"; mode = "subscription"; }
 	}
+	// A configurable pi-ai route has no fixed provider family in the pricing
+	// catalog. When it exposes an HTTPS endpoint and a credential reference,
+	// use the same read-only `/v1/usage` contract as cc-switch. Specialized
+	// first-party adapters above keep their precedence, and subscriptions stay
+	// on their quota-specific paths.
+	const customRoute = provider.source === "pi-ai" || family === "unknown";
+	const hasCredentialRef = firstNonEmpty(configuredApiKeyRef, configuredAccountApiKeyRef, usageTemplate?.apiKeyRef, usageTemplate?.apiKeyEnv);
+	if (!adapter && !subscription && customRoute && validTemplateBase(configuredBaseURL) && hasCredentialRef) {
+		adapter = "generic-usage";
+		mode = "balance";
+	}
 	// OpenRouter's credits endpoint requires a Management Key. Keep its
 	// account-specific reference separate from the normal inference API key.
+	const templateKeyRef = nonEmpty(usageTemplate?.apiKeyRef) || nonEmpty(usageTemplate?.apiKeyEnv);
 	const apiKeyRef = adapter === "openrouter-balance"
-		? nonEmpty(provider.accountApiKeyRef) || DEFAULTS.openrouter.apiKeyRef
-		: nonEmpty(provider.accountApiKeyRef) || nonEmpty(provider.apiKeyRef) || defaults?.apiKeyRef || null;
+		? configuredAccountApiKeyRef || DEFAULTS.openrouter.apiKeyRef
+		: templateKeyRef || configuredAccountApiKeyRef || configuredApiKeyRef || defaults?.apiKeyRef || null;
 	return {
 		id: provider.id,
 		displayName: displayName(provider.id, provider.displayName),
@@ -158,9 +268,12 @@ function accountSpec(provider) {
 		adapter,
 		mode,
 		apiKeyRef,
-		baseURL: nonEmpty(provider.baseURL) || defaults?.baseURL || null,
+		baseURL: configuredBaseURL || firstNonEmpty(usageTemplate?.baseURL) || defaults?.baseURL || null,
 		actionUrl: defaults?.actionUrl || null,
-		accountType
+		accountType,
+		usageTemplate: adapter === "generic-usage"
+			? (usageTemplate?.request ? usageTemplate : defaultUsageTemplateFor(configuredBaseURL))
+			: usageTemplate
 	};
 }
 
@@ -212,6 +325,105 @@ async function requestJson(url, headers, deps) {
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+function interpolateTemplate(value, variables) {
+	if (typeof value === "string") return value.replace(/\{\{(baseUrl|apiKey)\}\}/g, (_match, key) => variables[key]);
+	if (Array.isArray(value)) return value.map((item) => interpolateTemplate(item, variables));
+	if (value && typeof value === "object") {
+		const result = {};
+		for (const [key, item] of Object.entries(value)) result[key] = interpolateTemplate(item, variables);
+		return result;
+	}
+	return value;
+}
+
+function templateUrl(baseURL, configuredUrl) {
+	let base;
+	try { base = new URL(baseURL); } catch { throw new AccountError("blocked", "invalid-url"); }
+	if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new AccountError("blocked", "endpoint-not-allowed");
+	if (typeof configuredUrl !== "string" || !configuredUrl.trim()) throw new AccountError("invalid-response", "usage-request-missing");
+	if (/\{\{apiKey\}\}/.test(configuredUrl)) throw new AccountError("blocked", "credential-in-url");
+	const expanded = configuredUrl.replace(/\{\{baseUrl\}\}/g, base.toString().replace(/\/$/, ""));
+	let target;
+	try { target = new URL(expanded, base); } catch { throw new AccountError("blocked", "invalid-url"); }
+	if (target.protocol !== "https:" || target.origin !== base.origin || target.username || target.password) {
+		throw new AccountError("blocked", "endpoint-not-allowed");
+	}
+	return target.href;
+}
+
+async function requestTemplate(template, spec, key, deps) {
+	const request = template?.request;
+	if (!request || typeof request !== "object") throw new AccountError("invalid-response", "usage-request-missing");
+	const method = String(request.method || "GET").toUpperCase();
+	if (method !== "GET" && method !== "POST") throw new AccountError("blocked", "method-not-allowed");
+	const url = templateUrl(spec.baseURL, request.url);
+	const variables = { baseUrl: spec.baseURL.replace(/\/$/, ""), apiKey: key };
+	const headers = interpolateTemplate(request.headers && typeof request.headers === "object" ? request.headers : {}, variables);
+	const bodyValue = request.body === undefined ? undefined : interpolateTemplate(request.body, variables);
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), deps.timeoutMs || REQUEST_TIMEOUT_MS);
+	try {
+		let response;
+		try {
+			const init = { method, headers: { accept: "application/json", ...headers }, redirect: "error", signal: controller.signal };
+			if (bodyValue !== undefined && method !== "GET") {
+				init.body = typeof bodyValue === "string" ? bodyValue : JSON.stringify(bodyValue);
+				if (!Object.keys(init.headers).some((name) => name.toLowerCase() === "content-type")) init.headers["content-type"] = "application/json";
+			}
+			response = await (deps.fetch || globalThis.fetch)(url, init);
+		} catch (error) {
+			if (controller.signal.aborted || error?.name === "AbortError" || error?.name === "TimeoutError") throw new AccountError("unavailable", "timeout");
+			throw new AccountError("unavailable", "transport-failed");
+		}
+		if (!response?.ok) throw new AccountError(httpStatus(Number(response?.status)), `http-${response?.status || 0}`);
+		return await responseJson(response);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+function pathValue(value, path) {
+	if (typeof path !== "string" || !path.trim()) return undefined;
+	return path.split(".").filter(Boolean).reduce((current, key) => current == null ? undefined : current[key], value);
+}
+
+function extractorValue(body, descriptor) {
+	if (Array.isArray(descriptor)) {
+		for (const path of descriptor) {
+			const value = pathValue(body, path);
+			if (value !== undefined && value !== null) return value;
+		}
+		return undefined;
+	}
+	return pathValue(body, descriptor);
+}
+
+function genericUsageView(template, body) {
+	let extracted;
+	try {
+		if (typeof template?.extractor === "function") extracted = template.extractor(body);
+		else if (template?.extractor && typeof template.extractor === "object") {
+			extracted = {};
+			for (const [key, path] of Object.entries(template.extractor)) extracted[key] = extractorValue(body, path);
+		} else extracted = body;
+	} catch (error) {
+		if (error instanceof AccountError) throw error;
+		throw new AccountError("invalid-response", "extractor-failed");
+	}
+	if (!extracted || typeof extracted !== "object" || Array.isArray(extracted)) throw new AccountError("invalid-response", "invalid-usage-extractor");
+	const source = body && typeof body === "object" && !Array.isArray(body) ? body : null;
+	const isValid = extracted.isValid ?? source?.is_active ?? source?.isValid;
+	if (isValid === false) throw new AccountError("invalid-response", "provider-invalid");
+	const quota = extracted.quota && typeof extracted.quota === "object" ? extracted.quota : null;
+	const sourceQuota = source?.quota && typeof source.quota === "object" ? source.quota : null;
+	const remaining = extracted.remaining ?? quota?.remaining ?? extracted.balance
+		?? source?.remaining ?? sourceQuota?.remaining ?? source?.balance;
+	const unit = extracted.unit ?? quota?.unit ?? source?.unit ?? sourceQuota?.unit ?? "USD";
+	const total = extracted.total ?? quota?.total ?? source?.total ?? sourceQuota?.total;
+	const used = extracted.used ?? quota?.used ?? source?.used ?? sourceQuota?.used;
+	return balanceView(unit, remaining, { total, used, toppedUp: extracted.toppedUp, granted: extracted.granted, unlimited: extracted.unlimited === true });
 }
 
 async function resolveCredential(credentials, ref) {
@@ -344,7 +556,10 @@ function zaiWindow(limit, kind, fallbackReset = null) {
 
 async function queryBalance(spec, key, deps, now) {
 	let url, body, balance;
-	if (spec.adapter === "deepseek-balance") {
+	if (spec.adapter === "generic-usage") {
+		body = await requestTemplate(spec.usageTemplate, spec, key, deps);
+		balance = genericUsageView(spec.usageTemplate, body);
+	} else if (spec.adapter === "deepseek-balance") {
 		url = allowedUrl(spec.baseURL, "/user/balance", ["api.deepseek.com"]);
 		body = await requestJson(url, { authorization: `Bearer ${key}` }, deps);
 		const infos = Array.isArray(body?.balance_infos) ? body.balance_infos : [];
@@ -542,6 +757,8 @@ export {
 	AccountError,
 	configuredProviders,
 	accountSpec,
+	genericUsageView,
+	requestTemplate,
 	queryProviderAccount,
 	collectAccounts,
 	providerViews,

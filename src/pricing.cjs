@@ -1,9 +1,11 @@
 /*
  * Provider-scoped, effective-dated token pricing.
  *
- * Prices are expressed per one million tokens in the rule currency. Model
- * aliases are intentionally scoped to a provider family: a relay that happens
- * to expose the same model id is never charged at a first-party list price.
+ * Prices are expressed per one million tokens in the rule currency. A direct
+ * provider match is exact; when an API-compatible route has no provider
+ * pricing metadata, a unique first-party model match is available as an
+ * explicitly estimated fallback. The original provider identity is retained
+ * so an estimate is never presented as that provider's official bill.
  */
 
 var MILLION = 1e6;
@@ -12,6 +14,17 @@ var DEEPSEEK_CHANGE_AT = Date.parse("2026-08-17T00:00:00+08:00");
 var OPENAI_LONG_CONTEXT = 272000;
 var GEMINI_LONG_CONTEXT = 200000;
 var RETRIEVED_AT = "2026-08-18";
+var OPENAI_RETRIEVED_AT = "2026-08-26";
+// The dashboard reports one currency. Keep the FX snapshot explicit and
+// replaceable so a future host-side rate provider can pass a newer value
+// without changing the pricing rules themselves.
+var DISPLAY_CURRENCY = "CNY";
+var USD_CNY_RATE = 6.7205;
+var FX_RETRIEVED_AT = "2026-08-26";
+var FX_SOURCE = "https://api.frankfurter.app/2026-08-26?from=USD&to=CNY";
+// OpenRouter rows are provider-specific snapshots, not a source for the
+// model-only fallback. A model fallback must resolve to one first-party rule.
+var MODEL_FALLBACK_EXCLUDED_FAMILIES = new Set(["openrouter"]);
 
 var SOURCES = {
 	deepseek: "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
@@ -27,7 +40,7 @@ var SOURCES = {
 var OFFICIAL_PROVIDER_IDS = {
 	// These routes preserve DeepSeek's official API billing while exposing a
 	// distinct provider id in DSH. Keep the allowlist explicit: model names alone
-	// are still insufficient to trust an arbitrary relay's pricing.
+	// are insufficient for exact billing on an arbitrary relay.
 	deepseek: new Set(["deepseek", "deepseek-official", "deepseek-modlens", "nbdeepseek"]),
 	minimax: new Set(["minimax", "minimax-cn", "minimaxi", "minimax-global", "minimax-coding"]),
 	openai: new Set(["openai", "openai-official", "openai-codex"]),
@@ -53,14 +66,15 @@ function modelAliases(canonical, aliases) {
 }
 
 function fixedRule(family, canonical, currency, rates, aliases, extra) {
+	var retrievedAt = extra && typeof extra.retrievedAt === "string" && extra.retrievedAt ? extra.retrievedAt : RETRIEVED_AT;
 	return {
-		id: family + "/" + canonical + "@" + RETRIEVED_AT,
+		id: family + "/" + canonical + "@" + retrievedAt,
 		family: family,
 		canonical: canonical,
 		aliases: modelAliases(canonical, aliases),
 		currency: currency,
 		sourceUrl: SOURCES[family],
-		retrievedAt: RETRIEVED_AT,
+		retrievedAt: retrievedAt,
 		rates: rates,
 		reasoningIncludedInOutput: true,
 		confidence: "exact",
@@ -98,27 +112,43 @@ var RULES = [
 	fixedRule("minimax", "MiniMax-M2.7-highspeed", "CNY", { cacheRead: 0.42, uncached: 4.2, cacheWrite: 2.625, output: 16.8 }, ["minimax-m2.7-highspeed"]),
 
 	{
-		...fixedRule("openai", "gpt-5.6-sol", "USD", null, ["openai/gpt-5.6-sol"]),
+		...fixedRule("openai", "gpt-5.6-sol", "USD", null, ["openai/gpt-5.6-sol", "daybreak-blue-latest"], { retrievedAt: OPENAI_RETRIEVED_AT }),
 		contextTiers: {
-			short: { cacheRead: 0.5, uncached: 5, cacheWrite: 6.25, output: 30 },
-			long: { cacheRead: 1, uncached: 10, cacheWrite: 12.5, output: 45 }
+			short: { cacheRead: 0.4, uncached: 4, cacheWrite: 5, output: 20 },
+			long: { cacheRead: 0.8, uncached: 8, cacheWrite: 10, output: 30 }
 		}, contextThreshold: OPENAI_LONG_CONTEXT
 	},
 	{
-		...fixedRule("openai", "gpt-5.6-terra", "USD", null, ["openai/gpt-5.6-terra"]),
+		...fixedRule("openai", "gpt-5.6-terra", "USD", null, ["openai/gpt-5.6-terra"], { retrievedAt: OPENAI_RETRIEVED_AT }),
 		contextTiers: {
 			short: { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 12 },
 			long: { cacheRead: 0.4, uncached: 4, cacheWrite: 5, output: 18 }
 		}, contextThreshold: OPENAI_LONG_CONTEXT
 	},
 	{
-		...fixedRule("openai", "gpt-5.6-luna", "USD", null, ["openai/gpt-5.6-luna"]),
+		...fixedRule("openai", "gpt-5.6-luna", "USD", null, ["openai/gpt-5.6-luna"], { retrievedAt: OPENAI_RETRIEVED_AT }),
 		contextTiers: {
 			short: { cacheRead: 0.02, uncached: 0.2, cacheWrite: 0.25, output: 1.2 },
 			long: { cacheRead: 0.04, uncached: 0.4, cacheWrite: 0.5, output: 1.8 }
 		}, contextThreshold: OPENAI_LONG_CONTEXT
 	},
-	fixedRule("openai", "gpt-5.6-cyber", "USD", { cacheRead: 1.25, uncached: 12.5, cacheWrite: 15.625, output: 75 }, ["openai/gpt-5.6-cyber"]),
+	{
+		// OpenAI lists cache writes as unavailable for these models. Keep a
+		// conservative input-rate proxy and mark rows with writes estimated.
+		...fixedRule("openai", "gpt-5.4", "USD", null, ["openai/gpt-5.4"], { retrievedAt: OPENAI_RETRIEVED_AT }),
+		contextTiers: {
+			short: { cacheRead: 0.25, uncached: 2.5, cacheWrite: 2.5, output: 15 },
+			long: { cacheRead: 0.5, uncached: 5, cacheWrite: 5, output: 30 }
+		}, contextThreshold: OPENAI_LONG_CONTEXT, cacheWritePriceUnknown: true
+	},
+	{
+		...fixedRule("openai", "gpt-5.4-mini", "USD", null, ["openai/gpt-5.4-mini"], { retrievedAt: OPENAI_RETRIEVED_AT }),
+		contextTiers: {
+			short: { cacheRead: 0.075, uncached: 0.75, cacheWrite: 0.75, output: 4.5 },
+			long: { cacheRead: 0.15, uncached: 1.5, cacheWrite: 1.5, output: 9 }
+		}, contextThreshold: OPENAI_LONG_CONTEXT, cacheWritePriceUnknown: true
+	},
+	fixedRule("openai", "gpt-5.6-cyber", "USD", { cacheRead: 1.25, uncached: 12.5, cacheWrite: 15.625, output: 75 }, ["openai/gpt-5.6-cyber", "daybreak-red-latest"], { retrievedAt: OPENAI_RETRIEVED_AT }),
 
 	fixedRule("anthropic", "claude-opus-5", "USD", { cacheRead: 0.5, uncached: 5, cacheWrite: 6.25, output: 25 }, ["anthropic/claude-opus-5"], { cacheWriteDurationUnknown: true }),
 	fixedRule("anthropic", "claude-sonnet-5", "USD", { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 10 }, ["anthropic/claude-sonnet-5"], { cacheWriteDurationUnknown: true }),
@@ -188,6 +218,25 @@ function matchingRules(family, modelRaw, at) {
 	});
 }
 
+function modelFallbackRules(modelRaw, at) {
+	var when = Number.isFinite(at) ? at : Date.now();
+	return RULES.filter(function(rule) {
+		if (MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) || rule.confidence !== "exact" || !ruleMatchesModel(rule, modelRaw)) return false;
+		if (rule.effectiveFrom && when < Date.parse(rule.effectiveFrom)) return false;
+		if (rule.effectiveTo && when > Date.parse(rule.effectiveTo)) return false;
+		return true;
+	});
+}
+
+// Resolve provider-scoped rules first. Unknown provider ids may use a unique
+// first-party model row as an estimate, but the provider family stays unknown.
+function rulesForIdentity(family, modelRaw, at) {
+	var direct = matchingRules(family, modelRaw, at);
+	if (direct.length > 0 || family !== "unknown") return { matches: direct, estimatedFallback: false };
+	var fallback = modelFallbackRules(modelRaw, at);
+	return { matches: fallback, estimatedFallback: fallback.length === 1 };
+}
+
 function normalizeAccountType(value) {
 	var type = String(value || "api").trim().toLowerCase().replace(/_/g, "-");
 	if (["coding-plan", "subscription-plan", "paid-plan"].indexOf(type) >= 0) type = "token-plan";
@@ -198,7 +247,7 @@ function normalizeIdentity(providerId, modelRaw, accountType, at) {
 	var provider = typeof providerId === "string" && providerId.trim() ? providerId.trim() : "unknown";
 	var raw = typeof modelRaw === "string" && modelRaw.trim() ? modelRaw.trim() : "(unknown)";
 	var family = providerFamilyOf(provider);
-	var matches = matchingRules(family, raw, at);
+	var matches = rulesForIdentity(family, raw, at).matches;
 	return {
 		providerId: provider,
 		providerFamily: family,
@@ -222,6 +271,82 @@ function tokenCounts(usage) {
 
 function totalBillableTokens(tokens) {
 	return tokens.uncached + tokens.cacheRead + tokens.cacheWrite + tokens.output;
+}
+
+function positiveRate(value) {
+	return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function usdCnyRate(options) {
+	var override = positiveRate(options && options.usdCnyRate);
+	return override || USD_CNY_RATE;
+}
+
+// Convert a single priced row for display/aggregation. Native pricing remains
+// in priceUsage(); this boundary keeps the official USD rule auditable while
+// making all dashboard totals comparable in CNY.
+function convertCostToCny(cost, options) {
+	if (!cost || typeof cost !== "object") return cost;
+	var currency = typeof cost.currency === "string" ? cost.currency.toUpperCase() : "";
+	if (currency === DISPLAY_CURRENCY) return { ...cost, currency: DISPLAY_CURRENCY };
+	if (cost.amount == null || currency !== "USD") return { ...cost };
+	var rate = usdCnyRate(options);
+	if (!rate) return { ...cost };
+	// A USD list-price row converted with a fixed FX snapshot is useful for
+	// comparison, but it cannot represent the provider's settled RMB bill.
+	// Move the converted amount into the estimated bucket so the UI and summary
+	// never describe it as an exact charge.
+	var convertedAmount = cost.amount * rate;
+	return {
+		...cost,
+		status: convertedAmount > 0 ? "estimated" : cost.status === "free" ? "free" : cost.status,
+		currency: DISPLAY_CURRENCY,
+		amount: convertedAmount,
+		exactAmount: 0,
+		estimatedAmount: convertedAmount
+	};
+}
+
+function convertCostSummaryToCny(summary, options) {
+	if (!summary || !Array.isArray(summary.totals)) return summary;
+	var totals = new Map();
+	var conversionFailures = 0;
+	for (var total of summary.totals) {
+		var converted = convertCostToCny({
+			status: (total.estimatedAmount || 0) > 0 ? "estimated" : "exact",
+			amount: total.amount,
+			currency: total.currency,
+			exactAmount: total.exactAmount || 0,
+			estimatedAmount: total.estimatedAmount || 0
+		}, options);
+		if (!converted || converted.currency !== DISPLAY_CURRENCY) {
+			conversionFailures++;
+			continue;
+		}
+		var row = totals.get(DISPLAY_CURRENCY) || { currency: DISPLAY_CURRENCY, amount: 0, exactAmount: 0, estimatedAmount: 0 };
+		row.amount += converted.amount || 0;
+		row.exactAmount += converted.exactAmount || 0;
+		row.estimatedAmount += converted.estimatedAmount || 0;
+		totals.set(DISPLAY_CURRENCY, row);
+	}
+	var status = summary.status;
+	var unpricedTokens = Number.isFinite(summary.unpricedTokens) ? summary.unpricedTokens : 0;
+	var unknownRows = (Number.isFinite(summary.unknownRows) ? summary.unknownRows : 0) + conversionFailures;
+	if (conversionFailures > 0 || unknownRows > 0 || unpricedTokens > 0) status = totals.size > 0 ? "partial" : "unsupported";
+	return {
+		status: status,
+		totals: Array.from(totals.values()),
+		unpricedTokens: unpricedTokens,
+		unknownRows: unknownRows
+	};
+}
+
+function summarizeCostsCny(costs, options) {
+	return summarizeCosts((costs || []).map(function(cost) { return convertCostToCny(cost, options); }));
+}
+
+function mergeCostSummariesCny(summaries, options) {
+	return mergeCostSummaries((summaries || []).map(function(summary) { return convertCostSummaryToCny(summary, options); }));
 }
 
 function deepSeekPeak(slot) {
@@ -277,17 +402,21 @@ function priceUsage(usage, identityInput) {
 		at
 	);
 	var tokens = tokenCounts(usage);
+	var resolved = rulesForIdentity(identity.providerFamily, identity.modelRaw, at);
 	if (identity.accountType === "free") {
-		var freeMatches = matchingRules(identity.providerFamily, identity.modelRaw, at);
+		var freeMatches = resolved.matches;
 		return { ...emptyCost("free", identity, tokens), amount: 0, currency: freeMatches.length === 1 ? freeMatches[0].currency : null, unpricedTokens: 0 };
 	}
 	if (identity.accountType === "subscription" || identity.accountType === "token-plan") {
 		return emptyCost("subscription", identity, tokens);
 	}
-	if (identity.providerFamily === "unknown" || identity.accountType === "unknown" || identity.accountType === "relay" || identity.accountType === "local") {
+	if (identity.accountType === "unknown" || identity.accountType === "relay" || identity.accountType === "local") {
 		return emptyCost("unsupported", identity, tokens);
 	}
-	var matches = matchingRules(identity.providerFamily, identity.modelRaw, at);
+	if (identity.providerFamily === "unknown" && !resolved.estimatedFallback) {
+		return emptyCost(resolved.matches.length > 1 ? "ambiguous" : "unsupported", identity, tokens);
+	}
+	var matches = resolved.matches;
 	if (matches.length > 1) return emptyCost("ambiguous", identity, tokens);
 	if (matches.length === 0) return emptyCost("unsupported", identity, tokens);
 	var rule = matches[0];
@@ -295,9 +424,10 @@ function priceUsage(usage, identityInput) {
 	if (!rates) return emptyCost("unsupported", identity, tokens);
 	var amount = (tokens.uncached * rates.uncached + tokens.cacheRead * rates.cacheRead + tokens.cacheWrite * rates.cacheWrite + tokens.output * rates.output) / MILLION;
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
-	var uncertain = rule.confidence === "estimated"
+	var uncertain = resolved.estimatedFallback || rule.confidence === "estimated"
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
-		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0;
+		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
+		|| rule.cacheWritePriceUnknown && tokens.cacheWrite > 0;
 	var status = allZero ? "free" : uncertain ? "estimated" : "exact";
 	return {
 		status: status,
@@ -335,7 +465,9 @@ function summarizeCosts(costs) {
 			continue;
 		}
 		pricedRows++;
-		if (cost.status === "estimated") estimatedRows++;
+		// Metadata-only usage rows can carry a model/provider identity but no
+		// tokens. They must not turn an otherwise exact summary into estimated.
+		if (cost.status === "estimated" && (cost.estimatedAmount || cost.amount || 0) > 0) estimatedRows++;
 		var row = totals.get(cost.currency) || { currency: cost.currency, amount: 0, exactAmount: 0, estimatedAmount: 0 };
 		row.amount += cost.amount;
 		row.exactAmount += cost.exactAmount || 0;
@@ -394,12 +526,20 @@ function pricingCatalog() {
 module.exports = {
 	SOURCES: SOURCES,
 	RULES: RULES,
+	DISPLAY_CURRENCY: DISPLAY_CURRENCY,
+	USD_CNY_RATE: USD_CNY_RATE,
+	FX_RETRIEVED_AT: FX_RETRIEVED_AT,
+	FX_SOURCE: FX_SOURCE,
 	providerFamilyOf: providerFamilyOf,
 	normalizeAccountType: normalizeAccountType,
 	normalizeIdentity: normalizeIdentity,
 	priceUsage: priceUsage,
 	summarizeCosts: summarizeCosts,
 	mergeCostSummaries: mergeCostSummaries,
+	convertCostToCny: convertCostToCny,
+	convertCostSummaryToCny: convertCostSummaryToCny,
+	summarizeCostsCny: summarizeCostsCny,
+	mergeCostSummariesCny: mergeCostSummariesCny,
 	emptyCostSummary: emptyCostSummary,
 	pricingCatalog: pricingCatalog,
 	tokenCounts: tokenCounts

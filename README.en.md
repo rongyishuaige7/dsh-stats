@@ -49,13 +49,13 @@ Reopen the page. The “Stats” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.37
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.41
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.37.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.41.tgz
 ```
 
 Verify the bundle registration:
@@ -74,7 +74,7 @@ You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **
 | 📊 Project overview | Per-project sessions, turns, tokens, cache hit rate, speed, and spend; inactive projects stay out of the day view. |
 | ⏱️ Development timeline | Event-based 30-minute activity slots whose project colors and durations remain readable when work overlaps. |
 | 📈 Usage trends | Seven-day input/output tokens, an interactive activity heatmap, model distribution, and per-model spend on hover. |
-| 💳 Provider-scoped pricing | Selects a rule from the real `provider + model + account type + time slot` instead of trusting a look-alike model name. |
+| 💳 Provider-scoped pricing | Uses exact first-party rates when the provider is known; otherwise prices a uniquely matched official model as an estimate, with all spend displayed in RMB. |
 | 👤 Balances and quotas | DeepSeek, OpenRouter, Moonshot, and Z.ai API balances plus Kimi, Z.ai, and MiniMax Coding Plan windows. |
 | 🔒 Host-side credential boundary | Account requests run in the DSH host; the browser receives normalized balances and statuses only. |
 
@@ -123,30 +123,30 @@ Project overview, development timeline, and usage trends support CSV and JSON ex
 
 ## 💰 Pricing
 
-All rates are calculated per million tokens. Currencies are reported separately (for example `¥... + $...`) with no implicit FX conversion. The pricing engine considers context length, service tier, cache type, and effective time, and includes rule metadata in project exports for auditing.
+All rates are calculated per million tokens. Provider rules may be denominated in USD, but spend summaries are converted to RMB (CNY), and the UI and spend exports show RMB only. The current fixed FX snapshot is `1 USD = 6.7205 CNY`, retrieved on `2026-08-26` from [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY). The pricing engine considers context length, service tier, cache type, and effective time, and includes rule metadata and estimate status in project exports for auditing. Account balances remain in each provider's native currency.
 
 | Provider | Built-in models | Pricing notes |
 | --- | --- | --- |
 | [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`, `deepseek-v4-flash` | CNY; Beijing-time 30-minute slots select historical, peak, or off-peak rates. |
 | [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` | CNY; M3 separates standard/priority and `<=512K`/`>512K` context. |
-| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber` | USD; includes the `272K` context tier. |
+| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber`, `gpt-5.4`, `gpt-5.4-mini` | Source rates are USD; uses the official standard rates retrieved on 2026-08-26, including the `272K` context tier; cache-write pricing for `gpt-5.4` models uses a conservative input-rate estimate when needed. |
 | [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5, Sonnet 5, Sonnet 4.6, Haiku 4.5 | USD; cache-write duration gaps are explicitly estimated. |
 | [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash, 3.1 Pro Preview, 2.5 Pro/Flash | USD; includes the `200K` context tier; missing cache-storage duration is estimated. |
 | [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3, K2.7 Code/Highspeed, K2.6 | CNY; official model rules. |
 | [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2, 5.1, 5, 5 Turbo, 4.7, 4.7 FlashX/Flash | USD; official model rules. |
 | [OpenRouter](https://openrouter.ai/api/v1/models) | Dated routes for mainstream OpenAI, Anthropic, Google, Kimi, and GLM models | USD; catalog snapshots are marked `estimated`. |
 
-Pricing is **provider-scoped**. A first-party list price is applied only when the provider is explicitly recognized as that official family. The DSH pass-through routes `nbdeepseek` and `deepseek-modlens` explicitly inherit DeepSeek's official API pricing; other relays, `local`, unknown providers, look-alike model names, and subscription/token-plan usage are never presented as API spend.
+Pricing is primarily **provider-scoped**. Explicitly recognized first-party providers use their list prices and are `exact`; the DSH pass-through routes `nbdeepseek` and `deepseek-modlens` explicitly inherit DeepSeek's official API pricing. When an unknown or API-compatible provider has no usable pricing metadata but its model uniquely matches one first-party rule, the original provider is retained, the amount is marked `estimated`, and the result is converted to RMB. This is a public-price estimate, not the relay's bill. The estimate status remains available in data and exports, while the UI shows the calculated RMB amount without an approximation marker. Explicit `relay`/`local` modes, subscription/token-plan usage, unknown models, and ambiguous matches are not guessed, are excluded from the primary spend total, and retain an explanation in session details and warnings.
 
 ### Cost status guide
 
 | Status | Meaning |
 | --- | --- |
 | `exact` | Every priced usage row matched a deterministic built-in rule. |
-| `estimated` | An amount is available, but a dynamic snapshot or missing price-affecting metadata is involved. |
+| `estimated` | An amount is available, but a dynamic snapshot, missing price-affecting metadata, or a unique official-model fallback for an unknown API provider is involved; the UI shows the calculated RMB amount, while the estimate status remains in data and exports. |
 | `free` | All matched usage is free; the summary keeps a zero amount instead of displaying an unknown cost. |
-| `partial` | Known and unpriced usage coexist; known totals remain visible with `+ ?`. |
-| `unsupported` | No safe rule applies, so the amount is shown as `—` rather than guessed. |
+| `partial` | Known and unpriced usage coexist; the primary total shows only included RMB, with the incomplete reason in details. |
+| `unsupported` | No safe rule applies; the session is excluded from the primary spend total and the detail view explains why. |
 
 Individual usage rows may also be marked `subscription` or `ambiguous`. Subscription aliases such as `coding-plan` and `coding_plan` are normalized before pricing and are never presented as API spend.
 
@@ -194,13 +194,13 @@ Tier 2 RPC did not load, or the host is still running an older plugin. Restart `
 <details>
 <summary><strong>Why is the most-used model `(unknown)`?</strong></summary>
 
-The source session may not contain provider/model metadata, or that provider is not in the safe pricing catalog yet. The plugin refuses to map a similar-looking name to a first-party price; an explicit unknown is safer than a fabricated bill.
+The source session may not contain provider/model metadata. When the model field itself is missing, there is no reliable rule to select, so the UI uses `(unknown)`. If a model is present but the provider is unknown and the model uniquely matches a first-party rule, the model remains visible and its calculated RMB amount is shown while the data retains `estimated`; ambiguous or unknown models still stay unpriced.
 </details>
 
 <details>
-<summary><strong>Why does total spend end with `+ ?`?</strong></summary>
+<summary><strong>Why does a session have no cost?</strong></summary>
 
-Known model rows were priced, but some tokens came from an unknown provider, a relay, or a subscription plan. Project CSV exports preserve `costStatus`, `ruleId`, `pricingSource`, provider, and model identity so the missing part can be audited.
+The primary spend total shows only amounts that can be confirmed and converted to RMB. Archived logless forks, unknown models, explicit relay/local routes, and subscription usage are not guessed and are excluded from that total; session details, warnings, and exports retain `costStatus`, `ruleId`, `pricingSource`, provider/model identity, and the exclusion reason.
 </details>
 
 <details>
@@ -280,10 +280,10 @@ npm publish
 ## ⚠️ Known limitations
 
 - The current session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
-- The first request over many sessions may decode logs on the host; mtime caching reduces repeat work.
-- Archived sessions remain in statistics and are marked archived.
+- The first request over many sessions prefers the official projection-cache watermark ladder; older hosts fall back to log decoding, with mtime caching for repeat work.
+- Ordinary archived sessions are marked archived; archived, logless forks backed only by inherited cache values are excluded and reported in warnings.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.
-- Currencies are not converted. Unknown models, relays, local providers, and subscription usage are not guessed.
+- Spend summaries use RMB throughout, with USD converted using the documented FX snapshot; historical values are not re-fetched from the network each time the panel opens. Unknown API providers receive an `estimated` amount only when the model uniquely matches an official rule; explicit relays/local providers, unknown or ambiguous models, and subscription usage remain unpriced.
 - Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool durations remain cumulative work metrics.
 
 ## 🙌 Contributing and license

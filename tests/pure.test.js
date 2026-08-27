@@ -4,7 +4,7 @@ const client = require('../src/client.cjs');
 const {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
-	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
+	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct, fmtCostSummary,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
@@ -29,6 +29,7 @@ test('providerPickerLabel uses the canonical provider family without status text
 	expect(providerPickerLabel({ providerFamily: 'deepseek', displayName: 'DeepSeek', status: 'ok' })).toBe('deepseek');
 	expect(providerPickerLabel({ providerFamily: 'minimax', displayName: 'MiniMax', status: 'stale' })).toBe('minimax');
 	expect(providerPickerLabel({ displayName: 'Custom Provider', status: 'ok' })).toBe('Custom Provider');
+	expect(providerPickerLabel({ providerFamily: 'unknown', displayName: 'yi-api', status: 'ok' })).toBe('yi-api');
 });
 
 test('modelListNeedsScroll limits the visible model list to three rows', () => {
@@ -105,7 +106,7 @@ test('tiny non-zero model shares never render as 0.0%', () => {
 	expect(fmtSharePct(82.34)).toBe('82.3%');
 });
 
-test('cost sorting groups currencies instead of comparing unrelated numeric amounts', () => {
+test('cost sorting compares the unified RMB totals', () => {
 	const project = (currency, amount) => ({ sessions: [{ cost: {
 		status: 'exact', totals: [{ currency, amount, exactAmount: amount, estimatedAmount: 0 }], unpricedTokens: 0, unknownRows: 0,
 	} }] });
@@ -113,7 +114,17 @@ test('cost sorting groups currencies instead of comparing unrelated numeric amou
 	const cnyHigh = project('CNY', 10);
 	const usd = project('USD', 2);
 	expect(compareProjectCost(cnyLow, cnyHigh)).toBeLessThan(0);
-	expect(compareProjectCost(cnyHigh, usd)).toBe('CNY'.localeCompare('USD'));
+	// USD summaries from an older host are converted before sorting (2 USD is about 13.44 CNY).
+	expect(compareProjectCost(cnyHigh, usd)).toBeLessThan(0);
+});
+
+test('estimated and partial summaries render only confirmed RMB amounts', () => {
+	const estimated = { status: 'estimated', totals: [{ currency: 'USD', amount: 0.00082844, exactAmount: 0, estimatedAmount: 0.00082844 }], unpricedTokens: 0, unknownRows: 0 };
+	const partial = { status: 'partial', totals: [{ currency: 'USD', amount: 0.00082844, exactAmount: 0.00082844, estimatedAmount: 0 }], unpricedTokens: 100, unknownRows: 1 };
+
+	expect(fmtCostSummary(estimated)).toBe('¥0.0056');
+	expect(fmtCostSummary(partial)).toBe('¥0.0056');
+	expect(fmtCostSummary({ status: 'free', totals: [], unpricedTokens: 0, unknownRows: 0 })).toBe('¥0');
 });
 
 test('localDayKey returns YYYY-MM-DD', () => {
@@ -342,10 +353,11 @@ test('modelAgg accumulates each model cost with the price of its actual slot', (
 	const peakSlot = Math.floor(Date.parse('2026-08-17T09:00:00+08:00') / 1800000);
 	const models = modelAgg([{
 		model: 'deepseek-v4-pro',
+		providerId: 'deepseek-official',
 		slotUsage: [
-			{ slot: offPeakSlot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
-			{ slot: peakSlot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
-			{ slot: offPeakSlot, model: 'deepseek-v4-flash', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+			{ slot: offPeakSlot, providerId: 'deepseek-official', model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+			{ slot: peakSlot, providerId: 'deepseek-official', model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
+			{ slot: offPeakSlot, providerId: 'deepseek-official', model: 'deepseek-v4-flash', uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 },
 		],
 		stats: { llmMs: 0, toolMs: 0 },
 	}]);
@@ -362,9 +374,10 @@ test('modelAgg keeps known model costs when another model price is unknown', () 
 	const slot = Math.floor(Date.parse('2026-08-17T00:00:00+08:00') / 1800000);
 	const models = modelAgg([{
 		model: 'deepseek-v4-pro',
+		providerId: 'deepseek-official',
 		slotUsage: [
-			{ slot, model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-			{ slot, model: 'future-model', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			{ slot, providerId: 'deepseek-official', model: 'deepseek-v4-pro', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+			{ slot, providerId: 'deepseek-official', model: 'future-model', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 		],
 		stats: { llmMs: 0, toolMs: 0 },
 	}]);

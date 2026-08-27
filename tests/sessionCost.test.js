@@ -1,6 +1,7 @@
 // sessionCost 跨模型计价回归测试：跨模型会话里 flash 的 token 应按 flash 价格算，
 // 而不是被按会话主要模型（pro）价格误算。slotUsage 已带 model 字段。
-const { sessionCost } = require('../src/client.cjs').__test;
+const { sessionCost, sessionCostSummary, identityForUsage } = require('../src/client.cjs').__test;
+const { USD_CNY_RATE } = require('../src/pricing.cjs');
 
 const SLOT_MS = 1800000;
 const DAY_START = Date.parse('2026-08-17T00:00:00+08:00'); // 8/17 00:00（北京）→ offPeak
@@ -91,4 +92,23 @@ test('未知模型不再静默套用已知模型价格', () => {
 	const slot = Math.floor(DAY_START / SLOT_MS);
 	const cost = sessionCost({ model: 'unknown-model', updatedAt: DAY_START, slotUsage: [{ slot, model: 'unknown-model', serviceTier: 'standard', contextOver512k: false, uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }], stats: {} });
 	expect(cost).toBeNull();
+});
+
+test('缺少 Provider 的常见模型使用唯一官方规则并转换为人民币', () => {
+	const slot = Math.floor(DAY_START / SLOT_MS);
+	const session = {
+		model: 'gpt-5.6-luna',
+		updatedAt: DAY_START,
+		slotUsage: [{ slot, model: 'gpt-5.6-luna', uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }],
+		stats: {},
+	};
+	const identity = identityForUsage(session.slotUsage[0], session.model, undefined, undefined);
+	const summary = sessionCostSummary(session);
+
+	expect(identity).toMatchObject({ providerId: 'unknown', providerFamily: 'unknown', modelCanonical: 'gpt-5.6-luna' });
+	expect(summary).toMatchObject({ status: 'estimated', unpricedTokens: 0 });
+	const expectedCny = 0.00032 * USD_CNY_RATE;
+	expect(summary.totals[0]).toMatchObject({ currency: 'CNY', estimatedAmount: expectedCny, exactAmount: 0 });
+	// 旧数值接口也应返回人民币金额，避免旧 UI 把它当成无价格。
+	expect(sessionCost(session)).toBeCloseTo(expectedCny, 10);
 });

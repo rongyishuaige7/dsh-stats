@@ -43,6 +43,96 @@ function configurableContext(initialRef = 'ACCOUNT_KEY_A') {
 	};
 }
 
+test('yi-api-shaped pi-ai routes get the cc-switch usage adapter by default', async () => {
+	const ctx = {
+		settings: {
+			get(name) {
+				if (name === 'llm-deepseek') return { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com' };
+				if (name === 'llm-pi-ai') return { providers: {
+					'yi-api': {
+						apiKeyEnv: 'YI_API_API_KEY', api: 'openai-responses', baseURL: 'https://yiapi.cloud', displayName: 'yi-api',
+						models: [{ id: 'gpt-5.6-luna', name: 'gpt-5.6-luna' }]
+					}
+				} };
+				return null;
+			}
+		},
+		credentials: credentials('yi-secret')
+	};
+	const provider = (await configuredProviders(ctx)).find((item) => item.id === 'yi-api');
+	const spec = accountSpec(provider);
+	expect(spec).toMatchObject({ displayName: 'yi-api', providerFamily: 'unknown', adapter: 'generic-usage', mode: 'balance', apiKeyRef: 'YI_API_API_KEY', baseURL: 'https://yiapi.cloud' });
+	let request;
+	const account = await queryProviderAccount(spec, ctx.credentials, {
+		fetch: async (url, init) => {
+			request = { url, init };
+			return jsonResponse({ balance: 95349.09, remaining: 95349.09, unit: 'USD', isValid: true });
+		}
+	});
+	expect(request.url).toBe('https://yiapi.cloud/v1/usage');
+	expect(request.init.headers.Authorization).toBe('Bearer yi-secret');
+	expect(account).toMatchObject({ id: 'yi-api', displayName: 'yi-api', status: 'ok', balance: { currency: 'USD', remaining: 95349.09 } });
+	expect(JSON.stringify(account)).not.toContain('yi-secret');
+});
+
+test('default usage adapter accepts baseURL aliases and avoids a duplicate /v1 segment', async () => {
+	const spec = accountSpec({ id: 'relay', baseUrl: 'https://relay.example.test/v1/', apiKeyEnv: 'RELAY_KEY' });
+	let request;
+	const account = await queryProviderAccount(spec, credentials('relay-secret'), {
+		fetch: async (url, init) => { request = { url, init }; return jsonResponse({ remaining: 4, unit: 'USD', is_active: true }); }
+	});
+	expect(spec).toMatchObject({ adapter: 'generic-usage', apiKeyRef: 'RELAY_KEY', baseURL: 'https://relay.example.test/v1/' });
+	expect(request.url).toBe('https://relay.example.test/v1/usage');
+	expect(request.init.headers.Authorization).toBe('Bearer relay-secret');
+	expect(account).toMatchObject({ status: 'ok', balance: { remaining: 4, currency: 'USD' } });
+});
+
+test('generic accountUsage adapter follows the cc-switch response contract without exposing the key', async () => {
+	const spec = accountSpec({
+		id: 'custom-relay', baseURL: 'https://relay.example.test', apiKeyRef: 'RELAY_API_KEY', accountType: 'api',
+		accountUsage: {
+			request: { url: '{{baseUrl}}/v1/usage', method: 'GET', headers: { Authorization: 'Bearer {{apiKey}}' } },
+			extractor: { isValid: 'is_active', remaining: 'quota.remaining', unit: 'quota.unit', total: 'quota.total', used: 'quota.used' },
+		},
+	});
+	let requested;
+	const account = await queryProviderAccount(spec, credentials('relay-secret'), {
+		fetch: async (url, init) => {
+			requested = { url, init };
+			return jsonResponse({ is_active: true, quota: { remaining: '8.5', used: 1.5, total: 10, unit: 'USD' } });
+		},
+	});
+	expect(spec.adapter).toBe('generic-usage');
+	expect(requested.url).toBe('https://relay.example.test/v1/usage');
+	expect(requested.init.method).toBe('GET');
+	expect(requested.init.headers.Authorization).toBe('Bearer relay-secret');
+	expect(account).toMatchObject({ status: 'ok', balance: { currency: 'USD', remaining: 8.5, used: 1.5, total: 10 } });
+	expect(JSON.stringify(account)).not.toContain('relay-secret');
+});
+
+test('generic accountUsage supports POST templates and rejects cross-origin endpoints', async () => {
+	const postSpec = accountSpec({
+		id: 'post-provider', baseURL: 'https://post.example.test/api', apiKeyRef: 'POST_KEY',
+		accountUsage: { request: { url: '{{baseUrl}}/usage', method: 'POST', headers: { authorization: 'Bearer {{apiKey}}' }, body: { token: '{{apiKey}}' } }, extractor: { remaining: 'balance', unit: 'unit' } },
+	});
+	let request;
+	const post = await queryProviderAccount(postSpec, credentials('post-secret'), { fetch: async (url, init) => { request = { url, init }; return jsonResponse({ balance: 2, unit: 'CNY' }); } });
+	expect(post).toMatchObject({ status: 'ok', balance: { currency: 'CNY', remaining: 2 } });
+	expect(request.url).toBe('https://post.example.test/api/usage');
+	expect(request.init.body).toBe(JSON.stringify({ token: 'post-secret' }));
+	const blockedSpec = accountSpec({ id: 'blocked-provider', baseURL: 'https://safe.example.test', apiKeyRef: 'KEY', accountUsage: { request: { url: 'https://evil.example.test/v1/usage', method: 'GET' }, extractor: { remaining: 'remaining' } } });
+	const blocked = await queryProviderAccount(blockedSpec, credentials(), { fetch: async () => { throw new Error('must not fetch'); } });
+	expect(blocked).toMatchObject({ status: 'blocked', errorCode: 'endpoint-not-allowed' });
+});
+
+test('generic accountUsage invalid responses and isValid=false are explicit', async () => {
+	const spec = accountSpec({ id: 'invalid-provider', baseURL: 'https://invalid.example.test', apiKeyRef: 'KEY', accountUsage: { request: { url: '/v1/usage' }, extractor: { isValid: 'is_active', remaining: 'remaining' } } });
+	const invalid = await queryProviderAccount(spec, credentials(), { fetch: async () => jsonResponse({ is_active: false, remaining: 5 }) });
+	expect(invalid).toMatchObject({ status: 'invalid-response', errorCode: 'provider-invalid' });
+	const missing = await queryProviderAccount(spec, credentials(), { fetch: async () => jsonResponse({ is_active: true }) });
+	expect(missing).toMatchObject({ status: 'invalid-response' });
+});
+
 test('DeepSeek account adapter normalizes balance without returning the credential', async () => {
 	let requested;
 	const spec = accountSpec({ id: 'deepseek-official', displayName: 'DeepSeek', apiKeyRef: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com', accountType: 'api' });

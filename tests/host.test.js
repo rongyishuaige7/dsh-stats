@@ -93,6 +93,207 @@ test('StatsService balance keeps the last successful value as stale on refresh f
 	}
 });
 
+test('StatsService account resolves configured pi-ai providers through the host context', async () => {
+	const settings = {
+		get: async (name) => {
+			if (name === 'llm-deepseek') return { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com' };
+			if (name === 'llm-pi-ai') return { providers: {
+				'yi-api': { apiKeyEnv: 'YI_API_API_KEY', api: 'openai-responses', baseURL: 'https://yiapi.cloud', displayName: 'yi-api' }
+			} };
+			return null;
+		}
+	};
+	const credentialsByRef = {
+		DEEPSEEK_API_KEY: 'deepseek-secret',
+		YI_API_API_KEY: 'yi-secret'
+	};
+	const credentialsService = { resolve: async (ref) => ({ value: credentialsByRef[ref], source: 'test' }) };
+	const requested = [];
+	globalThis.fetch = async (url, init) => {
+		requested.push({ url, authorization: init?.headers?.authorization || init?.headers?.Authorization });
+		if (url === 'https://api.deepseek.com/user/balance') {
+			return { ok: true, status: 200, json: async () => ({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: 18.64 }] }) };
+		}
+		if (url === 'https://yiapi.cloud/v1/usage') {
+			return { ok: true, status: 200, json: async () => ({ remaining: 95349.09, balance: 95349.09, unit: 'USD', isValid: true }) };
+		}
+		throw new Error(`unexpected account URL: ${url}`);
+	};
+	const service = { ctx: { reflect: { get: (name) => ({ settings, credentials: credentialsService }[name]) } } };
+	const result = await StatsService.prototype.account.call(service, true);
+	const deepseek = result.accounts.find((account) => account.id === 'deepseek-official');
+	const yi = result.accounts.find((account) => account.id === 'yi-api');
+	expect(deepseek).toMatchObject({ status: 'ok', balance: { currency: 'CNY', remaining: 18.64 } });
+	expect(yi).toMatchObject({ id: 'yi-api', displayName: 'yi-api', providerFamily: 'unknown', adapter: 'generic-usage', status: 'ok', balance: { currency: 'USD', remaining: 95349.09 } });
+	expect(requested.map((entry) => entry.url)).toEqual(expect.arrayContaining(['https://api.deepseek.com/user/balance', 'https://yiapi.cloud/v1/usage']));
+	expect(JSON.stringify(result)).not.toContain('deepseek-secret');
+	expect(JSON.stringify(result)).not.toContain('yi-secret');
+	TYPERT.invocations.find((invocation) => invocation.method === 'account').result.schema.parse(result);
+});
+
+function captureRouteProjection() {
+	let definition;
+	const ctx = {
+		reflect: { provide: () => {} },
+		inject: (keys, callback) => {
+			expect(keys).toEqual(['sessionProjections']);
+			callback({ sessionProjections: { register: (value) => { definition = value; } } });
+		},
+	};
+	new StatsService(ctx);
+	return definition;
+}
+
+test('route projection is valid for rc6 and rc2 contracts and replaces same-step usage', () => {
+	const definition = captureRouteProjection();
+	let state = definition.init();
+	const now = Date.parse('2026-08-17T12:30:00+08:00');
+	const event = (type, seq, time, data = {}) => ({ type, seq, time, data });
+	state = definition.apply(state, { type: 'session', seq: 0, time: now });
+	state = definition.apply(state, event('assistant/message', 1, now + 1, { turn: 0, step: 0, usage: { inputTokens: 900, outputTokens: 90, cacheReadTokens: 40, cacheWriteTokens: 5 }, message: { source: { provider: 'openai', model: 'gpt-5.6-sol' } } }));
+	// A finalized message for the same turn/step replaces the streaming sample.
+	state = definition.apply(state, event('assistant/message', 2, now + 2, { turn: 0, step: 0, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 50, cacheWriteTokens: 6 }, message: { source: { provider: 'openai', model: 'gpt-5.6-sol', serviceTier: 'priority' } } }));
+	state = definition.apply(state, event('request/header', 3, now + 3, { header: { provider: 'openai', config: { model: 'gpt-5.6-terra', serviceTier: 'standard' } } }));
+	state = definition.apply(state, event('assistant/message', 4, now + 4, { turn: 1, step: 0, usage: { inputTokens: 20, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }, message: { source: { model: 'gpt-5.6-terra' } } }));
+	const view = definition.view(state);
+	const priority = view.routes.find((row) => row.model === 'gpt-5.6-sol');
+	const standard = view.routes.find((row) => row.model === 'gpt-5.6-terra');
+	expect(priority).toMatchObject({ providerId: 'openai', serviceTier: 'priority', uncached: 1000, output: 100, cacheRead: 50, cacheWrite: 6 });
+	expect(standard).toMatchObject({ providerId: 'openai', serviceTier: 'standard', uncached: 20, output: 2, cacheRead: 3, cacheWrite: 4 });
+	expect(view.parentSession).toBeNull();
+	definition.schema.parse(view); // rc6 registry contract
+	definition.wire.viewSchema.parse(view); // rc2 wire contract
+	definition.stateSchema.parse(state); // rc2 state contract
+	expect(() => definition.stateSchema.parse({ ...state, samples: { broken: { routeKey: 'x', output: -1, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 } } })).toThrow();
+});
+
+test('route projection excludes inherited fork seed usage before rendering the view', () => {
+	const definition = captureRouteProjection();
+	let state = definition.apply(definition.init(), { type: 'session', seq: 0, time: 1, parentSession: 'parent', seedLength: 3 });
+	state = definition.apply(state, { type: 'assistant/message', seq: 1, time: 2, data: { turn: 0, step: 0, usage: { inputTokens: 9999, outputTokens: 999 }, message: { source: { provider: 'openai', model: 'gpt-5.6-luna' } } } });
+	state = definition.apply(state, { type: 'request/header', seq: 3, time: 3, data: { header: { config: { provider: 'openai', model: 'gpt-5.6-luna' } } } });
+	state = definition.apply(state, { type: 'assistant/message', seq: 4, time: 4, data: { turn: 1, step: 0, usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 7, cacheWriteTokens: 1 }, message: { source: { model: 'gpt-5.6-luna' } } } });
+	const view = definition.view(state);
+	expect(view.routes).toHaveLength(1);
+	expect(view.routes[0]).toMatchObject({ uncached: 10, output: 2, cacheRead: 7, cacheWrite: 1 });
+});
+
+test('aggregate prefers official session services and restores projection suffixes from the watermark', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	fixture({ official: projection(now) });
+	const calls = [];
+	const ctx = {
+		workspaceRegistry: {
+			list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['official'] }],
+		},
+		sessionQuery: {
+			readSession: async (sessionId) => {
+				calls.push(['readSession', sessionId]);
+				return { session: { id: sessionId, cwd: '/tmp/fixture', createdAt: now }, events: [{ type: 'session', seq: 0, time: now }] };
+			},
+		},
+		sessionPersistence: {
+			readFrom: async (sessionId, floor) => {
+				calls.push(['readFrom', sessionId, floor]);
+				return { events: [] };
+			},
+		},
+		sessionProjections: {
+			restoreFloor: (checkpoint) => { calls.push(['restoreFloor', checkpoint]); return 2; },
+			restore: (checkpoint, events, floor) => {
+				calls.push(['restore', checkpoint, events, floor]);
+				return { snapshot: { values: {
+					sessionStats: { turns: 4, steps: 5, llmMs: 60, toolMs: 7, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+					tokenUsage: { totals: { uncachedInputTokens: 12, outputTokens: 3, cacheReadTokens: 8, cacheWriteTokens: 0 } },
+				} } };
+			},
+		},
+	};
+	const result = await StatsService.prototype.aggregate.call({ ctx });
+	const session = result.projects[0].sessions[0];
+	expect(calls.some((call) => call[0] === 'readSession')).toBe(false);
+	expect(calls.some((call) => call[0] === 'readFrom' && call[2] === 2)).toBe(true);
+	expect(calls.some((call) => call[0] === 'restore' && call[3] === 2)).toBe(true);
+	expect(session.stats).toMatchObject({ turns: 4, steps: 5, uncached: 12, output: 3, cacheRead: 8 });
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'OFFICIAL_PROJECTION_VALUES_USED', sessionId: 'official' })]));
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
+test('aggregate uses the official projection-cache cold snapshot when available', async () => {
+	const now = Date.parse('2026-08-17T11:00:00+08:00');
+	fixture({ cached: projection(now) });
+	let restoreCalled = false;
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['cached'] }] },
+		sessionQuery: { readSession: async (id) => ({ session: { id, cwd: '/tmp/fixture', createdAt: now }, events: [{ type: 'session', seq: 0, time: now }] }) },
+		sessionProjectionCache: { coldSnapshot: async () => ({ asOfSeq: 4, values: {
+			sessionStats: { turns: 2, steps: 3, llmMs: 20, toolMs: 4, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+			tokenUsage: { totals: { uncachedInputTokens: 9, outputTokens: 2, cacheReadTokens: 6, cacheWriteTokens: 0 } },
+		} }) },
+		sessionProjections: { restore: () => { restoreCalled = true; return { snapshot: { values: {} } }; } },
+	} });
+	const session = result.projects[0].sessions[0];
+	expect(restoreCalled).toBe(false);
+	expect(session.stats).toMatchObject({ turns: 2, steps: 3, uncached: 9, output: 2, cacheRead: 6 });
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'OFFICIAL_PROJECTION_CACHE_USED', sessionId: 'cached' })]));
+});
+
+test('official projection cache rejects a snapshot from a different session lifecycle', async () => {
+	const now = Date.parse('2026-08-17T11:15:00+08:00');
+	const entry = projection(now);
+	entry.identity.parentSession = 'new-parent';
+	entry.identity.seedLength = 4;
+	const home = fixture({ child: entry });
+	const events = [
+		{ type: 'session', seq: 0, time: now, origin: 'subagent', parentSession: 'new-parent', seedLength: 4 },
+		{ type: 'assistant/message', seq: 4, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+	];
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['child'] }] },
+		sessionQuery: {
+			listSessions: async () => [{ header: { id: 'child', cwd: '/tmp/fixture', createdAt: now, parentSession: 'new-parent', seedLength: 4 } }],
+			readSession: async (id) => ({ session: { id, cwd: '/tmp/fixture', createdAt: now, parentSession: 'new-parent', seedLength: 4 }, events })
+		},
+		sessionProjectionCache: { coldSnapshot: async () => ({ asOfSeq: 4, values: {
+			sessionStats: { turns: 99, steps: 99, llmMs: 0, toolMs: 0 },
+			tokenUsage: { totals: { uncachedInputTokens: 999, outputTokens: 999, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+			statsRoute: { origin: 'subagent', parentSession: 'old-parent', seedLength: 3,
+				current: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' }, routes: [] }
+		} }) }
+	} });
+	const session = result.projects[0].sessions[0];
+	expect(session.stats).toMatchObject({ uncached: 7, output: 2 });
+	expect(session.stats.uncached).not.toBe(999);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_CACHE_LIFECYCLE_MISMATCH', sessionId: 'child' })]));
+});
+
+test('route projection cache avoids reopening a cold log and keeps model pricing', async () => {
+	const now = Date.parse('2026-08-17T11:30:00+08:00');
+	fixture({ cachedRoute: projection(now) });
+	const calls = [];
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['cachedRoute'] }] },
+		sessionQuery: { readSession: async (id) => { calls.push(['readSession', id]); throw new Error('route cache should avoid a full read'); } },
+		sessionProjectionCache: { coldSnapshot: async () => ({ asOfSeq: 8, values: {
+			sessionStats: { turns: 2, steps: 2, llmMs: 20, toolMs: 4, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+			tokenUsage: { totals: { uncachedInputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+			sessionListMetadata: { blank: false, lastPromptAt: now + 500 },
+			statsRoute: { origin: null, parentSession: null, seedLength: null,
+				current: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+				routes: [{ providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot: Math.floor(now / (30 * 60 * 1000)), time: now + 500, uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }]
+			}
+		} }) }
+	} });
+	const session = result.projects[0].sessions[0];
+	expect(calls).toEqual([]);
+	expect(session.model).toBe('gpt-5.6-luna');
+	expect(session.stats).toMatchObject({ uncached: 1000, output: 100 });
+	expect(session.cost.status).toBe('estimated');
+	expect(session.cost.totals[0].currency).toBe('CNY');
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'OFFICIAL_ROUTE_PROJECTION_USED', sessionId: 'cachedRoute' })]));
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
 function projection(createdAt, overrides = {}) {
 	return {
 		identity: { createdAt, cwd: '/tmp/fixture' },
@@ -105,13 +306,13 @@ function projection(createdAt, overrides = {}) {
 	};
 }
 
-function fixture(entries, sessionIds = Object.keys(entries)) {
+function fixture(entries, sessionIds = Object.keys(entries), archivedSessionIds = []) {
 	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-test-'));
 	createdHomes.push(home);
 	mkdirSync(join(home, 'storages'), { recursive: true });
 	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
 		tables: { workspaces: { fixture: { title: 'Fixture', path: '/tmp/fixture', sessionIds } } },
-		global: { archivedSessionIds: [] },
+		global: { archivedSessionIds },
 	}));
 	writeFileSync(join(home, 'storages', 'session_projcache.json'), JSON.stringify({ tables: { sessions: entries } }));
 	process.env.DSH_HOME = home;
@@ -119,10 +320,42 @@ function fixture(entries, sessionIds = Object.keys(entries)) {
 }
 
 function writeLog(home, sessionId, records, suffix) {
-	const dir = join(home, 'sessions', 'workspace', sessionId);
+	const encoded = encodeSessionId(sessionId);
+	const dir = join(home, 'sessions', 'workspace', encoded);
 	mkdirSync(dir, { recursive: true });
 	const frame = zstdCompressSync(Buffer.from(records.map((record) => JSON.stringify(record)).join('\n') + '\n'));
 	writeFileSync(join(dir, 'session.jsonl.zstd'), suffix ? Buffer.concat([frame, suffix]) : frame);
+}
+
+function writePlainLog(home, sessionId, records) {
+	const encoded = encodeSessionId(sessionId);
+	const dir = join(home, 'sessions', 'workspace', encoded);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, 'session.jsonl'), Buffer.from(records.map((record) => JSON.stringify(record)).join('\n') + '\n'));
+}
+
+function encodeSessionId(raw) {
+	if (raw === '.') return '~002E';
+	if (raw === '..') return '~002E~002E';
+	let encoded = '';
+	for (let i = 0; i < raw.length; i++) {
+		const code = raw.charCodeAt(i), char = String.fromCharCode(code);
+		encoded += char !== '~' && /^[A-Za-z0-9._-]$/.test(char) ? char : `~${code.toString(16).toUpperCase().padStart(4, '0')}`;
+	}
+	return encoded;
+}
+
+function versionedProjection(createdAt, seq, usage = {}) {
+	const row = (val) => ({ ver: 1, seq, val });
+	return {
+		identity: { createdAt, cwd: '/tmp/fixture' },
+		rows: {
+			title: row('Fixture session'),
+			sessionListMetadata: row({ blank: false, lastPromptAt: createdAt }),
+			sessionStats: row({ turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }),
+			tokenUsage: row({ totals: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, ...usage } }),
+		},
+	};
 }
 
 async function aggregate() {
@@ -203,7 +436,7 @@ test('slot usage preserves MiniMax service and 512k context pricing tiers', asyn
 	TYPERT.invocations[0].result.schema.parse(await aggregate());
 });
 
-test('host aggregation prices trusted DeepSeek aliases while keeping unknown relays unpriced', async () => {
+test('host aggregation estimates unknown API routes while keeping provider identity', async () => {
 	const now = Date.parse('2026-08-17T10:00:00+08:00');
 	const home = fixture({ s1: projection(now) });
 	writeLog(home, 's1', [
@@ -220,14 +453,40 @@ test('host aggregation prices trusted DeepSeek aliases while keeping unknown rel
 	const session = result.projects[0].sessions[0];
 	expect(session.modelUsage).toHaveLength(3);
 	expect(session.modelUsage.map((row) => row.providerId).sort()).toEqual(['custom-relay', 'deepseek-official', 'nbdeepseek']);
+	expect(session.modelUsage.find((row) => row.providerId === 'custom-relay').cost).toMatchObject({ status: 'estimated', unpricedTokens: 0 });
+	expect(session.cost.status).toBe('estimated');
+	expect(session.cost.totals).toHaveLength(1);
+	expect(session.cost.totals[0].currency).toBe('CNY');
+	expect(session.cost.totals[0].amount).toBeCloseTo(0.0351, 10);
+	expect(session.cost.totals[0].exactAmount).toBeCloseTo(0.0234, 10);
+	expect(session.cost.totals[0].estimatedAmount).toBeCloseTo(0.0117, 10);
+	expect(session.cost.unpricedTokens).toBe(0);
+	expect(result.projects[0].cost.status).toBe('estimated');
+	expect(result.cost.status).toBe('estimated');
+	expect(result.meta.schemaVersion).toBe(2);
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
+test('mixed priced and unsupported usage keeps only confirmed RMB in primary totals', async () => {
+	const now = Date.parse('2026-08-17T12:00:00+08:00');
+	const home = fixture({ mixed: projection(now) });
+	writeLog(home, 'mixed', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'request/header', seq: 1, time: now + 10, data: { header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } } } },
+		{ type: 'assistant/message', seq: 2, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } } } },
+		{ type: 'request/header', seq: 3, time: now + 200, data: { header: { config: { provider: 'deepseek-official', model: 'future-model' } } } },
+		{ type: 'assistant/message', seq: 4, time: now + 300, data: { turn: 1, step: 0, usage: { inputTokens: 2000, outputTokens: 200 }, message: { source: { provider: 'deepseek-official', model: 'future-model' } } } },
+	]);
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
 	expect(session.cost.status).toBe('partial');
 	expect(session.cost.totals).toHaveLength(1);
 	expect(session.cost.totals[0].currency).toBe('CNY');
-	expect(session.cost.totals[0].amount).toBeCloseTo(0.0234, 10);
-	expect(session.cost.unpricedTokens).toBe(1100);
-	expect(result.projects[0].cost.status).toBe('partial');
-	expect(result.cost.status).toBe('partial');
-	expect(result.meta.schemaVersion).toBe(2);
+	expect(session.cost.totals[0].amount).toBeGreaterThan(0);
+	expect(session.cost.unpricedTokens).toBe(2200);
+	expect(session.cost.unknownRows).toBe(1);
+	expect(result.projects[0].cost).toMatchObject({ status: 'partial', unpricedTokens: 2200, unknownRows: 1 });
+	expect(result.cost).toMatchObject({ status: 'partial', unpricedTokens: 2200, unknownRows: 1 });
 	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
 });
 
@@ -355,17 +614,147 @@ test('a valid fork containing only inherited events is not reported as a malform
 	expect(result.meta.warnings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_PARTIAL' })]));
 });
 
-test('session ids cannot escape the sessions directory', async () => {
+test('archived orphan forks with inherited-only projection usage are excluded from every aggregate', async () => {
+	const orphanAt = Date.parse('2026-08-17T10:00:00+08:00');
+	const keptAt = Date.parse('2026-08-18T10:00:00+08:00');
+	const home = fixture({
+		orphan: projection(orphanAt, {
+			usage: { uncachedInputTokens: 4000, outputTokens: 500, cacheReadTokens: 8000 },
+			stats: { turns: 20, steps: 30, llmMs: 1000, toolMs: 200 }
+		}),
+		kept: projection(keptAt),
+	}, ['orphan', 'kept'], ['orphan', 'kept']);
+	writeLog(home, 'orphan', [
+		{ type: 'session', seq: 0, time: orphanAt, origin: 'subagent', parentSession: 'parent', seedLength: 3 },
+		{ type: 'assistant/message', seq: 1, time: orphanAt + 100, data: { turn: 0, step: 0, usage: { inputTokens: 9999, outputTokens: 999 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+	]);
+	writeLog(home, 'kept', [
+		{ type: 'session', seq: 0, time: keptAt, origin: 'subagent', parentSession: 'parent', seedLength: 3 },
+		{ type: 'assistant/message', seq: 1, time: keptAt + 100, data: { turn: 0, step: 0, usage: { inputTokens: 9999, outputTokens: 999 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'request/header', seq: 3, time: keptAt + 200, data: { header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 4, time: keptAt + 300, data: { turn: 1, step: 0, usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'step/end', seq: 5, time: keptAt + 400, data: { turn: 1, step: 0 } },
+	]);
+
+	const result = await aggregate();
+	const project = result.projects.find((candidate) => candidate.id === 'fixture');
+	expect(project.sessionCount).toBe(1);
+	expect(project.subagentCount).toBe(1);
+	expect(project.sessions.map((session) => session.id)).toEqual(['kept']);
+	expect(project.stats).toMatchObject({ uncached: 7, output: 2, cacheRead: 0, cacheWrite: 0 });
+	expect(project.cost).toMatchObject({ status: 'exact', unpricedTokens: 0, unknownRows: 0 });
+	expect(result.cost).toMatchObject({ status: 'exact', unpricedTokens: 0, unknownRows: 0 });
+	expect(result.timeline.days.map((day) => day.date)).toEqual(['2026-08-18']);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_ORPHAN_FORK_DISCARDED', sessionId: 'orphan' })
+	]));
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
+test('special session ids use the official encoded path and cannot escape the sessions directory', async () => {
 	const now = Date.parse('2026-08-17T10:00:00+08:00');
 	const id = '../../outside';
 	const home = fixture({ [id]: projection(now, { usage: { uncachedInputTokens: 5 } }) }, [id]);
+	// A legacy raw join would resolve this candidate outside <home>/sessions.
+	mkdirSync(join(home, 'outside'), { recursive: true });
+	const escaped = zstdCompressSync(Buffer.from(JSON.stringify({ type: 'session', seq: 0, time: now }) + '\n'));
+	writeFileSync(join(home, 'outside', 'session.jsonl.zstd'), escaped);
 	writeLog(home, id, [
 		{ type: 'session', seq: 0, time: now },
-		{ type: 'assistant/message', seq: 1, time: now + 10, data: { turn: 0, step: 0, usage: { inputTokens: 999, outputTokens: 99 }, message: { source: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'assistant/message', seq: 1, time: now + 10, data: { turn: 0, step: 0, usage: { inputTokens: 9, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-pro' } } } },
 	]);
 	const result = await aggregate();
-	expect(result.projects[0].sessions[0].stats.uncached).toBe(5);
-	expect(result.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_MISSING', sessionId: id })]));
+	expect(result.projects[0].sessions[0].stats.uncached).toBe(9);
+	expect(result.meta.warnings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SESSION_LOG_MISSING', sessionId: id })]));
+});
+
+test('official plain JSONL logs and special encoded session ids are readable', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const id = '会话~42';
+	const home = fixture({ [id]: projection(now) });
+	writePlainLog(home, id, [
+		{ type: 'session', seq: 0, version: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 12, outputTokens: 3 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+	]);
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(session.id).toBe(id);
+	expect(session.stats).toMatchObject({ uncached: 12, output: 3 });
+	expect(session.quality).toBe('exact');
+});
+
+test('seq gaps, future format versions, and bad packed rows are degraded explicitly', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ gap: projection(now), future: projection(now), packed: projection(now) });
+	writeLog(home, 'gap', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 2, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 1 } } },
+	]);
+	writeLog(home, 'future', [
+		{ type: 'session', seq: 0, version: 99, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 1000, outputTokens: 100 } } },
+	]);
+	writeLog(home, 'packed', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'text-chunks', seq0: 1, time0: now + 10, data: { turn: 0, step: 0, index: 0, dt: [], texts: ['a', 'b'] } },
+	]);
+	const result = await aggregate();
+	const byId = new Map(result.projects[0].sessions.map((session) => [session.id, session]));
+	expect(byId.get('gap').quality).toBe('partial');
+	expect(byId.get('future').quality).toBe('partial');
+	expect(byId.get('packed').quality).toBe('partial');
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_SEQ_GAP', sessionId: 'gap' }),
+		expect.objectContaining({ code: 'SESSION_FORMAT_VERSION_UNSUPPORTED', sessionId: 'future' }),
+		expect.objectContaining({ code: 'SESSION_LOG_PARTIAL', sessionId: 'packed' }),
+	]));
+});
+
+test('versioned projection rows are accepted only at the exact log watermark', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ stale: versionedProjection(now, 1), ahead: versionedProjection(now, 9) });
+	writeLog(home, 'stale', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 7, outputTokens: 2 } } },
+		{ type: 'step/end', seq: 2, time: now + 200, data: { turn: 0, step: 0 } },
+	]);
+	writeLog(home, 'ahead', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 5, outputTokens: 1 } } },
+	]);
+	const result = await aggregate();
+	const warningCodes = result.meta.warnings.map((warning) => warning.code);
+	expect(warningCodes).toContain('SESSION_CACHE_STALE');
+	expect(warningCodes).toContain('SESSION_CACHE_AHEAD_OF_LOG');
+	expect(result.projects[0].sessions.find((session) => session.id === 'stale').stats.uncached).toBe(7);
+});
+
+test('projection cache rejects a fork row from a different session lifecycle', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const entry = projection(now);
+	entry.identity.parentSession = 'old-parent';
+	entry.identity.seedLength = 3;
+	fixture({ child: entry });
+	const home = process.env.DSH_HOME;
+	writeLog(home, 'child', [
+		{ type: 'session', seq: 0, time: now, parentSession: 'new-parent', seedLength: 4 },
+		{ type: 'assistant/message', seq: 4, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+	]);
+	const result = await aggregate();
+	const warning = result.meta.warnings.find((item) => item.code === 'SESSION_CACHE_LIFECYCLE_MISMATCH');
+	expect(warning).toMatchObject({ sessionId: 'child' });
+	expect(result.projects[0].sessions[0].stats).toMatchObject({ uncached: 7, output: 2 });
+});
+
+test('archived sessions without logs and cache-only tokens stay out of primary totals', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	fixture({ deleted: projection(now, { usage: { uncachedInputTokens: 1000, outputTokens: 100 } }) }, ['deleted'], ['deleted']);
+	const result = await aggregate();
+	expect(result.projects[0].sessions).toHaveLength(0);
+	expect(result.projects[0].stats.uncached).toBe(0);
+	expect(result.meta.warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_ORPHAN_FORK_DISCARDED', sessionId: 'deleted' }),
+	]));
 });
 
 test('primary model weighting includes cache-write tokens', async () => {

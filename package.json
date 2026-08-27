@@ -1,6 +1,6 @@
 {
   "name": "@rongyi7/dsh-stats",
-  "version": "0.2.37",
+  "version": "0.2.41",
   "description": "工作区 Token 消耗统计 + 开发时间线 + 消费金额（DSH 插件：Tier 2 宿主 RPC + 客户端 UI）",
   "type": "module",
   "main": "lib/index.js",
@@ -26,7 +26,8 @@
     "build": "node scripts/build.mjs",
     "prepublishOnly": "node scripts/build.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke:rc2": "node scripts/rc2-browser-smoke.mjs"
   },
   "license": "MIT",
   "repository": {
@@ -72,16 +73,33 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-workspace": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-query": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-projection-cache": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-stats": "^0.1.0-rc.6 || ^0.1.1-rc.2",
+    "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6 || ^0.1.1-rc.2",
     "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-workspace": { "optional": true },
+    "@deepseek-ai/dsh-session-persistence": { "optional": true },
+    "@deepseek-ai/dsh-session-query": { "optional": true },
+    "@deepseek-ai/dsh-session-projection": { "optional": true },
+    "@deepseek-ai/dsh-session-projection-cache": { "optional": true },
+    "@deepseek-ai/dsh-session-stats": { "optional": true },
+    "@deepseek-ai/dsh-token-meter": { "optional": true }
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "vitest": "^3.1.4"
+    "vitest": "^3.1.4",
+    "ws": "^8.21.0"
   }
 }
