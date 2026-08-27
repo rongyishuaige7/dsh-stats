@@ -2247,8 +2247,8 @@ function buildGlobals(projects) {
 const inject = ["slots", "locale", "remote", "sessions"];
 const NS = "stats";
 const zh = {
-	"trigger": "统计",
-	"title": "项目统计",
+	"trigger": "用量",
+	"title": "DSH 用量",
 	"tab.overview": "项目总览",
 	"tab.timeline": "开发时间线",
 	"tab.trends": "用量趋势",
@@ -2333,8 +2333,8 @@ const zh = {
 	"trends.weekdays": "日,一,二,三,四,五,六"
 };
 const en = {
-	"trigger": "Stats",
-	"title": "Project Stats",
+	"trigger": "Usage",
+	"title": "DSH Usage",
 	"tab.overview": "Overview",
 	"tab.timeline": "Timeline",
 	"tab.trends": "Usage Trends",

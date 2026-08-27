@@ -1,7 +1,7 @@
-<h1 align="center">DSH Stats</h1>
+<h1 align="center">DSH Usage</h1>
 
-<p align="center"><strong>看清每个项目用了多少 Token、开发时间和费用。</strong></p>
-<p align="center">把 DSH 中分散的会话记录，整理成项目总览、开发时间线、用量趋势与账户余额。</p>
+<p align="center"><strong>一眼看懂 DSH 的用量、时间和花费。</strong></p>
+<p align="center">按项目整理会话，查看 Token、开发时长、模型费用和账户余额。</p>
 
 <p align="center">
   <strong>简体中文</strong> · <a href="README.en.md">English</a>
@@ -13,11 +13,11 @@
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6" alt="license"></a>
 </p>
 
-> **DSH 告诉你聊了什么，DSH Stats 告诉你这些会话属于哪个项目，以及花了多少时间、Token 和费用。** `(｡•̀ᴗ-)✧`
+> **DSH 记录每次对话，DSH Usage 帮你看清每个项目用了多少。** `(｡•̀ᴗ-)✧`
 
-`@rongyi7/dsh-stats` 是面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的本地统计插件。宿主侧 RPC 会聚合持久化会话日志；旧版宿主不可用时，界面自动回退到客户端近似统计。
+`DSH Usage` 是面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 端的本地用量面板。它会按项目、日期和模型整理 DSH 会话；无法确认价格时会明确标记，不会硬猜。
 
-<p align="center"><strong>项目维度统计</strong> · <strong>Provider 级计价</strong> · <strong>宿主侧凭证</strong> · <strong>CSV/JSON 导出</strong></p>
+<p align="center"><strong>按项目看用量</strong> · <strong>按模型算费用</strong> · <strong>密钥留在本机</strong> · <strong>数据一键导出</strong></p>
 
 <p align="center">
   <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="浅色模式项目总览：汇总指标与项目身份均已脱敏" width="100%"></a>
@@ -41,7 +41,9 @@ dsh plugin --profile web add @rongyi7/dsh-stats
 dsh web
 ```
 
-重新打开页面，侧边栏底部会出现「统计」入口。
+重新打开页面，侧边栏底部会出现「用量」入口。
+
+> **名称说明**：界面品牌现在叫 **DSH Usage**。为避免已安装用户的 profile 和远程接口失效，当前安装包仍使用 `@rongyi7/dsh-stats`；安装命令暂时不变。
 
 <details>
 <summary><strong>固定版本、本地 tarball 与注册验证</strong></summary>
@@ -49,13 +51,13 @@ dsh web
 固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.41
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.42
 ```
 
 安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.41.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.42.tgz
 ```
 
 验证插件是否已注册：
@@ -69,14 +71,14 @@ dsh --profile web --dump-config
 
 ## ✨ 核心能力
 
-| 能力 | 解决的问题 |
+| 能力 | 你能看到什么 |
 | --- | --- |
-| 📊 项目总览 | 按项目查看会话、轮次、Token、缓存命中率、速度和消费；没有活动的项目不会挤占“按日”列表。 |
-| ⏱️ 开发时间线 | 以 30 分钟为粒度还原每天的开发区间；同一时段并行开发多个项目时仍能分辨颜色和时长。 |
-| 📈 用量趋势 | 查看近 7 天输入/输出 Token、活动热力图和模型分布；悬停即可核对精确用量与模型消费。 |
-| 💳 Provider 级计价 | 官方 Provider 直接精确计价；无法直接读取 Provider 价但模型唯一匹配官方规则时按公开价估算，消费统一显示人民币。 |
-| 👤 账户余额与额度 | 查看 DeepSeek 等 API 余额，以及 Kimi、Z.ai、MiniMax Coding Plan 窗口额度。 |
-| 🔒 宿主侧凭证安全 | 余额请求只在 DSH 宿主侧执行，浏览器仅接收脱敏后的余额与状态。 |
+| 📊 项目用量 | 每个项目用了多少 Token、花了多少时间和费用。 |
+| ⏱️ 开发时间 | 按天查看什么时候最忙，半小时一格的时间线一目了然。 |
+| 📈 趋势与模型 | 查看近 7 天变化，找出最常用的模型和项目。 |
+| 💳 费用估算 | 按公开模型价格换算成人民币；无法确认的部分不会乱算。 |
+| 👤 余额与额度 | 查看已配置平台的余额和套餐额度。 |
+| 🔒 安全与导出 | 密钥只在本机使用，统计数据可导出为 CSV/JSON。 |
 
 项目总览最多同时展示 7 个项目，开发时间线最多同时展示最近 3 天，模型分布最多同时展示 3 个模型；更多内容在各自区域内滚动，不会撑开整个面板。 `(ง •̀_•́)ง`
 
@@ -292,4 +294,4 @@ npm publish
 
 欢迎提交 Issue 和 Pull Request。项目采用 [MIT License](LICENSE)。
 
-`╰(*°▽°*)╯` 祝你每次打开统计面板，都能更快看懂自己的开发节奏。
+`╰(*°▽°*)╯` 祝你每次打开用量面板，都能更快看懂自己的开发节奏。

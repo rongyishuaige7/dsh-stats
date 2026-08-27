@@ -1,7 +1,7 @@
-<h1 align="center">DSH Stats</h1>
+<h1 align="center">DSH Usage</h1>
 
-<p align="center"><strong>Understand every project's tokens, development time, and cost.</strong></p>
-<p align="center">Turn scattered DSH sessions into a project overview, development timeline, usage trends, balances, and quotas.</p>
+<p align="center"><strong>See your DSH usage, time, and spend at a glance.</strong></p>
+<p align="center">Organize sessions by project and see tokens, development time, model cost, and account balances.</p>
 
 <p align="center">
   <a href="README.md">简体中文</a> · <strong>English</strong>
@@ -13,11 +13,11 @@
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6" alt="license"></a>
 </p>
 
-> **DSH tells you what happened in a session. DSH Stats tells you which project it belonged to and how much time, token usage, and cost it accumulated.** `(｡•̀ᴗ-)✧`
+> **DSH records every conversation. DSH Usage shows what each project used.** `(｡•̀ᴗ-)✧`
 
-`@rongyi7/dsh-stats` is a local-first [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin. Host RPC aggregates persisted session logs; when that RPC is unavailable on an older host, the UI falls back to a client-side approximation.
+`DSH Usage` is a local [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web usage panel. It organizes DSH sessions by project, date, and model; when a price cannot be confirmed, it marks the amount instead of guessing.
 
-<p align="center"><strong>Project-level analytics</strong> · <strong>Provider-scoped pricing</strong> · <strong>Host-side credentials</strong> · <strong>CSV/JSON exports</strong></p>
+<p align="center"><strong>Usage by project</strong> · <strong>Model-based cost</strong> · <strong>Keys stay local</strong> · <strong>One-click export</strong></p>
 
 <p align="center">
   <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="Light-mode project overview with masked identity fields and aggregate metrics" width="100%"></a>
@@ -41,7 +41,9 @@ After installation, fully restart the running DSH Web process:
 dsh web
 ```
 
-Reopen the page. The “Stats” entry will appear at the bottom of the sidebar.
+Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
+
+> **Name note:** The user-facing brand is now **DSH Usage**. To keep existing DSH profiles and remote interfaces working, the install package remains `@rongyi7/dsh-stats` for now; the install command does not change.
 
 <details>
 <summary><strong>Pin a version, install a tarball, or verify registration</strong></summary>
@@ -49,13 +51,13 @@ Reopen the page. The “Stats” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.2.41
+dsh plugin --profile web add @rongyi7/dsh-stats@0.2.42
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.41.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.2.42.tgz
 ```
 
 Verify the bundle registration:
@@ -69,14 +71,14 @@ You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **
 
 ## ✨ Core capabilities
 
-| Capability | Question it answers |
+| Capability | What you get |
 | --- | --- |
-| 📊 Project overview | Per-project sessions, turns, tokens, cache hit rate, speed, and spend; inactive projects stay out of the day view. |
-| ⏱️ Development timeline | Event-based 30-minute activity slots whose project colors and durations remain readable when work overlaps. |
-| 📈 Usage trends | Seven-day input/output tokens, an interactive activity heatmap, model distribution, and per-model spend on hover. |
-| 💳 Provider-scoped pricing | Uses exact first-party rates when the provider is known; otherwise prices a uniquely matched official model as an estimate, with all spend displayed in RMB. |
-| 👤 Balances and quotas | DeepSeek, OpenRouter, Moonshot, and Z.ai API balances plus Kimi, Z.ai, and MiniMax Coding Plan windows. |
-| 🔒 Host-side credential boundary | Account requests run in the DSH host; the browser receives normalized balances and statuses only. |
+| 📊 Usage by project | Tokens, time, and spend for every project. |
+| ⏱️ Development time | A simple day-by-day timeline with one block per 30 minutes. |
+| 📈 Trends and models | Seven-day changes plus the models and projects you use most. |
+| 💳 Cost estimates | Public model prices converted to RMB; unknown amounts are never guessed. |
+| 👤 Balances and quotas | Balances and plan quotas for configured providers. |
+| 🔒 Privacy and export | Keys stay on the host, and statistics export to CSV/JSON. |
 
 The overview keeps up to seven projects visible, the timeline keeps the latest three days visible, and model distribution keeps three models visible. Additional content scrolls inside its own region, so the panel itself does not keep growing. `(ง •̀_•́)ง`
 
@@ -216,7 +218,7 @@ Code sessions often send a much larger context than they generate. Output bars r
 </details>
 
 <details>
-<summary><strong>Why is the Stats entry missing after installation?</strong></summary>
+<summary><strong>Why is the Usage entry missing after installation?</strong></summary>
 
 DSH caches client modules and Typert descriptors. Confirm the install completed, fully restart `dsh web`, and hard-refresh the browser if necessary.
 </details>

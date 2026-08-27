@@ -221,11 +221,19 @@ try {
 		result.workspaceOptions = options?.slice(0, 20) || [];
 		if (result.workspaceOptions.length === 0) result.workspaceSelection = "no-options";
 	}
-	const statsClicked = (await page.clickButton({ aria: "统计" })) || (await page.clickButton({ text: "统计" })) || (await page.clickButton({ aria: "Stats" })) || (await page.clickButton({ text: "Stats" }));
-	if (!statsClicked) throw new Error("统计/Stats entry button not found");
+	const statsClicked = (await page.clickButton({ aria: "用量" }))
+		|| (await page.clickButton({ text: "用量" }))
+		|| (await page.clickButton({ aria: "Usage" }))
+		|| (await page.clickButton({ text: "Usage" }))
+		// Keep older installed bundles runnable during the branding transition.
+		|| (await page.clickButton({ aria: "统计" }))
+		|| (await page.clickButton({ text: "统计" }))
+		|| (await page.clickButton({ aria: "Stats" }))
+		|| (await page.clickButton({ text: "Stats" }));
+	if (!statsClicked) throw new Error("用量/Usage entry button not found");
 	await waitForPage(page, "Boolean(document.querySelector('.dss-panel'))", deadline, "stats panel");
 	result.panel = true;
-	result.dataVisible = Boolean(await page.evaluate("document.querySelector('.dss-panel')?.innerText.includes('项目统计') || document.querySelector('.dss-panel')?.innerText.includes('Project Stats')"));
+	result.dataVisible = Boolean(await page.evaluate("(() => { const text = document.querySelector('.dss-panel')?.innerText || ''; return text.includes('DSH 用量') || text.includes('DSH Usage') || text.includes('项目统计') || text.includes('Project Stats'); })()"));
 	result.panelText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 1_500) || "";
 	const accountClicked = (await page.clickText(["账户余额", "Account Balance"], ".dss-panel button"));
 	if (!accountClicked) throw new Error("账户余额/Account Balance tab not found");
