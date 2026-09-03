@@ -150,6 +150,32 @@ test('DeepSeek account adapter normalizes balance without returning the credenti
 	expect(JSON.stringify(account)).not.toContain('secret-test-value');
 });
 
+test('a custom DeepSeek route id inherits the deepseek family from its official base host', async () => {
+	let requested;
+	const spec = accountSpec({ id: 'my-deepseek', apiKeyEnv: 'MY_DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com' });
+	expect(spec).toMatchObject({ providerFamily: 'deepseek', adapter: 'deepseek-balance', mode: 'balance', apiKeyRef: 'MY_DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com' });
+	const account = await queryProviderAccount(spec, credentials('secret-two'), {
+		fetch: async (url, init) => {
+			requested = { url, init };
+			return jsonResponse({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '9.99', topped_up_balance: '9.99', granted_balance: '0' }] });
+		},
+	});
+	expect(requested.url).toBe('https://api.deepseek.com/user/balance');
+	expect(requested.init.headers.authorization).toBe('Bearer secret-two');
+	expect(account).toMatchObject({ id: 'my-deepseek', status: 'ok', balance: { currency: 'CNY', remaining: 9.99 } });
+	expect(JSON.stringify(account)).not.toContain('secret-two');
+});
+
+test('a relay host is never guessed into an official family', () => {
+	const spec = accountSpec({ id: 'relay-ds', apiKeyEnv: 'RELAY_KEY', baseURL: 'https://relay.example.test' });
+	expect(spec).toMatchObject({ providerFamily: 'unknown', adapter: 'generic-usage', mode: 'balance', apiKeyRef: 'RELAY_KEY' });
+});
+
+test('an official host wins over a conflicting route id', () => {
+	const spec = accountSpec({ id: 'openrouter', apiKeyEnv: 'DS_KEY', baseURL: 'https://api.deepseek.com' });
+	expect(spec).toMatchObject({ providerFamily: 'deepseek', adapter: 'deepseek-balance', mode: 'balance', apiKeyRef: 'DS_KEY', baseURL: 'https://api.deepseek.com' });
+});
+
 test.each([
 	[401, 'unauthorized'],
 	[429, 'rate-limited'],
