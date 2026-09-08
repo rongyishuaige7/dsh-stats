@@ -1787,7 +1787,7 @@ let StatsService = (() => {
 				projects,
 				cost,
 				timeline: { slotMinutes: SLOT_MINUTES, days },
-				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.length > 0, warnings }
+				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings }
 			};
 		}
 

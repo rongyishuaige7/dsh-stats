@@ -662,13 +662,13 @@ function transient(status) {
 }
 
 function staleResult(previous, current) {
-	if (!previous || previous.status !== "ok" || !transient(current.status)) return current;
+	if (!previous || (previous.status !== "ok" && !previous.stale) || !transient(current.status)) return current;
 	return {
 		...previous,
 		status: current.status,
 		stale: true,
 		fetchedAt: current.fetchedAt,
-		lastSuccessAt: previous.lastSuccessAt || previous.fetchedAt,
+		lastSuccessAt: previous.lastSuccessAt ?? previous.fetchedAt,
 		errorCode: current.errorCode
 	};
 }

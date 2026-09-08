@@ -7,8 +7,8 @@
 //                           依赖（react / @deepseek-ai/dsh-client-ui-primitives）外部化，
 //                           与 DSH 客户端模块装载器的格式一致。
 //   lib/index.js            宿主 StatsService —— ESM，@deepseek-ai/dsh-typert-protocol 外部化。
-//   lib/typert.host.js      宿主 Typert manifest（原样拷贝，zod 外部化）。
-//   lib/typert.remote-client.js 客户端描述符（参考用，原样拷贝）。
+//   lib/typert.host.js      宿主 Typert manifest（共享 schema，zod 外部化）。
+//   lib/typert.remote-client.js 客户端描述符（参考用，共享 schema）。
 
 import { build } from "esbuild";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -38,9 +38,11 @@ const client = await build({
   format: "cjs",
   platform: "browser",
   target: "es2020",
+  // Keep multiline literals intact when the module-loader wrapper indents code.
+  supported: { "template-literal": false },
   external: CLIENT_EXTERNALS,
   write: false,
-  minify: false,
+  minify: true,
   legalComments: "none",
 });
 const body = client.outputFiles[0].text;
@@ -69,8 +71,13 @@ await build({
   legalComments: "none",
 });
 
-// ---- 3. Typert manifest（原样拷贝，zod 由运行环境解析）----
-writeFileSync(join(root, "lib/typert.host.js"), readFileSync(join(root, "src/typert-host.js"), "utf8"));
-writeFileSync(join(root, "lib/typert.remote-client.js"), readFileSync(join(root, "src/typert-remote-client.js"), "utf8"));
+// ---- 3. Typert manifests: bundle shared schemas, retain the host's zod ----
+for (const [entry, output] of [["typert-host.js", "typert.host.js"], ["typert-remote-client.js", "typert.remote-client.js"]]) {
+  await build({
+    entryPoints: [join(root, "src", entry)], bundle: true, format: "esm",
+    platform: "node", target: "node22", external: ["zod"],
+    outfile: join(root, "lib", output), legalComments: "none",
+  });
+}
 
 console.log("构建完成：lib/client.js / lib/index.js / lib/typert.host.js / lib/typert.remote-client.js");

@@ -56,7 +56,7 @@ No npm publication or service restart as part of this maintenance task.
 ## Staged delivery
 
 1. Verified: statistics correctness, host compatibility and replay/read cost.
-2. Pending: account reliability, visible data quality and shared RPC validation.
+2. Verified: account reliability, visible data quality and shared RPC validation.
 3. Pending: compatibility matrix, integration checks and final documentation.
 
 Each stage is verified and committed/pushed before the next stage starts.
@@ -76,3 +76,18 @@ dependency directory is preserved.
   took about 4806 ms). This measures fold updates, not full UI rendering.
 - The isolated validation copy uses the original lockfile. Its rebuilt tracked
   bundles are synchronized back to the working checkout before the commit.
+
+## Stage 2 evidence
+
+- 182 tests pass, including repeated transient balance failures, configuration
+  isolation, structured unsupported-method fallback, ordinary error propagation,
+  shared validation rejection cases, visible stale/partial/cost states and
+  duplicate workspace membership.
+- All four bundles build. Built host/remote manifests import successfully and
+  expose all four RPC methods. The browser uses named Zod imports to retain
+  only the APIs used by the shared schema. Minification reduces the browser
+  artifact to 214129 bytes (59468 bytes gzip).
+- Source information events no longer mark otherwise valid host data degraded.
+  The panel exposes provenance, freshness, diagnostics and pricing completeness;
+  account failures retain the last success time and an explicit stale marker.
+- Browser interaction and upstream contract checks follow in stage 3.

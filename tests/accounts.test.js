@@ -340,6 +340,11 @@ test('failed refresh preserves the last successful account snapshot as stale', a
 	const stale = await collectAccounts(owner, context(), { deps });
 	expect(stale.accounts[0]).toMatchObject({ status: 'unavailable', stale: true, lastSuccessAt: 20_000, balance: { remaining: 18.64 } });
 	expect(stale.warnings[0]).toMatchObject({ providerId: 'deepseek-official' });
+	for (let attempt = 0; attempt < 3; attempt++) {
+		now += 101;
+		const again = await collectAccounts(owner, context(), { deps });
+		expect(again.accounts[0]).toMatchObject({ status: 'unavailable', stale: true, fetchedAt: now, lastSuccessAt: 20_000, balance: { remaining: 18.64 } });
+	}
 });
 
 test('changing an account credential reference cannot reuse the previous snapshot', async () => {

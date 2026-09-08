@@ -2,6 +2,7 @@ let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let pricing = require("./pricing.cjs");
 let routeData = require("./route-data.cjs");
+let { parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, forceSchema } = require("./rpc-client.js");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -509,7 +510,7 @@ function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 		var members = [];
 		(ws.sessionIds || []).forEach((id) => {
 			var s = byId.get(id);
-			if (s) { accounted.add(id); members.push(s); }
+			if (s && !accounted.has(id)) { accounted.add(id); members.push(s); }
 		});
 		var agg = emptyRaw();
 		var sessions = [];
@@ -664,6 +665,9 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10
 	".dss-export:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-export:disabled{opacity:.45;cursor:default}" +
 	".dss-body{padding:16px 18px;overflow:auto}" +
+	".dss-data-status{padding:0 0 12px;margin-bottom:12px;border-bottom:1px solid var(--dsw-alias-border,#d1d5db);font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary,#6b7280);overflow-wrap:anywhere}" +
+	".dss-data-status-line{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap}.dss-data-status strong{font-size:11px;font-weight:600}.dss-data-status.stale strong,.dss-data-status.fallback strong,.dss-data-status.partial strong,.dss-data-cost{color:var(--dsw-alias-label-primary,#555)}" +
+	".dss-data-diagnostics{margin-top:6px}.dss-data-diagnostics summary{cursor:pointer;width:fit-content}.dss-data-diagnostics>div{padding-top:4px;white-space:pre-wrap}" +
 	".dss-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px}" +
 	".dss-card{background:var(--dsw-specific-menu,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:11px;padding:11px 13px}" +
 	".dss-card .k{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px}" +
@@ -1498,7 +1502,8 @@ function BalanceView(props) {
 	if (state.kind === "loading" && !data) return e("div", { className: "dss-balance-state loading" }, t("balance.loading"));
 	if (!props.remote) return e("div", { className: "dss-balance-state error" }, t("balance.unavailable"));
 	var account = accounts.find(function(item) { return item.id === selectedId; }) || accounts[0] || null;
-	var visualStatus = account?.stale ? "stale" : account?.status;
+	var stale = account?.stale || state.kind === "stale";
+	var visualStatus = stale ? "stale" : account?.status;
 	var ready = account && (account.status === "ok" || account.stale);
 	var metrics = account?.balance ? [
 		account.balance.toppedUp == null ? null : [t("balance.toppedUp"), fmtBalanceAmount(account.balance.toppedUp, account.balance.currency)],
@@ -1550,10 +1555,25 @@ function BalanceView(props) {
 					);
 				}))
 				) : e("div", { className: "dss-balance-message" }, statusMessage),
-				account.stale ? e("div", { className: "dss-balance-stale" }, t("balance.staleHint")) : null,
+				stale ? e("div", { className: "dss-balance-stale" }, t("balance.staleHint")) : null,
+				account.lastSuccessAt != null ? e("div", { className: "dss-quota-reset" }, t("balance.lastSuccess") + " " + fmtClock(account.lastSuccessAt)) : null,
 				account.actionUrl ? e("a", { className: "dss-balance-topup", href: account.actionUrl, target: "_blank", rel: "noreferrer" }, account.mode === "balance" ? t("balance.topUp") : t("balance.manage")) : null
 			)
 		)
+	);
+}
+
+function StatsDataStatus({ state, remote, projects, t }) {
+	const cost = pricing.mergeCostSummariesCny((projects || []).map(projectCostSummary));
+	return e("section", { className: "dss-data-status " + state.kind, "aria-live": "polite" },
+		e("div", { className: "dss-data-status-line" },
+			e("span", null, t(remote ? "source.host" : "source.local")),
+			e("strong", null, t("source." + state.kind)),
+			state.at != null ? e("span", null, t("source.updated") + " " + fmtClock(state.at)) : null,
+			["estimated", "partial", "unsupported"].includes(cost.status) ? e("span", { className: "dss-data-cost" }, t("pricing." + cost.status)) : null,
+			cost.unpricedTokens > 0 ? e("span", null, t("pricing.unpriced") + " " + fmtTokens(cost.unpricedTokens)) : null
+		),
+		state.error ? e("details", { className: "dss-data-diagnostics" }, e("summary", null, t("source.details")), e("div", null, state.error)) : null
 	);
 }
 
@@ -1591,7 +1611,7 @@ function StatsPanel(props) {
 		aggregateRemote().then((r) => {
 			if (cancelled) return;
 			setRemoteData(r);
-			setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt || Date.now() });
+			setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code); }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
 		})
 			.catch((err) => {
 				if (cancelled) return;
@@ -1712,6 +1732,7 @@ function StatsPanel(props) {
 			),
 			e("div", { className: "dss-body" },
 				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
+					e(StatsDataStatus, { state: sourceState, remote: data.remote, projects: visibleProjects, t }),
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
@@ -2405,6 +2426,8 @@ const zh = {
 	"empty": "暂无数据",
 	"refresh": "刷新",
 	"source.updated": "更新时间",
+	"source.host": "宿主统计", "source.local": "本地摘要", "source.exact": "已同步", "source.partial": "数据不完整", "source.stale": "刷新失败，显示上次快照", "source.fallback": "回退数据，可能不完整", "source.loading": "正在读取", "source.refreshing": "正在刷新", "source.details": "数据诊断",
+	"pricing.estimated": "费用含估算", "pricing.partial": "部分用量未计价", "pricing.unsupported": "暂无可用价格", "pricing.unpriced": "未计价 Token", "balance.lastSuccess": "上次成功",
 	"nav.day": "按日", "nav.days7": "7日", "nav.days30": "30日", "nav.days90": "90日", "nav.all": "全部", "nav.previous": "前一天", "nav.next": "后一天",
 	"sort.label": "排序", "sort.toggle": "切换升降序", "sort.asc": "升序", "sort.desc": "降序",
 	"card.projects": "项目",
@@ -2491,6 +2514,8 @@ const en = {
 	"empty": "No data",
 	"refresh": "Refresh",
 	"source.updated": "Updated",
+	"source.host": "Host statistics", "source.local": "Local summaries", "source.exact": "Synced", "source.partial": "Incomplete data", "source.stale": "Refresh failed; last snapshot", "source.fallback": "Fallback data; may be incomplete", "source.loading": "Loading", "source.refreshing": "Refreshing", "source.details": "Data diagnostics",
+	"pricing.estimated": "Includes estimates", "pricing.partial": "Some usage is unpriced", "pricing.unsupported": "No available prices", "pricing.unpriced": "Unpriced tokens", "balance.lastSuccess": "Last success",
 	"nav.day": "Day", "nav.days7": "7D", "nav.days30": "30D", "nav.days90": "90D", "nav.all": "All", "nav.previous": "Previous day", "nav.next": "Next day",
 	"sort.label": "Sort", "sort.toggle": "Toggle sort direction", "sort.asc": "Ascending", "sort.desc": "Descending",
 	"card.projects": "Projects",
@@ -2566,187 +2591,6 @@ const en = {
 	"trends.weekdays": "S,M,T,W,T,F,S"
 };
 
-function parseAggregateResult(value) {
-	var object = function(input, path, keys) {
-		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
-		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
-		return input;
-	};
-	var array = function(input, path) { if (!Array.isArray(input)) throw new TypeError(path + ": expected array"); return input; };
-	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
-	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
-	var boolean = function(input, path) { if (typeof input !== "boolean") throw new TypeError(path + ": expected boolean"); };
-	var number = function(input, path, integer) {
-		if (!Number.isFinite(input) || input < 0 || (integer && !Number.isInteger(input))) throw new TypeError(path + ": expected non-negative " + (integer ? "integer" : "number"));
-	};
-	var nullableNumber = function(input, path) { if (input !== null && !Number.isFinite(input)) throw new TypeError(path + ": expected number or null"); };
-	var numberFields = ["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens", "uncached", "output", "cacheRead", "cacheWrite", "reasoning"];
-	var checkStats = function(stats, path) {
-		object(stats, path, numberFields);
-		numberFields.forEach(function(k) { number(stats[k], path + "." + k, false); });
-	};
-	var checkCostSummary = function(cost, path) {
-		object(cost, path, ["status", "totals", "unpricedTokens", "unknownRows"]);
-		if (["exact", "estimated", "free", "partial", "unsupported"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
-		array(cost.totals, path + ".totals").forEach(function(total, index) {
-			var tp = path + ".totals[" + index + "]";
-			object(total, tp, ["currency", "amount", "exactAmount", "estimatedAmount"]); string(total.currency, tp + ".currency");
-			["amount", "exactAmount", "estimatedAmount"].forEach(function(key) { number(total[key], tp + "." + key, false); });
-		});
-		number(cost.unpricedTokens, path + ".unpricedTokens", false); number(cost.unknownRows, path + ".unknownRows", true);
-	};
-	var checkCost = function(cost, path) {
-		object(cost, path, ["status", "amount", "currency", "exactAmount", "estimatedAmount", "unpricedTokens", "ruleId", "sourceUrl", "retrievedAt", "providerId", "providerFamily", "modelCanonical"]);
-		if (["exact", "estimated", "free", "subscription", "unsupported", "ambiguous"].indexOf(cost.status) < 0) throw new TypeError(path + ".status: invalid value");
-		nullableNumber(cost.amount, path + ".amount"); nullableString(cost.currency, path + ".currency");
-		["exactAmount", "estimatedAmount", "unpricedTokens"].forEach(function(key) { number(cost[key], path + "." + key, false); });
-		["ruleId", "sourceUrl", "retrievedAt"].forEach(function(key) { nullableString(cost[key], path + "." + key); });
-		["providerId", "providerFamily", "modelCanonical"].forEach(function(key) { string(cost[key], path + "." + key); });
-	};
-	object(value, "stats/aggregate", ["projects", "cost", "timeline", "meta"]);
-	var schemaVersion = value.meta?.schemaVersion || 1;
-	if (schemaVersion >= 2) checkCostSummary(value.cost, "cost");
-	array(value.projects, "projects");
-	value.projects.forEach(function(p, pi) {
-		var pp = "projects[" + pi + "]";
-		object(p, pp, ["id", "name", "path", "sessionCount", "subagentCount", "lastActiveAt", "stats", "cost", "sessions"]);
-		string(p.id, pp + ".id"); string(p.name, pp + ".name"); string(p.path, pp + ".path");
-		number(p.sessionCount, pp + ".sessionCount", true); number(p.subagentCount, pp + ".subagentCount", true); nullableNumber(p.lastActiveAt, pp + ".lastActiveAt");
-		checkStats(p.stats, pp + ".stats"); if (schemaVersion >= 2) checkCostSummary(p.cost, pp + ".cost"); array(p.sessions, pp + ".sessions");
-		p.sessions.forEach(function(s, si) {
-			var sp = pp + ".sessions[" + si + "]";
-			object(s, sp, ["id", "title", "updatedAt", "createdAt", "model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "modelUsage", "cost", "archived", "blank", "subagent", "origin", "parentSession", "seedLength", "calls", "stats", "durMs", "slots", "slotStats", "slotUsage", "quality", "cwd"]);
-			string(s.id, sp + ".id"); nullableString(s.title, sp + ".title"); nullableNumber(s.updatedAt, sp + ".updatedAt"); nullableNumber(s.createdAt, sp + ".createdAt"); nullableString(s.model, sp + ".model");
-			if (schemaVersion >= 2) {
-				["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(s[key], sp + "." + key); });
-				checkCostSummary(s.cost, sp + ".cost");
-			}
-			boolean(s.archived, sp + ".archived"); boolean(s.blank, sp + ".blank"); boolean(s.subagent, sp + ".subagent"); nullableString(s.origin, sp + ".origin"); nullableString(s.parentSession, sp + ".parentSession"); nullableNumber(s.seedLength, sp + ".seedLength");
-			number(s.calls, sp + ".calls", true); checkStats(s.stats, sp + ".stats"); number(s.durMs, sp + ".durMs", false); nullableString(s.cwd, sp + ".cwd");
-			if (["exact", "partial", "stale"].indexOf(s.quality) < 0) throw new TypeError(sp + ".quality: invalid value");
-			array(s.modelUsage, sp + ".modelUsage").forEach(function(u, ui) {
-				var up = sp + ".modelUsage[" + ui + "]";
-				object(u, up, ["model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "uncached", "output", "cacheRead", "cacheWrite", "reasoning", "cost"]); string(u.model, up + ".model");
-				if (schemaVersion >= 2) {
-					["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(u[key], up + "." + key); });
-					checkCostSummary(u.cost, up + ".cost");
-				}
-				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(u[k], up + "." + k, false); });
-			});
-			array(s.slots, sp + ".slots").forEach(function(row, ri) {
-				var rp = sp + ".slots[" + ri + "]"; object(row, rp, ["slot", "ms"]); number(row.slot, rp + ".slot", true); number(row.ms, rp + ".ms", false);
-			});
-			array(s.slotStats, sp + ".slotStats").forEach(function(row, ri) {
-				var rp = sp + ".slotStats[" + ri + "]"; object(row, rp, ["slot", "turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"]); number(row.slot, rp + ".slot", true);
-				["turns", "steps", "llmMs", "toolMs", "ttftMs", "ttftSteps", "decodeMs", "decodeTokens"].forEach(function(k) { number(row[k], rp + "." + k, false); });
-			});
-			array(s.slotUsage, sp + ".slotUsage").forEach(function(row, ri) {
-				var rp = sp + ".slotUsage[" + ri + "]"; object(row, rp, ["model", "providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType", "serviceTier", "contextTokens", "contextOver512k", "slot", "uncached", "output", "cacheRead", "cacheWrite", "reasoning", "cost"]); string(row.model, rp + ".model");
-				if (schemaVersion >= 2) {
-					["providerId", "providerFamily", "modelRaw", "modelCanonical", "accountType"].forEach(function(key) { string(row[key], rp + "." + key); });
-					number(row.contextTokens, rp + ".contextTokens", false); checkCost(row.cost, rp + ".cost");
-				}
-				if (["standard", "priority"].indexOf(row.serviceTier) < 0) throw new TypeError(rp + ".serviceTier: invalid value"); boolean(row.contextOver512k, rp + ".contextOver512k"); number(row.slot, rp + ".slot", true);
-				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].forEach(function(k) { number(row[k], rp + "." + k, false); });
-			});
-		});
-	});
-	object(value.timeline, "timeline", ["slotMinutes", "days"]); number(value.timeline.slotMinutes, "timeline.slotMinutes", true); if (value.timeline.slotMinutes <= 0) throw new TypeError("timeline.slotMinutes: expected positive integer");
-	array(value.timeline.days, "timeline.days").forEach(function(day, di) {
-		var dp = "timeline.days[" + di + "]"; object(day, dp, ["date", "dayTotalMs", "slotBlocks"]); string(day.date, dp + ".date"); number(day.dayTotalMs, dp + ".dayTotalMs", false);
-		array(day.slotBlocks, dp + ".slotBlocks").forEach(function(block, bi) {
-			var bp = dp + ".slotBlocks[" + bi + "]"; object(block, bp, ["slot", "projectId", "name", "colorIndex", "ms"]); number(block.slot, bp + ".slot", true); string(block.projectId, bp + ".projectId"); string(block.name, bp + ".name"); number(block.colorIndex, bp + ".colorIndex", true); number(block.ms, bp + ".ms", false);
-		});
-	});
-	object(value.meta, "meta", ["schemaVersion", "source", "generatedAt", "degraded", "warnings"]); if (value.meta.source !== "host") throw new TypeError("meta.source: expected host"); if (value.meta.schemaVersion !== undefined) number(value.meta.schemaVersion, "meta.schemaVersion", true); number(value.meta.generatedAt, "meta.generatedAt", false); boolean(value.meta.degraded, "meta.degraded");
-	array(value.meta.warnings, "meta.warnings").forEach(function(warning, wi) {
-		var wp = "meta.warnings[" + wi + "]"; object(warning, wp, ["code", "message", "sessionId"]); string(warning.code, wp + ".code"); string(warning.message, wp + ".message"); if (warning.sessionId !== undefined) string(warning.sessionId, wp + ".sessionId");
-	});
-	return value;
-}
-
-function parseBalanceResult(value) {
-	var object = function(input, path, keys) {
-		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
-		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
-		return input;
-	};
-	var array = function(input, path) { if (!Array.isArray(input)) throw new TypeError(path + ": expected array"); return input; };
-	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
-	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
-	var nullableNumber = function(input, path) { if (input !== null && (!Number.isFinite(input) || input < 0)) throw new TypeError(path + ": expected non-negative number or null"); };
-	object(value, "balance/current", ["generatedAt", "accounts", "warnings"]);
-	if (!Number.isFinite(value.generatedAt) || value.generatedAt < 0) throw new TypeError("generatedAt: expected non-negative number");
-	array(value.accounts, "accounts").forEach(function(account, index) {
-		var path = "accounts[" + index + "]";
-		object(account, path, ["provider", "name", "status", "currency", "total", "toppedUp", "granted", "fetchedAt", "topUpUrl", "errorCode"]);
-		if (account.provider !== "deepseek") throw new TypeError(path + ".provider: expected deepseek");
-		string(account.name, path + ".name");
-		if (["ok", "stale", "unconfigured", "error"].indexOf(account.status) < 0) throw new TypeError(path + ".status: invalid value");
-		string(account.currency, path + ".currency");
-		nullableNumber(account.total, path + ".total"); nullableNumber(account.toppedUp, path + ".toppedUp"); nullableNumber(account.granted, path + ".granted"); nullableNumber(account.fetchedAt, path + ".fetchedAt");
-		string(account.topUpUrl, path + ".topUpUrl"); nullableString(account.errorCode, path + ".errorCode");
-	});
-	array(value.warnings, "warnings").forEach(function(warning, index) {
-		var path = "warnings[" + index + "]"; object(warning, path, ["code", "message"]); string(warning.code, path + ".code"); string(warning.message, path + ".message");
-	});
-	return value;
-}
-
-function parseAccountResult(value) {
-	var object = function(input, path, keys) {
-		if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(path + ": expected object");
-		Object.keys(input).forEach(function(key) { if (keys.indexOf(key) < 0) throw new TypeError(path + "." + key + ": unexpected field"); });
-	};
-	var string = function(input, path) { if (typeof input !== "string") throw new TypeError(path + ": expected string"); };
-	var nullableString = function(input, path) { if (input !== null && typeof input !== "string") throw new TypeError(path + ": expected string or null"); };
-	var number = function(input, path, nullable) { if (nullable && input === null) return; if (!Number.isFinite(input) || input < 0) throw new TypeError(path + ": expected non-negative number" + (nullable ? " or null" : "")); };
-	var statuses = ["ok", "not-configured", "unauthorized", "rate-limited", "unavailable", "invalid-response", "blocked", "unsupported"];
-	object(value, "stats/account", ["generatedAt", "accounts", "warnings"]); number(value.generatedAt, "generatedAt", false);
-	if (!Array.isArray(value.accounts)) throw new TypeError("accounts: expected array");
-	value.accounts.forEach(function(account, index) {
-		var path = "accounts[" + index + "]";
-		object(account, path, ["id", "displayName", "providerFamily", "mode", "adapter", "status", "stale", "fetchedAt", "lastSuccessAt", "errorCode", "missingCredential", "actionUrl", "balance", "plan", "windows"]);
-		["id", "displayName", "providerFamily"].forEach(function(key) { string(account[key], path + "." + key); });
-		if (["balance", "subscription", "unsupported"].indexOf(account.mode) < 0) throw new TypeError(path + ".mode: invalid value");
-		if (statuses.indexOf(account.status) < 0) throw new TypeError(path + ".status: invalid value");
-		nullableString(account.adapter, path + ".adapter"); nullableString(account.errorCode, path + ".errorCode"); nullableString(account.missingCredential, path + ".missingCredential"); nullableString(account.actionUrl, path + ".actionUrl"); nullableString(account.plan, path + ".plan");
-		if (typeof account.stale !== "boolean") throw new TypeError(path + ".stale: expected boolean");
-		number(account.fetchedAt, path + ".fetchedAt", false); number(account.lastSuccessAt, path + ".lastSuccessAt", true);
-		if (account.balance !== null) {
-			var bp = path + ".balance";
-			object(account.balance, bp, ["currency", "remaining", "used", "total", "toppedUp", "granted", "unlimited"]); string(account.balance.currency, bp + ".currency");
-			["remaining"].forEach(function(key) { number(account.balance[key], bp + "." + key, false); });
-			["used", "total", "toppedUp", "granted"].forEach(function(key) { number(account.balance[key], bp + "." + key, true); });
-			if (typeof account.balance.unlimited !== "boolean") throw new TypeError(bp + ".unlimited: expected boolean");
-		}
-		if (!Array.isArray(account.windows)) throw new TypeError(path + ".windows: expected array");
-		account.windows.forEach(function(window, wi) {
-			var wp = path + ".windows[" + wi + "]"; object(window, wp, ["kind", "usedPercent", "remainingPercent", "resetsAt"]); string(window.kind, wp + ".kind");
-			number(window.usedPercent, wp + ".usedPercent", false); number(window.remainingPercent, wp + ".remainingPercent", false); number(window.resetsAt, wp + ".resetsAt", true);
-			if (window.usedPercent > 100 || window.remainingPercent > 100) throw new TypeError(wp + ": percentage exceeds 100");
-		});
-	});
-	if (!Array.isArray(value.warnings)) throw new TypeError("warnings: expected array");
-	value.warnings.forEach(function(warning, index) { var path = "warnings[" + index + "]"; object(warning, path, ["providerId", "code", "message"]); ["providerId", "code", "message"].forEach(function(key) { string(warning[key], path + "." + key); }); });
-	return value;
-}
-
-function parseProvidersResult(value) {
-	var keys = ["id", "displayName", "providerFamily", "accountMode", "adapter", "configured", "status", "fetchedAt"];
-	if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(function(key) { return ["generatedAt", "providers"].indexOf(key) < 0; })) throw new TypeError("stats/providers: expected strict object");
-	if (!Number.isFinite(value.generatedAt) || value.generatedAt < 0 || !Array.isArray(value.providers)) throw new TypeError("stats/providers: invalid result");
-	value.providers.forEach(function(provider, index) {
-		var path = "providers[" + index + "]";
-		if (!provider || typeof provider !== "object" || Array.isArray(provider) || Object.keys(provider).some(function(key) { return keys.indexOf(key) < 0; })) throw new TypeError(path + ": expected strict object");
-		["id", "displayName", "providerFamily", "accountMode", "status"].forEach(function(key) { if (typeof provider[key] !== "string") throw new TypeError(path + "." + key + ": expected string"); });
-		if (provider.adapter !== null && typeof provider.adapter !== "string") throw new TypeError(path + ".adapter: expected string or null");
-		if (typeof provider.configured !== "boolean") throw new TypeError(path + ".configured: expected boolean");
-		if (provider.fetchedAt !== null && (!Number.isFinite(provider.fetchedAt) || provider.fetchedAt < 0)) throw new TypeError(path + ".fetchedAt: invalid value");
-	});
-	return value;
-}
-
 function adaptLegacyBalance(value) {
 	return {
 		generatedAt: value.generatedAt,
@@ -2772,6 +2616,24 @@ function adaptLegacyBalance(value) {
 		}),
 		warnings: (value.warnings || []).map(function(warning) { return { providerId: "deepseek-official", code: warning.code, message: warning.message }; })
 	};
+}
+
+async function readAccountRemote(stats, force) {
+	if (typeof stats.account === "function") {
+		try {
+			const answered = await stats.account(force === true);
+			if (!answered.ok) throw answered.error || new Error("stats/account failed");
+			return parseAccountResult(answered.value);
+		} catch (error) {
+			const missing = ["gateway/method-unavailable", "gateway/invocation-unavailable", "method-not-found", "METHOD_NOT_FOUND", -32601].includes(error?.code);
+			if (!missing) throw error;
+		}
+	}
+	const legacy = await stats.current();
+	if (!legacy.ok) throw legacy.error || new Error("stats/current failed");
+	const adapted = adaptLegacyBalance(parseBalanceResult(legacy.value));
+	adapted.warnings.push({ providerId: "deepseek-official", code: "LEGACY_ACCOUNT_API", message: "Legacy account service: only DeepSeek balances are available" });
+	return adapted;
 }
 
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，
@@ -2810,7 +2672,7 @@ const STATS_REMOTE_CONTRIBUTION = {
 				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
 			}, {
 				id: "@rongyi7/dsh-stats#stats/account", service: "stats", namespace: "stats", method: "account", invocation: { kind: "direct" }, parameters: [{
-					name: "force", wire: "force", source: "json", codec: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:force", schema: { parse: function(value) { if (value !== undefined && typeof value !== "boolean") throw new TypeError("force: expected boolean"); return value; } } }
+					name: "force", wire: "force", source: "json", codec: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:force", schema: forceSchema }
 				}],
 				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:result", schema: { parse: parseAccountResult } },
 				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
@@ -2929,20 +2791,10 @@ async function apply(ctx) {
 		await ctx.inject(["remote", "remote.stats"], function statsConsumer(childCtx) {
 			aggregateRemote = async () => {
 				const answered = await childCtx.remote.stats.aggregate();
-				if (!answered.ok) throw new Error(answered.error?.message || "stats/aggregate failed");
-				return answered.value;
+				if (!answered.ok) throw answered.error || new Error("stats/aggregate failed");
+				return parseAggregateResult(answered.value);
 			};
-			balanceRemote = async (force) => {
-				try {
-					const answered = await childCtx.remote.stats.account(force === true);
-					if (answered.ok) return answered.value;
-					throw new Error(answered.error?.message || "stats/account failed");
-				} catch (accountError) {
-					const legacy = await childCtx.remote.stats.current();
-					if (!legacy.ok) throw accountError;
-					return adaptLegacyBalance(legacy.value);
-				}
-			};
+			balanceRemote = (force) => readAccountRemote(childCtx.remote.stats, force);
 		});
 	} catch (err) {
 		remoteError = err?.message || String(err);
@@ -2974,6 +2826,7 @@ async function apply(ctx) {
 module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
+	StatsDataStatus, BalanceView, readAccountRemote,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
