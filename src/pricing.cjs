@@ -424,7 +424,7 @@ function priceUsage(usage, identityInput) {
 	if (!rates) return emptyCost("unsupported", identity, tokens);
 	var amount = (tokens.uncached * rates.uncached + tokens.cacheRead * rates.cacheRead + tokens.cacheWrite * rates.cacheWrite + tokens.output * rates.output) / MILLION;
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
-	var uncertain = resolved.estimatedFallback || rule.confidence === "estimated"
+	var uncertain = usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
 		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
 		|| rule.cacheWritePriceUnknown && tokens.cacheWrite > 0;

@@ -1,6 +1,7 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let pricing = require("./pricing.cjs");
+let routeData = require("./route-data.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -349,10 +350,7 @@ function projectionValueOf(s, key) {
 	return undefined;
 }
 function routeRowsOf(route) {
-	if (!isRecord(route)) return [];
-	if (Array.isArray(route.routes)) return route.routes.slice();
-	if (isRecord(route.routes)) return Object.values(route.routes);
-	return [];
+	try { return routeData.routeRows(route); } catch { return []; }
 }
 function routeRowWeight(row) {
 	return nonNegativeFinite(row?.uncached) + nonNegativeFinite(row?.output) +
@@ -367,12 +365,7 @@ function projectionIdentityOf(s) {
 	var route = projectionValueOf(s, "statsRoute");
 	var current = isRecord(route?.current) ? route.current : {};
 	var rows = routeRowsOf(route).filter(function(row) { return isRecord(row) && usableString(row.model); }).sort(compareRouteRows);
-	var primary = null;
-	var primaryWeight = -1;
-	rows.forEach(function(row) {
-		var weight = routeRowWeight(row);
-		if (weight > primaryWeight) { primary = row; primaryWeight = weight; }
-	});
+	var primary = routeData.primaryRoute(rows, null);
 	var topModel = usableString(s?.modelRaw) || usableString(s?.model);
 	var source = topModel ? { model: topModel, providerId: usableProvider(s?.providerId) || current.providerId, accountType: usableString(s?.accountType) || current.accountType } : primary || current;
 	var modelRaw = topModel || usableString(source.model) || "(unknown)";
@@ -403,7 +396,7 @@ function projectionSlotUsageOf(s, identity) {
 		var output = nonNegativeFinite(row.output);
 		var cacheRead = nonNegativeFinite(row.cacheRead);
 		var cacheWrite = nonNegativeFinite(row.cacheWrite);
-		var contextTokens = uncached + cacheRead + cacheWrite;
+		var contextTokens = Number.isFinite(row.contextTokens) ? row.contextTokens : uncached + cacheRead + cacheWrite;
 		var slot = Number.isSafeInteger(row.slot) && row.slot >= 0 ? row.slot :
 			Number.isFinite(row.time) && row.time >= 0 ? Math.floor(row.time / SLOT_MS) : null;
 		if (slot === null) return null;
@@ -417,6 +410,7 @@ function projectionSlotUsageOf(s, identity) {
 			serviceTier: row.serviceTier === "priority" ? "priority" : "standard",
 			contextTokens,
 			contextOver512k: contextTokens > 512000,
+			pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
 			slot,
 			uncached,
 			output,

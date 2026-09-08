@@ -1,4 +1,6 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
@@ -144,6 +146,118 @@ function captureRouteProjection() {
 	return definition;
 }
 
+test('request context and counts survive cold projection replay without mutating old snapshots', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	fixture({ current: projection(now) });
+	const header = { id: 'current', cwd: '/tmp/fixture', createdAt: now, version: 1 };
+	const events = [0, 1].map((turn) => ({ type: 'assistant/message', seq: turn, time: now + turn + 1,
+		data: { turn, step: 0, usage: { inputTokens: 300000, outputTokens: 1000 }, message: { source: { provider: 'minimax', model: 'MiniMax-M3' } } } }));
+	const definition = captureRouteProjection();
+	const first = definition.apply(definition.init(header, 0), events[0]);
+	const saved = JSON.stringify(first);
+	const second = definition.apply(first, events[1]);
+	expect(JSON.stringify(first)).toBe(saved);
+	definition.stateSchema.parse(JSON.parse(JSON.stringify(second)));
+	expect(definition.view(second).routes[0]).toMatchObject({ contextTokens: 300000, count: 2, uncached: 600000 });
+	const base = { workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['current'] }] } };
+	const live = await StatsService.prototype.aggregate.call({ ctx: { ...base, sessions: { get: () => ({ header, inheritedEventCount: 0, snapshotEvents: () => events }) } } });
+	const cold = await StatsService.prototype.aggregate.call({ ctx: { ...base,
+		sessionProjectionCache: { coldSnapshot: async () => ({ values: { statsRoute: definition.view(second) } }) }
+	} });
+	for (const result of [live, cold]) {
+		const session = result.projects[0].sessions[0];
+		expect(session.calls).toBe(2);
+		expect(session.cost.totals[0].amount).toBeCloseTo(1.2768, 8);
+		expect(session.slotUsage[0].contextTokens).toBe(300000);
+	}
+});
+
+test('unchanged disk logs skip body reads and replacement files invalidate the cache', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	const home = fixture({ cached: projection(now) });
+	const records = [{ type: 'session', time: now }, { type: 'assistant/message', seq: 0, time: now + 1,
+		data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { provider: 'minimax', model: 'MiniMax-M3' } } } }];
+	writePlainLog(home, 'cached', records);
+	const read = vi.spyOn(fs, 'readFileSync');
+	syncBuiltinESMExports();
+	try {
+		await aggregate();
+		const bodyReads = () => read.mock.calls.filter(([path]) => String(path).endsWith('session.jsonl')).length;
+		expect(bodyReads()).toBeGreaterThan(0);
+		const first = bodyReads();
+		await aggregate();
+		expect(bodyReads()).toBe(first);
+		records[1].data.usage.inputTokens = 20;
+		writePlainLog(home, 'cached', records);
+		const result = await aggregate();
+		expect(bodyReads()).toBeGreaterThan(first);
+		expect(result.projects[0].sessions[0].stats.uncached).toBe(20);
+	} finally { read.mockRestore(); syncBuiltinESMExports(); }
+});
+
+test.each(['query', 'live', 'handle', 'disk'])('v2 streams and retries exclude the inherited prefix through %s', async (mode) => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	const home = fixture({ child: projection(now) });
+	const header = { type: 'session', id: 'child', cwd: '/tmp/fixture', createdAt: now, version: 2, parentSession: 'parent', isSeeded: true };
+	const event = (type, seq, data) => ({ type, seq, time: now + seq * 100, data });
+	const stream = (inputTokens, outputTokens, time) => [{ type: 'text-chunks', time0: time, index: 0, texts: ['', 'a'], dt: [10] },
+		{ type: 'chunk', time: time + 20, chunk: { type: 'usage', usage: { inputTokens, outputTokens } } }];
+	const events = [
+		event('assistant/message', 0, { turn: 0, step: 0, usage: { inputTokens: 9999, outputTokens: 999 } }),
+		event('session/end-seed', 1, { inherited: true }),
+		event('request/header', 2, { header: { config: { provider: 'deepseek', model: 'deepseek-v4-flash' } } }),
+		event('step/start', 3, { turn: 1, step: 0 }),
+		event('assistant/attempt', 4, { turn: 1, step: 0, stream: stream(5, 1, now + 350) }),
+		event('llm/retry-started', 5, { turn: 1, step: 0 }),
+		event('assistant/message', 6, { turn: 1, step: 0, stream: stream(20, 4, now + 550) }),
+		event('step/end', 7, { turn: 1, step: 0 })
+	];
+	const closed = vi.fn();
+	const ctx = { workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['child'] }] } };
+	if (mode === 'query') ctx.sessionQuery = { readSession: async () => ({ session: header, inheritedEventCount: 1, events }) };
+	if (mode === 'live') ctx.sessions = { get: () => ({ header, inheritedEventCount: 1, snapshotEvents: () => events }) };
+	if (mode === 'handle') ctx.sessionPersistence = { open: async (id, access) => {
+		expect([id, access]).toEqual(['child', 'read']);
+		return { header, inheritedEventCount: 1, read: async () => ({ events }), close: closed };
+	} };
+	if (mode === 'disk') {
+		const dir = join(home, 'sessions', 'workspace', 'child');
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'session.v2.jsonl'), [header, ...events].map(JSON.stringify).join('\n') + '\n');
+	}
+	const result = await StatsService.prototype.aggregate.call({ ctx });
+	const session = result.projects[0].sessions[0];
+	expect(session.stats).toMatchObject({ uncached: 25, output: 5, steps: 1, ttftMs: 60, decodeTokens: 4 });
+	expect(session.calls).toBe(2);
+	expect(result.meta.warnings.some((w) => w.code === 'SESSION_FORMAT_VERSION_UNSUPPORTED')).toBe(false);
+	if (mode === 'handle') expect(closed).toHaveBeenCalledOnce();
+	const definition = captureRouteProjection();
+	const state = events.reduce(definition.apply, definition.init(header, 1));
+	expect(definition.view(state).routes.reduce((sum, row) => sum + row.uncached, 0)).toBe(25);
+});
+
+test.each(['cache', 'restore'])('current %s receives the full observation and supplies official metadata', async (mode) => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	fixture({ current: projection(now) });
+	const header = { id: 'current', cwd: '/tmp/fixture', createdAt: now, version: 1, isSeeded: false };
+	const events = [];
+	let blank = true;
+	const check = (meta, count, log) => {
+		expect(meta).toBe(header); expect(count).toBe(0); expect(log).toBe(events);
+		return { values: { title: 'Official title', sessionListMetadata: { blank, lastPromptAt: now + 10 }, tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } } };
+	};
+	const ctx = { workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['current'] }] },
+		sessionQuery: { readSession: async () => ({ session: header, inheritedEventCount: 0, events }) } };
+	if (mode === 'cache') ctx.sessionProjectionCache = { coldSnapshot(meta, count, log) { return check(meta, count, log); } };
+	else ctx.sessionProjections = { restore(checkpoint, log, floor, meta, count) { expect(floor).toBe(0); return { snapshot: check(meta, count, log) }; } };
+	const empty = await StatsService.prototype.aggregate.call({ ctx });
+	expect(empty.projects[0].sessions).toHaveLength(0);
+	blank = false;
+	const result = await StatsService.prototype.aggregate.call({ ctx });
+	expect(result.projects[0].sessions[0]).toMatchObject({ title: 'Official title', blank: false, updatedAt: now + 10 });
+	expect(result.meta.warnings.some((w) => /FAILED/.test(w.code))).toBe(false);
+});
+
 test('route projection is valid for rc6 and rc2 contracts and replaces same-step usage', () => {
 	const definition = captureRouteProjection();
 	let state = definition.init();
@@ -164,7 +278,7 @@ test('route projection is valid for rc6 and rc2 contracts and replaces same-step
 	definition.schema.parse(view); // rc6 registry contract
 	definition.wire.viewSchema.parse(view); // rc2 wire contract
 	definition.stateSchema.parse(state); // rc2 state contract
-	expect(() => definition.stateSchema.parse({ ...state, samples: { broken: { routeKey: 'x', output: -1, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 } } })).toThrow();
+	expect(() => definition.stateSchema.parse({ ...state, last: { key: '0:0', routeKey: 'x', output: -1, uncached: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 } })).toThrow();
 });
 
 test('route projection excludes inherited fork seed usage before rendering the view', () => {

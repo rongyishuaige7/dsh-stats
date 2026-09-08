@@ -23,6 +23,20 @@ function findElementByTitle(node, title) {
 	return null;
 }
 
+test('client projection pricing preserves request context and qualifies legacy buckets', () => {
+	const { sessionCostSummary } = client.__test;
+	const time = Date.parse('2026-09-08T10:00:00+08:00');
+	const row = { providerId: 'minimax', model: 'MiniMax-M3', accountType: 'api', serviceTier: 'standard',
+		time, slot: Math.floor(time / 1800000), uncached: 600000, output: 2000, cacheRead: 0, cacheWrite: 0, contextTokens: 300000, count: 2 };
+	const session = { id: 's', updatedAt: time, projectionValues: { statsRoute: { routes: [row] } }, stats: {} };
+	const exact = sessionCostSummary(enrichSessionProjection(session));
+	expect(exact.totals[0].amount).toBeCloseTo(1.2768, 8);
+	expect(exact.status).toBe('exact');
+	const { contextTokens, count, ...oldRow } = row;
+	const legacy = sessionCostSummary(enrichSessionProjection({ ...session, projectionValues: { statsRoute: { routes: [oldRow] } } }));
+	expect(legacy.status).toBe('estimated');
+});
+
 // ---------------------------------------------------------------------------
 // localDayKey
 // ---------------------------------------------------------------------------

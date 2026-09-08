@@ -11,6 +11,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
+import routeData from "./route-data.cjs";
 import { collectAccounts, providerViews } from "./accounts.js";
 
 const { normalizeIdentity, priceUsage, convertCostToCny, summarizeCostsCny, mergeCostSummariesCny } = pricing;
@@ -63,7 +64,7 @@ const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
 const STATS_SCHEMA_VERSION = 2;
 const SESSION_PROJECTION_DOMAIN_VERSION = 3;
-const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: 1, title: 1, sessionListMetadata: 1, statsRoute: 1 });
+const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: 1, title: 1, sessionListMetadata: 1, statsRoute: 2 });
 
 // DeepSeek 余额查询与统计聚合解耦：余额是宿主凭证能力，不应让统计日志
 // 读取失败或网络波动改变现有 stats/aggregate 的语义。
@@ -318,10 +319,9 @@ function objectRecord(value) {
 // attribution just because it came from a state checkpoint.
 function projectionRouteRows(route) {
 	if (!objectRecord(route)) return [];
-	const raw = route.routes;
-	const rows = Array.isArray(raw) ? raw : objectRecord(raw) ? Object.values(raw) : [];
+	const rows = routeData.routeRows(route);
 	return rows.filter((row) => objectRecord(row)
-		&& typeof row.model === "string" && row.model.trim()
+		&& (row.model === null || typeof row.model === "string" && row.model.trim())
 		&& Number.isFinite(row.time) && row.time >= 0
 		&& (row.slot === undefined || (Number.isSafeInteger(row.slot) && row.slot >= 0)));
 }
@@ -392,7 +392,7 @@ function findSessionFile(home, sessionId) {
 	const rawIdIsSafe = sessionId !== "." && sessionId !== ".." && !/[/\\\0]/.test(sessionId);
 	for (const enc of sessionDirs(home)) {
 		const dirIds = rawIdIsSafe && encodedId !== sessionId ? [encodedId, sessionId] : [encodedId];
-		for (const dirId of dirIds) for (const suffix of ["session.jsonl.zstd", "session.jsonl"]) {
+		for (const dirId of dirIds) for (const suffix of ["session.v2.jsonl.zstd", "session.v2.jsonl", "session.v1.jsonl.zstd", "session.v1.jsonl", "session.jsonl.zstd", "session.jsonl"]) {
 			const cand = join(root, enc, dirId, suffix);
 			try {
 				const stat = lstatSync(cand);
@@ -568,14 +568,21 @@ function projectionLifecycleMismatch(route, ...expectedValues) {
 // The official token/session projections intentionally do not retain the
 // provider route. Keep that attribution in a small first-party projection so a
 // cold aggregate can use the official watermark without reopening the log.
-function routeProjectionState() {
+function inheritedCount(header, count) {
+	if (Number.isSafeInteger(count) && count >= 0) return count;
+	if (Number.isSafeInteger(header?.inheritedEventCount) && header.inheritedEventCount >= 0) return header.inheritedEventCount;
+	return header?.parentSession && Number.isSafeInteger(header.seedLength) && header.seedLength >= 0 ? header.seedLength : 0;
+}
+
+function routeProjectionState(header = null, count) {
 	return {
-		origin: null,
-		parentSession: null,
-		seedLength: null,
+		origin: firstString(header?.origin),
+		parentSession: firstString(header?.parentSession),
+		seedLength: Number.isSafeInteger(header?.seedLength) && header.seedLength >= 0 ? header.seedLength : null,
+		inheritedEventCount: inheritedCount(header, count),
 		current: { providerId: "unknown", model: null, accountType: "api", serviceTier: "standard" },
-		routes: {},
-		samples: {}
+		routeTree: {},
+		last: null
 	};
 }
 
@@ -588,7 +595,8 @@ function routeProjectionSchema(value) {
 	if (typeof record.current.providerId !== "string" || (record.current.model !== null && typeof record.current.model !== "string") || typeof record.current.accountType !== "string" || !["standard", "priority"].includes(record.current.serviceTier)) throw new TypeError("invalid statsRoute current route");
 	for (const row of record.routes) {
 		if (!objectRecord(row) || (row.model !== null && typeof row.model !== "string") || typeof row.providerId !== "string" || typeof row.accountType !== "string" || !["standard", "priority"].includes(row.serviceTier) || !Number.isSafeInteger(row.slot) || row.slot < 0 || !Number.isFinite(row.time) || row.time < 0) throw new TypeError("invalid statsRoute row");
-		for (const key of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) if (!Number.isFinite(row[key]) || row[key] < 0) throw new TypeError("invalid statsRoute token count");
+		for (const key of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning", "contextTokens"]) if (!Number.isFinite(row[key]) || row[key] < 0) throw new TypeError("invalid statsRoute token count");
+		if (!Number.isSafeInteger(row.count) || row.count < 1) throw new TypeError("invalid statsRoute request count");
 	}
 	return value;
 }
@@ -598,12 +606,12 @@ function routeProjectionSchema(value) {
 // a malformed checkpoint cannot be accepted on either host generation.
 function routeProjectionStateSchema(value) {
 	const record = objectRecord(value);
-	if (!record || !objectRecord(record.routes) || !objectRecord(record.samples)) throw new TypeError("invalid statsRoute state");
+	if (!record || !objectRecord(record.routeTree) || !Number.isSafeInteger(record.inheritedEventCount) || record.inheritedEventCount < 0) throw new TypeError("invalid statsRoute state");
 	routeProjectionSchema(routeProjectionView(record));
-	for (const [key, sample] of Object.entries(record.samples)) {
-		if (!objectRecord(sample) || typeof sample.routeKey !== "string") throw new TypeError(`invalid statsRoute sample ${key}`);
+	if (record.last !== null) {
+		if (!objectRecord(record.last) || typeof record.last.key !== "string" || typeof record.last.routeKey !== "string") throw new TypeError("invalid statsRoute last sample");
 		for (const field of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) {
-			if (!Number.isFinite(sample[field]) || sample[field] < 0) throw new TypeError(`invalid statsRoute sample ${key}.${field}`);
+			if (!Number.isFinite(record.last[field]) || record.last[field] < 0) throw new TypeError("invalid statsRoute last sample");
 		}
 	}
 	return value;
@@ -627,7 +635,10 @@ function routeProjectionValueFromEntry(entry, sessionId, header, warnings, domai
 	}
 	const value = row.val;
 	try {
-		if (objectRecord(value?.routes) && objectRecord(value?.samples)) routeProjectionStateSchema(value);
+		if (objectRecord(value?.routeTree)) routeProjectionStateSchema(value);
+		else if (!versioned) routeProjectionSchema({ ...value, routes: routeData.routeRows(value).map((row) => ({
+			...row, contextTokens: row.contextTokens ?? row.uncached + row.cacheRead + row.cacheWrite, count: row.count ?? 1
+		})) });
 		else routeProjectionSchema(value);
 	} catch {
 		warnings.push({ code: "SESSION_CACHE_ROUTE_INVALID", sessionId, message: "projection row statsRoute was malformed and was ignored" });
@@ -654,22 +665,25 @@ function routeProjectionRoute(config, current) {
 function routeProjectionUsage(event) {
 	if (event?.type === "assistant/chunk" && event.data?.chunk?.type === "usage") return event.data.chunk.usage || {};
 	if (event?.type === "assistant/message" && event.data?.usage !== undefined) return event.data.usage || {};
+	if (event?.type !== "assistant/message" && event?.type !== "assistant/attempt") return null;
+	const stream = event.data?.stream;
+	if (!Array.isArray(stream)) return null;
+	for (let i = stream.length - 1; i >= 0; i--) {
+		if (stream[i]?.type === "chunk" && stream[i].chunk?.type === "usage") return stream[i].chunk.usage || {};
+	}
 	return null;
 }
 
 function routeProjectionApply(state, event) {
 	if (!event || typeof event !== "object") return state;
 	if (event.type === "session") {
-		const next = { ...state };
-		if (typeof event.origin === "string") next.origin = event.origin;
-		if (typeof event.parentSession === "string") next.parentSession = event.parentSession;
-		if (Number.isSafeInteger(event.seedLength) && event.seedLength >= 0) next.seedLength = event.seedLength;
-		return next;
+		return { ...state, origin: firstString(event.origin, state.origin), parentSession: firstString(event.parentSession, state.parentSession),
+			seedLength: Number.isSafeInteger(event.seedLength) ? event.seedLength : state.seedLength,
+			inheritedEventCount: Math.max(state.inheritedEventCount, inheritedCount(event)) };
 	}
-	// Fork logs begin with inherited seed events. Their usage belongs to the
-	// parent and must never enter this child projection.
-	const firstOwnSeq = state.parentSession !== null ? state.seedLength ?? 0 : 0;
-	if (Number.isSafeInteger(event.seq) && event.seq < firstOwnSeq) return state;
+	if (Number.isSafeInteger(event.seq) && event.seq < state.inheritedEventCount) return state;
+	const key = Number.isSafeInteger(event.data?.turn) && Number.isSafeInteger(event.data?.step) ? event.data.turn + ":" + event.data.step : null;
+	if (event.type === "llm/retry-started") return key !== null && state.last?.key === key ? { ...state, last: null } : state;
 	let current = state.current;
 	if (event.type === "request/header") {
 		const header = event.data?.header;
@@ -679,54 +693,41 @@ function routeProjectionApply(state, event) {
 	}
 	const usage = routeProjectionUsage(event);
 	if (!usage || !Number.isFinite(event.time) || event.time < 0) return state;
-	const source = event.type === "assistant/message" ? event.data?.message?.source : null;
-	const route = routeProjectionRoute({
-		provider: firstString(source?.provider, source?.providerId, source?.provider_id),
-		model: source?.model,
-		accountType: accountTypeOf(source, current.accountType),
-		serviceTier: source?.serviceTier,
-		service_tier: source?.service_tier
-	}, current);
-	if (!route.model) return { ...state, current: route };
-	const uncached = nonNegativeNumber(usage.inputTokens);
-	const output = nonNegativeNumber(usage.outputTokens);
-	const cacheRead = nonNegativeNumber(usage.cacheReadTokens);
-	const cacheWrite = nonNegativeNumber(usage.cacheWriteTokens);
-	const reasoning = nonNegativeNumber(usage.reasoningTokens);
-	const contextTokens = uncached + cacheRead + cacheWrite;
+	const source = event.data?.message?.source;
+	const route = routeProjectionRoute(source, current);
+	const sample = {
+		uncached: nonNegativeNumber(usage.inputTokens), output: nonNegativeNumber(usage.outputTokens),
+		cacheRead: nonNegativeNumber(usage.cacheReadTokens), cacheWrite: nonNegativeNumber(usage.cacheWriteTokens),
+		reasoning: nonNegativeNumber(usage.reasoningTokens)
+	};
+	const contextTokens = sample.uncached + sample.cacheRead + sample.cacheWrite;
 	const slot = Math.floor(event.time / SLOT_MS);
 	const routeKey = JSON.stringify([route.providerId, route.model, route.accountType, route.serviceTier, slot, contextTokens]);
-	const sampleKey = Number.isSafeInteger(event.data?.turn) && Number.isSafeInteger(event.data?.step)
-		? `${event.data.turn}:${event.data.step}` : `event:${Number.isSafeInteger(event.seq) ? event.seq : Object.keys(state.samples).length}`;
-	const routes = { ...state.routes };
-	const adjust = (key, delta) => {
-		const previous = routes[key];
-		if (!previous) return;
-		const next = { ...previous };
-		for (const field of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) next[field] = Math.max(0, next[field] + delta * (state.samples[sampleKey]?.[field] || 0));
-		if (next.uncached + next.output + next.cacheRead + next.cacheWrite + next.reasoning === 0) delete routes[key];
-		else routes[key] = next;
-	};
-	const previous = state.samples[sampleKey];
-	if (previous) adjust(previous.routeKey, -1);
-	const row = routes[routeKey] || { providerId: route.providerId, model: route.model, accountType: route.accountType, serviceTier: route.serviceTier, slot, time: event.time, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
-	routes[routeKey] = { ...row, time: Math.max(row.time, event.time), uncached: row.uncached + uncached, output: row.output + output, cacheRead: row.cacheRead + cacheRead, cacheWrite: row.cacheWrite + cacheWrite, reasoning: row.reasoning + reasoning };
-	const samples = { ...state.samples, [sampleKey]: { routeKey, uncached, output, cacheRead, cacheWrite, reasoning } };
-	return { ...state, current: route, routes, samples };
+	const previous = key !== null && state.last?.key === key ? state.last : null;
+	let routeTree = state.routeTree;
+	if (previous) routeTree = routeData.updateRoute(routeTree, previous.routeKey, (row) => {
+		if (!row || row.count <= 1) return null;
+		const next = { ...row, count: row.count - 1 };
+		for (const field of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) next[field] = Math.max(0, row[field] - previous[field]);
+		return next;
+	});
+	routeTree = routeData.updateRoute(routeTree, routeKey, (row) => {
+		const next = row ? { ...row, count: row.count + 1, time: Math.max(row.time, event.time) }
+			: { ...route, slot, time: event.time, contextTokens, count: 1, uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+		for (const field of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) next[field] += sample[field];
+		return next;
+	});
+	return { ...state, current: route, routeTree, last: key === null ? null : { key, routeKey, ...sample } };
 }
 
 function routeProjectionView(state) {
-	const routes = Object.values(state.routes).map((row) => ({ ...row })).sort((a, b) => a.slot - b.slot || a.providerId.localeCompare(b.providerId) || String(a.model ?? "").localeCompare(String(b.model ?? "")));
-	let primary = state.current;
-	let weight = -1;
-	for (const row of routes) {
-		const nextWeight = row.uncached + row.output + row.cacheRead + row.cacheWrite;
-		if (nextWeight > weight) { weight = nextWeight; primary = row; }
-	}
+	const routes = routeData.routeRows(state).map((row) => ({ ...row })).sort((a, b) => a.slot - b.slot || a.providerId.localeCompare(b.providerId) || String(a.model ?? "").localeCompare(String(b.model ?? "")));
+	const primary = routeData.primaryRoute(routes, state.current);
 	return {
 		origin: state.origin,
 		parentSession: state.parentSession,
 		seedLength: state.seedLength,
+		inheritedEventCount: state.inheritedEventCount,
 		current: { providerId: primary.providerId, model: primary.model, accountType: primary.accountType, serviceTier: primary.serviceTier },
 		routes
 	};
@@ -734,7 +735,7 @@ function routeProjectionView(state) {
 
 const STATS_ROUTE_PROJECTION = Object.freeze({
 	key: "statsRoute",
-	stateVersion: 1,
+	stateVersion: 2,
 	schema: { parse: routeProjectionSchema },
 	stateSchema: { parse: routeProjectionStateSchema },
 	init: routeProjectionState,
@@ -749,11 +750,18 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 	for (const raw of Array.isArray(rawEvents) ? rawEvents : []) {
 		try {
 			const expanded = expandStorageRecord(raw);
-			for (const event of expanded) events.push(event);
+			for (const event of expanded) {
+				if (!objectRecord(event)) malformedRecords++;
+				else events.push(event);
+			}
 		} catch {
 			malformedRecords++;
 		}
 	}
+	header = header || events.find((event) => event?.type === "session") || null;
+	const seedMarker = events.find((event) => event?.type === "session/end-seed" && event.data?.inherited === true);
+	const count = inheritedCount(header, quality.inheritedEventCount ?? seedMarker?.seq);
+	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength);
 	const times = [];
 	let currentModel = null;
 	let currentProvider = "unknown";
@@ -762,8 +770,9 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 	let origin = typeof header?.origin === "string" ? header.origin : null;
 	let parentSession = typeof header?.parentSession === "string" ? header.parentSession : null;
 	let seedLength = Number.isSafeInteger(header?.seedLength) && header.seedLength >= 0 ? header.seedLength : null;
-	let firstOwnSeq = parentSession !== null ? seedLength ?? 0 : 0;
+	let firstOwnSeq = count;
 	const usageByStep = new Map();
+	let lastUsage = null;
 	const derived = emptyRaw();
 	const slotStats = new Map();
 	const addSlot = (time, field, value) => {
@@ -800,16 +809,33 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 			if (evSeq >= expectedSeq) expectedSeq = evSeq + 1;
 			lastSeq = Math.max(lastSeq, evSeq);
 		}
-		if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
+		if (unknownSeed || (evSeq !== undefined && evSeq < firstOwnSeq)) continue;
 		const t = ev?.time;
 		if (Object.prototype.hasOwnProperty.call(ev || {}, "time") && (!Number.isFinite(t) || t < 0)) { malformedRecords++; continue; }
 		if (Number.isFinite(t)) times.push(t);
 		if (!ev || typeof ev !== "object") continue;
+		const usage = routeProjectionUsage(ev);
+		const stepKey = Number.isSafeInteger(ev.data?.turn) && Number.isSafeInteger(ev.data?.step) ? ev.data.turn + ":" + ev.data.step : null;
+		if (ev.type === "llm/retry-started" && lastUsage?.stepKey === stepKey) lastUsage = null;
+		if (usage && Number.isFinite(t)) {
+			if (stepKey === null) malformedRecords++;
+			const source = ev.data?.message?.source;
+			const route = routeProjectionRoute(source, { model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier });
+			currentModel = route.model; currentProvider = route.providerId;
+			currentAccountType = route.accountType; currentServiceTier = route.serviceTier;
+			const key = stepKey !== null && lastUsage?.stepKey === stepKey ? lastUsage.key : usageByStep.size;
+			usageByStep.set(key, { time: t, ...route,
+				uncached: nonNegativeNumber(usage.inputTokens), output: nonNegativeNumber(usage.outputTokens),
+				cacheRead: nonNegativeNumber(usage.cacheReadTokens), cacheWrite: nonNegativeNumber(usage.cacheWriteTokens), reasoning: nonNegativeNumber(usage.reasoningTokens) });
+			lastUsage = stepKey === null ? null : { stepKey, key };
+		}
 		if (ev.type === "session") {
+			if ((ev.origin != null && typeof ev.origin !== "string") || (ev.parentSession != null && typeof ev.parentSession !== "string")
+				|| (ev.seedLength != null && (!Number.isSafeInteger(ev.seedLength) || ev.seedLength < 0))) malformedRecords++;
 			origin = typeof ev.origin === "string" ? ev.origin : origin;
 			parentSession = typeof ev.parentSession === "string" ? ev.parentSession : parentSession;
 			seedLength = Number.isSafeInteger(ev.seedLength) && ev.seedLength >= 0 ? ev.seedLength : seedLength;
-			if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
+			firstOwnSeq = Math.max(firstOwnSeq, inheritedCount(ev));
 		} else if (ev.type === "request/header") {
 			const config = ev.data?.header?.config;
 			if (config?.model) currentModel = config.model;
@@ -820,24 +846,11 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		} else if (ev.type === "step/start") {
 			openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
 		} else if (ev.type === "assistant/chunk") {
-			if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
-				const u = ev.data.chunk.usage || {};
-				const key = ev.data?.turn !== undefined && ev.data?.step !== undefined ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? events.indexOf(ev)}`;
-				usageByStep.set(key, { time: t, model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier,
-					uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens), cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
-			} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) openStep.firstTokenTime = t;
-		} else if (ev.type === "assistant/message") {
-			const u = ev.data?.usage;
-			const source = ev.data?.message?.source;
-			const msgModel = source?.model || currentModel;
-			const msgProvider = firstString(source?.provider, source?.providerId, source?.provider_id, currentProvider) || "unknown";
-			const msgAccountType = accountTypeOf(source, currentAccountType);
-			const msgServiceTier = source?.serviceTier === "priority" || source?.service_tier === "priority" ? "priority" : currentServiceTier;
-			if (u !== undefined && Number.isFinite(t)) {
-				const key = ev.data?.turn !== undefined && ev.data?.step !== undefined ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? events.indexOf(ev)}`;
-				usageByStep.set(key, { time: t, model: msgModel, providerId: msgProvider, accountType: msgAccountType, serviceTier: msgServiceTier,
-					uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens), cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
-			}
+			if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) openStep.firstTokenTime = t;
+		} else if (ev.type === "assistant/message" || ev.type === "assistant/attempt") {
+			const u = usage;
+			if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null) openStep.firstTokenTime = streamFirstTokenTime(ev.data?.stream);
+			if (ev.type === "assistant/attempt") continue;
 			if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
 				const llm = Math.max(0, t - openStep.startTime); derived.llmMs += llm; addInterval("llmMs", openStep.startTime, t);
 				if (openStep.firstTokenTime !== null) {
@@ -875,31 +888,41 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		times, lastTime: times.length ? times[times.length - 1] : null,
 		model: primary.modelRaw === "(unknown)" ? null : primary.modelRaw,
 		providerId: primary.providerId, accountType: primary.accountType,
-		usages: [...usageByStep.values()], origin, parentSession, seedLength,
+		usages: [...usageByStep.values()], origin, parentSession, seedLength, inheritedEventCount: count,
 		stats: derivedEvents ? derived : null, slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot),
-		partial: Boolean(quality.partial) || malformedRecords > 0 || seqGap || (header?.version !== undefined && header.version !== 0), stale: Boolean(quality.stale), missing: false, unavailable: false,
-		malformedRecords, lastSeq, seqGap, formatVersion: header?.version, futureVersion: header?.version !== undefined && header.version > 0,
+		partial: Boolean(quality.partial) || malformedRecords > 0 || events.length === 0 && !header || seqGap || unknownSeed || (header?.version !== undefined && ![0, 1, 2].includes(header.version)), stale: Boolean(quality.stale), missing: false, unavailable: false,
+		malformedRecords, lastSeq, seqGap, unknownSeed, formatVersion: header?.version, futureVersion: header?.version !== undefined && ![0, 1, 2].includes(header.version),
 		header: header || null
 	};
 }
 
 async function officialSessionSource(ctx, sessionId) {
-	const sessions = contextService(ctx, "sessions");
-	const live = sessions?.get?.(sessionId);
-	if (live && Array.isArray(live.events)) return { header: live.header, events: live.events, source: "live", liveSession: live };
+	const normalize = (loaded, source, liveSession) => {
+		if (!loaded || !Array.isArray(loaded.events)) return null;
+		const header = loaded.header || loaded.meta || loaded.session;
+		return { header, inheritedEventCount: inheritedCount(header, loaded.inheritedEventCount), events: loaded.events, source, liveSession };
+	};
+	const live = contextService(ctx, "sessions")?.get?.(sessionId);
+	if (live) {
+		const events = typeof live.snapshotEvents === "function" ? live.snapshotEvents() : live.events;
+		if (Array.isArray(events)) return normalize({ header: live.header, inheritedEventCount: live.inheritedEventCount, events }, "live", live);
+	}
 	const query = contextService(ctx, "sessionQuery");
-	if (query && typeof query.readSession === "function") {
-		const loaded = await query.readSession(sessionId);
-		if (loaded && Array.isArray(loaded.events)) return { header: loaded.header || loaded.meta || loaded.session, events: loaded.events, source: "sessionQuery" };
+	if (typeof query?.readSession === "function") {
+		const result = normalize(await query.readSession(sessionId), "sessionQuery");
+		if (result) return result;
 	}
 	const persistence = contextService(ctx, "sessionPersistence");
-	if (persistence && typeof persistence.inspect === "function") {
-		const loaded = await persistence.inspect(sessionId);
-		if (loaded && Array.isArray(loaded.events)) return { header: loaded.meta || loaded.header || loaded.session, events: loaded.events, source: "sessionPersistence" };
+	for (const method of ["inspect", "load"]) if (typeof persistence?.[method] === "function") {
+		const result = normalize(await persistence[method](sessionId), "sessionPersistence");
+		if (result) return result;
 	}
-	if (persistence && typeof persistence.load === "function") {
-		const loaded = await persistence.load(sessionId);
-		if (loaded && Array.isArray(loaded.events)) return { header: loaded.meta || loaded.header || loaded.session, events: loaded.events, source: "sessionPersistence" };
+	if (typeof persistence?.open === "function") {
+		const handle = await persistence.open(sessionId, "read");
+		try {
+			const loaded = await handle.read();
+			return normalize({ ...loaded, header: handle.header, inheritedEventCount: handle.inheritedEventCount }, "sessionPersistence");
+		} finally { await handle.close(); }
 	}
 	return null;
 }
@@ -917,9 +940,15 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 		// watermark and stale-log recovery rules. Prefer its cold-read ladder when
 		// available; the explicit restore path below is retained for rc6/partial
 		// hosts that expose the registry but not the cache service.
-			if (projectionCache && typeof projectionCache.coldSnapshot === "function") {
+		const needsSource = projectionCache?.coldSnapshot?.length >= 2 || projections?.restore?.length >= 4;
+		// rc1+ takes the full observation; rc2 owns its own persistence read.
+		// Both shipped methods retain their declared arity after binding.
+		if (needsSource && !source) return null;
+		if (projectionCache && typeof projectionCache.coldSnapshot === "function") {
 			try {
-				const snapshot = await projectionCache.coldSnapshot(sessionId);
+				const snapshot = needsSource
+					? await projectionCache.coldSnapshot(source.header, source.inheritedEventCount, source.events)
+					: await projectionCache.coldSnapshot(sessionId);
 				const snapshotSeq = snapshot?.asOfSeq;
 				const snapshotDomain = snapshot?.domain ?? snapshot?.unit;
 				const snapshotVersion = snapshot?.version;
@@ -944,9 +973,8 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 					warnings.push({ code: "OFFICIAL_PROJECTION_CACHE_USED", sessionId, message: "projection values loaded through sessionProjectionCache coldSnapshot" });
 					return snapshot.values;
 				}
-			} catch {
-				// A cache miss or an unavailable cache must not hide the persistence
-				// and registry fallback paths below.
+			} catch (error) {
+				warnings.push({ code: "OFFICIAL_PROJECTION_CACHE_FAILED", sessionId, message: error?.message || String(error) });
 			}
 		}
 		if (!projections) return null;
@@ -957,14 +985,15 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 			if (floor !== undefined) {
 				const suffix = await persistence.readFrom(sessionId, floor);
 				if (suffix && Array.isArray(suffix.events)) {
-					const restored = projections.restore(checkpoint, suffix.events, floor);
+					const header = source?.header || suffix.header || suffix.meta || suffix.session || entry?.identity;
+					const restored = projections.restore(checkpoint, suffix.events, floor, header, inheritedCount(header, suffix.inheritedEventCount ?? source?.inheritedEventCount));
 					return restored?.snapshot?.values || null;
 				}
 			}
 		}
 		if (typeof projections.restore === "function" && source?.events) {
 			const checkpoint = projectionCheckpoint(entry, sessionId, source.header, warnings, domainVersion);
-			const restored = projections.restore(checkpoint, source.events, 0);
+			const restored = projections.restore(checkpoint, source.events, 0, source.header, source.inheritedEventCount);
 			return restored?.snapshot?.values || null;
 		}
 	} catch (error) {
@@ -991,6 +1020,9 @@ function infoFromProjectionValues(values, entry) {
 		providerId: firstString(row.providerId) || "unknown",
 		accountType: accountTypeOf(row, "api"),
 		serviceTier: row.serviceTier === "priority" ? "priority" : "standard",
+		contextTokens: Number.isFinite(row.contextTokens) ? row.contextTokens : undefined,
+		count: Number.isSafeInteger(row.count) && row.count > 0 ? row.count : 1,
+		pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
 		uncached: nonNegativeNumber(row.uncached),
 		output: nonNegativeNumber(row.output),
 		cacheRead: nonNegativeNumber(row.cacheRead),
@@ -1001,16 +1033,7 @@ function infoFromProjectionValues(values, entry) {
 	// necessarily the route carrying the most tokens. Derive the primary
 	// identity from all buckets so multi-model cold sessions remain billable and
 	// are displayed under the same model as the event-based path.
-	let primary = null;
-	let primaryWeight = -1;
-	for (const row of usages) {
-		const weight = row.uncached + row.output + row.cacheRead + row.cacheWrite;
-		if (weight > primaryWeight) {
-			primaryWeight = weight;
-			primary = row;
-		}
-	}
-	const current = primary || objectRecord(routeProjection?.current) || {};
+	const current = routeData.primaryRoute(usages, objectRecord(routeProjection?.current) || {});
 	return {
 		times,
 		lastTime: times.length ? times.at(-1) : null,
@@ -1036,8 +1059,24 @@ function infoFromProjectionValues(values, entry) {
 
 function isTokenDelta(chunk) {
 	if (!chunk || typeof chunk !== "object") return false;
-	if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") return chunk.text !== "";
-	return chunk.type === "tool-call-delta" && (chunk.argumentsDelta !== "" || chunk.name !== undefined);
+	if (chunk.type === "text-delta" || chunk.type === "reasoning-delta") return typeof chunk.text === "string" && chunk.text !== "";
+	return chunk.type === "tool-call-delta" && (typeof chunk.argumentsDelta === "string" && chunk.argumentsDelta !== "" || chunk.name !== undefined);
+}
+
+function streamFirstTokenTime(stream) {
+	for (const record of Array.isArray(stream) ? stream : []) {
+		if (record?.type === "chunk") {
+			if (Number.isFinite(record.time) && isTokenDelta(record.chunk)) return record.time;
+		} else if (["text-chunks", "reasoning-chunks", "tool-call-chunks"].includes(record?.type)) {
+			let time = record.time0;
+			const fragments = record.type === "tool-call-chunks" ? record.args : record.texts;
+			for (let i = 0; i < (Array.isArray(fragments) ? fragments.length : 0); i++) {
+				if (i > 0) time += record.dt?.[i - 1];
+				if (Number.isFinite(time) && (fragments[i] !== "" || record.name !== undefined)) return time;
+			}
+		}
+	}
+	return null;
 }
 
 function readSessionRecords(file, snapshot) {
@@ -1084,189 +1123,22 @@ function sessionInfo(home, sessionId) {
 	if (!file) return { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true, seqGap: false, futureVersion: false, header: null };
 	const cached = sessionInfoCache.get(file);
 	let snapshot;
-	try { snapshot = readStable(file); } catch (error) {
+	try {
+		const stat = statSync(file);
+		if (cached?.stable && ["mtimeMs", "ctimeMs", "size", "ino"].every((key) => cached[key] === stat[key])) {
+			sessionInfoCache.delete(file);
+			sessionInfoCache.set(file, cached);
+			return cached.info;
+		}
+		snapshot = readStable(file);
+	} catch (error) {
 		if (cached) return { ...cached.info, stale: true, readError: error.message };
 		throw error;
 	}
 	const { mtimeMs, ctimeMs, size, ino } = snapshot;
-	if (cached && cached.mtimeMs === mtimeMs && cached.ctimeMs === ctimeMs && cached.size === size && cached.ino === ino) {
-		// LRU 提升：命中后移到最新
-		sessionInfoCache.delete(file);
-		sessionInfoCache.set(file, cached);
-		return cached.info;
-	}
 	const decoded = readSessionRecords(file, snapshot);
-	const records = decoded.records;
-	const times = [];
-	let currentModel = null; // 最近 request/header 声明的模型（chunk 兜底用）
-	let currentProvider = "unknown";
-	let currentAccountType = "api";
-	let currentServiceTier = "standard";
-	let sessionHeader = null;
-	for (const record of records) {
-		try {
-			for (const ev of expandStorageRecord(record)) if (ev?.type === "session") { sessionHeader = ev; break; }
-		} catch { /* The main pass records malformed rows. */ }
-		if (sessionHeader) break;
-	}
-	let origin = typeof sessionHeader?.origin === "string" ? sessionHeader.origin : null;
-	let parentSession = typeof sessionHeader?.parentSession === "string" ? sessionHeader.parentSession : null;
-	let seedLength = Number.isInteger(sessionHeader?.seedLength) && sessionHeader.seedLength >= 0 ? sessionHeader.seedLength : null;
-	const invalidSessionHeader = !!sessionHeader && (
-		(sessionHeader.origin !== undefined && sessionHeader.origin !== null && typeof sessionHeader.origin !== "string")
-		|| (sessionHeader.parentSession !== undefined && sessionHeader.parentSession !== null && typeof sessionHeader.parentSession !== "string")
-		|| (sessionHeader.seedLength !== undefined && sessionHeader.seedLength !== null && seedLength === null)
-	);
-	// 计算 fork 边界：firstOwnSeq = parentSession ? (seedLength ?? 0) : 0
-	let firstOwnSeq = parentSession !== null ? (Number.isInteger(seedLength) && seedLength >= 0 ? seedLength : 0) : 0;
-	const usageByStep = new Map();
-	const derived = emptyRaw();
-	const slotStats = new Map();
-	const addSlot = (time, field, value) => {
-		if (typeof time !== "number" || !Number.isFinite(time) || !value) return;
-		const slot = Math.floor(time / SLOT_MS);
-		const row = slotStats.get(slot) || { slot, turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 };
-		row[field] += value;
-		slotStats.set(slot, row);
-	};
-	const addInterval = (field, start, end) => {
-		if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
-		const first = Math.floor(start / SLOT_MS), last = Math.floor((end - 1) / SLOT_MS);
-		for (let slot = first; slot <= last; slot++) {
-			const overlap = Math.min(end, (slot + 1) * SLOT_MS) - Math.max(start, slot * SLOT_MS);
-			if (overlap > 0) addSlot(slot * SLOT_MS, field, overlap);
-		}
-	};
-	let openStep = null;
-	let lastTurn = null;
-	const pendingCalls = new Map();
-	let derivedEvents = 0;
-	let malformedRecords = invalidSessionHeader ? 1 : 0;
-	let decodedEvents = sessionHeader ? 1 : 0;
-	let lastSeq = -1;
-	let expectedSeq = 0;
-	let seqGap = false;
-	let futureVersion = false;
-	let usageFallbackIndex = 0;
-	for (const record of records) {
-			if (record === null) { malformedRecords++; continue; }
-			let events;
-			try { events = expandStorageRecord(record); } catch { malformedRecords++; continue; }
-			for (const ev of events) {
-				const evSeq = ev?.seq;
-				if (evSeq !== undefined && (!Number.isInteger(evSeq) || evSeq < 0)) { malformedRecords++; continue; }
-				if (Number.isSafeInteger(evSeq)) {
-					if (evSeq !== expectedSeq && !(evSeq === firstOwnSeq && expectedSeq < firstOwnSeq)) seqGap = true;
-					if (evSeq >= expectedSeq) expectedSeq = evSeq + 1;
-					lastSeq = Math.max(lastSeq, evSeq);
-				}
-				if (evSeq !== undefined && evSeq < firstOwnSeq) continue;
-				const t = ev?.time;
-				if (ev && Object.prototype.hasOwnProperty.call(ev, "time") && (!Number.isFinite(t) || t < 0)) { malformedRecords++; continue; }
-				if (Number.isFinite(t)) times.push(t);
-				if (!ev || typeof ev !== "object") continue;
-				decodedEvents++;
-				if (ev.type === "session") {
-					if (ev.origin !== undefined && ev.origin !== null && typeof ev.origin !== "string") malformedRecords++;
-					if (ev.parentSession !== undefined && ev.parentSession !== null && typeof ev.parentSession !== "string") malformedRecords++;
-					origin = typeof ev.origin === "string" ? ev.origin : null;
-					parentSession = typeof ev.parentSession === "string" ? ev.parentSession : null;
-					if (ev.seedLength !== undefined && ev.seedLength !== null && (!Number.isInteger(ev.seedLength) || ev.seedLength < 0)) malformedRecords++;
-					seedLength = Number.isInteger(ev.seedLength) && ev.seedLength >= 0 ? ev.seedLength : null;
-					if (parentSession !== null) firstOwnSeq = seedLength ?? 0;
-				} else if (ev.type === "request/header") {
-					const header = ev.data?.header;
-					const config = header?.config;
-					const m = config?.model;
-					if (m) currentModel = m;
-					const provider = firstString(config?.provider, config?.providerId, config?.provider_id, header?.provider);
-					if (provider) currentProvider = provider;
-					currentAccountType = accountTypeOf(config, currentAccountType);
-					currentServiceTier = config?.serviceTier === "priority" || config?.service_tier === "priority" ? "priority" : "standard";
-				} else if (ev.type === "step/start") {
-					openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
-				} else if (ev.type === "assistant/chunk") {
-					if (ev.data?.chunk?.type === "usage" && Number.isFinite(t)) {
-						const u = ev.data.chunk.usage || {};
-						const hasStepIdentity = ev.data?.turn !== undefined && ev.data?.step !== undefined;
-						if (!hasStepIdentity) malformedRecords++;
-						const usageKey = hasStepIdentity ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? "missing"}:${usageFallbackIndex++}`;
-						usageByStep.set(usageKey, { time: t, model: currentModel, providerId: currentProvider, accountType: currentAccountType, serviceTier: currentServiceTier,
-							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
-							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
-					} else if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null && Number.isFinite(t) && isTokenDelta(ev.data?.chunk)) {
-						openStep.firstTokenTime = t;
-					}
-				} else if (ev.type === "assistant/message") {
-					const u = ev.data?.usage;
-					const source = ev.data?.message?.source;
-					const msgModel = source?.model || currentModel;
-					const msgProvider = firstString(source?.provider, source?.providerId, source?.provider_id, currentProvider) || "unknown";
-					const msgAccountType = accountTypeOf(source, currentAccountType);
-					const msgServiceTier = source?.serviceTier === "priority" || source?.service_tier === "priority" ? "priority" : currentServiceTier;
-					if (u !== undefined && Number.isFinite(t)) {
-						const hasStepIdentity = ev.data?.turn !== undefined && ev.data?.step !== undefined;
-						if (!hasStepIdentity) malformedRecords++;
-						const usageKey = hasStepIdentity ? `${ev.data.turn}:${ev.data.step}` : `event:${evSeq ?? "missing"}:${usageFallbackIndex++}`;
-						usageByStep.set(usageKey, { time: t, model: msgModel, providerId: msgProvider, accountType: msgAccountType, serviceTier: msgServiceTier,
-							uncached: nonNegativeNumber(u.inputTokens), output: nonNegativeNumber(u.outputTokens),
-							cacheRead: nonNegativeNumber(u.cacheReadTokens), cacheWrite: nonNegativeNumber(u.cacheWriteTokens), reasoning: nonNegativeNumber(u.reasoningTokens) });
-					}
-					if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
-						const llm = Math.max(0, t - openStep.startTime);
-						derived.llmMs += llm; addInterval("llmMs", openStep.startTime, t);
-						if (openStep.firstTokenTime !== null) {
-							const ttft = Math.max(0, openStep.firstTokenTime - openStep.startTime);
-							derived.ttftMs += ttft; derived.ttftSteps++; addSlot(openStep.firstTokenTime, "ttftMs", ttft); addSlot(openStep.firstTokenTime, "ttftSteps", 1);
-							const out = Number.isFinite(u?.outputTokens) && u.outputTokens >= 0 ? u.outputTokens : null;
-							if (out !== null) { const decode = Math.max(0, t - openStep.firstTokenTime); derived.decodeMs += decode; derived.decodeTokens += out; addInterval("decodeMs", openStep.firstTokenTime, t); addSlot(t, "decodeTokens", out); }
-						}
-						derivedEvents++;
-						openStep = null;
-					}
-				} else if (ev.type === "tool/call") {
-					const callId = ev.data?.callId;
-					if (callId !== undefined && Number.isFinite(t)) pendingCalls.set(callId, t);
-				} else if (ev.type === "tool/result") {
-					const callId = ev.data?.message?.source?.callId;
-					if (pendingCalls.has(callId) && Number.isFinite(t)) { const start = pendingCalls.get(callId); const tool = Math.max(0, t - start); derived.toolMs += tool; addInterval("toolMs", start, t); pendingCalls.delete(callId); derivedEvents++; }
-				} else if (ev.type === "step/end") {
-					derived.steps++; addSlot(t, "steps", 1); derivedEvents++;
-					if (lastTurn !== ev.data?.turn) { derived.turns++; addSlot(t, "turns", 1); lastTurn = ev.data?.turn; }
-					openStep = null;
-				} else if (ev.type === "turn/end") {
-					pendingCalls.clear();
-				}
-			}
-	}
-	if (sessionHeader && sessionHeader.version !== 0) futureVersion = sessionHeader.version > 0;
-	times.sort((a, b) => a - b);
-	// 主要路由 = 按 token 量加权最大的 provider/model/accountType。
-	// 同一模型由不同 provider 提供时必须保持分离。
-	const modelTokens = new Map();
-	for (const u of usageByStep.values()) {
-		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
-		const mk = identityKey(identity);
-		const weight = (u.cacheRead || 0) + (u.cacheWrite || 0) + (u.output || 0) + (u.uncached || 0);
-		const row = modelTokens.get(mk) || { identity, weight: 0 };
-		row.weight += weight;
-		modelTokens.set(mk, row);
-	}
-	let primary = null, modelWeight = -1;
-	for (const row of modelTokens.values()) {
-		if (row.weight > modelWeight) { modelWeight = row.weight; primary = row.identity; }
-	}
-	if (primary === null) primary = rawIdentity(currentProvider, currentModel, currentAccountType, times[times.length - 1]);
-	const info = {
-		times, lastTime: times.length ? times[times.length - 1] : null, lastSeq,
-		model: primary.modelRaw === "(unknown)" ? null : primary.modelRaw,
-		providerId: primary.providerId,
-		accountType: primary.accountType,
-		usages: [...usageByStep.values()],
-		origin, parentSession, seedLength, stats: derivedEvents ? derived : null,
-		slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot), partial: decoded.truncated || !snapshot.stable || malformedRecords > 0 || decodedEvents === 0 || seqGap || futureVersion, stale: false, missing: false, seqGap, formatVersion: sessionHeader?.version, futureVersion, header: sessionHeader
-	};
-	sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, info });
+	const info = deriveSessionInfoFromEvents(decoded.records, null, { partial: decoded.truncated || !snapshot.stable });
+	sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info });
 	// LRU 淘汰：超限删除最旧条目
 	while (sessionInfoCache.size > SESSION_CACHE_LIMIT) {
 		const oldest = sessionInfoCache.keys().next().value;
@@ -1305,7 +1177,7 @@ function slotUsages(usages) {
 		const k = Math.floor(u.time / SLOT_MS);
 		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
 		const serviceTier = u.serviceTier === "priority" ? "priority" : "standard";
-		const contextTokens = u.uncached + u.cacheRead + u.cacheWrite;
+		const contextTokens = Number.isFinite(u.contextTokens) ? u.contextTokens : u.uncached + u.cacheRead + u.cacheWrite;
 		const contextOver512k = contextTokens > LONG_CONTEXT_TOKENS;
 		const key = identityKey(identity) + "\u0000" + serviceTier + "\u0000" + contextTokens + "\u0000" + k;
 		const cur = m.get(key) || {
@@ -1323,9 +1195,10 @@ function slotUsages(usages) {
 		};
 		cur.uncached += u.uncached; cur.output += u.output; cur.cacheRead += u.cacheRead; cur.cacheWrite += u.cacheWrite;
 		cur.reasoning += u.reasoning;
+		if (u.pricingIncomplete) cur.pricingIncomplete = true;
 		m.set(key, cur);
 	}
-	return [...m.values()].map((row) => ({ ...row, cost: convertCostToCny(priceUsage(row, row)) }));
+	return [...m.values()].map(({ pricingIncomplete, ...row }) => ({ ...row, cost: convertCostToCny(priceUsage({ ...row, pricingIncomplete }, row)) }));
 }
 
 function modelUsages(rows) {
@@ -1366,7 +1239,7 @@ function projectionSlotUsage(info, usage, updatedAt) {
 		slot: Math.floor(updatedAt / SLOT_MS),
 		...usage
 	};
-	return { ...row, cost: convertCostToCny(priceUsage(row, row)) };
+	return { ...row, cost: convertCostToCny(priceUsage({ ...row, pricingIncomplete: true }, row)) };
 }
 
 let StatsService = (() => {
@@ -1564,8 +1437,8 @@ let StatsService = (() => {
 				let statsRow = objectRecord(entry?.rows?.sessionStats?.val);
 				let usageTotals = objectRecord(entry?.rows?.tokenUsage?.val?.totals);
 				const rawTitle = entry?.rows?.title?.val;
-				const title = typeof rawTitle === "string" ? rawTitle : null;
-				const meta = objectRecord(entry?.rows?.sessionListMetadata?.val) || {};
+				let title = typeof rawTitle === "string" ? rawTitle : null;
+				let meta = objectRecord(entry?.rows?.sessionListMetadata?.val) || {};
 				const rawCreatedAt = entry?.identity?.createdAt;
 				const rawLastPromptAt = meta.lastPromptAt;
 				let createdAt = Number.isFinite(rawCreatedAt) && rawCreatedAt >= 0 ? rawCreatedAt : null;
@@ -1606,7 +1479,7 @@ let StatsService = (() => {
 				} else try {
 					officialSource = await officialSessionSource(hostCtx, sessionId);
 					if (officialSource) {
-						info = deriveSessionInfoFromEvents(officialSource.events, officialSource.header);
+						info = deriveSessionInfoFromEvents(officialSource.events, officialSource.header, { inheritedEventCount: officialSource.inheritedEventCount });
 						if (!officialValues) officialValues = await officialProjectionValues(hostCtx, officialSource, entry, warnings, sessionId, projectionDomainVersion);
 						if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
 						const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
@@ -1638,6 +1511,11 @@ let StatsService = (() => {
 					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（使用 projection cache）:`, message);
 					warnings.push({ code: "SESSION_DECODE_FAILED", sessionId, message });
 					info = { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
+				}
+				if (officialValues) {
+					if (officialValues.title === null || typeof officialValues.title === "string") title = officialValues.title;
+					meta = objectRecord(officialValues.sessionListMetadata) || meta;
+					if (Number.isFinite(meta.lastPromptAt) && meta.lastPromptAt >= 0) lastPromptAt = meta.lastPromptAt;
 				}
 				const sourceHeader = officialSource?.header || info?.header || null;
 				// On rc6/older hosts the official projection service may be absent,
@@ -1698,7 +1576,7 @@ let StatsService = (() => {
 						usageTotals = null;
 					}
 				}
-				if (info.seqGap || info.futureVersion) {
+				if (info.seqGap || info.futureVersion || info.unknownSeed) {
 					// A discontinuous or unknown-format log cannot establish a safe
 					// watermark. Keep the session visible as partial, but exclude all
 					// untrusted cache-derived usage from the primary totals.
@@ -1706,6 +1584,7 @@ let StatsService = (() => {
 					usageTotals = null;
 				}
 				if (info.seqGap) warnings.push({ code: "SESSION_SEQ_GAP", sessionId, message: "session log sequence had a gap; cache values were not trusted" });
+				if (info.unknownSeed) warnings.push({ code: "SESSION_SEED_BOUNDARY_UNKNOWN", sessionId, message: "inherited event boundary could not be recovered; unattributable usage was excluded" });
 				if (info.futureVersion) warnings.push({ code: "SESSION_FORMAT_VERSION_UNSUPPORTED", sessionId, message: `session log format version ${String(info.formatVersion ?? sourceHeader?.version ?? "unknown")} is newer than this plugin` });
 				// token 口径统一走日志 usages（已按 seedLength 过滤 fork 继承、按 turn:step 去重），
 				// 与 slotUsage / 趋势页 / 成本完全一致。不用 projcache usageTotals：它把 fork
@@ -1776,7 +1655,7 @@ let StatsService = (() => {
 					origin: info.origin ?? null,
 						parentSession: effectiveParentSession ?? null,
 					seedLength: info.seedLength ?? null,
-					calls: info.usages.length,
+					calls: info.usages.reduce((sum, usage) => sum + (usage.count ?? 1), 0),
 					stats: raw,
 					durMs: raw.llmMs + raw.toolMs,
 					slots: slotDurations(info.times),
