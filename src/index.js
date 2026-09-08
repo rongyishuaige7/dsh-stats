@@ -1377,7 +1377,8 @@ let StatsService = (() => {
 			}
 			if (!sessionListResolved && persistence && typeof persistence.list === "function") {
 				try {
-					persistedHeaders = await persistence.list();
+					const records = await persistence.list();
+					persistedHeaders = records.map((record) => record?.header || record).filter((header) => header && typeof header.id === "string");
 				} catch (error) {
 					warnings.push({ code: "OFFICIAL_SESSION_LIST_FAILED", message: error?.message || String(error) });
 				}

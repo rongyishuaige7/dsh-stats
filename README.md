@@ -31,6 +31,8 @@
 
 需要已安装的 DeepSeek Harness `web` profile，以及 Node.js `>= 22`。
 
+兼容范围包括 `0.1.2-rc.1` 和 `0.1.3-alpha.2`。这两个版本已通过真实模块接口检查；完整 Web 宿主验证的范围见 [兼容性矩阵](docs/compatibility.md)。
+
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
 ```
@@ -263,14 +265,18 @@ npm pack --dry-run
 src/index.js              # 宿主 StatsService 与 aggregate/account RPC
 src/client.cjs            # 客户端入口、React UI 与 fallback
 src/pricing.cjs           # Provider 级、按生效时间的计价内核
+src/route-data.cjs        # 保留单请求上下文与调用次数的不可变用量索引
 src/accounts.js           # 官方余额/额度适配器（仅宿主使用凭证）
-src/typert-host.js        # 宿主 Typert manifest 与 zod schema
+src/rpc-schemas.cjs       # 宿主与浏览器共用 RPC schema
+src/typert-host.js        # 宿主 Typert manifest
 src/typert-remote-client.js # 客户端 RPC 描述符
 scripts/build.mjs         # esbuild 构建脚本
 lib/                      # 构建产物（随包发布）
 ```
 
 修改 `src/` 后，执行 `npm run build`；发布前 `prepublishOnly` 会自动重建。更多集成背景、性能权衡和已知踩坑见 [DESIGN.md](DESIGN.md)。
+
+`npm run smoke:browser` 使用独立测试数据检查桌面和手机界面，不查询真实账户。新版 Harness 的接口检查命令见 [兼容性矩阵](docs/compatibility.md)，本轮修复及性能验证见 [维护记录](docs/reliability-2026-09.md)。
 
 发布前检查：
 
@@ -284,6 +290,7 @@ npm publish
 ## ⚠️ 已知限制
 
 - 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新。
+- 状态栏显示数据来源、更新时间、刷新失败和未完整计价状态。连续刷新失败会保留上次成功的余额，并标注已过期；普通 RPC 错误不会触发仅支持 DeepSeek 的旧版账户回退。
 - 首次读取大量会话时，宿主优先使用官方 projection cache 的 watermark 增量读取；旧宿主才回退解码日志，并使用 mtime 缓存减少重复开销。
 - 普通归档会话会标注“已归档”；归档、无日志且只有继承 cache 的 fork 会从统计中排除，并在告警中说明原因。
 - OpenRouter 使用带日期的模型目录快照；这类金额会标记为 `estimated`。

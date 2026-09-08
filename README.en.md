@@ -250,6 +250,10 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 
 ## 🛠️ Local development
 
+Compatibility includes `0.1.2-rc.1` and `0.1.3-alpha.2`, verified against their
+published service implementations. See the [compatibility matrix](docs/compatibility.md)
+for the distinction between module checks and complete Web host verification.
+
 ```bash
 npm install
 npm run build
@@ -261,14 +265,21 @@ npm pack --dry-run
 src/index.js                # host StatsService and aggregate/account RPC
 src/client.cjs              # client entry, React UI, and fallback
 src/pricing.cjs             # provider-scoped, effective-dated pricing
+src/route-data.cjs          # immutable usage index retaining request context and counts
 src/accounts.js             # official balance/quota adapters (host only)
-src/typert-host.js          # host Typert manifest and zod schema
+src/rpc-schemas.cjs         # shared host/browser RPC schemas
+src/typert-host.js          # host Typert manifest
 src/typert-remote-client.js # client RPC descriptor
 scripts/build.mjs           # esbuild build script
 lib/                        # generated files shipped in the package
 ```
 
 `prepublishOnly` rebuilds automatically before `npm publish`. For profile installation and iteration, always use the official `dsh plugin` command.
+
+`npm run smoke:browser` checks desktop and mobile views with isolated fixtures and
+does not query real accounts. Upstream contract commands are documented in the
+[compatibility matrix](docs/compatibility.md); fixes and performance evidence are
+recorded in the [maintenance notes](docs/reliability-2026-09.md).
 
 Release checklist:
 
@@ -282,6 +293,7 @@ npm publish
 ## ⚠️ Known limitations
 
 - The current session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
+- The status band exposes data provenance, freshness, refresh failures and incomplete pricing. Repeated account failures retain the last successful balance with a stale label. Ordinary RPC failures do not trigger the DeepSeek-only legacy fallback.
 - The first request over many sessions prefers the official projection-cache watermark ladder; older hosts fall back to log decoding, with mtime caching for repeat work.
 - Ordinary archived sessions are marked archived; archived, logless forks backed only by inherited cache values are excluded and reported in warnings.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.

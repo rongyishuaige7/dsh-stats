@@ -2758,6 +2758,9 @@ async function apply(ctx) {
 		".dss-balance-state{padding:42px 0;text-align:center;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 		".dss-balance-state.error{color:#fbbf24}" +
 		".dss-balance-warning{border:1px solid rgba(251,191,36,.22);background:rgba(251,191,36,.08);border-radius:8px;padding:9px 11px;color:#fbbf24;font-size:12px}" +
+		"body:not([data-ds-dark-theme]) .dss-balance-status.ok{color:#047857}" +
+		"body:not([data-ds-dark-theme]) .dss-balance-status.stale,body:not([data-ds-dark-theme]) .dss-balance-status.rate-limited,body:not([data-ds-dark-theme]) .dss-balance-status.unavailable,body:not([data-ds-dark-theme]) .dss-balance-stale,body:not([data-ds-dark-theme]) .dss-balance-warning,body:not([data-ds-dark-theme]) .dss-balance-state.error{color:#92400e}" +
+		"body:not([data-ds-dark-theme]) .dss-balance-status.not-configured,body:not([data-ds-dark-theme]) .dss-balance-status.unauthorized,body:not([data-ds-dark-theme]) .dss-balance-status.invalid-response,body:not([data-ds-dark-theme]) .dss-balance-status.blocked{color:#b91c1c}" +
 		"@media (max-width:640px){.dss-balance-head{flex-direction:column}.dss-provider-picker{width:100%;justify-content:space-between}.dss-provider-picker select{min-width:0;max-width:72%;flex:1}.dss-balance-account{padding:15px}.dss-balance-total{font-size:30px}.dss-balance-breakdown{gap:8px}}\n\t";
 
 	var ownedStyle = null;

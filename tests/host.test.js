@@ -146,6 +146,22 @@ function captureRouteProjection() {
 	return definition;
 }
 
+test.each(['header', 'snapshot'])('persistence %s listings retain sessions without workspace membership', async (shape) => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	fixture({});
+	const header = { id: 'unassigned', createdAt: now, cwd: '/tmp/fixture', version: 2, isSeeded: false };
+	const events = [{ type: 'assistant/message', seq: 0, time: now + 1, data: { turn: 1, step: 1,
+		usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } } } }];
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [] },
+		sessionPersistence: { list: async () => [shape === 'snapshot' ? { header, revision: 'r1', eventCount: 1 } : header],
+			open: async () => ({ header, inheritedEventCount: 0, read: async () => ({ events }), close: async () => {} }) }
+	} });
+	const sessions = result.projects.flatMap(project => project.sessions);
+	expect(sessions).toHaveLength(1);
+	expect(sessions[0]).toMatchObject({ id: 'unassigned', stats: { uncached: 7, output: 2 } });
+});
+
 test('request context and counts survive cold projection replay without mutating old snapshots', async () => {
 	const now = Date.parse('2026-09-08T10:00:00+08:00');
 	fixture({ current: projection(now) });

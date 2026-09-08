@@ -57,7 +57,7 @@ No npm publication or service restart as part of this maintenance task.
 
 1. Verified: statistics correctness, host compatibility and replay/read cost.
 2. Verified: account reliability, visible data quality and shared RPC validation.
-3. Pending: compatibility matrix, integration checks and final documentation.
+3. Verified: compatibility matrix, integration checks and final documentation.
 
 Each stage is verified and committed/pushed before the next stage starts.
 Tests may run in an isolated copy with the same lockfile because this checkout's
@@ -91,3 +91,29 @@ dependency directory is preserved.
   The panel exposes provenance, freshness, diagnostics and pricing completeness;
   account failures retain the last success time and an explicit stale marker.
 - Browser interaction and upstream contract checks follow in stage 3.
+
+## Stage 3 evidence
+
+- Published rc1 and alpha2 modules pass real Cordis/plugin initialization,
+  JSONL writes/reads, projection checkpoint restoration, cold snapshots and
+  real Session reads. The fork fixture excludes inherited usage and preserves
+  two MiniMax-M3 calls at CNY 1.2768 on both live and cold paths.
+- The actual alpha2 contract probe found another omission: `persistence.list()`
+  now wraps headers in snapshot records. The plugin accepts both list shapes
+  and retains sessions without workspace membership. Two focused unit cases
+  and both upstream contract runs cover this path.
+- The isolated browser run passes all four views at 1440x1000, 390x844 and
+  320x740, including provider changes, forced refresh, stale balance retention,
+  structured legacy fallback, data diagnostics and estimated/partial pricing.
+  It captures 25 screenshots and reports no console/runtime/network errors.
+  Unsupported pricing and dark-theme stale account states are covered as well.
+  Light-theme account status colors were darkened after screenshot review.
+- Peer ranges now include the tested releases. Only the lockfile's root peer
+  metadata changed; the resolved dependency graph is unchanged.
+- The browser fixture uses real React and installed Harness icons, with fixture
+  stores/RPC responses. A complete rc1/alpha2 Web host and real provider API
+  calls remain outside this task. No npm publication or service restart occurred.
+- All 184 tests pass in the default timezone and UTC. All four bundles build
+  and pass syntax checks; the built host and manifests import successfully and
+  expose all four RPC methods. `npm pack --dry-run --json` verifies 16 package
+  entries. The final browser artifact is 214824 bytes (59547 bytes gzip).
