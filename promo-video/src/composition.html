@@ -196,8 +196,9 @@
         ctx.fillText('DEEPSEEK HARNESS · LOCAL USAGE', 164, 88);
 
         const titleProgress = span(time, 1.25, 2.45);
+        const titleExit = 1 - span(time, 3.55, 3.96);
         ctx.save();
-        ctx.globalAlpha = titleProgress;
+        ctx.globalAlpha = titleProgress * titleExit;
         ctx.fillStyle = '#f7f9fc';
         ctx.font = `700 64px ${fontStack}`;
         ctx.fillText('DSH Usage', 164, 952);
@@ -210,16 +211,381 @@
         const metrics = ['321M TOKEN', '7h36m', '¥54.33'];
         metrics.forEach((metric, index) => {
           const metricProgress = span(time, 1.55 + index * 0.16, 2.55 + index * 0.16);
-          ctx.globalAlpha = titleProgress * metricProgress;
+          ctx.globalAlpha = titleProgress * titleExit * metricProgress;
           ctx.fillStyle = ['#5a92ff', '#31c8a0', '#ff9a3c'][index];
           ctx.fillText(metric, 1756 - index * 212, 988);
         });
         ctx.restore();
       }
 
+      function drawRail(time, progress, label, color = '#4f8cff') {
+        const lineEnd = mix(164, 1756, clamp(progress));
+        ctx.save();
+        ctx.strokeStyle = 'rgba(127, 141, 168, 0.24)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(164, 112);
+        ctx.lineTo(1756, 112);
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.moveTo(164, 112);
+        ctx.lineTo(lineEnd, 112);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(lineEnd, 112, 5 + Math.sin(time * 7) * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#aebbd0';
+        ctx.font = `600 19px ${fontStack}`;
+        ctx.fillText(label, 164, 78);
+        ctx.restore();
+      }
+
+      function drawSceneCaption(kicker, title, detail, progress, color = '#4f8cff') {
+        ctx.save();
+        ctx.globalAlpha = clamp(progress);
+        ctx.fillStyle = color;
+        ctx.font = `650 18px ${fontStack}`;
+        ctx.fillText(kicker, 164, 928);
+        ctx.fillStyle = '#f7f9fc';
+        ctx.font = `700 48px ${fontStack}`;
+        ctx.fillText(title, 164, 986);
+        ctx.fillStyle = '#aebbd0';
+        ctx.font = `500 25px ${fontStack}`;
+        ctx.fillText(detail, 164, 1030);
+        ctx.restore();
+      }
+
+      function drawScanEdge(x, y, height, alpha = 1, color = '#4f8cff') {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 34;
+        ctx.fillRect(x - 2, y, 4, height);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y + height * 0.52, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawOverview(time) {
+        const local = time - 4;
+        const intro = span(local, 0, 0.6);
+        const camera = span(local, 0.15, 4.55);
+        const handoff = span(local, 4.12, 4.94);
+        const x = 164;
+        const y = mix(126, 138, intro);
+        const width = 1592;
+        const height = mix(754, 720, intro);
+        drawBackdrop(time);
+        drawWindow(images.hero, x, y, width, height, {
+          scale: 1.02,
+        });
+        drawWindow(images.overview, x, y, width, height, {
+          reveal: intro,
+          scale: mix(1.02, 1.08, camera),
+          offsetY: mix(-226, 170, camera),
+        });
+        if (intro < 0.995) drawScanEdge(x + width * intro, y, height, 1 - span(intro, 0.9, 1));
+
+        const cursor = span(local, 0.35, 4.2);
+        const cursorX = mix(x + 86, x + width - 88, cursor);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(79, 140, 255, 0.76)';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#4f8cff';
+        ctx.shadowBlur = 22;
+        roundedRect(cursorX - 76, y + 120, 152, 104, 8);
+        ctx.stroke();
+        ctx.restore();
+
+        if (handoff > 0) {
+          drawWindow(images.timeline, x, y, width, height, {
+            reveal: handoff,
+            scale: 1.02,
+            offsetY: -132,
+          });
+          drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1));
+        }
+        drawRail(time, cursor, 'PROJECT OVERVIEW');
+        drawSceneCaption('01 · OVERVIEW', '项目、用量、时间、花费', '从全局指标进入每一次真实开发活动', span(local, 0.2, 1) * (1 - handoff));
+      }
+
+      function drawTimeline(time) {
+        const local = time - 9;
+        const progress = span(local, 0.25, 4.35);
+        const handoff = span(local, 4.1, 4.94);
+        const x = 164;
+        const y = 138;
+        const width = 1592;
+        const height = 720;
+        drawBackdrop(time);
+        drawWindow(images.timeline, x, y, width, height, {
+          scale: mix(1.02, 1.07, progress),
+          offsetY: mix(-132, 126, progress),
+        });
+
+        const cursorX = mix(x + 250, x + width - 176, progress);
+        ctx.save();
+        ctx.strokeStyle = '#31c8a0';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#31c8a0';
+        ctx.shadowBlur = 24;
+        ctx.beginPath();
+        ctx.moveTo(cursorX, y + 150);
+        ctx.lineTo(cursorX, y + height - 40);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(cursorX, mix(y + 250, y + height - 100, 0.5 + Math.sin(local * 1.4) * 0.25), 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = 1 - handoff;
+        ctx.fillStyle = '#31c8a0';
+        ctx.font = `700 23px ${fontStack}`;
+        ctx.textAlign = 'right';
+        ctx.fillText(`${String(Math.round(mix(0, 24, progress))).padStart(2, '0')}:00`, 1756, 926);
+        ctx.restore();
+
+        if (handoff > 0) {
+          drawWindow(images.trends, x, y, width, height, {
+            reveal: handoff,
+            scale: 1.02,
+            offsetY: -310,
+          });
+          drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1));
+        }
+        drawRail(time, progress, 'DEVELOPMENT TIMELINE', '#31c8a0');
+        drawSceneCaption('02 · TIMELINE', '什么时候最忙', '活动区间沿 24 小时时间轴依次点亮', span(local, 0.15, 0.9) * (1 - handoff), '#31c8a0');
+      }
+
+      function drawTrends(time) {
+        const local = time - 14;
+        const progress = span(local, 0.15, 4.45);
+        const handoff = span(local, 4.08, 4.94);
+        const x = 164;
+        const y = 138;
+        const width = 1592;
+        const height = 720;
+        drawBackdrop(time);
+        drawWindow(images.trends, x, y, width, height, {
+          scale: mix(1.02, 1.07, progress),
+          offsetY: mix(-310, 326, progress),
+        });
+
+        const scanY = mix(y + 160, y + height - 74, progress);
+        ctx.save();
+        ctx.strokeStyle = '#ff9a3c';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#ff9a3c';
+        ctx.shadowBlur = 24;
+        ctx.beginPath();
+        ctx.moveTo(x + 46, scanY);
+        ctx.lineTo(x + width - 46, scanY);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x + mix(90, width - 90, progress), scanY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (handoff > 0) {
+          drawWindow(images.balance, x, y, width, height, {
+            reveal: handoff,
+            scale: 1.01,
+          });
+          drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1), '#ff9a3c');
+        }
+        drawRail(time, progress, 'USAGE TRENDS', '#ff9a3c');
+        drawSceneCaption('03 · TRENDS', '用量与模型，一眼看懂', 'Token、热力图与模型分布共享同一数据视线', span(local, 0.15, 0.9) * (1 - handoff), '#ff9a3c');
+      }
+
+      function drawBalance(time) {
+        const local = time - 19;
+        const intro = span(local, 0, 0.62);
+        const progress = span(local, 0.2, 4.5);
+        const providerSwitch = span(local, 1.75, 3.55);
+        const x = 164;
+        const y = mix(138, 190, intro);
+        const width = 1592;
+        const height = mix(720, 620, intro);
+        drawBackdrop(time);
+        drawWindow(images.balance, x, y, width, height, { scale: mix(1.01, 1.045, progress) });
+        if (providerSwitch > 0) {
+          drawWindow(images.balanceMinimax, x, y, width, height, {
+            reveal: providerSwitch,
+            scale: mix(1.025, 1.01, providerSwitch),
+          });
+          drawScanEdge(x + width * providerSwitch, y, height, 1 - span(providerSwitch, 0.93, 1), '#bc73ff');
+        }
+        drawRail(time, progress, 'ACCOUNT BALANCE', '#bc73ff');
+        drawSceneCaption('04 · BALANCE', '余额与额度，随时掌握', 'DeepSeek 余额与 MiniMax 套餐进度连续切换', span(local, 0.15, 0.9), '#bc73ff');
+
+        ctx.save();
+        ctx.textAlign = 'right';
+        ctx.globalAlpha = span(local, 0.5, 1.1);
+        ctx.fillStyle = providerSwitch < 0.5 ? '#5a92ff' : '#bc73ff';
+        ctx.font = `700 24px ${fontStack}`;
+        ctx.fillText(providerSwitch < 0.5 ? 'DEEPSEEK · ¥88.88' : 'MINIMAX · 82% REMAINING', 1756, 928);
+        ctx.restore();
+      }
+
+      function drawThumbnail(image, x, y, width, height, alpha, scale = 1) {
+        if (alpha <= 0.01 || width <= 2 || height <= 2) return;
+        drawWindow(image, x, y, width, height, { alpha, scale });
+      }
+
+      function drawMerge(time) {
+        const local = time - 24;
+        const appear = span(local, 0, 0.55);
+        const merge = span(local, 0.55, 2.62);
+        drawBackdrop(time);
+        drawWindow(images.balanceMinimax, 164, 190, 1592, 620, {
+          alpha: 1 - appear,
+          scale: 1.01,
+        });
+
+        const tiles = [
+          { image: images.overview, x: 110, y: 164, w: 720, h: 350, color: '#4f8cff' },
+          { image: images.timeline, x: 1090, y: 164, w: 720, h: 350, color: '#31c8a0' },
+          { image: images.trends, x: 110, y: 622, w: 720, h: 350, color: '#ff9a3c' },
+          { image: images.balanceMinimax, x: 1090, y: 622, w: 720, h: 350, color: '#bc73ff' },
+        ];
+
+        for (const tile of tiles) {
+          const targetWidth = 260;
+          const targetHeight = 150;
+          const width = mix(tile.w, targetWidth, merge);
+          const height = mix(tile.h, targetHeight, merge);
+          const x = mix(tile.x, 960 - targetWidth / 2, merge);
+          const y = mix(tile.y, 520 - targetHeight / 2, merge);
+          const centerX = x + width / 2;
+          const centerY = y + height / 2;
+          ctx.save();
+          ctx.globalAlpha = appear * (0.7 + merge * 0.3);
+          ctx.strokeStyle = tile.color;
+          ctx.lineWidth = 3;
+          ctx.shadowColor = tile.color;
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(960, 520);
+          ctx.stroke();
+          ctx.restore();
+          drawThumbnail(tile.image, x, y, width, height, appear * (1 - span(merge, 0.78, 1)), mix(1.06, 1.02, merge));
+        }
+
+        const brand = span(merge, 0.58, 1);
+        ctx.save();
+        ctx.globalAlpha = brand;
+        ctx.fillStyle = '#0d1320';
+        ctx.strokeStyle = '#4f8cff';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#4f8cff';
+        ctx.shadowBlur = 34;
+        roundedRect(842, 430, 236, 180, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#f7f9fc';
+        ctx.font = `750 72px ${fontStack}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('DSH', 960, 540);
+        ctx.fillStyle = '#8fb1ff';
+        ctx.font = `650 18px ${fontStack}`;
+        ctx.fillText('USAGE', 960, 578);
+        ctx.restore();
+        drawRail(time, clamp(local / 3), 'ONE PRODUCT · COMPLETE VIEW');
+      }
+
+      function drawClose(time) {
+        const local = time - 27;
+        const enter = span(local, 0.05, 0.9);
+        const settle = span(local, 0.8, 2.5);
+        drawBackdrop(time);
+
+        ctx.save();
+        ctx.globalAlpha = 1 - enter;
+        ctx.fillStyle = '#0d1320';
+        ctx.strokeStyle = '#4f8cff';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#4f8cff';
+        ctx.shadowBlur = 34;
+        roundedRect(842, 430, 236, 180, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#f7f9fc';
+        ctx.font = `750 72px ${fontStack}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('DSH', 960, 540);
+        ctx.fillStyle = '#8fb1ff';
+        ctx.font = `650 18px ${fontStack}`;
+        ctx.fillText('USAGE', 960, 578);
+        ctx.restore();
+
+        const imageX = mix(1030, 886, enter);
+        const imageY = mix(216, 178, settle);
+        const imageWidth = mix(780, 870, settle);
+        const imageHeight = mix(452, 506, settle);
+        drawWindow(images.hero, imageX, imageY, imageWidth, imageHeight, {
+          alpha: enter,
+          scale: mix(1.08, 1.02, settle),
+          offsetX: mix(-72, 0, settle),
+        });
+
+        ctx.save();
+        ctx.globalAlpha = enter;
+        ctx.fillStyle = '#8fb1ff';
+        ctx.font = `650 19px ${fontStack}`;
+        ctx.fillText('DEEPSEEK HARNESS · LOCAL USAGE', 164, 286);
+        ctx.fillStyle = '#f7f9fc';
+        ctx.font = `750 76px ${fontStack}`;
+        ctx.fillText('DSH Usage', 164, 390);
+        ctx.fillStyle = '#bdc7d7';
+        ctx.font = `520 30px ${fontStack}`;
+        ctx.fillText('一眼看懂，用量 · 时间 · 花费', 164, 446);
+
+        ctx.globalAlpha = span(local, 0.65, 1.35);
+        ctx.fillStyle = '#101725';
+        ctx.strokeStyle = '#33425e';
+        ctx.lineWidth = 2;
+        roundedRect(164, 520, 642, 76, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#78a3ff';
+        ctx.font = `600 21px ui-monospace, "SFMono-Regular", Menlo, monospace`;
+        ctx.fillText('dsh plugin --profile web add', 190, 552);
+        ctx.fillStyle = '#f7f9fc';
+        ctx.fillText('@rongyi7/dsh-stats', 190, 580);
+
+        ctx.globalAlpha = span(local, 1.05, 1.75);
+        ctx.fillStyle = '#aebbd0';
+        ctx.font = `550 22px ${fontStack}`;
+        ctx.fillText('真实项目统计 · 多 Provider 额度 · 本地数据', 164, 660);
+        ctx.restore();
+
+        drawRail(time, 1, 'DSH USAGE');
+      }
+
       function drawFrame(frame) {
         const time = frame / FPS;
-        drawPilot(time);
+        if (time < 4) drawPilot(time);
+        else if (time < 9) drawOverview(time);
+        else if (time < 14) drawTimeline(time);
+        else if (time < 19) drawTrends(time);
+        else if (time < 24) drawBalance(time);
+        else if (time < 27) drawMerge(time);
+        else drawClose(time);
       }
 
       async function loadImages() {

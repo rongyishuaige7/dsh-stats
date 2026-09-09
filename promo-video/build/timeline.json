@@ -1,0 +1,17 @@
+{
+  "title": "DSH Usage Promo v1",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "frames": 720,
+  "durationSeconds": 30,
+  "beats": [
+    { "id": "hook", "startFrame": 0, "endFrame": 95, "asset": "docs/images/hero-overview.png" },
+    { "id": "overview", "startFrame": 96, "endFrame": 215, "asset": "docs/images/overview.png" },
+    { "id": "timeline", "startFrame": 216, "endFrame": 335, "asset": "docs/images/timeline.png" },
+    { "id": "trends", "startFrame": 336, "endFrame": 455, "asset": "docs/images/trends.png" },
+    { "id": "balance", "startFrame": 456, "endFrame": 575, "assets": ["docs/images/balance.png", "docs/images/balance-minimax.png"] },
+    { "id": "merge", "startFrame": 576, "endFrame": 647, "asset": "all product views" },
+    { "id": "close", "startFrame": 648, "endFrame": 719, "asset": "docs/images/hero-overview.png" }
+  ]
+}

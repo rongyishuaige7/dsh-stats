@@ -17,9 +17,9 @@ const fadeOutStart = Math.max(0, duration - 1);
 await mkdir(path.dirname(outputPath), { recursive: true });
 
 const filter = [
-  '[1:a]volume=0.045,lowpass=f=260[bed]',
-  '[2:a]volume=0.014,tremolo=f=1.25:d=0.55[pulse]',
-  '[3:a]highpass=f=900,lowpass=f=5200,volume=0.012[air]',
+  '[1:a]volume=0.22,lowpass=f=260[bed]',
+  '[2:a]volume=0.10,tremolo=f=1.25:d=0.55[pulse]',
+  '[3:a]highpass=f=900,lowpass=f=5200,volume=0.08[air]',
   `[bed][pulse][air]amix=inputs=3:normalize=0,afade=t=in:st=0:d=0.45,afade=t=out:st=${fadeOutStart}:d=1[audio]`,
 ].join(';');
 

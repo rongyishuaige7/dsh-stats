@@ -1,0 +1,31 @@
+{
+  "output": "promo-video/final/dsh-usage-promo-v1.mp4",
+  "sha256": "23c7ec02b40309b4e31a1ec52187aa6fceef31fd4514c42ddb29c4578bcfbeb4",
+  "bytes": 12299876,
+  "container": "MP4",
+  "durationSeconds": 30,
+  "video": {
+    "codec": "H.264 High",
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 720,
+    "pixelFormat": "yuv420p full range",
+    "bitrateKbps": 3131,
+    "encoder": "libx264",
+    "crf": 18
+  },
+  "audio": {
+    "codec": "AAC LC",
+    "sampleRateHz": 48000,
+    "channels": 1,
+    "bitrateKbps": 142,
+    "meanVolumeDb": -33.9,
+    "maxVolumeDb": -27.9
+  },
+  "render": {
+    "renderer": "Chrome CDP Canvas frame capture",
+    "sourceFrames": 720,
+    "delivery": "baked-video"
+  }
+}
