@@ -1,0 +1,47 @@
+{
+  "display": {
+    "width": 1920,
+    "height": 1080,
+    "dpr": 1.0
+  },
+  "requiredCell": {
+    "width": 1920,
+    "height": 1080
+  },
+  "frames": 720,
+  "texture": {
+    "maxSize": 4096,
+    "columnsPerSheet": 2,
+    "rowsPerSheet": 3,
+    "framesPerSheet": 6,
+    "sheetCount": 120
+  },
+  "decodedFrameMemoryMiB": 5695.3,
+  "sourceCheck": null,
+  "cellCheck": null,
+  "temporalCheck": null,
+  "driver": "time",
+  "parameterSpace": "linear",
+  "timeControl": "autonomous",
+  "access": "sequential",
+  "backgroundOwner": "video",
+  "delivery": {
+    "selected": "baked-video",
+    "reasonCodes": [
+      "background-baked-into-video",
+      "long-linear-sequence"
+    ],
+    "atlasWithinBudget": false,
+    "thresholds": {
+      "atlasMaxSheets": 1,
+      "atlasMaxDecodedMemoryMiB": 192.0,
+      "linearVideoMinFrames": 180
+    }
+  },
+  "runtime": {
+    "renderer": "baked-video",
+    "controller": "autonomous-playback"
+  },
+  "failures": [],
+  "passes": true
+}

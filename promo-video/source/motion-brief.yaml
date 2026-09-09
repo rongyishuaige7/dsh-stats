@@ -1,0 +1,52 @@
+concept_contract: source/concept-contract.yaml
+identity_bible: null
+parameter_space: linear
+media_access: sequential
+gesture_policy:
+  unit: continuous
+  inertia: preserve
+  while_active: ignore
+  boundary: clamp
+  programmatic_navigation: ignore
+storyboard:
+  - id: hook
+    frames: 0-95
+    action: 数据脉冲扫描并生成 DSH Usage 界面
+  - id: overview
+    frames: 96-215
+    action: 镜头穿行项目、Token、时长与消费指标
+  - id: timeline
+    frames: 216-335
+    action: 时间游标横穿一天并依次点亮活动区间
+  - id: trends
+    frames: 336-455
+    action: Token 柱图、热力图与模型分布沿扫描路径响应
+  - id: balance
+    frames: 456-575
+    action: DeepSeek 余额通过连续遮罩切换为 MiniMax 套餐进度
+  - id: merge
+    frames: 576-647
+    action: 四个真实视图沿数据路径汇聚为一个产品窗口
+  - id: close
+    frames: 648-719
+    action: 数据脉冲收束成品牌落点与安装命令
+keyframes:
+  K0: frame 0，暗场中已经可辨识的产品窗口
+  K1: frame 95，开场扫描完成
+  K2: frame 215，总览指标完成聚焦
+  K3: frame 335，时间游标抵达终点
+  K4: frame 455，趋势与模型分布完成扫描
+  K5: frame 575，账户额度切换完成
+  K6: frame 647，多视图汇聚完成
+  K7: frame 719，品牌与安装命令稳定停留
+clip_chain: 单条确定性 Canvas 母版，K0 到 K7 使用同一数据脉冲与舞台坐标系连续衔接
+rest_state: K7
+loop: none
+anchor: center
+scene_continuity: 深色中性舞台固定，真实界面在统一透视和边界系统中移动
+frame_policy: native
+target_fps: 24
+quality_target: 1920x1080、DPR 1、H.264 CRF 18、AAC 48kHz，最终文件目标小于 40 MiB
+aspect_ratio: 16:9
+pixel_dimensions: 1920x1080
+reduced_motion: 使用最终 poster，显示 DSH Usage、定位语和真实总览界面

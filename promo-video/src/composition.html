@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DSH Usage Promo</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #080b12;
+      }
+
+      canvas {
+        display: block;
+        width: 1920px;
+        height: 1080px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" width="1920" height="1080"></canvas>
+    <script type="module">
+      const WIDTH = 1920;
+      const HEIGHT = 1080;
+      const FPS = 24;
+      const canvas = document.querySelector('#stage');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const fontStack = '"SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif';
+
+      const assetPaths = {
+        hero: '../../docs/images/hero-overview.png',
+        overview: '../../docs/images/overview.png',
+        timeline: '../../docs/images/timeline.png',
+        trends: '../../docs/images/trends.png',
+        balance: '../../docs/images/balance.png',
+        balanceMinimax: '../../docs/images/balance-minimax.png',
+      };
+
+      const images = {};
+
+      const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+      const mix = (from, to, progress) => from + (to - from) * progress;
+      const smooth = (progress) => {
+        const p = clamp(progress);
+        return p * p * (3 - 2 * p);
+      };
+      const span = (time, start, end) => smooth((time - start) / (end - start));
+
+      function roundedRect(x, y, width, height, radius = 8) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, radius);
+      }
+
+      function drawBackdrop(time) {
+        ctx.fillStyle = '#080b12';
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = '#7f8da8';
+        ctx.lineWidth = 1;
+        const drift = (time * 16) % 64;
+        for (let x = -64 + drift; x < WIDTH + 64; x += 64) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, HEIGHT);
+          ctx.stroke();
+        }
+        for (let y = 28; y < HEIGHT; y += 64) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(WIDTH, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.fillStyle = '#5a92ff';
+        ctx.globalAlpha = 0.04;
+        ctx.fillRect(0, HEIGHT - 260, WIDTH, 260);
+        ctx.globalAlpha = 1;
+      }
+
+      function drawImageCover(image, x, y, width, height, scale = 1, offsetX = 0, offsetY = 0) {
+        const imageRatio = image.width / image.height;
+        const boxRatio = width / height;
+        let sourceWidth = image.width;
+        let sourceHeight = image.height;
+        if (imageRatio > boxRatio) {
+          sourceWidth = image.height * boxRatio;
+        } else {
+          sourceHeight = image.width / boxRatio;
+        }
+        sourceWidth /= scale;
+        sourceHeight /= scale;
+        const sourceX = clamp((image.width - sourceWidth) / 2 + offsetX, 0, image.width - sourceWidth);
+        const sourceY = clamp((image.height - sourceHeight) / 2 + offsetY, 0, image.height - sourceHeight);
+        ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+      }
+
+      function drawWindow(image, x, y, width, height, options = {}) {
+        const alpha = options.alpha ?? 1;
+        const fill = options.fill ?? true;
+        const reveal = options.reveal ?? 1;
+        const scale = options.scale ?? 1;
+        const offsetX = options.offsetX ?? 0;
+        const offsetY = options.offsetY ?? 0;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+        ctx.shadowBlur = 42;
+        ctx.shadowOffsetY = 24;
+        ctx.beginPath();
+        ctx.rect(x, y, width * reveal, height);
+        ctx.clip();
+        if (fill) {
+          roundedRect(x, y, width, height, 8);
+          ctx.fillStyle = '#f7f9fc';
+          ctx.fill();
+        }
+        ctx.shadowColor = 'transparent';
+        drawImageCover(image, x, y, width, height, scale, offsetX, offsetY);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.8;
+        roundedRect(x, y, width, height, 8);
+        ctx.strokeStyle = '#a8b5c9';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawPulse(time, reveal) {
+        const x = mix(172, 1748, reveal);
+        ctx.save();
+        ctx.strokeStyle = '#4f8cff';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#4f8cff';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.moveTo(112, 128);
+        ctx.lineTo(x, 128);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, 128, 6 + Math.sin(time * 8) * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawPilot(time) {
+        drawBackdrop(time);
+
+        const reveal = span(time, 0.15, 2.2);
+        const settle = span(time, 2.1, 3.7);
+        const windowX = mix(208, 164, settle);
+        const windowY = mix(156, 126, settle);
+        const windowWidth = mix(1504, 1592, settle);
+        const windowHeight = mix(712, 754, settle);
+
+        drawWindow(images.hero, windowX, windowY, windowWidth, windowHeight, {
+          alpha: mix(0.42, 0.08, reveal),
+          fill: false,
+          reveal: 1,
+          scale: 1.01,
+        });
+
+        drawWindow(images.hero, windowX, windowY, windowWidth, windowHeight, {
+          alpha: 0.96,
+          reveal,
+          scale: mix(1.08, 1.02, settle),
+          offsetX: mix(-52, 0, settle),
+        });
+
+        const scanX = windowX + windowWidth * reveal;
+        if (reveal < 0.995) {
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = '#73a3ff';
+          ctx.shadowColor = '#4f8cff';
+          ctx.shadowBlur = 32;
+          ctx.fillRect(scanX - 2, windowY, 4, windowHeight);
+          ctx.restore();
+        }
+
+        drawPulse(time, reveal);
+
+        ctx.fillStyle = '#aebbd0';
+        ctx.font = `600 20px ${fontStack}`;
+        ctx.fillText('DEEPSEEK HARNESS · LOCAL USAGE', 164, 88);
+
+        const titleProgress = span(time, 1.25, 2.45);
+        ctx.save();
+        ctx.globalAlpha = titleProgress;
+        ctx.fillStyle = '#f7f9fc';
+        ctx.font = `700 64px ${fontStack}`;
+        ctx.fillText('DSH Usage', 164, 952);
+        ctx.fillStyle = '#b7c2d5';
+        ctx.font = `500 30px ${fontStack}`;
+        ctx.fillText('一眼看懂，用量 · 时间 · 花费', 164, 1004);
+
+        ctx.textAlign = 'right';
+        ctx.font = `650 26px ${fontStack}`;
+        const metrics = ['321M TOKEN', '7h36m', '¥54.33'];
+        metrics.forEach((metric, index) => {
+          const metricProgress = span(time, 1.55 + index * 0.16, 2.55 + index * 0.16);
+          ctx.globalAlpha = titleProgress * metricProgress;
+          ctx.fillStyle = ['#5a92ff', '#31c8a0', '#ff9a3c'][index];
+          ctx.fillText(metric, 1756 - index * 212, 988);
+        });
+        ctx.restore();
+      }
+
+      function drawFrame(frame) {
+        const time = frame / FPS;
+        drawPilot(time);
+      }
+
+      async function loadImages() {
+        await Promise.all(
+          Object.entries(assetPaths).map(([key, source]) => new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => {
+              images[key] = image;
+              resolve();
+            };
+            image.onerror = reject;
+            image.src = source;
+          })),
+        );
+        drawFrame(0);
+        window.__READY__ = true;
+      }
+
+      window.renderFrame = (frame) => {
+        if (!window.__READY__) throw new Error('Composition assets are not ready');
+        drawFrame(frame);
+        return { frame, width: WIDTH, height: HEIGHT };
+      };
+
+      window.__READY__ = false;
+      loadImages().catch((error) => {
+        window.__LOAD_ERROR__ = String(error?.stack || error);
+      });
+    </script>
+  </body>
+</html>

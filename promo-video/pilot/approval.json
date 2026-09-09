@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "passed": true,
+  "approvedAt": "2026-09-09T08:44:04.887239+00:00",
+  "reviewer": "Codex",
+  "continuityMode": "chain",
+  "notes": "1920x1080首帧可辨识真实界面，电蓝扫描连续揭示内容，中文排版清晰，末帧稳定；完整解码96帧通过。",
+  "artifacts": {
+    "conceptContract": {
+      "path": "/Users/rongyi/Desktop/dsh-stats-plugin/promo-video/source/concept-contract.yaml",
+      "bytes": 1009,
+      "sha256": "c2e799c2972ce12d389fb9844b229389aca912146706f23b97739f7e7acd0700"
+    },
+    "firstFrame": {
+      "path": "/Users/rongyi/Desktop/dsh-stats-plugin/promo-video/pilot/frames/frame-0000.jpg",
+      "bytes": 177291,
+      "sha256": "1468c9e67e5eda4a8fba25417645d269fa8c0ffdb58ca856310babec7039b253"
+    },
+    "lastFrame": {
+      "path": "/Users/rongyi/Desktop/dsh-stats-plugin/promo-video/pilot/frames/frame-0095.jpg",
+      "bytes": 209762,
+      "sha256": "7a71e4f2182e05005bb5ea11389b56993a02014fdb931fe190bc8ff07495797b"
+    },
+    "pilotVideo": {
+      "path": "/Users/rongyi/Desktop/dsh-stats-plugin/promo-video/pilot/pilot.mp4",
+      "bytes": 1491575,
+      "sha256": "574cdc9a18008c9aea58f9220e5eb2419ff5c0926a7beeb9445d225c3ef9164a"
+    },
+    "pageEvidence": {
+      "path": "/Users/rongyi/Desktop/dsh-stats-plugin/promo-video/pilot/frames/frame-0048.jpg",
+      "bytes": 211597,
+      "sha256": "cfc707e33e51658d291f5c326a39cc630e4d20f7e6188831542b4332ea900012"
+    }
+  }
+}

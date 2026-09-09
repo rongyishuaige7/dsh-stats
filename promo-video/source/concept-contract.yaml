@@ -1,0 +1,19 @@
+subject_count: 1
+subjects:
+  - identity: DSH Usage 真实、已脱敏的项目统计界面
+style: 克制、精确、产品化；深色舞台承托浅色真实界面，使用电蓝、青、品红和橙色数据强调
+motion_intent: 一条持续移动的数据脉冲扫描并连接项目总览、开发时间线、用量趋势和账户额度，最后汇聚成 DSH Usage
+background_owner: video
+scene: 深色数据观察场，真实产品界面始终是主要视觉对象，镜头在同一空间连续推进
+driver: time
+input_semantics: continuous
+time_control: autonomous
+navigation: none
+clip_continuity: chain
+continuity:
+  - DSH Usage 名称和真实界面截图不变形、不重绘
+  - 数据脉冲在各节拍中保持电蓝色和左至右的运动逻辑
+  - 深色舞台、白色界面与多色图表构成统一视觉系统
+  - 项目、路径、会话和余额信息保持已脱敏状态
+aspect_ratio: 16:9
+destination: 1920x1080 桌面端 30 秒宣传视频，H.264 MP4，保存在 promo-video/final
