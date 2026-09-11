@@ -61,6 +61,32 @@ function providerFamilyOf(providerId) {
 	return "unknown";
 }
 
+// A custom route id says nothing about which provider it speaks to; the
+// endpoint host does. Match a baseURL against official first-party API hosts
+// only, so a relay or local gateway is never guessed into a family the
+// account adapter would query with a credential. This is the same safety
+// boundary the account adapters already enforce through their host
+// allowlists; it only widens which route ids are recognized, not which hosts.
+var OFFICIAL_PROVIDER_HOSTS = {
+	"api.deepseek.com": "deepseek",
+	"openrouter.ai": "openrouter",
+	"api.moonshot.cn": "moonshot",
+	"api.kimi.com": "moonshot",
+	"api.z.ai": "zai",
+	"open.bigmodel.cn": "zai"
+};
+
+function providerFamilyOfUrl(baseURL) {
+	var text = String(baseURL || "").trim();
+	if (!text) return null;
+	try {
+		var host = new URL(text).hostname.toLowerCase();
+		return (host in OFFICIAL_PROVIDER_HOSTS) ? OFFICIAL_PROVIDER_HOSTS[host] : null;
+	} catch {
+		return null;
+	}
+}
+
 function modelAliases(canonical, aliases) {
 	return [canonical].concat(aliases || []).map(function(value) { return String(value).toLowerCase(); });
 }
@@ -531,6 +557,7 @@ module.exports = {
 	FX_RETRIEVED_AT: FX_RETRIEVED_AT,
 	FX_SOURCE: FX_SOURCE,
 	providerFamilyOf: providerFamilyOf,
+	providerFamilyOfUrl: providerFamilyOfUrl,
 	normalizeAccountType: normalizeAccountType,
 	normalizeIdentity: normalizeIdentity,
 	priceUsage: priceUsage,
