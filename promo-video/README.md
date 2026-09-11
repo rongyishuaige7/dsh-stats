@@ -15,16 +15,16 @@ node promo-video/scripts/encode-video.mjs \
   --frames 720
 ```
 
-## Taiwan Mandarin Voiceover
+## Taiwan Mandarin Neural Voiceover
 
 ```sh
 node promo-video/scripts/build-voiceover.mjs \
-  --output promo-video/audio/voiceover-zh-tw-meijia.m4a
+  --output promo-video/audio/voiceover-zh-tw-hsiaochen-neural.m4a
 
 node promo-video/scripts/encode-video.mjs \
   --input promo-video/build/frames \
-  --voiceover promo-video/audio/voiceover-zh-tw-meijia.m4a \
-  --output promo-video/final/dsh-usage-promo-v3-zh-tw.mp4 \
+  --voiceover promo-video/audio/voiceover-zh-tw-hsiaochen-neural.m4a \
+  --output promo-video/final/dsh-usage-promo-v4-zh-tw-neural.mp4 \
   --frames 720
 ```
 

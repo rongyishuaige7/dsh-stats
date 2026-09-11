@@ -19,18 +19,18 @@ function run(command, argumentsList) {
   });
 }
 
-const outputPath = path.resolve(readArgument('--output', 'promo-video/audio/voiceover-zh-tw-meijia.m4a'));
-const voice = readArgument('--voice', 'Meijia');
-const rate = readArgument('--rate', '210');
+const outputPath = path.resolve(readArgument('--output', 'promo-video/audio/voiceover-zh-tw-hsiaochen-neural.m4a'));
+const voice = readArgument('--voice', 'zh-TW-HsiaoChenNeural');
+const rate = readArgument('--rate', '+15%');
 const duration = 30;
 const segments = [
-  { start: 0.08, text: '用量查得好累？D S H Usage，一眼看懂。' },
-  { start: 4.35, text: '專案、用量、時間、花費，打開就有答案。' },
-  { start: 9.55, text: '開發時間軸，讓每段投入清清楚楚。' },
-  { start: 14.45, text: '用量趨勢和模型分布，一張圖就掌握。' },
-  { start: 19.55, text: '餘額、額度和方案進度，隨時掌握。' },
-  { start: 24.04, text: '所有關鍵資料，匯成完整視角。' },
-  { start: 27, text: '安裝 D S H，開發資料一眼懂。' },
+  { start: 0.35, text: 'D S H Usage，用量一眼看懂。' },
+  { start: 4.35, text: '專案、用量、時間、花費，一次看懂。' },
+  { start: 9.45, text: '開發時間軸，每段投入清清楚楚。' },
+  { start: 14.35, text: '用量趨勢和模型分布，一張圖掌握。' },
+  { start: 19.25, text: '餘額、額度和方案進度，隨時掌握。' },
+  { start: 24, text: '關鍵資料，匯成完整視角。' },
+  { start: 27.05, text: '安裝 D S H，資料一眼懂。' },
 ];
 
 await mkdir(path.dirname(outputPath), { recursive: true });
@@ -39,14 +39,21 @@ const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'dsh-voiceover-'));
 try {
   const clips = [];
   for (const [index, segment] of segments.entries()) {
-    const clipPath = path.join(temporaryDirectory, `segment-${index}.aiff`);
-    await run('say', ['-v', voice, '-r', rate, '-o', clipPath, segment.text]);
+    const clipPath = path.join(temporaryDirectory, `segment-${index}.mp3`);
+    await run('uvx', [
+      '--from', 'edge-tts==7.2.8',
+      'edge-tts',
+      '--voice', voice,
+      `--rate=${rate}`,
+      '--text', segment.text,
+      '--write-media', clipPath,
+    ]);
     clips.push(clipPath);
   }
 
   const filterParts = segments.map((segment, index) => (
     `[${index}:a]aformat=sample_rates=48000:channel_layouts=mono,` +
-    `highpass=f=90,adelay=${Math.round(segment.start * 1000)}:all=1[segment${index}]`
+    `highpass=f=70,adelay=${Math.round(segment.start * 1000)}:all=1[segment${index}]`
   ));
   const mixInputs = segments.map((_, index) => `[segment${index}]`).join('');
   filterParts.push(
