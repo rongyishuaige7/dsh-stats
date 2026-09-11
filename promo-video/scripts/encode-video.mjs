@@ -9,6 +9,8 @@ function readArgument(name, fallback) {
 
 const inputDirectory = path.resolve(readArgument('--input', 'promo-video/pilot/frames'));
 const outputPath = path.resolve(readArgument('--output', 'promo-video/pilot/pilot.mp4'));
+const voiceoverArgument = readArgument('--voiceover', '');
+const voiceoverPath = voiceoverArgument ? path.resolve(voiceoverArgument) : '';
 const fps = Number.parseInt(readArgument('--fps', '24'), 10);
 const frameCount = Number.parseInt(readArgument('--frames', '96'), 10);
 const duration = frameCount / fps;
@@ -16,12 +18,26 @@ const fadeOutStart = Math.max(0, duration - 1);
 
 await mkdir(path.dirname(outputPath), { recursive: true });
 
-const filter = [
+const filterParts = [
   '[1:a]volume=0.22,lowpass=f=260[bed]',
   '[2:a]volume=0.10,tremolo=f=1.25:d=0.55[pulse]',
   '[3:a]highpass=f=900,lowpass=f=5200,volume=0.08[air]',
-  `[bed][pulse][air]amix=inputs=3:normalize=0,afade=t=in:st=0:d=0.45,afade=t=out:st=${fadeOutStart}:d=1[audio]`,
-].join(';');
+];
+
+if (voiceoverPath) {
+  filterParts.push(
+    '[bed][pulse][air]amix=inputs=3:normalize=0[music]',
+    '[4:a]volume=1,asplit=2[voice][sidechain]',
+    '[music][sidechain]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=250[ducked]',
+    `[ducked][voice]amix=inputs=2:normalize=0:duration=longest,apad,atrim=duration=${duration},afade=t=in:st=0:d=0.2,afade=t=out:st=${fadeOutStart}:d=1[audio]`,
+  );
+} else {
+  filterParts.push(
+    `[bed][pulse][air]amix=inputs=3:normalize=0,afade=t=in:st=0:d=0.45,afade=t=out:st=${fadeOutStart}:d=1[audio]`,
+  );
+}
+
+const filter = filterParts.join(';');
 
 const argumentsList = [
   '-y',
@@ -31,6 +47,11 @@ const argumentsList = [
   '-f', 'lavfi', '-i', `sine=frequency=58:sample_rate=48000:duration=${duration}`,
   '-f', 'lavfi', '-i', `sine=frequency=116:sample_rate=48000:duration=${duration}`,
   '-f', 'lavfi', '-i', `anoisesrc=color=pink:sample_rate=48000:duration=${duration}:amplitude=0.1`,
+];
+
+if (voiceoverPath) argumentsList.push('-i', voiceoverPath);
+
+argumentsList.push(
   '-filter_complex', filter,
   '-map', '0:v:0',
   '-map', '[audio]',
@@ -46,7 +67,7 @@ const argumentsList = [
   '-movflags', '+faststart',
   '-shortest',
   outputPath,
-];
+);
 
 const ffmpeg = spawn('ffmpeg', argumentsList, { stdio: 'inherit' });
 const exitCode = await new Promise((resolve) => ffmpeg.once('exit', resolve));
