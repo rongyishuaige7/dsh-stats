@@ -11,8 +11,8 @@ node promo-video/scripts/render-frames.mjs \
 
 node promo-video/scripts/encode-video.mjs \
   --input promo-video/build/frames \
-  --output promo-video/final/dsh-usage-promo-v1.mp4 \
+  --output promo-video/final/dsh-usage-promo-v2.mp4 \
   --frames 720
 ```
 
-The frame cache and local Python QA environment are ignored. The final video, poster, timeline, encoding manifest, and QA evidence are retained.
+The frame cache and local Python QA environment are ignored. Versioned final videos, posters, encoding manifests, and QA evidence are retained. The v1 delivery remains available for visual comparison.

@@ -101,13 +101,41 @@
         ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
       }
 
+      function containRect(image, x, y, width, height, options = {}) {
+        const padding = options.padding ?? 24;
+        const scale = clamp(options.scale ?? 1, 0.85, 1);
+        const innerWidth = Math.max(1, width - padding * 2);
+        const innerHeight = Math.max(1, height - padding * 2);
+        const fitScale = Math.min(innerWidth / image.width, innerHeight / image.height) * scale;
+        const drawWidth = image.width * fitScale;
+        const drawHeight = image.height * fitScale;
+        const horizontalTravel = Math.max(0, (innerWidth - drawWidth) / 2);
+        const verticalTravel = Math.max(0, (innerHeight - drawHeight) / 2);
+        const translateX = clamp(options.translateX ?? 0, -horizontalTravel, horizontalTravel);
+        const translateY = clamp(options.translateY ?? 0, -verticalTravel, verticalTravel);
+        return {
+          x: x + (width - drawWidth) / 2 + translateX,
+          y: y + (height - drawHeight) / 2 + translateY,
+          width: drawWidth,
+          height: drawHeight,
+        };
+      }
+
+      function drawImageContain(image, x, y, width, height, options = {}) {
+        const rect = containRect(image, x, y, width, height, options);
+        ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+        return rect;
+      }
+
       function drawWindow(image, x, y, width, height, options = {}) {
         const alpha = options.alpha ?? 1;
         const fill = options.fill ?? true;
+        const fit = options.fit ?? 'contain';
         const reveal = options.reveal ?? 1;
         const scale = options.scale ?? 1;
         const offsetX = options.offsetX ?? 0;
         const offsetY = options.offsetY ?? 0;
+        let imageRect;
 
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -123,7 +151,17 @@
           ctx.fill();
         }
         ctx.shadowColor = 'transparent';
-        drawImageCover(image, x, y, width, height, scale, offsetX, offsetY);
+        if (fit === 'cover') {
+          drawImageCover(image, x, y, width, height, scale, offsetX, offsetY);
+          imageRect = { x, y, width, height };
+        } else {
+          imageRect = drawImageContain(image, x, y, width, height, {
+            padding: options.padding,
+            scale,
+            translateX: options.translateX,
+            translateY: options.translateY,
+          });
+        }
         ctx.restore();
 
         ctx.save();
@@ -133,6 +171,7 @@
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
+        return imageRect;
       }
 
       function drawPulse(time, reveal) {
@@ -168,14 +207,14 @@
           alpha: mix(0.42, 0.08, reveal),
           fill: false,
           reveal: 1,
-          scale: 1.01,
+          scale: 0.97,
         });
 
         drawWindow(images.hero, windowX, windowY, windowWidth, windowHeight, {
           alpha: 0.96,
           reveal,
-          scale: mix(1.08, 1.02, settle),
-          offsetX: mix(-52, 0, settle),
+          scale: mix(0.95, 0.99, settle),
+          translateX: mix(-18, 0, settle),
         });
 
         const scanX = windowX + windowWidth * reveal;
@@ -286,31 +325,36 @@
         const height = mix(754, 720, intro);
         drawBackdrop(time);
         drawWindow(images.hero, x, y, width, height, {
-          scale: 1.02,
+          scale: 0.99,
         });
-        drawWindow(images.overview, x, y, width, height, {
+        const overviewRect = drawWindow(images.overview, x, y, width, height, {
           reveal: intro,
-          scale: mix(1.02, 1.08, camera),
-          offsetY: mix(-226, 170, camera),
+          scale: mix(0.95, 0.99, camera),
+          translateX: mix(-20, 20, camera),
         });
         if (intro < 0.995) drawScanEdge(x + width * intro, y, height, 1 - span(intro, 0.9, 1));
 
         const cursor = span(local, 0.35, 4.2);
-        const cursorX = mix(x + 86, x + width - 88, cursor);
+        const cursorX = mix(overviewRect.x + overviewRect.width * 0.035, overviewRect.x + overviewRect.width * 0.965, cursor);
         ctx.save();
         ctx.strokeStyle = 'rgba(79, 140, 255, 0.76)';
         ctx.lineWidth = 3;
         ctx.shadowColor = '#4f8cff';
         ctx.shadowBlur = 22;
-        roundedRect(cursorX - 76, y + 120, 152, 104, 8);
+        ctx.beginPath();
+        ctx.moveTo(cursorX, overviewRect.y + overviewRect.height * 0.12);
+        ctx.lineTo(cursorX, overviewRect.y + overviewRect.height * 0.29);
         ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(cursorX, overviewRect.y + overviewRect.height * 0.205, 7, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
 
         if (handoff > 0) {
           drawWindow(images.timeline, x, y, width, height, {
             reveal: handoff,
-            scale: 1.02,
-            offsetY: -132,
+            scale: 0.96,
           });
           drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1));
         }
@@ -327,24 +371,24 @@
         const width = 1592;
         const height = 720;
         drawBackdrop(time);
-        drawWindow(images.timeline, x, y, width, height, {
-          scale: mix(1.02, 1.07, progress),
-          offsetY: mix(-132, 126, progress),
+        const timelineRect = drawWindow(images.timeline, x, y, width, height, {
+          scale: mix(0.95, 0.99, progress),
+          translateX: mix(-20, 20, progress),
         });
 
-        const cursorX = mix(x + 250, x + width - 176, progress);
+        const cursorX = mix(timelineRect.x + timelineRect.width * 0.157, timelineRect.x + timelineRect.width * 0.884, progress);
         ctx.save();
         ctx.strokeStyle = '#31c8a0';
         ctx.lineWidth = 4;
         ctx.shadowColor = '#31c8a0';
         ctx.shadowBlur = 24;
         ctx.beginPath();
-        ctx.moveTo(cursorX, y + 150);
-        ctx.lineTo(cursorX, y + height - 40);
+        ctx.moveTo(cursorX, timelineRect.y + timelineRect.height * 0.17);
+        ctx.lineTo(cursorX, timelineRect.y + timelineRect.height * 0.965);
         ctx.stroke();
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(cursorX, mix(y + 250, y + height - 100, 0.5 + Math.sin(local * 1.4) * 0.25), 7, 0, Math.PI * 2);
+        ctx.arc(cursorX, mix(timelineRect.y + timelineRect.height * 0.28, timelineRect.y + timelineRect.height * 0.88, 0.5 + Math.sin(local * 1.4) * 0.25), 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
@@ -359,8 +403,7 @@
         if (handoff > 0) {
           drawWindow(images.trends, x, y, width, height, {
             reveal: handoff,
-            scale: 1.02,
-            offsetY: -310,
+            scale: 0.95,
           });
           drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1));
         }
@@ -377,31 +420,31 @@
         const width = 1592;
         const height = 720;
         drawBackdrop(time);
-        drawWindow(images.trends, x, y, width, height, {
-          scale: mix(1.02, 1.07, progress),
-          offsetY: mix(-310, 326, progress),
+        const trendsRect = drawWindow(images.trends, x, y, width, height, {
+          scale: mix(0.94, 0.99, progress),
+          translateX: mix(-22, 22, progress),
         });
 
-        const scanY = mix(y + 160, y + height - 74, progress);
+        const scanY = mix(trendsRect.y + trendsRect.height * 0.12, trendsRect.y + trendsRect.height * 0.92, progress);
         ctx.save();
         ctx.strokeStyle = '#ff9a3c';
         ctx.lineWidth = 3;
         ctx.shadowColor = '#ff9a3c';
         ctx.shadowBlur = 24;
         ctx.beginPath();
-        ctx.moveTo(x + 46, scanY);
-        ctx.lineTo(x + width - 46, scanY);
+        ctx.moveTo(trendsRect.x + trendsRect.width * 0.02, scanY);
+        ctx.lineTo(trendsRect.x + trendsRect.width * 0.98, scanY);
         ctx.stroke();
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(x + mix(90, width - 90, progress), scanY, 7, 0, Math.PI * 2);
+        ctx.arc(mix(trendsRect.x + trendsRect.width * 0.05, trendsRect.x + trendsRect.width * 0.95, progress), scanY, 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
         if (handoff > 0) {
           drawWindow(images.balance, x, y, width, height, {
             reveal: handoff,
-            scale: 1.01,
+            scale: 0.97,
           });
           drawScanEdge(x + width * handoff, y, height, 1 - span(handoff, 0.92, 1), '#ff9a3c');
         }
@@ -419,11 +462,11 @@
         const width = 1592;
         const height = mix(720, 620, intro);
         drawBackdrop(time);
-        drawWindow(images.balance, x, y, width, height, { scale: mix(1.01, 1.045, progress) });
+        drawWindow(images.balance, x, y, width, height, { scale: mix(0.96, 0.99, progress) });
         if (providerSwitch > 0) {
           drawWindow(images.balanceMinimax, x, y, width, height, {
             reveal: providerSwitch,
-            scale: mix(1.025, 1.01, providerSwitch),
+            scale: mix(0.96, 0.99, providerSwitch),
           });
           drawScanEdge(x + width * providerSwitch, y, height, 1 - span(providerSwitch, 0.93, 1), '#bc73ff');
         }
@@ -451,7 +494,7 @@
         drawBackdrop(time);
         drawWindow(images.balanceMinimax, 164, 190, 1592, 620, {
           alpha: 1 - appear,
-          scale: 1.01,
+          scale: 0.98,
         });
 
         const tiles = [
@@ -481,7 +524,7 @@
           ctx.lineTo(960, 520);
           ctx.stroke();
           ctx.restore();
-          drawThumbnail(tile.image, x, y, width, height, appear * (1 - span(merge, 0.78, 1)), mix(1.06, 1.02, merge));
+          drawThumbnail(tile.image, x, y, width, height, appear * (1 - span(merge, 0.78, 1)), mix(0.94, 0.98, merge));
         }
 
         const brand = span(merge, 0.58, 1);
@@ -539,8 +582,8 @@
         const imageHeight = mix(452, 506, settle);
         drawWindow(images.hero, imageX, imageY, imageWidth, imageHeight, {
           alpha: enter,
-          scale: mix(1.08, 1.02, settle),
-          offsetX: mix(-72, 0, settle),
+          scale: mix(0.95, 0.99, settle),
+          translateX: mix(-12, 0, settle),
         });
 
         ctx.save();
