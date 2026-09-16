@@ -30,7 +30,7 @@ test('trusted DeepSeek aliases keep distinct route ids while using the official 
 
 	expect(official).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-pro' });
 	expect(nbdeepseek).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-pro' });
-	expect(modlens).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-v4-flash' });
+	expect(modlens).toMatchObject({ providerFamily: 'deepseek', modelCanonical: 'deepseek-flash' });
 	expect(relay).toMatchObject({ providerFamily: 'unknown', modelCanonical: 'deepseek-v4-pro' });
 	expect(new Set([official.providerId, nbdeepseek.providerId, modlens.providerId])).toHaveProperty('size', 3);
 });
@@ -195,4 +195,39 @@ test('currency-less free usage mixed with unpriced usage is partial, not free', 
 
 	expect(free).toMatchObject({ status: 'free', amount: 0, currency: null, unpricedTokens: 0 });
 	expect(summary).toMatchObject({ status: 'partial', totals: [], unpricedTokens: 1100, unknownRows: 1 });
+});
+
+test('prices deepseek-flash (DeepSeek-V4.1-Flash) at the official Flash rates', () => {
+	const offPeak = Math.floor(Date.parse('2026-08-17T00:00:00+08:00') / 1800000);
+	const peak = Math.floor(Date.parse('2026-08-17T09:00:00+08:00') / 1800000);
+	const tokens = { uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 };
+
+	const off = priceUsage(usage({ ...tokens, model: 'deepseek-flash', slot: offPeak }));
+	const on = priceUsage(usage({ ...tokens, model: 'deepseek-flash', slot: peak }));
+
+	// offPeak: 1000*1 + 10000*0.02 + 100*4 = 1600 ? 0.0016
+	expect(off).toMatchObject({ status: 'exact', currency: 'CNY', modelCanonical: 'deepseek-flash' });
+	expect(off.amount).toBeCloseTo(0.0016, 6);
+	// peak: 1000*2 + 10000*0.04 + 100*8 = 3200 ? 0.0032
+	expect(on.amount).toBeCloseTo(0.0032, 6);
+});
+
+test('the retired deepseek-v4-flash ids resolve to the V4.1-Flash row', () => {
+	const canonical = priceUsage(usage({ model: 'deepseek-flash' }));
+	for (const model of ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']) {
+		const cost = priceUsage(usage({ model }));
+		expect(cost).toMatchObject({ status: 'exact', currency: 'CNY', modelCanonical: 'deepseek-flash' });
+		expect(cost.ruleId).toBe(canonical.ruleId);
+		expect(cost.amount).toBeCloseTo(canonical.amount, 9);
+	}
+});
+
+test('weekends bill off-peak even inside a weekday peak window', () => {
+	const tokens = { uncached: 1000, output: 100, cacheRead: 10000, cacheWrite: 0, reasoning: 0 };
+	const at = (iso) => Math.floor(Date.parse(iso) / 1800000);
+	const costAt = (iso) => priceUsage(usage({ ...tokens, model: 'deepseek-flash', slot: at(iso) })).amount;
+
+	expect(costAt('2026-08-17T09:00:00+08:00')).toBeCloseTo(0.0032, 6); // Monday -> peak
+	expect(costAt('2026-08-22T09:00:00+08:00')).toBeCloseTo(0.0016, 6); // Saturday -> off-peak
+	expect(costAt('2026-08-23T09:00:00+08:00')).toBeCloseTo(0.0016, 6); // Sunday -> off-peak
 });

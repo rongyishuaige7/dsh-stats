@@ -90,10 +90,12 @@ var RULES = [
 		peak: { cacheRead: 0.30, uncached: 9, cacheWrite: 9, output: 27 }
 	},
 	{
-		...fixedRule("deepseek", "deepseek-v4-flash", "CNY", null),
+		// deepseek-flash is DeepSeek-V4.1-Flash. The retired ids deepseek-v4-flash and
+		// deepseek-v4-flash-vision-exp still route to it and bill at Flash prices.
+		...fixedRule("deepseek", "deepseek-flash", "CNY", null, ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]),
 		legacy: { cacheRead: 0.02, uncached: 1, cacheWrite: 1, output: 2 },
-		offPeak: { cacheRead: 0.05, uncached: 1.5, cacheWrite: 1.5, output: 4.5 },
-		peak: { cacheRead: 0.10, uncached: 3, cacheWrite: 3, output: 9 }
+		offPeak: { cacheRead: 0.02, uncached: 1, cacheWrite: 1, output: 4 },
+		peak: { cacheRead: 0.04, uncached: 2, cacheWrite: 2, output: 8 }
 	},
 	{
 		...fixedRule("minimax", "MiniMax-M3", "CNY", null, ["minimax-m3"]),
@@ -352,6 +354,9 @@ function mergeCostSummariesCny(summaries, options) {
 function deepSeekPeak(slot) {
 	var t = slot * 30 * 60 * 1000;
 	var bj = new Date(t + BEIJING_OFFSET_MS);
+	// Peak windows are Beijing-time Monday-Friday; weekends bill off-peak all day.
+	var weekday = bj.getUTCDay();
+	if (weekday === 0 || weekday === 6) return false;
 	var minutes = bj.getUTCHours() * 60 + bj.getUTCMinutes();
 	return minutes >= 9 * 60 && minutes < 12 * 60 || minutes >= 14 * 60 && minutes < 18 * 60;
 }
