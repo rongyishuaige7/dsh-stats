@@ -441,11 +441,11 @@ test('modelAgg accumulates each model cost with the price of its actual slot', (
 	}]);
 	const pro = models.find(m => m.model === 'deepseek-v4-pro');
 	const flash = models.find(m => m.model === 'deepseek-v4-flash');
-	// pro: offPeak 0.00735 + peak 0.0147; flash offPeak: 0.00245
+	// pro: offPeak 0.00735 + peak 0.0147; flash (V4.1-Flash) offPeak: 0.0016
 	expect(pro.costKnown).toBe(true);
 	expect(pro.cost).toBeCloseTo(0.02205, 6);
 	expect(flash.costKnown).toBe(true);
-	expect(flash.cost).toBeCloseTo(0.00245, 6);
+	expect(flash.cost).toBeCloseTo(0.0016, 6);
 });
 
 test('modelAgg keeps known model costs when another model price is unknown', () => {

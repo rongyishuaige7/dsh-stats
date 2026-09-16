@@ -20,8 +20,8 @@ test('跨模型会话按逐模型价格计价（flash 不按 pro 高价算）', 
 
 	const cost = sessionCost(session);
 	// pro offPeak: 900*4.5 + 99000*0.15 + 90*13.5 = 20115 (→ 0.020115)
-	// flash offPeak: 100*1.5 + 1000*0.05 + 10*4.5 = 245 (→ 0.000245)
-	expect(cost).toBeCloseTo(0.02036, 5);
+	// flash (V4.1-Flash) offPeak: 100*1 + 1000*0.02 + 10*4 = 160 (→ 0.00016)
+	expect(cost).toBeCloseTo(0.020275, 5);
 });
 
 test('跨模型会话按逐模型计价（结果低于全部按 pro 计）', () => {
