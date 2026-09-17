@@ -40,3 +40,25 @@ Delivery gates: release-commit CI, v0.4.0 tag publication, public npm registry
 verification, backed-up production profile upgrade and 3080 Web validation.
 The existing server command, environment and working directory are retained.
 Original sessions and provider credentials are not modified.
+
+Delivery completed on 2026-09-17:
+
+- Release commit `b188ed9` and tag `v0.4.0` are pushed. Release CI
+  [35202171414](https://github.com/rongyishuaige7/dsh-stats/actions/runs/35202171414)
+  and npm publication
+  [35202410271](https://github.com/rongyishuaige7/dsh-stats/actions/runs/35202410271)
+  succeeded; the public registry serves 0.4.0.
+- The production Web profile on port 3080 runs the published 0.4.0 files,
+  compared byte-for-byte with the registry archive after SHA-512 verification.
+  The profile backup is under `$DSH_HOME/backups/dsh-stats-0.4.0-20260917-165308/`.
+  Its original pnpm 11.21.0 installation was retained; Harness's bundled pnpm 9
+  correctly rejected the incompatible store and made no upgrade. The cached
+  matching pnpm completed the scoped update without global configuration changes.
+- Production browser checks confirm host-sourced CNY 13.71 on September 16 and
+  CNY 3.60 on September 17, all four tabs, price settings, and a healthy yi-api
+  account response, with zero console/runtime/network errors. The signed catalog
+  refreshed successfully to 2026091702.
+- Existing settings and usage records are preserved. Harness appended one normal
+  `session/end-seed` lifecycle marker on restart; the original log prefix matches
+  its pre-upgrade SHA-256. No original usage bytes were changed, and both days'
+  token totals still match the pre-upgrade audit.
