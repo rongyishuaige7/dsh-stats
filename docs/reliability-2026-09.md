@@ -169,3 +169,9 @@ commit exposed an intermittent Linux Chrome profile cleanup race (`ENOTEMPTY`)
 after the UI checks. The browser fixture now retries only its own temporary
 profile cleanup, allowing short-lived Chromium helper writes to finish. Local
 browser smoke still passes all views and reports no runtime errors.
+
+The Linux cleanup retry alone was insufficient: the Chrome launcher can exit
+while helper processes keep writing. The fixture now requests CDP Browser.close,
+terminates its exclusively owned process group, and records report.json before
+cleanup so an assertion failure cannot be masked. The complete local browser
+fixture passes with this lifecycle change; GitHub verification follows the push.

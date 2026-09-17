@@ -36,7 +36,7 @@ const url = 'http://127.0.0.1:' + server.address().port;
 const chrome = spawn(chromePath, [
   '--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
   '--remote-debugging-port=0', '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: process.platform !== 'win32' });
 let socket;
 let nextId = 0;
 const pending = new Map();
@@ -155,12 +155,26 @@ try {
   if (socket?.readyState === WebSocket.OPEN) await capture('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
+  // Preserve assertion failures even if browser shutdown itself fails.
+  writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
+  if (socket?.readyState === WebSocket.OPEN) await command('Browser.close').catch(() => {});
   socket?.close();
-  const stopped = once(chrome, 'exit'); chrome.kill('SIGTERM'); await Promise.race([stopped, delay(3000)]);
-  if (chrome.exitCode === null && chrome.signalCode === null) { chrome.kill('SIGKILL'); await stopped; }
+  const stopBrowser = signal => {
+    try {
+      // Chrome's launcher may exit before its helpers. This process group was
+      // created exclusively for this fixture, so it never includes user Chrome.
+      if (process.platform !== 'win32') process.kill(-chrome.pid, signal);
+      else chrome.kill(signal);
+    } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  };
+  if (chrome.exitCode === null && chrome.signalCode === null) {
+    const stopped = once(chrome, 'exit');
+    stopBrowser('SIGTERM'); await Promise.race([stopped, delay(3000)]);
+    if (chrome.exitCode === null && chrome.signalCode === null) { stopBrowser('SIGKILL'); await stopped; }
+  }
+  stopBrowser('SIGKILL');
   await new Promise(resolve => server.close(resolve));
   // Chromium helpers can briefly finish profile writes after the parent exits.
   rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify({ ...report, output }, null, 2));
 }
