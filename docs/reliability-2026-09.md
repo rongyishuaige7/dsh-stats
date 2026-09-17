@@ -217,3 +217,11 @@ Reproduce after building:
 ```bash
 DSH_HARNESS_ROOT=/path/to/isolated/harness node scripts/harness-projection-benchmark.mjs
 ```
+
+Client fallback follow-up verified: all 216 tests pass. Unknown-model route usage
+is retained in overview, model aggregation and CSV and remains explicitly unpriced,
+even when the session's current model is known. Missing or malformed own-session
+projections mark the session partial and do not import a fork parent's token totals.
+Valid empty own projections remain exact zero, and parent metadata survives the
+client fallback path. All bundles build; the browser fixture passes 25 screenshots
+with no reported runtime, console or network errors.

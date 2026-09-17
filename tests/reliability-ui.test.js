@@ -112,3 +112,26 @@ test('CSV preserves numeric negatives, quotes, commas and ordinary labels', () =
 	expect(csvField('a,"b"')).toBe('"a,""b"""');
 	expect(csvField('ordinary name')).toBe('ordinary name');
 });
+
+test('client fallback retains unknown-model usage and parent metadata', () => {
+	const { sessionCostSummary, modelAgg, projectCsvTable } = require('../src/client.cjs').__test;
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	const child = { id: 'unknown-route', updatedAt: now, projectionValues: {
+		tokenUsage: { uncachedInputTokens: 9999, outputTokens: 999 },
+		statsRoute: { current: { providerId: 'minimax', model: 'MiniMax-M3' }, parentSession: 'parent', origin: 'subagent', routes: [{ model: null, providerId: 'unknown', slot: Math.floor(now / 1800000), contextTokens: 10, count: 1, uncached: 10, output: 2 }] },
+	} };
+	const projects = aggregate([child], [], key => key, []);
+	const session = projects[0].sessions[0];
+	expect(session).toMatchObject({ parentSession: 'parent', subagent: true, quality: 'exact', stats: { inputTokens: 10, outputTokens: 2 } });
+	expect(sessionCostSummary(session)).toMatchObject({ unpricedTokens: 12 });
+	expect(modelAgg([session])[0]).toMatchObject({ input: 10, output: 2 });
+	const [headers, row] = projectCsvTable(projects, key => key);
+	expect(row[headers.indexOf('uncachedInput')]).toBe(10);
+	expect(row[headers.indexOf('unpricedTokens')]).toBe(12);
+});
+
+test.each([undefined, { parentSession: 'parent', routeTree: { invalid: {} } }])('unrecoverable fork projection is partial rather than a trustworthy zero', (route) => {
+	const child = { id: 'missing-own', parentSession: 'parent', projectionValues: { tokenUsage: { uncachedInputTokens: 9999 }, statsRoute: route } };
+	const session = aggregate([child], [], key => key, [])[0].sessions[0];
+	expect(session).toMatchObject({ parentSession: 'parent', quality: 'partial', stats: { inputTokens: 0 } });
+});

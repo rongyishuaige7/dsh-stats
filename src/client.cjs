@@ -340,6 +340,18 @@ function projectionValueOf(s, key) {
 function routeRowsOf(route) {
 	try { return routeData.routeRows(route); } catch { return []; }
 }
+function ownRouteRowsOf(s) {
+	var route = projectionValueOf(s, "statsRoute");
+	if (!isRecord(route)) return null;
+	if (route.routeTree === undefined && !Array.isArray(route.routes) && !(isRecord(route.routes) && Object.keys(route.routes).length)) return null;
+	try {
+		var rows = routeData.routeRows(route);
+		return rows.every(function(row) {
+			return isRecord(row) && (Number.isSafeInteger(row.slot) && row.slot >= 0 || Number.isFinite(row.time) && row.time >= 0) &&
+				["uncached", "output", "cacheRead", "cacheWrite", "reasoning"].every(function(key) { return row[key] == null || Number.isFinite(row[key]) && row[key] >= 0; });
+		}) ? rows : null;
+	} catch { return null; }
+}
 function routeRowWeight(row) {
 	return nonNegativeFinite(row?.uncached) + nonNegativeFinite(row?.output) +
 		nonNegativeFinite(row?.cacheRead) + nonNegativeFinite(row?.cacheWrite);
@@ -371,11 +383,10 @@ function projectionIdentityOf(s) {
 	};
 }
 function projectionSlotUsageOf(s, identity) {
-	var route = projectionValueOf(s, "statsRoute");
-	return routeRowsOf(route).filter(function(row) {
-		return isRecord(row) && usableString(row.model) && routeRowWeight(row) > 0;
+	return (ownRouteRowsOf(s) || []).filter(function(row) {
+		return routeRowWeight(row) > 0;
 	}).map(function(row) {
-		var modelRaw = usableString(row.model) || identity.modelRaw;
+		var modelRaw = usableString(row.model) || "(unknown)";
 		var providerId = usableProvider(row.providerId) || identity.providerId;
 		var accountType = usableString(row.accountType) || identity.accountType;
 		var normalized = pricing.normalizeIdentity(providerId, modelRaw, accountType,
@@ -414,6 +425,10 @@ function enrichSessionProjection(s) {
 	var slots = projectionSlotUsageOf(s, identity);
 	var next = s;
 	var updates = {};
+	var route = projectionValueOf(s, "statsRoute");
+	if (!usableString(s.parentSession) && usableString(route?.parentSession)) updates.parentSession = route.parentSession;
+	if (!usableString(s.origin) && usableString(route?.origin)) updates.origin = route.origin;
+	if (!s.quality) updates.quality = ownRouteRowsOf(s) === null ? "partial" : "exact";
 	if (!usableString(s.model) && identity.model) updates.model = identity.model;
 	if (!usableString(s.modelRaw) && identity.modelRaw !== "(unknown)") updates.modelRaw = identity.modelRaw;
 	if (!usableString(s.modelCanonical) && identity.modelCanonical !== "(unknown)") updates.modelCanonical = identity.modelCanonical;
@@ -427,6 +442,8 @@ function enrichSessionProjection(s) {
 function clientSessionIdentityFields(s) {
 	var model = usableString(s?.model) || usableString(s?.modelRaw);
 	return {
+		parentSession: usableString(s?.parentSession),
+		quality: s?.quality || "partial",
 		model: model || null,
 		providerId: usableProvider(s?.providerId) || "unknown",
 		providerFamily: usableProvider(s?.providerFamily) || "unknown",
@@ -440,7 +457,7 @@ function rawOf(s) {
 	b = b ? (b.totals || b) : {};
 	var st = projectionValueOf(s, "sessionStats") || {};
 	var route = projectionValueOf(s, "statsRoute");
-	var hasOwnUsage = isRecord(route) && (route.routeTree !== undefined || Array.isArray(route.routes) || routeRowsOf(route).length > 0);
+	var hasOwnUsage = ownRouteRowsOf(s) !== null;
 	if (hasOwnUsage) {
 		var own = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 };
 		(s.slotUsage || projectionSlotUsageOf(s, projectionIdentityOf(s))).forEach(function(row) {
