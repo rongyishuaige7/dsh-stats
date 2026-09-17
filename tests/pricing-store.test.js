@@ -124,3 +124,15 @@ test('preview fingerprints detect intervening price updates and custom revisions
   expect(JSON.parse(readFileSync(join(store.dir, 'settings-1.json'), 'utf8')).overrides[0].id).toBe('custom-astra');
   expect(() => pricing.validateOverrides([custom(), custom({ id: 'relay', accountType: 'relay' })])).toThrow('overlapping');
 });
+
+test('disposing the host cancels updates without recreating its data directory', async () => {
+  let release;
+  const store = fixture(() => new Promise(resolve => { release = resolve; }));
+  const pending = store.refresh();
+  store.close();
+  release(new Response(JSON.stringify(envelope({ ...base, version: base.version + 1 }))));
+  await pending;
+  const { existsSync } = await import('node:fs');
+  expect(existsSync(store.dir)).toBe(false);
+  expect(store.catalog.version).toBe(base.version);
+});

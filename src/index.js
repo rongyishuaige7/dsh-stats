@@ -1364,7 +1364,7 @@ let StatsService = (() => {
 				this._pricingAuto = true;
 				void store.refresh();
 				const timer = setInterval(() => { void store.refresh(); }, 3600000); timer.unref?.();
-				return () => clearInterval(timer);
+				return () => { this._pricingAuto = false; clearInterval(timer); store.close(); };
 			}, "dsh-stats: pricing updates");
 			// Register the route projection only when the host exposes the official
 			// registry. The registration is scoped to this service's Cordis fiber and

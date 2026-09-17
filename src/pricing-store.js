@@ -89,6 +89,7 @@ export class PricingStore {
     try { writeFileSync(fd, JSON.stringify({ pid: process.pid })); this.syncDisk(); return fn(); }
     finally { closeSync(fd); unlinkSync(lock); }
   }
+  close() { this.closed = true; this.controller?.abort(); }
   snapshot() { this.syncDisk(); return this.engine; }
   status() {
     this.syncDisk();
@@ -100,6 +101,7 @@ export class PricingStore {
       catalogJson: JSON.stringify(this.catalog), overridesJson: JSON.stringify(this.settings.overrides), history };
   }
   async refresh({ force = false, unknown = false } = {}) {
+    if (this.closed) return this.status();
     if (this.inflight) return this.inflight;
     this.syncDisk();
     const now = this.now();
@@ -110,7 +112,7 @@ export class PricingStore {
     return this.inflight;
   }
   async download({ force, revision }) {
-    const controller = new AbortController();
+    const controller = new AbortController(); this.controller = controller;
     const timer = setTimeout(() => controller.abort(), 12000); timer.unref?.();
     try {
       const response = await this.fetch(this.url, { signal: controller.signal, redirect: 'error', headers: { Accept: 'application/json' } });
@@ -123,6 +125,7 @@ export class PricingStore {
       const envelope = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const catalog = verifyEnvelope(envelope, this.publicKey);
       if (Date.parse(catalog.publishedAt) > this.now() + 5 * 60000) throw new Error('pricing-future-version');
+      if (this.closed) return this.status();
       this.withLock(() => {
         if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
         const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
@@ -142,8 +145,8 @@ export class PricingStore {
         this.envelope = envelope; this.catalog = catalog; this.error = null; this.rebuild();
       });
     } catch (error) {
-      this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : controller.signal.aborted ? 'pricing-timeout' : 'pricing-update-failed';
-    } finally { clearTimeout(timer); }
+      if (!this.closed) this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : controller.signal.aborted ? 'pricing-timeout' : 'pricing-update-failed';
+    } finally { clearTimeout(timer); this.controller = null; }
     return this.status();
   }
   preview(overrides) { return pricing.createPricing(this.catalog, pricing.validateOverrides(overrides)); }
