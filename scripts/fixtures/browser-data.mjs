@@ -1,3 +1,4 @@
+import { pricingStore } from '../../src/pricing-store.js';
 import { StatsService } from '../../src/index.js';
 
 export async function browserData(home) {
@@ -42,7 +43,14 @@ export async function browserData(home) {
         actionUrl: 'https://platform.minimaxi.com/subscribe/token-plan', plan: 'Professional Coding Plan',
         windows: [{ kind: 'weekly', usedPercent: 32, remainingPercent: 68, resetsAt: now + 86400000 }] }
     ], warnings: [] };
-    return { estimated, partial, unsupported, accounts };
+    service.aggregate = engine => StatsService.prototype.aggregate.call(service, engine);
+    pricingStore(service, home).fetch = async () => { throw new Error('fixture-offline'); };
+    const pricingRequest = async request => {
+      const previous = process.env.DSH_HOME; process.env.DSH_HOME = home;
+      try { return await StatsService.prototype.pricing.call(service, request); }
+      finally { if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous; }
+    };
+    return { estimated, partial, unsupported, accounts, pricingRequest };
   } finally {
     if (previousHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previousHome;

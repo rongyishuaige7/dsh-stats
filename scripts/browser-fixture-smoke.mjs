@@ -25,8 +25,16 @@ const runtime = await build({ entryPoints: [join(root, 'scripts/fixtures/browser
   loader: { '.css': 'empty' } });
 const client = readFileSync(join(root, 'lib/client.js'));
 const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Stats Fixture</title><style>*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;letter-spacing:0;background:#f4f5f6;--dsw-specific-menu:#fff;--dsw-alias-label-primary:#20242b;--dsw-alias-label-secondary:#565e6b;--dsw-alias-label-tertiary:#707986;--dsw-alias-border:#dce0e5;--dsw-alias-border-inverted:#dce0e5}</style></head><body><div id="app"></div><script src="/runtime.js"></script><script src="/client.js"></script></body></html>';
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname;
+  if (path === '/pricing' && request.method === 'POST') {
+    try {
+      let body = ''; for await (const chunk of request) body += chunk;
+      const value = await data.pricingRequest(JSON.parse(body));
+      response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: true, value }));
+    } catch { response.writeHead(400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: false, error: { message: 'pricing-fixture-error' } })); }
+    return;
+  }
   const [type, body] = path === '/runtime.js' ? ['text/javascript', runtime.outputFiles[0].contents]
     : path === '/client.js' ? ['text/javascript', client] : path === '/data' ? ['application/json', JSON.stringify(data)] : ['text/html', html];
   response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); response.end(body);
@@ -83,7 +91,7 @@ async function click(selector) {
   assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.click(); return true; })()`), selector);
   await delay(100);
 }
-async function refresh() { await click('.dss-head-actions .dss-export'); }
+async function refresh() { await click('.dss-head-actions .dss-export:nth-child(2)'); }
 async function tab(index) { await click('.dss-tabs button:nth-child(' + index + ')'); }
 async function capture(name) {
   const result = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
@@ -118,7 +126,7 @@ try {
     await click('.dss-trigger');
     await tab(1);
     await until('document.querySelector(".dss-data-status.exact")');
-    await until('document.querySelector(".dss-data-cost")?.textContent === window.__fixture.t("pricing.estimated")');
+    assert(await evaluate('!document.querySelector(".dss-data-cost")'));
     for (const [index, view] of [[1,'overview'],[2,'timeline'],[3,'trends'],[4,'balance']]) {
       await tab(index); await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && ['overview', 'trends'].includes(view)) {
@@ -148,9 +156,10 @@ try {
   await evaluate('window.__fixture.statsMode = "partial"'); await refresh();
   await until('document.querySelector(".dss-data-status.partial")');
   await until('document.querySelector(".dss-cards")?.textContent.includes("*")');
-  await click('.dss-data-diagnostics summary'); await layout('partial'); await capture('narrow-partial');
+  await evaluate(`document.querySelector('.dss-cards [role=button][aria-label*="unpriced"]').click()`);
+  await until('document.querySelector(".dss-cards [aria-expanded=true]")'); await layout('partial'); await capture('narrow-partial');
   await evaluate('window.__fixture.statsMode = "unsupported"'); await refresh();
-  await until('document.querySelector(".dss-data-cost")?.textContent === window.__fixture.t("pricing.unsupported")');
+  await until('document.querySelector(".dss-cards")?.textContent.includes(window.__fixture.t("pricing.pending"))');
   await layout('unsupported'); await capture('narrow-unsupported');
   await evaluate('window.__fixture.statsMode = "error"'); await refresh();
   await until('document.querySelector(".dss-data-status.stale")');
@@ -161,6 +170,28 @@ try {
   assert(await evaluate('document.querySelector(".dss-data-status").textContent.includes(window.__fixture.t("source.local"))'));
   await layout('fallback'); await capture('narrow-fallback');
   report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data and local fallback');
+  await command('Page.navigate', { url: url + '/?stats=partial&lang=en' });
+  await until('window.__fixture?.ready'); await click('.dss-trigger'); await tab(1);
+  const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
+  await priceButton('price.title');
+  await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
+  await priceButton('price.configure');
+  for (const [field, value] of [['uncached','1'],['output','2'],['cacheRead','0']]) {
+    await evaluate(`(() => { const input = document.querySelector('[aria-label="' + window.__fixture.t('price.${field}') + '"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  }
+  await priceButton('price.add'); await priceButton('price.preview');
+  await until('document.querySelector(".dss-price-preview")');
+  assert(await evaluate('!document.querySelector(".dss-price-preview").textContent.includes("Affected sessions 0")'));
+  await layout('pricing-preview'); await capture('narrow-pricing-preview');
+  await priceButton('price.save');
+  await until('!document.querySelector(".dss-price-preview")');
+  assert(await evaluate('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "save")'));
+  await priceButton('price.edit');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Uncached input"]').value`), '1');
+  await priceButton('price.refresh');
+  await until('document.querySelector(".dss-pricing").textContent.includes(window.__fixture.t("price.refreshFailed"))');
+  await layout('pricing-failure'); await capture('narrow-pricing-failure');
+  report.checks.push('price settings: missing models, custom price preview/save/edit and offline refresh retains prices');
   await command('Page.navigate', { url: url + '/?theme=dark&lang=en' });
   await until('window.__fixture?.ready'); await click('.dss-trigger'); await tab(4);
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();

@@ -1,0 +1,60 @@
+name: Update prices
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      sign_reviewed_catalog:
+        description: 'Sign reviewed catalog.json changes (increment version first)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: price-catalog
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Collect verified data or sign reviewed rules
+        env:
+          PRICING_SIGNING_KEY: ${{ secrets.PRICING_SIGNING_KEY }}
+          SIGN_REVIEWED: ${{ inputs.sign_reviewed_catalog }}
+        run: |
+          if [ "$SIGN_REVIEWED" = "true" ]; then
+            node scripts/sign-pricing.mjs
+          else
+            node scripts/collect-pricing.mjs --publish
+          fi
+      - name: Validate engine and data
+        run: |
+          npm test -- --run tests/pricing.test.js tests/pricing-store.test.js tests/pricing-collector.test.js
+          npm run build
+      - name: Publish price data
+        run: |
+          if ! git diff --quiet -- data/pricing; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add data/pricing lib
+            git commit -m 'chore(pricing): update verified price catalog'
+            git push origin HEAD:main
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: price-review-report
+          path: artifacts/pricing/report.json
+          if-no-files-found: ignore

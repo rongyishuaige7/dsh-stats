@@ -2,7 +2,8 @@ let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let pricing = require("./pricing.cjs");
 let routeData = require("./route-data.cjs");
-let { parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, forceSchema } = require("./rpc-client.js");
+let { PricingPanel } = require("./pricing-panel.cjs");
+let { parsePricingResult, pricingRequestSchema, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, forceSchema } = require("./rpc-client.js");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -1458,7 +1459,7 @@ function projectCsvTable(projects, t) {
 		var projectFields = [
 			project.name, project.path, project.sessionCount, fmtSessionCounts(sessionCounts(project.sessions)),
 			stats.turns, stats.steps, Math.round(stats.llmMs || 0), Math.round(stats.toolMs || 0),
-			stats.inputTokens, stats.outputTokens, stats.cacheHitPct == null ? "" : stats.cacheHitPct, fmtCostSummary(summary)
+			stats.inputTokens, stats.outputTokens, stats.cacheHitPct == null ? "" : stats.cacheHitPct, fmtCostSummary(summary, t)
 		];
 		if (!project.sessions || !project.sessions.length) {
 			rows.push(projectFields.concat(new Array(19).fill(""), summary.status, "", "", summary.unpricedTokens || 0, "", "", ""));
@@ -1609,6 +1610,7 @@ function StatsPanel(props) {
 	var onOpenSession = props.onOpenSession;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
+	var [showPrices, setShowPrices] = useState(false);
 	var balanceRemote = props.balance;
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
@@ -1744,6 +1746,7 @@ function StatsPanel(props) {
 					e("button", { className: tab === "balance" ? "on" : "", onClick: () => setTab("balance") }, t("tab.balance"))
 				),
 				e("div", { className: "dss-head-actions" },
+					e("button", { className: "dss-export", onClick: () => setShowPrices(!showPrices), "aria-expanded": showPrices }, t("price.title")),
 					e("button", { className: "dss-export", onClick: refreshCurrent, disabled: isRefreshing }, t("refresh")),
 					tab !== "balance" ? e(Fragment, null,
 						e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
@@ -1755,6 +1758,7 @@ function StatsPanel(props) {
 				)
 			),
 			e("div", { className: "dss-body" },
+				showPrices ? e(PricingPanel, { remote: props.pricing, projects: data.projects, t, onChanged: () => setRefreshTick(x => x + 1) }) : null,
 				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
 					e(StatsDataStatus, { state: sourceState, remote: data.remote, projects: visibleProjects, t }),
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
@@ -2439,6 +2443,7 @@ function buildGlobals(projects) {
 const inject = ["slots", "locale", "remote", "sessions"];
 const NS = "stats";
 const zh = {
+	...require("./pricing-locale.cjs").zh,
 	"trigger": "用量",
 	"title": "DSH 用量",
 	"tab.overview": "项目总览",
@@ -2450,7 +2455,7 @@ const zh = {
 	"empty": "暂无数据",
 	"refresh": "刷新",
 	"source.updated": "更新时间",
-	"source.host": "宿主统计", "source.local": "本地摘要", "source.exact": "已同步", "source.partial": "数据不完整", "source.stale": "刷新失败，显示上次快照", "source.fallback": "回退数据，可能不完整", "source.loading": "正在读取", "source.refreshing": "正在刷新", "source.details": "数据诊断",
+	"source.host": "宿主统计", "source.local": "本地摘要 · 内置价格", "source.exact": "已同步", "source.partial": "数据不完整", "source.stale": "刷新失败，显示上次快照", "source.fallback": "回退数据，可能不完整", "source.loading": "正在读取", "source.refreshing": "正在刷新", "source.details": "数据诊断",
 	"pricing.pending": "待计价", "pricing.estimated": "费用含估算", "pricing.partial": "部分用量未计价", "pricing.unsupported": "暂无可用价格", "pricing.unpriced": "未计价 Token", "balance.lastSuccess": "上次成功",
 	"nav.day": "按日", "nav.days7": "7日", "nav.days30": "30日", "nav.days90": "90日", "nav.all": "全部", "nav.previous": "前一天", "nav.next": "后一天",
 	"sort.label": "排序", "sort.toggle": "切换升降序", "sort.asc": "升序", "sort.desc": "降序",
@@ -2527,6 +2532,7 @@ const zh = {
 	"trends.weekdays": "日,一,二,三,四,五,六"
 };
 const en = {
+	...require("./pricing-locale.cjs").en,
 	"trigger": "Usage",
 	"title": "DSH Usage",
 	"tab.overview": "Overview",
@@ -2538,7 +2544,7 @@ const en = {
 	"empty": "No data",
 	"refresh": "Refresh",
 	"source.updated": "Updated",
-	"source.host": "Host statistics", "source.local": "Local summaries", "source.exact": "Synced", "source.partial": "Incomplete data", "source.stale": "Refresh failed; last snapshot", "source.fallback": "Fallback data; may be incomplete", "source.loading": "Loading", "source.refreshing": "Refreshing", "source.details": "Data diagnostics",
+	"source.host": "Host statistics", "source.local": "Local summaries · bundled prices", "source.exact": "Synced", "source.partial": "Incomplete data", "source.stale": "Refresh failed; last snapshot", "source.fallback": "Fallback data; may be incomplete", "source.loading": "Loading", "source.refreshing": "Refreshing", "source.details": "Data diagnostics",
 	"pricing.pending": "Awaiting price", "pricing.estimated": "Includes estimates", "pricing.partial": "Some usage is unpriced", "pricing.unsupported": "No available prices", "pricing.unpriced": "Unpriced tokens", "balance.lastSuccess": "Last success",
 	"nav.day": "Day", "nav.days7": "7D", "nav.days30": "30D", "nav.days90": "90D", "nav.all": "All", "nav.previous": "Previous day", "nav.next": "Next day",
 	"sort.label": "Sort", "sort.toggle": "Toggle sort direction", "sort.asc": "Ascending", "sort.desc": "Descending",
@@ -2700,6 +2706,12 @@ const STATS_REMOTE_CONTRIBUTION = {
 				}],
 				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/account:result", schema: { parse: parseAccountResult } },
 				sourceLocation: { file: "packages/stats/src/index.ts", line: 1, column: 1 }
+			}, {
+				id: "@rongyi7/dsh-stats#stats/pricing", service: "stats", namespace: "stats", method: "pricing", invocation: { kind: "direct" },
+				parameters: [{ name: "request", wire: "request", source: "json", codec: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/pricing:request", schema: pricingRequestSchema } }],
+				result: { mode: "strict", typeSymbol: "@rongyi7/dsh-stats#stats/pricing:result", schema: { parse: parsePricingResult } },
+				sourceLocation: { file: "src/index.js", line: 1, column: 1 }
+
 			}]
 };
 
@@ -2787,12 +2799,14 @@ async function apply(ctx) {
 		"body:not([data-ds-dark-theme]) .dss-balance-status.not-configured,body:not([data-ds-dark-theme]) .dss-balance-status.unauthorized,body:not([data-ds-dark-theme]) .dss-balance-status.invalid-response,body:not([data-ds-dark-theme]) .dss-balance-status.blocked{color:#b91c1c}" +
 		"@media (max-width:640px){.dss-balance-head{flex-direction:column}.dss-provider-picker{width:100%;justify-content:space-between}.dss-provider-picker select{min-width:0;max-width:72%;flex:1}.dss-balance-account{padding:15px}.dss-balance-total{font-size:30px}.dss-balance-breakdown{gap:8px}}\n\t";
 
+	const pricingCSS = ".dss-pricing{padding:16px;border:1px solid var(--dsw-alias-border-main,#8884);border-radius:10px;margin-bottom:16px}.dss-pricing h3{margin:0 0 12px}.dss-price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0}.dss-price-field{display:flex;flex-direction:column;gap:5px;font-size:12px}.dss-pricing input:not([type=checkbox]),.dss-pricing select{box-sizing:border-box;width:100%;min-width:0;padding:7px;border:1px solid #8885;border-radius:5px;background:transparent;color:inherit}.dss-price-actions,.dss-price-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}.dss-price-row>span{flex:1 1 160px;min-width:140px;overflow-wrap:anywhere}.dss-pricing details{margin:10px 0}.dss-pricing summary{cursor:pointer;font-size:13px}.dss-price-muted{opacity:.7;font-size:12px}.dss-pricing pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}.dss-price-rule{padding:8px;border-bottom:1px solid #8883}.dss-price-rates{display:flex;flex-wrap:wrap;gap:16px;font-size:12px}.dss-price-rates dt{opacity:.7}.dss-price-rates dd{margin:4px 0}.dss-price-preview{font-size:13px}.dss-pricing [role=alert]{color:#dc2626}.dss-pricing [role=status]{font-size:12px}";
+
 	var ownedStyle = null;
 	if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(CSS_ID) + "]") === null) {
 		var tag = document.createElement("style");
 		tag.dataset.plugin = "@rongyi7/dsh-stats";
 		tag.dataset.pluginCss = CSS_ID;
-		tag.textContent = css + _phaseDCSS;
+		tag.textContent = css + _phaseDCSS + pricingCSS;
 		document.head.appendChild(tag);
 		ownedStyle = tag;
 	}
@@ -2809,6 +2823,7 @@ async function apply(ctx) {
 
 	let aggregateRemote = null;
 	let balanceRemote = null;
+	let pricingRemote = null;
 	let remoteError = null;
 	let disposeRemote = () => {};
 	try {
@@ -2822,6 +2837,7 @@ async function apply(ctx) {
 				return parseAggregateResult(answered.value);
 			};
 			balanceRemote = (force) => readAccountRemote(childCtx.remote.stats, force);
+			pricingRemote = async (request) => { const result = await childCtx.remote.stats.pricing(request); if (!result.ok) throw result.error || new Error("Price settings unavailable"); return parsePricingResult(result.value); };
 		});
 	} catch (err) {
 		remoteError = err?.message || String(err);
@@ -2839,7 +2855,7 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), onOpenSession, aggregate: aggregateRemote, balance: balanceRemote, remoteError })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), onOpenSession, aggregate: aggregateRemote, balance: balanceRemote, pricing: pricingRemote, remoteError })
 	}, StatsPanel));
 
 	return () => {

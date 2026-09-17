@@ -135,14 +135,26 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 | --- | --- | --- |
 | [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`、`deepseek-v4-flash` | CNY；按北京时间 30 分钟槽区分历史价、峰时价和非峰时价。 |
 | [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`、`MiniMax-M2.7`、`MiniMax-M2.7-highspeed` | CNY；M3 区分 standard/priority 与 `<=512K`/`>512K` 上下文。 |
-| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.6-cyber`、`gpt-5.4`、`gpt-5.4-mini` | 原始价为 USD；按 2026-08-26 官方标准价，支持 `272K` 上下文分档；`gpt-5.4` 系列缓存写入价缺失时按输入价保守估算。 |
+| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-6-astra`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.6-cyber`、`gpt-5.4`、`gpt-5.4-mini` | 原始价为 USD；Astra 按 2026-09-17 核验价，支持 `272K` 上下文分档及 Batch/Flex/Priority；其他模型保留各自核验日期；`gpt-5.4` 系列缓存写入价缺失时按输入价保守估算。 |
 | [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5、Sonnet 5、Sonnet 4.6、Haiku 4.5 | USD；缓存写入时长不可得时明确标记为估算。 |
 | [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash、3.1 Pro Preview、2.5 Pro/Flash | USD；支持 `200K` 上下文分档，缓存存储时长缺失时标记为估算。 |
 | [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3、K2.7 Code/Highspeed、K2.6 | CNY；按官方模型规则计价。 |
 | [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2、5.1、5、5 Turbo、4.7、4.7 FlashX/Flash | USD；按官方模型规则计价。 |
 | [OpenRouter](https://openrouter.ai/api/v1/models) | 主流 OpenAI、Anthropic、Google、Kimi、GLM 路由快照 | USD；目录价格是带日期的快照，因此状态为 estimated。 |
 
-计价优先按 **Provider-scoped** 规则处理：明确识别为官方 Provider 的请求命中官方价并标记为 `exact`；DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价。对于未知或 API-compatible Provider，如果模型名唯一匹配一条官方模型规则，会保留原始 Provider 并标记为 `estimated`，再按上述汇率换算为人民币；这是按公开价推算，不代表中转服务的实际账单。`estimated` 状态继续写入 CSV/JSON 供审计，但界面不再显示约等于符号。显式 `relay`、`local`、订阅/Token Plan、未知模型或多条规则冲突时不会猜价，这些会话不进入主费用汇总，并在会话详情与 `meta.warnings` 中标注原因。
+计价优先按 **Provider-scoped** 规则处理：明确识别为官方 Provider 的请求命中官方价并标记为 `exact`；DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价。对于未知或 API-compatible Provider，如果模型名唯一匹配一条官方模型规则，会保留原始 Provider 并标记为 `estimated`，再按上述汇率换算为人民币；这是按公开价推算，不代表中转服务的实际账单。`estimated` 状态继续写入 CSV/JSON 供审计，但界面不再显示约等于符号。显式 `relay`、`local` 未配置自定义费率时，以及订阅/Token Plan、未知模型或多条规则冲突时不会猜价，这些会话不进入主费用汇总，并在会话详情与 `meta.warnings` 中标注原因。
+
+### 价格设置与自动更新
+
+主界面统一显示“预估费用”：有价格显示 `¥12.34`，部分用量缺价显示 `¥12.34*`，没有可用价格显示“待计价”。点击金额可查看说明。
+
+右上角“价格设置”可以查看用过的模型、价格来源、同步状态和待计价模型。新增或编辑自定义费率时，填写供应商 ID、模型 ID 和每百万 token 的单价，点击“加入草稿/更新草稿”→“预览变化”→“保存”。留空表示缺价，填 `0` 才表示免费；更多条件支持有效期、账户类型、上下文阈值和服务档倍率。未指定生效时间时，历史用量按该费率估算；指定时间后，规则只在对应时间范围内生效。供应商自定义价格优先于公共目录。订阅用量仍不折算成 API 费用。
+
+宿主启动及每小时检查经过签名的价格目录，遇到缺价模型会触发有冷却时间的检查；也可立即更新、关闭自动更新或恢复历史版本。更新失败时继续使用上次有效版本，错误只在价格设置里显示。恢复旧版本会暂停自动更新；重新勾选并保存即可恢复。自动更新只下载公共目录，不上传会话或凭证。
+
+维护端每 6 小时采集：OpenRouter 文本模型的简单结构化费率通过验证后自动发布；OpenAI 官方网页的新模型/变化及异常调价进入复核报告，审核后签名发布，无需重新安装插件。未确认的模型继续显示“待计价”。费率保留历史时间区间；USD 按用量日期选择目录中的汇率快照，缺少更早汇率时使用最早快照并保留估算依据。汇率快照由维护端复核更新，不随实时汇率浮动。
+
+本地目录位于 `$DSH_HOME/plugins/dsh-stats/pricing/`（默认 `~/.dsh/plugins/dsh-stats/pricing/`），包含有效价格、历史目录与自定义设置修订。原始 token 日志不会被改写。浏览器离线降级会标明“本地摘要 · 内置价格”。维护和签名说明见 [动态价格设计](docs/pricing-updates.md)。
 
 ### 消费状态怎么读
 
@@ -151,8 +163,8 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 | `exact` | 每一条有价用量都命中确定的内置规则。 |
 | `estimated` | 有金额，但至少一条记录来自动态价格快照、缺少会影响价格的元数据，或未知 API Provider 借用了唯一匹配的官方模型价；界面显示计算后的人民币金额，估算状态仅在数据与导出字段中保留。 |
 | `free` | 命中的用量全部免费；汇总会保留零金额，不会误显示为未知消费。 |
-| `partial` | 一部分用量可计价，另一部分无法安全计价；主汇总只显示已纳入的 CNY，详情保留不完整原因。 |
-| `unsupported` | 没有足够可靠的规则；该会话不计入主费用汇总，详情显示未计价原因。 |
+| `partial` | 一部分用量可计价，另一部分无法安全计价；主汇总显示已计价 CNY 并加 `*`，点击可查看说明。 |
+| `unsupported` | 没有足够可靠的规则；该会话不计入费用合计，界面显示“待计价”。 |
 
 单条用量还可能标记为 `subscription`（订阅/Token Plan）或 `ambiguous`（规则冲突）。`coding-plan`、`coding_plan` 等订阅别名会在计价前统一归一化，绝不会伪装成 API 消费。
 

@@ -14,7 +14,7 @@ function read(file) {
 function atomic(file, value) {
   const temp = file + '.' + randomUUID() + '.tmp';
   writeFileSync(temp, JSON.stringify(value) + '\n', { mode: 0o600, flag: 'wx' });
-  renameSync(temp, file);
+  try { renameSync(temp, file); } finally { try { unlinkSync(temp); } catch {} }
 }
 export function verifyEnvelope(envelope, publicKey = trust.publicKey) {
   if (!envelope || typeof envelope.payload !== 'string' || Buffer.byteLength(envelope.payload) > MAX_BYTES || typeof envelope.signature !== 'string'
@@ -31,7 +31,8 @@ export class PricingStore {
     try { this.settings = this.validateSettings(read(join(this.dir, 'settings.json'))); }
     catch (error) { if (error.code !== 'ENOENT') { this.error = 'pricing-settings-invalid'; this.settingsInvalid = true; } }
     try {
-      const cached = read(join(this.dir, 'current.json'));
+      const cached = this.settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
+        : { envelope: read(join(this.dir, 'catalog-' + this.settings.pinnedVersion + '.json')) };
       const catalog = verifyEnvelope(cached.envelope, publicKey);
       if (catalog.version >= this.catalog.version || this.settings.pinnedVersion === catalog.version) {
         this.catalog = catalog; this.envelope = cached.envelope;
@@ -49,8 +50,48 @@ export class PricingStore {
     this.engine = pricing.createPricing(this.catalog, this.settings.overrides);
     this.fingerprint = createHash('sha256').update(JSON.stringify([this.catalog, this.settings.overrides])).digest('hex');
   }
-  snapshot() { return this.engine; }
+  syncDisk() {
+    const stamp = name => { try { const st = statSync(join(this.dir, name)); return st.mtimeMs + ':' + st.size + ':' + st.ino; } catch { return ''; } };
+    const stampKey = stamp('settings.json') + '/' + stamp('current.json');
+    if (stampKey === this.diskStamp) return;
+    try {
+      let settings = this.settings;
+      try { settings = this.validateSettings(read(join(this.dir, 'settings.json'))); }
+      catch (error) { if (error.code !== 'ENOENT') { this.settingsInvalid = true; throw new Error('pricing-settings-invalid'); } }
+      let cached;
+      try { cached = settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
+        : { envelope: read(join(this.dir, 'catalog-' + settings.pinnedVersion + '.json')) }; }
+      catch (error) { if (error.code !== 'ENOENT' || settings.pinnedVersion !== null) throw new Error('pricing-cache-invalid'); }
+      const catalog = cached ? verifyEnvelope(cached.envelope, this.publicKey) : this.catalog;
+      this.settings = settings; this.settingsInvalid = false;
+      if (settings.pinnedVersion === catalog.version || settings.pinnedVersion === null && catalog.version >= pricing.BUILTIN.version) {
+        this.catalog = catalog; if (cached) this.envelope = cached.envelope;
+        if (Number.isFinite(cached?.lastSuccessAt)) this.lastSuccessAt = cached.lastSuccessAt;
+      }
+      this.rebuild(); this.diskStamp = stampKey;
+    } catch (error) { this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : 'pricing-cache-invalid'; }
+  }
+  withLock(fn) {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const lock = join(this.dir, 'settings.lock');
+    let fd;
+    try { fd = openSync(lock, 'wx', 0o600); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw new Error('pricing-settings-busy');
+      // Recover only locks whose owning process is known to have exited.
+      let dead = false;
+      try { const owner = read(lock); if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
+        try { process.kill(owner.pid, 0); } catch (err) { dead = err.code === 'ESRCH'; }
+      } } catch {}
+      if (!dead) throw new Error('pricing-settings-busy');
+      try { unlinkSync(lock); fd = openSync(lock, 'wx', 0o600); } catch { throw new Error('pricing-settings-busy'); }
+    }
+    try { writeFileSync(fd, JSON.stringify({ pid: process.pid })); this.syncDisk(); return fn(); }
+    finally { closeSync(fd); unlinkSync(lock); }
+  }
+  snapshot() { this.syncDisk(); return this.engine; }
   status() {
+    this.syncDisk();
     let history = [];
     try { history = readdirSync(this.dir).filter(name => /^catalog-\d+\.json$/.test(name)).map(name => Number(name.slice(8, -5))).sort((a, b) => b - a); } catch {}
     return { version: this.catalog.version, publishedAt: this.catalog.publishedAt, fingerprint: this.fingerprint,
@@ -60,14 +101,15 @@ export class PricingStore {
   }
   async refresh({ force = false, unknown = false } = {}) {
     if (this.inflight) return this.inflight;
+    this.syncDisk();
     const now = this.now();
     if (!force && (!this.settings.autoUpdate || this.settings.pinnedVersion !== null || this.settingsInvalid)) return this.status();
     if (!force && this.lastCheckAt !== null && now - this.lastCheckAt < (unknown ? 15 * 60000 : HOUR)) return this.status();
     this.lastCheckAt = now;
-    this.inflight = this.download().finally(() => { this.inflight = null; });
+    this.inflight = this.download({ force, revision: this.settings.revision }).finally(() => { this.inflight = null; });
     return this.inflight;
   }
-  async download() {
+  async download({ force, revision }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000); timer.unref?.();
     try {
@@ -81,49 +123,58 @@ export class PricingStore {
       const envelope = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const catalog = verifyEnvelope(envelope, this.publicKey);
       if (Date.parse(catalog.publishedAt) > this.now() + 5 * 60000) throw new Error('pricing-future-version');
-      const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
-      if (catalog.version < highest) throw new Error('pricing-version-regressed');
-      if (catalog.version === this.catalog.version && JSON.stringify(catalog) !== JSON.stringify(this.catalog)) throw new Error('pricing-version-conflict');
-      mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-      if (this.envelope) atomic(join(this.dir, 'catalog-' + this.catalog.version + '.json'), this.envelope);
-      atomic(join(this.dir, 'catalog-' + catalog.version + '.json'), envelope);
-      this.lastSuccessAt = this.now();
-      atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt: this.lastSuccessAt });
-      this.envelope = envelope; this.catalog = catalog; this.error = null; this.rebuild();
+      this.withLock(() => {
+        if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
+        const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
+        if (catalog.version < highest) throw new Error('pricing-version-regressed');
+        let previous;
+        try { previous = verifyEnvelope(read(join(this.dir, 'catalog-' + catalog.version + '.json')), this.publicKey); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if ((previous && JSON.stringify(catalog) !== JSON.stringify(previous))
+          || catalog.version === this.catalog.version && JSON.stringify(catalog) !== JSON.stringify(this.catalog)) throw new Error('pricing-version-conflict');
+        if (this.envelope) atomic(join(this.dir, 'catalog-' + this.catalog.version + '.json'), this.envelope);
+        atomic(join(this.dir, 'catalog-' + catalog.version + '.json'), envelope);
+        // A restore always wins over a download that was already in flight.
+        if (this.settings.pinnedVersion !== null || !force && (!this.settings.autoUpdate || revision !== this.settings.revision)) return;
+        const lastSuccessAt = this.now();
+        atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt });
+        this.lastSuccessAt = lastSuccessAt;
+        this.envelope = envelope; this.catalog = catalog; this.error = null; this.rebuild();
+      });
     } catch (error) {
       this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : controller.signal.aborted ? 'pricing-timeout' : 'pricing-update-failed';
     } finally { clearTimeout(timer); }
     return this.status();
   }
   preview(overrides) { return pricing.createPricing(this.catalog, pricing.validateOverrides(overrides)); }
-  save({ revision, autoUpdate, overrides }) {
-    if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    const lock = join(this.dir, 'settings.lock');
-    let fd;
-    try { fd = openSync(lock, 'wx', 0o600); } catch { throw new Error('pricing-settings-busy'); }
-    try {
-    // Re-read the disk revision to catch a second browser or host process.
-    let disk = this.settings;
-    try { disk = this.validateSettings(read(join(this.dir, 'settings.json'))); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (revision !== disk.revision || revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
-    const settings = this.validateSettings({ revision: revision + 1, autoUpdate, pinnedVersion: autoUpdate ? null : this.settings.pinnedVersion, overrides });
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    atomic(join(this.dir, 'settings.json'), settings); this.settings = settings; this.rebuild();
-    return this.status();
-    } finally { closeSync(fd); unlinkSync(lock); }
+  persistSettings(settings) {
+    atomic(join(this.dir, 'settings-' + this.settings.revision + '.json'), this.settings);
+    atomic(join(this.dir, 'settings-' + settings.revision + '.json'), settings);
+    atomic(join(this.dir, 'settings.json'), settings);
+    this.settings = settings;
+  }
+  save({ revision, autoUpdate, overrides, fingerprint }) {
+    return this.withLock(() => {
+      if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
+      if (fingerprint !== undefined && fingerprint !== this.fingerprint) throw new Error('pricing-settings-conflict');
+      if (revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
+      const settings = this.validateSettings({ revision: revision + 1, autoUpdate, pinnedVersion: autoUpdate ? null : this.settings.pinnedVersion, overrides });
+      this.persistSettings(settings); this.rebuild();
+      return this.status();
+    });
   }
   rollback(version, revision) {
-    if (revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
-    if (!Number.isSafeInteger(version) || version <= 0) throw new Error('pricing-version-invalid');
-    const envelope = read(join(this.dir, 'catalog-' + version + '.json'));
-    const catalog = verifyEnvelope(envelope, this.publicKey);
-    if (catalog.version !== version) throw new Error('pricing-version-invalid');
-    this.save({ revision, autoUpdate: false, overrides: this.settings.overrides });
-    this.settings = { ...this.settings, pinnedVersion: version };
-    atomic(join(this.dir, 'settings.json'), this.settings);
-    atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt: this.lastSuccessAt });
-    this.envelope = envelope; this.catalog = catalog; this.rebuild(); return this.status();
+    return this.withLock(() => {
+      if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
+      if (revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
+      if (!Number.isSafeInteger(version) || version <= 0) throw new Error('pricing-version-invalid');
+      const envelope = read(join(this.dir, 'catalog-' + version + '.json'));
+      const catalog = verifyEnvelope(envelope, this.publicKey);
+      if (catalog.version !== version) throw new Error('pricing-version-invalid');
+      // The settings file is the single commit point; startup follows its pin.
+      this.persistSettings({ ...this.settings, revision: revision + 1, autoUpdate: false, pinnedVersion: version });
+      this.envelope = envelope; this.catalog = catalog; this.rebuild(); return this.status();
+    });
   }
 }
 export function pricingStore(owner, home) {

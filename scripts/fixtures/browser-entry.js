@@ -22,6 +22,10 @@ window.__ModuleLoader__ = { async load({ factory }) {
   let dictionaries;
   const slots = [];
   const stats = {
+    pricing: async request => {
+      fixture.calls.push(['pricing', request.action]);
+      return (await fetch('/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) })).json();
+    },
     aggregate: async () => {
       fixture.calls.push(['aggregate']);
       if (fixture.statsMode === 'error') return { ok: false, error: { code: 'gateway/internal', message: 'Fixture statistics refresh failed' } };

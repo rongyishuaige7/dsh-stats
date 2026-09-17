@@ -73,7 +73,8 @@ function ruleMatchesModel(rule, raw) {
 	var model = String(raw || "").trim().toLowerCase();
 	if (rule.aliases.indexOf(model) >= 0) return true;
 	// Anthropic dated model ids are stable aliases of the named family.
-	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-20")) return true;
+	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
+		&& /^20[0-9]{6}$/.test(model.slice(rule.canonical.length + 1))) return true;
 	return false;
 }
 

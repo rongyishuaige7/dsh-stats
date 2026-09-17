@@ -1361,6 +1361,7 @@ let StatsService = (() => {
 			__runInitializers(this, _instanceExtraInitializers);
 			if (typeof ctx?.effect === "function") ctx.effect(() => {
 				const store = pricingStore(this, dshHome());
+				this._pricingAuto = true;
 				void store.refresh();
 				const timer = setInterval(() => { void store.refresh(); }, 3600000); timer.unref?.();
 				return () => clearInterval(timer);
@@ -1856,7 +1857,7 @@ let StatsService = (() => {
 			});
 			projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 			const cost = mergeCostSummariesCny(projects.map((project) => project.cost));
-			if (!overridePricing && cost.unpricedTokens > 0 && this.ctx) void priceStore.refresh({ unknown: true });
+			if (!overridePricing && cost.unpricedTokens > 0 && this._pricingAuto) void priceStore.refresh({ unknown: true });
 
 			const projectIndex = new Map();
 			projects.forEach((p, i) => projectIndex.set(p.id, i));
@@ -1906,9 +1907,11 @@ let StatsService = (() => {
 			if (request.action === "rollback") return store.rollback(request.version, request.revision);
 			if (request.action === "preview" || request.action === "save") {
 				const overrides = JSON.parse(request.overridesJson);
-				if (request.action === "save") return store.save({ revision: request.revision, autoUpdate: request.autoUpdate, overrides });
-				const before = await this.aggregate();
-				const after = await this.aggregate(store.preview(overrides));
+				if (request.action === "save") return store.save({ revision: request.revision, autoUpdate: request.autoUpdate, overrides, fingerprint: request.fingerprint });
+				const engine = store.snapshot(), fingerprint = store.fingerprint;
+				const before = await this.aggregate(engine);
+				const after = await this.aggregate(pricing.createPricing(engine.catalog, overrides));
+				if (store.status().fingerprint !== fingerprint) throw new Error("pricing-settings-conflict");
 				const changed = [];
 				const old = new Map(before.projects.flatMap(p => p.sessions).map(s => [s.id, s]));
 				for (const session of after.projects.flatMap(p => p.sessions)) {

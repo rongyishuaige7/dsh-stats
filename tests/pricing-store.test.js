@@ -83,3 +83,44 @@ test('catalog rejects unsupported structures and invalid rates even if signed', 
   }
   expect(() => verifyEnvelope(envelope({ ...base, schemaVersion: 999 }), publicKey)).toThrow();
 });
+
+test('rollback remains pinned during in-flight refresh and across restarts; resume loads newest valid cache', async () => {
+  let value = { ...base, version: base.version + 1 };
+  const store = fixture(async () => new Response(JSON.stringify(envelope(value))));
+  await store.refresh();
+  value = { ...base, version: base.version + 2 };
+  await store.refresh({ force: true });
+  const restore = base.version + 1;
+  let release;
+  store.fetch = () => new Promise(resolve => { release = resolve; });
+  const pending = store.refresh({ force: true });
+  store.rollback(restore, 0);
+  release(new Response(JSON.stringify(envelope({ ...base, version: base.version + 3 }))));
+  await pending;
+  expect(store.catalog.version).toBe(restore);
+  const reopened = new PricingStore(homes[0], { publicKey });
+  expect(reopened.catalog.version).toBe(restore);
+  expect(reopened.settings.autoUpdate).toBe(false);
+  store.save({ revision: 1, autoUpdate: true, overrides: [] });
+  expect(store.catalog.version).toBe(base.version + 2);
+  expect(store.settings.pinnedVersion).toBeNull();
+});
+
+test('another process settings are reloaded and stale writes are rejected', () => {
+  const first = fixture(vi.fn());
+  const second = new PricingStore(homes[0], { publicKey });
+  first.save({ revision: 0, autoUpdate: false, overrides: [custom()] });
+  expect(() => second.save({ revision: 0, autoUpdate: true, overrides: [] })).toThrow('pricing-settings-conflict');
+  expect(second.snapshot().priceUsage(usage()).amount).toBeCloseTo(0.0012);
+});
+
+test('preview fingerprints detect intervening price updates and custom revisions are archived', async () => {
+  const store = fixture(async () => new Response(JSON.stringify(envelope({ ...base, version: base.version + 1 }))));
+  const fingerprint = store.fingerprint;
+  await store.refresh();
+  expect(() => store.save({ revision: 0, autoUpdate: true, overrides: [custom()], fingerprint })).toThrow('pricing-settings-conflict');
+  store.save({ revision: 0, autoUpdate: true, overrides: [custom()] });
+  const { readFileSync } = await import('node:fs');
+  expect(JSON.parse(readFileSync(join(store.dir, 'settings-1.json'), 'utf8')).overrides[0].id).toBe('custom-astra');
+  expect(() => pricing.validateOverrides([custom(), custom({ id: 'relay', accountType: 'relay' })])).toThrow('overlapping');
+});

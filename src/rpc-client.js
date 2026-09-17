@@ -3,5 +3,5 @@ import { object, number, string, array, boolean, literal, enum as enumeration } 
 import createRpcSchemas from './rpc-schemas.cjs';
 
 export const {
-  parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, forceSchema,
+  parsePricingResult, pricingRequestSchema, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, forceSchema,
 } = createRpcSchemas({ object, number, string, array, boolean, literal, enum: enumeration });

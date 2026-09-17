@@ -5,7 +5,7 @@ const RULE_KEYS = new Set(['id', 'family', 'canonical', 'aliases', 'currency', '
 function check(ok, label) { if (!ok) throw new TypeError('Invalid pricing: ' + label); }
 function record(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function text(value, limit = 250) { return typeof value === 'string' && value.length > 0 && value.length <= limit && !/[\x00-\x1f]/.test(value); }
-function timestamp(value) { return typeof value === 'string' && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value)); }
+function timestamp(value) { return typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value)); }
 function source(value) { try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash; } catch { return false; } }
 function rates(value) {
   check(record(value) && Object.keys(value).length === 4, 'rates');
@@ -42,11 +42,11 @@ function rules(values, custom) {
   for (const value of values) {
     rule(value, custom); check(!ids.has(value.id), 'duplicate rule ID'); ids.add(value.id);
     for (const alias of value.aliases) {
-      const key = JSON.stringify([value.providerId || 'family:' + value.family, value.accountType || 'api', alias]);
+      const key = JSON.stringify([value.providerId || 'family:' + value.family, alias]);
       const spans = aliases.get(key) || [];
       const from = value.effectiveFrom ? Date.parse(value.effectiveFrom) : -Infinity, to = value.effectiveTo ? Date.parse(value.effectiveTo) : Infinity;
-      check(!spans.some(([a, b]) => from < b && a < to), 'overlapping rules: ' + alias);
-      spans.push([from, to]); aliases.set(key, spans);
+      check(!spans.some(([a, b, account]) => from < b && a < to && (!account || !value.accountType || account === value.accountType)), 'overlapping rules: ' + alias);
+      spans.push([from, to, value.accountType]); aliases.set(key, spans);
     }
   }
 }
@@ -61,7 +61,7 @@ function validateCatalog(input) {
   for (const fx of input.fx) {
     check(record(fx) && Object.keys(fx).every(k => ['date', 'usdCny', 'sourceUrl'].includes(k)), 'FX fields');
     check(/^\d{4}-\d\d-\d\d$/.test(fx.date) && Number.isFinite(Date.parse(fx.date)) && fx.date > previous, 'FX date order');
-    check(Number.isFinite(fx.usdCny) && fx.usdCny > 0 && fx.usdCny <= 100 && typeof fx.sourceUrl === 'string' && fx.sourceUrl.startsWith('https://'), 'FX rate'); previous = fx.date;
+    check(Number.isFinite(fx.usdCny) && fx.usdCny > 0 && fx.usdCny <= 100 && typeof fx.sourceUrl === 'string' && (() => { try { const url = new URL(fx.sourceUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.hash; } catch { return false; } })(), 'FX rate'); previous = fx.date;
   }
   const result = freeze(JSON.parse(JSON.stringify(input))); validated.add(result); return result;
 }

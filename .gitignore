@@ -6,3 +6,6 @@ yarn-error.log*
 promo-video/.venv/
 promo-video/build/frames/
 promo-video/pilot/frames/
+
+artifacts/pricing/
+browser-results/

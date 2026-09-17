@@ -1,0 +1,11 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createPrivateKey, sign, verify } from 'node:crypto';
+import pricing from '../src/pricing.cjs';
+import trust from '../src/pricing-trust.cjs';
+const payload = readFileSync('data/pricing/catalog.json', 'utf8');
+pricing.validateCatalog(JSON.parse(payload));
+if (!process.env.PRICING_SIGNING_KEY) throw new Error('PRICING_SIGNING_KEY is required');
+const signature = sign(null, Buffer.from(payload), createPrivateKey(process.env.PRICING_SIGNING_KEY)).toString('base64');
+if (!verify(null, Buffer.from(payload), trust.publicKey, Buffer.from(signature, 'base64'))) throw new Error('Signing key does not match pinned public key');
+writeFileSync('data/pricing/latest.json', JSON.stringify({ payload, signature }) + '\n');
+console.log('Validated and signed price catalog ' + pricing.BUILTIN.version);

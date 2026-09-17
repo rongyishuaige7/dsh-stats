@@ -133,7 +133,7 @@ All rates are calculated per million tokens. Provider rules may be denominated i
 | --- | --- | --- |
 | [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`, `deepseek-v4-flash` | CNY; Beijing-time 30-minute slots select historical, peak, or off-peak rates. |
 | [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` | CNY; M3 separates standard/priority and `<=512K`/`>512K` context. |
-| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber`, `gpt-5.4`, `gpt-5.4-mini` | Source rates are USD; uses the official standard rates retrieved on 2026-08-26, including the `272K` context tier; cache-write pricing for `gpt-5.4` models uses a conservative input-rate estimate when needed. |
+| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber`, `gpt-5.4`, `gpt-5.4-mini` | Source rates are USD; Astra was verified on 2026-09-17, with the `272K` threshold and Batch/Flex/Priority tiers; other models retain their own observation dates; cache-write pricing for `gpt-5.4` models uses a conservative input-rate estimate when needed. |
 | [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5, Sonnet 5, Sonnet 4.6, Haiku 4.5 | USD; cache-write duration gaps are explicitly estimated. |
 | [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash, 3.1 Pro Preview, 2.5 Pro/Flash | USD; includes the `200K` context tier; missing cache-storage duration is estimated. |
 | [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3, K2.7 Code/Highspeed, K2.6 | CNY; official model rules. |
@@ -153,6 +153,19 @@ Pricing is primarily **provider-scoped**. Explicitly recognized first-party prov
 | `unsupported` | No safe rule applies; the session is excluded from the primary spend total and the detail view explains why. |
 
 Individual usage rows may also be marked `subscription` or `ambiguous`. Subscription aliases such as `coding-plan` and `coding_plan` are normalized before pricing and are never presented as API spend.
+
+### Price settings and updates
+
+The dashboard uses “Estimated cost”: `¥12.34` for available prices, `¥12.34*` for partially priced usage, and “Awaiting price” when no usable rate exists. Click an amount for details. Sources and update errors stay in Price settings.
+
+In Price settings, enter the exact provider/model IDs and prices per million tokens, then Add to draft → Preview changes → Save. Existing rules can be edited or removed. Empty means unknown; `0` means free. Additional conditions cover account type, dates, context thresholds and service multipliers. Without a start date, earlier usage is estimated; with a start date, the rule applies only within its interval. Custom rules take precedence, including explicitly configured relay/local accounts. Subscription tokens never become API spend.
+
+The host checks signed catalogs at startup and hourly, with a cooled-down check for unpriced models. Manual refresh, disabling updates and restoring a version are available. A restore pauses updates until automatic updates are enabled and saved again. Failed updates retain valid prices and expose the error in settings. Only public pricing data is downloaded; no sessions or credentials are uploaded.
+
+A maintainer workflow runs every six hours. Validated simple OpenRouter text-model rates can publish automatically; new or changed OpenAI website prices and unusual changes require review before signing. Catalog updates need no plugin reinstall. Historical rule intervals are retained. USD conversions use dated, reviewed FX snapshots in the catalog, using the earliest snapshot when no earlier one exists; they do not follow live FX fluctuations.
+
+The cache and settings revisions live in `$DSH_HOME/plugins/dsh-stats/pricing/` (default `~/.dsh/plugins/dsh-stats/pricing/`). Original token logs are preserved. Browser fallback explicitly shows “Local summaries · bundled prices”. See [pricing design and maintenance](docs/pricing-updates.md).
+
 
 ## 👤 Balances and subscription quotas
 
