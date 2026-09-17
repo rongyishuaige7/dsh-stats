@@ -83,3 +83,32 @@ test('client fallback counts duplicate workspace membership only once', () => {
 	expect(projects.reduce((sum, project) => sum + project.sessionCount, 0)).toBe(1);
 	expect(projects.reduce((sum, project) => sum + project.stats.inputTokens, 0)).toBe(10);
 });
+
+test.each([false, true])('client fallback consistently excludes inherited tokens (empty own usage: %s)', (empty) => {
+	const { sessionDayTokens, projectCsvTable } = require('../src/client.cjs').__test;
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	const own = { providerId: 'deepseek', model: 'deepseek-v4-flash', accountType: 'api', serviceTier: 'standard', contextTokens: 10, count: 1, slot: Math.floor(now / 1800000), time: now, uncached: 10, output: 2 };
+	const child = { id: 'child', title: 'Fork', updatedAt: now, parentSession: 'parent', origin: 'subagent', cwd: '/fixture', projectionValues: {
+		tokenUsage: { uncachedInputTokens: 10009, outputTokens: 1002 },
+		statsRoute: { parentSession: 'parent', inheritedEventCount: 1, current: own, routes: empty ? [] : [own] },
+	} };
+	const projects = aggregate([child], [{ workspaceId: 'p', path: '/fixture', sessionIds: ['child'] }], key => key, []);
+	const session = projects[0].sessions[0];
+	expect(session.stats.inputTokens + session.stats.outputTokens).toBe(empty ? 0 : 12);
+	const daily = [...sessionDayTokens([session]).values()];
+	expect(daily.reduce((sum, row) => sum + (row.input || 0) + (row.output || 0), 0)).toBe(empty ? 0 : 12);
+	const [headers, ...rows] = projectCsvTable(projects, key => key);
+	expect(rows.reduce((sum, row) => sum + row[headers.indexOf('uncachedInput')] + row[headers.indexOf('tokenOutput')], 0)).toBe(empty ? 0 : 12);
+});
+
+test.each(['=1+1', '+SUM(A1:A2)', '-1+2', '@SUM(A1)', '  =1+1', '\t=1+1', '\r=1+1', '\n=1+1'])('CSV neutralizes formula text %j', (value) => {
+	const { csvField } = require('../src/client.cjs').__test;
+	expect(csvField(value).replace(/^"/, '')).toMatch(/^'/);
+});
+
+test('CSV preserves numeric negatives, quotes, commas and ordinary labels', () => {
+	const { csvField } = require('../src/client.cjs').__test;
+	expect(csvField(-2.5)).toBe('-2.5');
+	expect(csvField('a,"b"')).toBe('"a,""b"""');
+	expect(csvField('ordinary name')).toBe('ordinary name');
+});

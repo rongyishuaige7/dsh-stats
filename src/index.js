@@ -1608,15 +1608,19 @@ let StatsService = (() => {
 					reasoning: 0
 				};
 				const projectionTokens = projectionUsage.uncached + projectionUsage.output + projectionUsage.cacheRead + projectionUsage.cacheWrite;
-				const usedProjectionUsage = info.usages.length === 0 && projectionTokens > 0;
+				const effectiveParentSession = info.parentSession ?? firstString(entry?.identity?.parentSession, meta?.parentSession);
+				const inheritedUsage = effectiveParentSession !== null || info.inheritedEventCount > 0 || info.seedLength > 0;
+				// A complete log establishes an authoritative zero. Missing fork logs
+				// cannot establish ownership of the official seed-inclusive totals.
+				const usedProjectionUsage = info.usages.length === 0 && projectionTokens > 0 && !inheritedUsage &&
+					(info.missing || info.unavailable || info.partial || info.cacheOnly);
 				// 已归档且没有自身 usage 的 fork，其 projection token 只是父会话继承快照。
 				// 这通常是已删除/不可恢复的 fork，无法可靠归属，整条记录从统计中舍弃。
-					const effectiveParentSession = info.parentSession ?? firstString(entry?.identity?.parentSession, meta?.parentSession);
-					const cacheOnlyArchived = archived && info.missing && info.usages.length === 0 && usedProjectionUsage;
-					const cacheOnlyFork = archived && effectiveParentSession !== null && info.missing && info.cacheOnly;
-					if (cacheOnlyFork || (archived && effectiveParentSession !== null && info.usages.length === 0 && usedProjectionUsage) || cacheOnlyArchived) {
-						warnings.push({ code: "SESSION_ORPHAN_FORK_DISCARDED", sessionId, message: "archived fork had no own usage; inherited projection tokens were excluded from statistics" });
-						return null;
+				const cacheOnlyArchived = archived && info.missing && info.usages.length === 0 && usedProjectionUsage;
+				const cacheOnlyFork = archived && effectiveParentSession !== null && info.missing && info.cacheOnly;
+				if (cacheOnlyFork || (archived && effectiveParentSession !== null && info.usages.length === 0 && projectionTokens > 0) || cacheOnlyArchived) {
+					warnings.push({ code: "SESSION_ORPHAN_FORK_DISCARDED", sessionId, message: "archived fork had no own usage; inherited projection tokens were excluded from statistics" });
+					return null;
 				}
 				if (info.missing) warnings.push({ code: "SESSION_LOG_MISSING", sessionId, message: "session log was not found; projection cache was used where available" });
 				if (info.partial) warnings.push({ code: "SESSION_LOG_PARTIAL", sessionId, message: "session log was incomplete or malformed; only valid committed records were used" });

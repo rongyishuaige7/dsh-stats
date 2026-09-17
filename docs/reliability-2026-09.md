@@ -141,3 +141,10 @@ upstream contract probes exercise real published server modules separately.
 Follow-up stage 1 verified: 77 account/host tests pass, including zero-balance
 refresh, chunked/declared oversize cancellation, stalled-body timeout, split UTF-8
 and legacy endpoint coverage. All four published bundles build successfully.
+
+Follow-up stage 2 verified: all 204 tests pass. Live/query inherited-only forks
+remain zero despite official inherited token totals; client overview, trends and
+CSV use the same own-session route usage. Legacy empty metadata-only route maps
+retain non-fork token fallback. Missing request context produces estimated pricing
+and an empty CSV context field. CSV text formulas are escaped while numeric
+negative values remain numeric. All four bundles build successfully.

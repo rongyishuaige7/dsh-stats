@@ -1024,3 +1024,21 @@ test('legacy balance accepts an exhausted account and bounds streamed responses'
 	})).rejects.toMatchObject({ code: 'invalid-response' });
 	expect(cancelled).toBe(true);
 });
+
+test.each(['query', 'live'])('inherited-only fork ignores official token totals through %s', async (mode) => {
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	fixture({ child: projection(now) });
+	const header = { id: 'child', version: 2, createdAt: now, cwd: '/tmp/fixture', parentSession: 'parent', isSeeded: true, origin: 'subagent' };
+	const events = [
+		{ type: 'assistant/message', seq: 0, time: now, data: { turn: 0, step: 0, usage: { inputTokens: 9999, outputTokens: 1000 }, message: { source: { kind: 'model', provider: 'deepseek', model: 'deepseek-v4-flash' } } } },
+		{ type: 'session/end-seed', seq: 1, time: now + 1, data: { inherited: true } },
+	];
+	const ctx = { sessionProjectionCache: { coldSnapshot(meta, count, log) { return { values: { tokenUsage: { uncachedInputTokens: 9999, outputTokens: 1000 }, sessionListMetadata: { blank: false } } }; } } };
+	if (mode === 'query') ctx.sessionQuery = { readSession: async () => ({ session: header, inheritedEventCount: 1, events }) };
+	else ctx.sessions = { get: () => ({ header, inheritedEventCount: 1, snapshotEvents: () => events }) };
+	const result = await StatsService.prototype.aggregate.call({ ctx });
+	const session = result.projects[0].sessions[0];
+	expect(session).toMatchObject({ calls: 0, quality: 'exact', stats: { uncached: 0, output: 0 } });
+	expect(session.slotUsage).toEqual([]);
+	expect(result.meta.warnings.some(row => row.code === 'SESSION_USAGE_FALLBACK')).toBe(false);
+});

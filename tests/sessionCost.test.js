@@ -112,3 +112,13 @@ test('缺少 Provider 的常见模型使用唯一官方规则并转换为人民�
 	// 旧数值接口也应返回人民币金额，避免旧 UI 把它当成无价格。
 	expect(sessionCost(session)).toBeCloseTo(expectedCny, 10);
 });
+
+test('missing request context is estimated consistently in totals and CSV', () => {
+	const { projectCsvTable } = require('../src/client.cjs').__test;
+	const session = { id: 's', providerId: 'minimax', model: 'MiniMax-M3', updatedAt: DAY_START, stats: { uncached: 600000, output: 2000 } };
+	expect(sessionCostSummary(session).status).toBe('estimated');
+	const [headers, row] = projectCsvTable([{ name: 'fixture', sessions: [session], stats: {} }], key => key);
+	expect(row[headers.indexOf('costStatus')]).toBe('estimated');
+	expect(row[headers.indexOf('contextTokens')]).toBe('');
+	expect(row[headers.indexOf('exactAmount')]).toBe(0);
+});

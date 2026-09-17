@@ -132,22 +132,9 @@ function sessionCostSummary(s) {
 		}));
 	}
 	if (s.cost && Array.isArray(s.cost.totals)) return convertCostSummaryToCny(s.cost);
-	var st = s.stats || {};
-	var model = s.modelRaw || s.model || "(unknown)";
-	var usage = {
-		model,
-		slot: Math.floor((s.updatedAt || Date.now()) / SLOT_MS),
-		serviceTier: "standard",
-		contextTokens: (st.uncached || 0) + (st.cacheRead || 0) + (st.cacheWrite || 0),
-		uncached: st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0)),
-		output: st.output != null ? st.output : (st.outputTokens || 0),
-		cacheRead: st.cacheRead || 0,
-		cacheWrite: st.cacheWrite || 0,
-		reasoning: st.reasoning || 0
-	};
-	if (Object.prototype.hasOwnProperty.call(s, "providerId")) usage.providerId = s.providerId;
-	if (s.accountType) usage.accountType = s.accountType;
-	return summarizeCosts([usageCostDetail(usage, model, undefined, s.accountType)]);
+	return summarizeCosts(sessionExportUsages(s).map(function(usage) {
+		return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
+	}));
 }
 // 数值返回值仅保留给旧接口/测试；新 UI 与兼容路径都使用 CNY summary。
 function sessionCost(s) {
@@ -452,6 +439,20 @@ function rawOf(s) {
 	var b = projectionValueOf(s, "tokenUsage");
 	b = b ? (b.totals || b) : {};
 	var st = projectionValueOf(s, "sessionStats") || {};
+	var route = projectionValueOf(s, "statsRoute");
+	var hasOwnUsage = isRecord(route) && (route.routeTree !== undefined || Array.isArray(route.routes) || routeRowsOf(route).length > 0);
+	if (hasOwnUsage) {
+		var own = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 };
+		(s.slotUsage || projectionSlotUsageOf(s, projectionIdentityOf(s))).forEach(function(row) {
+			own.uncachedInputTokens += row.uncached || 0; own.outputTokens += row.output || 0;
+			own.cacheReadTokens += row.cacheRead || 0; own.cacheWriteTokens += row.cacheWrite || 0;
+			own.reasoningTokens += row.reasoning || 0;
+		});
+		b = own;
+	} else if (s.parentSession || route?.parentSession || s.isSeeded) {
+		// Official token totals may include the parent's entire seed history.
+		b = {};
+	}
 	return {
 		turns: st.turns || 0, steps: st.steps || 0,
 		llmMs: st.llmMs || 0, toolMs: st.toolMs || 0,
@@ -1395,6 +1396,7 @@ function exportJSON(projects) {
 function csvField(value) {
 	if (value == null) return "";
 	var text = String(value);
+	if (typeof value === "string" && (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text))) text = "'" + text;
 	return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 function sessionExportUsages(session) {
@@ -1404,7 +1406,8 @@ function sessionExportUsages(session) {
 		model: session?.modelRaw || session?.model || "(unknown)",
 		slot: Math.floor((session?.updatedAt || session?.createdAt || Date.now()) / SLOT_MS),
 		serviceTier: "standard",
-		contextTokens: (stats.uncached || 0) + (stats.cacheRead || 0) + (stats.cacheWrite || 0),
+		contextTokens: null,
+		pricingIncomplete: true,
 		uncached: stats.uncached != null ? stats.uncached : Math.max(0, (stats.inputTokens || 0) - (stats.cacheRead || 0) - (stats.cacheWrite || 0)),
 		cacheRead: stats.cacheRead || 0,
 		cacheWrite: stats.cacheWrite || 0,
@@ -1441,12 +1444,11 @@ function projectCsvTable(projects, t) {
 			sessionExportUsages(session).forEach(function (usage) {
 				var identity = identityForUsage(usage, session.modelRaw || session.model, session.providerId, session.accountType);
 				var cost = usageCostDetail(usage, session.modelRaw || session.model, session.providerId, session.accountType);
-				var input = (usage.uncached || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0);
 				rows.push(projectFields.concat([
 					session.id, session.title, session.updatedAt == null ? "" : new Date(session.updatedAt).toISOString(), session.quality || "",
 					Number.isFinite(usage.slot) ? new Date(usage.slot * SLOT_MS).toISOString() : "",
 					identity.providerId, identity.providerFamily, identity.modelRaw, usage.modelCanonical || cost.modelCanonical || identity.modelCanonical, identity.accountType,
-					usage.serviceTier || "standard", Number.isFinite(usage.contextTokens) ? usage.contextTokens : input,
+					usage.serviceTier || "standard", Number.isFinite(usage.contextTokens) ? usage.contextTokens : "",
 					usage.uncached || 0, usage.cacheRead || 0, usage.cacheWrite || 0, usage.output || 0, usage.reasoning || 0,
 					cost.currency, cost.amount, cost.status, cost.exactAmount, cost.estimatedAmount, cost.unpricedTokens,
 					cost.ruleId, cost.sourceUrl, cost.retrievedAt
@@ -2834,6 +2836,6 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
-	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable,
+	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex
 };
