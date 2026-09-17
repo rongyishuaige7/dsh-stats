@@ -84,6 +84,14 @@ function fixedRule(family, canonical, currency, rates, aliases, extra) {
 
 var RULES = [
 	{
+		...fixedRule("openai", "gpt-6-astra", "USD", null, ["openai/gpt-6-astra"], { retrievedAt: "2026-09-17", observedFrom: "2026-09-17T00:00:00Z" }),
+		contextTiers: {
+			short: { cacheRead: 1, uncached: 10, cacheWrite: 12.5, output: 50 },
+			long: { cacheRead: 2, uncached: 20, cacheWrite: 25, output: 75 }
+		}, contextThreshold: OPENAI_LONG_CONTEXT,
+		tierMultipliers: { standard: 1, priority: 2, batch: 0.5, flex: 0.5 }
+	},
+	{
 		...fixedRule("deepseek", "deepseek-v4-pro", "CNY", null),
 		legacy: { cacheRead: 0.025, uncached: 3, cacheWrite: 3, output: 6 },
 		offPeak: { cacheRead: 0.15, uncached: 4.5, cacheWrite: 4.5, output: 13.5 },
@@ -356,6 +364,12 @@ function deepSeekPeak(slot) {
 	return minutes >= 9 * 60 && minutes < 12 * 60 || minutes >= 14 * 60 && minutes < 18 * 60;
 }
 
+function normalizeServiceTier(value) {
+	if (value === "fast") return "priority";
+	if (value == null || value === "auto" || value === "default") return "standard";
+	return ["standard", "priority", "batch", "flex"].includes(value) ? value : "unknown";
+}
+
 function ratesFor(rule, usage, at) {
 	var contextTokens = Number.isFinite(usage && usage.contextTokens)
 		? usage.contextTokens
@@ -368,8 +382,8 @@ function ratesFor(rule, usage, at) {
 		return deepSeekPeak(Number.isFinite(usage && usage.slot) ? usage.slot : Math.floor(time / (30 * 60 * 1000))) ? rule.peak : rule.offPeak;
 	}
 	if (rule.serviceTiers) {
-		var service = usage && usage.serviceTier === "priority" ? "priority" : "standard";
-		return rule.serviceTiers[service][contextTokens > 512000 ? "long" : "short"];
+		var service = normalizeServiceTier(usage?.serviceTier);
+		return rule.serviceTiers[service]?.[contextTokens > 512000 ? "long" : "short"] || null;
 	}
 	if (rule.contextTiers) return rule.contextTiers[contextTokens > rule.contextThreshold ? "long" : "short"];
 	return rule.rates;
@@ -421,10 +435,18 @@ function priceUsage(usage, identityInput) {
 	if (matches.length === 0) return emptyCost("unsupported", identity, tokens);
 	var rule = matches[0];
 	var rates = ratesFor(rule, usage, at);
+	var tier = normalizeServiceTier(usage?.serviceTier);
+	if (tier === "unknown") return emptyCost("unsupported", identity, tokens);
+	if (rule.tierMultipliers) {
+		var multiplier = rule.tierMultipliers[tier];
+		if (!Number.isFinite(multiplier)) return emptyCost("unsupported", identity, tokens);
+		if (rates) rates = Object.fromEntries(Object.entries(rates).map(([key, rate]) => [key, rate * multiplier]));
+	}
 	if (!rates) return emptyCost("unsupported", identity, tokens);
 	var amount = (tokens.uncached * rates.uncached + tokens.cacheRead * rates.cacheRead + tokens.cacheWrite * rates.cacheWrite + tokens.output * rates.output) / MILLION;
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
 	var uncertain = usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
+		|| rule.observedFrom && at < Date.parse(rule.observedFrom)
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
 		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
 		|| rule.cacheWritePriceUnknown && tokens.cacheWrite > 0;
@@ -532,6 +554,7 @@ module.exports = {
 	FX_SOURCE: FX_SOURCE,
 	providerFamilyOf: providerFamilyOf,
 	normalizeAccountType: normalizeAccountType,
+	normalizeServiceTier: normalizeServiceTier,
 	normalizeIdentity: normalizeIdentity,
 	priceUsage: priceUsage,
 	summarizeCosts: summarizeCosts,

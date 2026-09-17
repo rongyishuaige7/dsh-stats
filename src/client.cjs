@@ -102,14 +102,22 @@ function fmtCurrencyAmount(value, currency) {
 	var amount = value <= 0 ? "0" : value >= 1000 ? value.toFixed(0) : value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
 	return "¥" + amount;
 }
-function fmtCostSummary(summary) {
+function fmtCostSummary(summary, t) {
 	if (!summary || !Array.isArray(summary.totals)) return "—";
 	var display = convertCostSummaryToCny(summary);
 	if (!display || !Array.isArray(display.totals)) return "—";
-	if (display.totals.length === 0) return display.status === "free" ? "¥0" : "—";
+	if (display.totals.length === 0) return display.status === "free" ? "¥0" : t ? t("pricing.pending") : "待计价";
 	// 主汇总只展示已纳入统计的 CNY 金额。未计价会话及其原因通过
 	// meta.warnings/详情呈现，避免在金额旁混入“？”造成误导。
-	return display.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ");
+	return display.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ") + (display.status === "partial" ? "*" : "");
+}
+function CostValue({ summary, t }) {
+	var [expanded, setExpanded] = useState(false);
+	var hint = summary?.status === "partial" ? t("pricing.partial") : summary?.status === "unsupported" ? t("pricing.pending") : t("hint.cost");
+	return e("span", null, e("span", { role: "button", tabIndex: 0, title: hint, "aria-label": fmtCostSummary(summary, t) + ": " + hint, "aria-expanded": expanded,
+		onClick: function(ev) { ev.stopPropagation(); setExpanded(!expanded); },
+		onKeyDown: function(ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); setExpanded(!expanded); } }
+	}, fmtCostSummary(summary, t)), expanded ? e("small", { style: { display: "block", fontSize: "12px", fontWeight: "normal" } }, hint) : null);
 }
 function fmtBalanceAmount(value, currency) {
 	if (value == null || !Number.isFinite(value)) return "—";
@@ -406,7 +414,7 @@ function projectionSlotUsageOf(s, identity) {
 			modelRaw: normalized.modelRaw,
 			modelCanonical: normalized.modelCanonical,
 			accountType: normalized.accountType,
-			serviceTier: row.serviceTier === "priority" ? "priority" : "standard",
+			serviceTier: pricing.normalizeServiceTier(row.serviceTier),
 			contextTokens,
 			contextOver512k: contextTokens > 512000,
 			pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
@@ -965,7 +973,7 @@ function SummaryCards(props) {
 		[t("card.input"), fmtTokens(tot.input)],
 		[t("card.output"), fmtTokens(tot.output)],
 		[t("card.cacheHit"), tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
-		[t("card.cost"), fmtCostSummary(cost)]
+		[t("card.cost"), e(CostValue, { summary: cost, t })]
 	];
 	return e("div", { className: "dss-cards" },
 		cards.map((c, i) => e("div", { className: "dss-card", key: i },
@@ -1102,9 +1110,8 @@ function ProjectsTable(props) {
 					var modelName = modelNameOnly(sd);
 					var sessionTitle = sd.title || t("w.untitled");
 					var costDetail = sessionCostSummary(sd);
-					var sessionCost = fmtCostSummary(costDetail);
-					var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null, sd.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : sd.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null,
-						costDetail.status === "unsupported" ? e("span", { className: "dss-tag", key: "cost-excluded", title: t("w.costExcludedHint") }, t("w.costExcludedTag")) : costDetail.status === "partial" ? e("span", { className: "dss-tag", key: "cost-partial", title: t("w.costPartialHint") }, t("w.costPartialTag")) : costDetail.status === "estimated" ? e("span", { className: "dss-tag", key: "estimated", title: t("w.estimatedHint") }, t("w.estimatedTag")) : null];
+					var sessionCost = e(CostValue, { summary: costDetail, t });
+					var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null, sd.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : sd.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null,];
 				return e("div", { className: "dss-sess", key: sd.id },
 					onOpenSession ? e("button", {
 						type: "button",
@@ -1162,7 +1169,7 @@ function ProjectsTable(props) {
 					pm(fmtPct(s.cacheHitPct), t("th.cacheHit")),
 					pm(fmtTokens(s.inputTokens), t("th.input")),
 					pm(fmtTokens(s.outputTokens), t("th.output")),
-					pm(fmtCostSummary(projectCostSummary(p)), t("th.cost"), "cost"),
+					pm(e(CostValue, { summary: projectCostSummary(p), t }), t("th.cost"), "cost"),
 					dayMode ? null : pm(fmtClock(p.lastActiveAt), t("th.lastActive"))
 				)
 			),
@@ -1588,9 +1595,7 @@ function StatsDataStatus({ state, remote, projects, t }) {
 		e("div", { className: "dss-data-status-line" },
 			e("span", null, t(remote ? "source.host" : "source.local")),
 			e("strong", null, t("source." + state.kind)),
-			state.at != null ? e("span", null, t("source.updated") + " " + fmtClock(state.at)) : null,
-			["estimated", "partial", "unsupported"].includes(cost.status) ? e("span", { className: "dss-data-cost" }, t("pricing." + cost.status)) : null,
-			cost.unpricedTokens > 0 ? e("span", null, t("pricing.unpriced") + " " + fmtTokens(cost.unpricedTokens)) : null
+			state.at != null ? e("span", null, t("source.updated") + " " + fmtClock(state.at)) : null
 		),
 		state.error ? e("details", { className: "dss-data-diagnostics" }, e("summary", null, t("source.details")), e("div", null, state.error)) : null
 	);
@@ -1813,7 +1818,7 @@ function TrendsView(props) {
 		e("div", { className: "dss-hero-side" },
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.totalCost")),
-				e("div", { className: "dss-hero-v dss-cost" }, fmtCostSummary(dg.totalCost))
+				e("div", { className: "dss-hero-v dss-cost" }, e(CostValue, { summary: dg.totalCost, t: props.t }))
 			),
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.mostUsed")),
@@ -2113,7 +2118,7 @@ function ModelRing(props) {
 
 function showModelTip(model, t, ev) {
 	showTipRaw(tipRows(model.displayName || modelDisplayName(model), [
-		[t("th.cost"), fmtCostSummary(model.costSummary)],
+		[t("th.cost"), fmtCostSummary(model.costSummary, t)],
 		[t("w.input"), fmtTokens(model.input || 0)],
 		[t("w.output"), fmtTokens(model.output || 0)]
 	]), ev);
@@ -2446,7 +2451,7 @@ const zh = {
 	"refresh": "刷新",
 	"source.updated": "更新时间",
 	"source.host": "宿主统计", "source.local": "本地摘要", "source.exact": "已同步", "source.partial": "数据不完整", "source.stale": "刷新失败，显示上次快照", "source.fallback": "回退数据，可能不完整", "source.loading": "正在读取", "source.refreshing": "正在刷新", "source.details": "数据诊断",
-	"pricing.estimated": "费用含估算", "pricing.partial": "部分用量未计价", "pricing.unsupported": "暂无可用价格", "pricing.unpriced": "未计价 Token", "balance.lastSuccess": "上次成功",
+	"pricing.pending": "待计价", "pricing.estimated": "费用含估算", "pricing.partial": "部分用量未计价", "pricing.unsupported": "暂无可用价格", "pricing.unpriced": "未计价 Token", "balance.lastSuccess": "上次成功",
 	"nav.day": "按日", "nav.days7": "7日", "nav.days30": "30日", "nav.days90": "90日", "nav.all": "全部", "nav.previous": "前一天", "nav.next": "后一天",
 	"sort.label": "排序", "sort.toggle": "切换升降序", "sort.asc": "升序", "sort.desc": "降序",
 	"card.projects": "项目",
@@ -2457,7 +2462,7 @@ const zh = {
 	"card.input": "输入 tok",
 	"card.output": "输出 tok",
 	"card.cacheHit": "平均缓存命中",
-	"card.cost": "消费金额",
+	"card.cost": "预估费用",
 	"th.project": "项目",
 	"th.sessions": "会话",
 	"th.turns": "轮",
@@ -2469,7 +2474,7 @@ const zh = {
 	"th.cacheHit": "缓存命中",
 	"th.input": "输入 tok",
 	"th.output": "输出 tok",
-	"th.cost": "消费",
+	"th.cost": "预估费用",
 	"th.lastActive": "最近活跃",
 	"w.turns": "轮",
 	"w.steps": "步",
@@ -2512,7 +2517,7 @@ const zh = {
 	"trends.totalInput": "总输入",
 	"trends.totalOutput": "总输出",
 	"trends.totalReasoning": "思考 token",
-	"trends.totalTokens": "总 Token 消耗", "trends.totalCost": "总消费", "trends.activeDaysHint": "有活动的自然日", "trends.streakHint": "截至最近活动日", "trends.longestStreakHint": "历史最佳纪录", "trends.totalSessionsHint": "主会话 + 子会话",
+	"trends.totalTokens": "总 Token 消耗", "trends.totalCost": "预估费用", "trends.activeDaysHint": "有活动的自然日", "trends.streakHint": "截至最近活动日", "trends.longestStreakHint": "历史最佳纪录", "trends.totalSessionsHint": "主会话 + 子会话",
 	"trends.heatmap": "活动热力图",
 	"trends.heatmapHint": "左侧：当月按实际天数 · 右侧：近 7 天每日 Token", "trends.dailyTrend": "每日 Token（近 7 天）", "trends.modelHint": "按输入 + 输出 token 占比",
 	"trends.activity": "活动", "trends.futureDate": "未来日期", "trends.none": "无", "trends.less": "少", "trends.more": "多", "trends.today": "今天", "trends.cacheRead": "缓存读取", "trends.outputIncludesReasoning": "输出（含思考）", "trends.inputOutput": "输入 + 输出",
@@ -2534,7 +2539,7 @@ const en = {
 	"refresh": "Refresh",
 	"source.updated": "Updated",
 	"source.host": "Host statistics", "source.local": "Local summaries", "source.exact": "Synced", "source.partial": "Incomplete data", "source.stale": "Refresh failed; last snapshot", "source.fallback": "Fallback data; may be incomplete", "source.loading": "Loading", "source.refreshing": "Refreshing", "source.details": "Data diagnostics",
-	"pricing.estimated": "Includes estimates", "pricing.partial": "Some usage is unpriced", "pricing.unsupported": "No available prices", "pricing.unpriced": "Unpriced tokens", "balance.lastSuccess": "Last success",
+	"pricing.pending": "Awaiting price", "pricing.estimated": "Includes estimates", "pricing.partial": "Some usage is unpriced", "pricing.unsupported": "No available prices", "pricing.unpriced": "Unpriced tokens", "balance.lastSuccess": "Last success",
 	"nav.day": "Day", "nav.days7": "7D", "nav.days30": "30D", "nav.days90": "90D", "nav.all": "All", "nav.previous": "Previous day", "nav.next": "Next day",
 	"sort.label": "Sort", "sort.toggle": "Toggle sort direction", "sort.asc": "Ascending", "sort.desc": "Descending",
 	"card.projects": "Projects",
@@ -2545,7 +2550,7 @@ const en = {
 	"card.input": "Input tok",
 	"card.output": "Output tok",
 	"card.cacheHit": "Avg cache hit",
-	"card.cost": "Cost",
+	"card.cost": "Estimated cost",
 	"th.project": "Project",
 	"th.sessions": "Sessions",
 	"th.turns": "Turns",
@@ -2557,7 +2562,7 @@ const en = {
 	"th.cacheHit": "Cache hit",
 	"th.input": "Input tok",
 	"th.output": "Output tok",
-	"th.cost": "Cost",
+	"th.cost": "Estimated cost",
 	"th.lastActive": "Last active",
 	"w.turns": "turns",
 	"w.steps": "steps",
@@ -2600,7 +2605,7 @@ const en = {
 	"trends.totalInput": "Total input",
 	"trends.totalOutput": "Total output",
 	"trends.totalReasoning": "Thinking tokens",
-	"trends.totalTokens": "Total token usage", "trends.totalCost": "Total cost", "trends.activeDaysHint": "Calendar days with activity", "trends.streakHint": "Through the latest active day", "trends.longestStreakHint": "Best historical run", "trends.totalSessionsHint": "Main + sub-agent sessions",
+	"trends.totalTokens": "Total token usage", "trends.totalCost": "Estimated cost", "trends.activeDaysHint": "Calendar days with activity", "trends.streakHint": "Through the latest active day", "trends.longestStreakHint": "Best historical run", "trends.totalSessionsHint": "Main + sub-agent sessions",
 	"trends.heatmap": "Activity heatmap",
 	"trends.heatmapHint": "Calendar days this month · daily tokens for the last 7 days", "trends.dailyTrend": "Daily tokens (last 7 days)", "trends.modelHint": "Share of input + output tokens",
 	"trends.activity": "Activity", "trends.futureDate": "Future date", "trends.none": "None", "trends.less": "Less", "trends.more": "More", "trends.today": "Today", "trends.cacheRead": "Cache read", "trends.outputIncludesReasoning": "Output (incl. reasoning)", "trends.inputOutput": "Input + output",

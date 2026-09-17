@@ -7,6 +7,23 @@ const {
 } = pricing;
 const slot = Math.floor(Date.parse('2026-08-17T10:00:00+08:00') / 1800000);
 
+test('Astra prices each request at the 272K boundary and applies service tiers', () => {
+	const base = usage({ model: 'gpt-6-astra', providerId: 'yi-api', uncached: 1000, cacheRead: 2000, cacheWrite: 100, output: 100, contextTokens: 272000 });
+	const short = priceUsage(base);
+	expect(short).toMatchObject({ status: 'estimated', currency: 'USD', amount: 0.01825, unpricedTokens: 0 });
+	expect(priceUsage({ ...base, contextTokens: 272001 }).amount).toBeCloseTo(0.034);
+	for (const [serviceTier, multiple] of [['standard', 1], ['fast', 2], ['priority', 2], ['batch', 0.5], ['flex', 0.5]]) {
+		expect(priceUsage({ ...base, serviceTier }).amount).toBeCloseTo(short.amount * multiple);
+	}
+	expect(priceUsage({ ...base, serviceTier: 'future-tier' })).toMatchObject({ status: 'unsupported', amount: null });
+});
+
+test('Astra historical reference pricing is not presented as a verified historical bill', () => {
+	const old = priceUsage(usage({ model: 'gpt-6-astra', providerId: 'openai' }));
+	expect(old.status).toBe('estimated');
+	expect(old.retrievedAt).toBe('2026-09-17');
+});
+
 function usage(overrides = {}) {
 	return {
 		slot,

@@ -147,7 +147,7 @@ try {
   await tab(1);
   await evaluate('window.__fixture.statsMode = "partial"'); await refresh();
   await until('document.querySelector(".dss-data-status.partial")');
-  await until('document.querySelector(".dss-data-cost")?.textContent === window.__fixture.t("pricing.partial")');
+  await until('document.querySelector(".dss-cards")?.textContent.includes("*")');
   await click('.dss-data-diagnostics summary'); await layout('partial'); await capture('narrow-partial');
   await evaluate('window.__fixture.statsMode = "unsupported"'); await refresh();
   await until('document.querySelector(".dss-data-cost")?.textContent === window.__fixture.t("pricing.unsupported")');

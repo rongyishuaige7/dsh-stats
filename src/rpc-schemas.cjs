@@ -40,7 +40,7 @@ const _slotStat$schema = z.object({
 }).strict()
 const _usage$schema = z.object({
   model: z.string(), providerId: z.string(), providerFamily: z.string(), modelRaw: z.string(), modelCanonical: z.string(), accountType: z.string(),
-  serviceTier: z.enum(['standard', 'priority']), contextTokens: z.number().nonnegative(), contextOver512k: z.boolean(), slot: z.number().int().nonnegative(),
+  serviceTier: z.enum(['standard', 'priority', 'batch', 'flex', 'unknown']), contextTokens: z.number().nonnegative(), contextOver512k: z.boolean(), slot: z.number().int().nonnegative(),
   uncached: z.number().nonnegative(), output: z.number().nonnegative(),
   cacheRead: z.number().nonnegative(), cacheWrite: z.number().nonnegative(), reasoning: z.number().nonnegative(),
   cost: _cost$schema,

@@ -122,3 +122,11 @@ test('missing request context is estimated consistently in totals and CSV', () =
 	expect(row[headers.indexOf('contextTokens')]).toBe('');
 	expect(row[headers.indexOf('exactAmount')]).toBe(0);
 });
+
+
+test('cost display stays concise and distinguishes missing from free and partial', () => {
+ const { fmtCostSummary } = require('../src/client.cjs').__test;
+ expect(fmtCostSummary({ status: 'unsupported', totals: [], unpricedTokens: 10, unknownRows: 1 })).toBe('待计价');
+ expect(fmtCostSummary({ status: 'free', totals: [], unpricedTokens: 0, unknownRows: 0 })).toBe('¥0');
+ expect(fmtCostSummary({ status: 'partial', totals: [{ currency: 'CNY', amount: 12.34, exactAmount: 12.34, estimatedAmount: 0 }], unpricedTokens: 10, unknownRows: 1 })).toBe('¥12.34*');
+});

@@ -201,7 +201,7 @@ test('estimated and partial summaries render only confirmed RMB amounts', () => 
 	const partial = { status: 'partial', totals: [{ currency: 'USD', amount: 0.00082844, exactAmount: 0.00082844, estimatedAmount: 0 }], unpricedTokens: 100, unknownRows: 1 };
 
 	expect(fmtCostSummary(estimated)).toBe('¥0.0056');
-	expect(fmtCostSummary(partial)).toBe('¥0.0056');
+	expect(fmtCostSummary(partial)).toBe('¥0.0056*');
 	expect(fmtCostSummary({ status: 'free', totals: [], unpricedTokens: 0, unknownRows: 0 })).toBe('¥0');
 });
 

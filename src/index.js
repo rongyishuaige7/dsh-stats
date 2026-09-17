@@ -598,10 +598,10 @@ function routeProjectionSchema(value) {
 	if (record.origin !== null && typeof record.origin !== "string") throw new TypeError("invalid statsRoute origin");
 	if (record.parentSession !== null && typeof record.parentSession !== "string") throw new TypeError("invalid statsRoute parentSession");
 	if (record.seedLength !== null && (!Number.isSafeInteger(record.seedLength) || record.seedLength < 0)) throw new TypeError("invalid statsRoute seedLength");
-	if (typeof record.current.providerId !== "string" || (record.current.model !== null && typeof record.current.model !== "string") || typeof record.current.accountType !== "string" || !["standard", "priority"].includes(record.current.serviceTier)) throw new TypeError("invalid statsRoute current route");
+	if (typeof record.current.providerId !== "string" || (record.current.model !== null && typeof record.current.model !== "string") || typeof record.current.accountType !== "string" || !["standard", "priority", "batch", "flex", "unknown"].includes(record.current.serviceTier)) throw new TypeError("invalid statsRoute current route");
 	for (const row of record.routes) {
 		if (validatedRouteRows.has(row)) continue;
-		if (!objectRecord(row) || (row.model !== null && typeof row.model !== "string") || typeof row.providerId !== "string" || typeof row.accountType !== "string" || !["standard", "priority"].includes(row.serviceTier) || !Number.isSafeInteger(row.slot) || row.slot < 0 || !Number.isFinite(row.time) || row.time < 0) throw new TypeError("invalid statsRoute row");
+		if (!objectRecord(row) || (row.model !== null && typeof row.model !== "string") || typeof row.providerId !== "string" || typeof row.accountType !== "string" || !["standard", "priority", "batch", "flex", "unknown"].includes(row.serviceTier) || !Number.isSafeInteger(row.slot) || row.slot < 0 || !Number.isFinite(row.time) || row.time < 0) throw new TypeError("invalid statsRoute row");
 		for (const key of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning", "contextTokens"]) if (!Number.isFinite(row[key]) || row[key] < 0) throw new TypeError("invalid statsRoute token count");
 		if (!Number.isSafeInteger(row.count) || row.count < 1) throw new TypeError("invalid statsRoute request count");
 		if (Object.isFrozen(row)) validatedRouteRows.add(row);
@@ -666,7 +666,7 @@ function routeProjectionRoute(config, current) {
 		providerId: firstString(config?.provider, config?.providerId, config?.provider_id, current?.providerId) || "unknown",
 		model: firstString(config?.model, current?.model),
 		accountType: accountTypeOf(config, current?.accountType || "api"),
-		serviceTier: requestedTier === "priority" ? "priority" : requestedTier === "standard" ? "standard" : (current?.serviceTier === "priority" ? "priority" : "standard")
+		serviceTier: pricing.normalizeServiceTier(requestedTier || current?.serviceTier)
 	};
 }
 
@@ -861,7 +861,7 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 			const provider = firstString(config?.provider, config?.providerId, config?.provider_id, ev.data?.header?.provider);
 			if (provider) currentProvider = provider;
 			currentAccountType = accountTypeOf(config, currentAccountType);
-			currentServiceTier = config?.serviceTier === "priority" || config?.service_tier === "priority" ? "priority" : "standard";
+			currentServiceTier = pricing.normalizeServiceTier(config?.serviceTier || config?.service_tier);
 		} else if (ev.type === "step/start") {
 			openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
 		} else if (ev.type === "assistant/chunk") {
@@ -1076,7 +1076,7 @@ function infoFromProjectionValues(values, entry) {
 		model: row.model,
 		providerId: firstString(row.providerId) || "unknown",
 		accountType: accountTypeOf(row, "api"),
-		serviceTier: row.serviceTier === "priority" ? "priority" : "standard",
+		serviceTier: pricing.normalizeServiceTier(row.serviceTier),
 		contextTokens: Number.isFinite(row.contextTokens) ? row.contextTokens : undefined,
 		count: Number.isSafeInteger(row.count) && row.count > 0 ? row.count : 1,
 		pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
@@ -1233,7 +1233,7 @@ function slotUsages(usages) {
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
 		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
-		const serviceTier = u.serviceTier === "priority" ? "priority" : "standard";
+		const serviceTier = pricing.normalizeServiceTier(u.serviceTier);
 		const contextTokens = Number.isFinite(u.contextTokens) ? u.contextTokens : u.uncached + u.cacheRead + u.cacheWrite;
 		const contextOver512k = contextTokens > LONG_CONTEXT_TOKENS;
 		const key = identityKey(identity) + "\u0000" + serviceTier + "\u0000" + contextTokens + "\u0000" + k;
