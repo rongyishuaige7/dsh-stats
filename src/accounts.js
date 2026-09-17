@@ -293,9 +293,43 @@ function httpStatus(status) {
 	return status >= 500 ? "unavailable" : "invalid-response";
 }
 
-async function responseJson(response) {
+export async function responseJson(response, signal) {
 	const declared = numberOrNull(response?.headers?.get?.("content-length"));
-	if (declared !== null && declared > MAX_RESPONSE_BYTES) throw new AccountError("invalid-response", "response-too-large");
+	if (declared !== null && declared > MAX_RESPONSE_BYTES) {
+		void response?.body?.cancel?.().catch(() => {});
+		throw new AccountError("invalid-response", "response-too-large");
+	}
+	if (typeof response?.body?.getReader === "function") {
+		const reader = response.body.getReader();
+		const cancel = () => { void reader.cancel().catch(() => {}); };
+		const decoder = new TextDecoder();
+		let size = 0, text = "";
+		signal?.addEventListener("abort", cancel, { once: true });
+		try {
+			for (;;) {
+				if (signal?.aborted) throw new AccountError("unavailable", "timeout");
+				const { done, value } = await reader.read();
+				if (signal?.aborted) throw new AccountError("unavailable", "timeout");
+				if (done) break;
+				size += value.byteLength;
+				if (size > MAX_RESPONSE_BYTES) {
+					cancel();
+					throw new AccountError("invalid-response", "response-too-large");
+				}
+				text += decoder.decode(value, { stream: true });
+			}
+			text += decoder.decode();
+		} catch (error) {
+			if (signal?.aborted) throw new AccountError("unavailable", "timeout");
+			if (error instanceof AccountError) throw error;
+			throw new AccountError("unavailable", "transport-failed");
+		} finally {
+			signal?.removeEventListener("abort", cancel);
+			reader.releaseLock();
+		}
+		try { return JSON.parse(text); } catch { throw new AccountError("invalid-response", "invalid-json"); }
+	}
+	// Compatibility with injected fetch implementations that have no stream.
 	if (typeof response?.arrayBuffer === "function") {
 		const bytes = new Uint8Array(await response.arrayBuffer());
 		if (bytes.byteLength > MAX_RESPONSE_BYTES) throw new AccountError("invalid-response", "response-too-large");
@@ -321,7 +355,7 @@ async function requestJson(url, headers, deps) {
 			throw new AccountError("unavailable", "transport-failed");
 		}
 		if (!response?.ok) throw new AccountError(httpStatus(Number(response?.status)), `http-${response?.status || 0}`);
-		return await responseJson(response);
+		return await responseJson(response, controller.signal);
 	} finally {
 		clearTimeout(timer);
 	}
@@ -378,7 +412,7 @@ async function requestTemplate(template, spec, key, deps) {
 			throw new AccountError("unavailable", "transport-failed");
 		}
 		if (!response?.ok) throw new AccountError(httpStatus(Number(response?.status)), `http-${response?.status || 0}`);
-		return await responseJson(response);
+		return await responseJson(response, controller.signal);
 	} finally {
 		clearTimeout(timer);
 	}
@@ -563,7 +597,7 @@ async function queryBalance(spec, key, deps, now) {
 		url = allowedUrl(spec.baseURL, "/user/balance", ["api.deepseek.com"]);
 		body = await requestJson(url, { authorization: `Bearer ${key}` }, deps);
 		const infos = Array.isArray(body?.balance_infos) ? body.balance_infos : [];
-		if (!infos.length || body?.is_available === false) throw new AccountError("invalid-response", "balance-unavailable");
+		if (!infos.length) throw new AccountError("invalid-response", "balance-unavailable");
 		const info = infos.find((entry) => String(entry?.currency).toUpperCase() === "CNY") || infos[0];
 		balance = balanceView(info?.currency, info?.total_balance, { toppedUp: info?.topped_up_balance, granted: info?.granted_balance });
 	} else if (spec.adapter === "openrouter-balance") {

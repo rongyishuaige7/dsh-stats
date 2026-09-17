@@ -405,3 +405,50 @@ test('a slower request for an old account config cannot overwrite the new cache'
 	expect(calls).toBe(2);
 	expect(cached.accounts[0].balance.remaining).toBe(2);
 });
+
+test('exhausted DeepSeek balance replaces the previous successful snapshot', async () => {
+	const owner = {}, ctx = context();
+	let exhausted = false;
+	const deps = { fetch: async () => new Response(JSON.stringify({ is_available: !exhausted, balance_infos: [{ currency: 'CNY', total_balance: exhausted ? '0' : '18.64' }] })) };
+	await collectAccounts(owner, ctx, { deps });
+	exhausted = true;
+	const result = await collectAccounts(owner, ctx, { deps, force: true });
+	expect(result.accounts[0]).toMatchObject({ status: 'ok', stale: false, balance: { remaining: 0 } });
+});
+
+test('oversized chunked account responses cancel before downloading the whole body', async () => {
+	let pulls = 0, cancelled = false;
+	const spec = accountSpec({ id: 'deepseek-official' });
+	const body = new ReadableStream({
+		pull(controller) { pulls++; controller.enqueue(new Uint8Array(64 * 1024)); if (pulls === 128) controller.close(); },
+		cancel() { cancelled = true; },
+	});
+	const account = await queryProviderAccount(spec, credentials(), { fetch: async () => new Response(body) });
+	expect(account).toMatchObject({ status: 'invalid-response', errorCode: 'response-too-large' });
+	expect(cancelled).toBe(true);
+	expect(pulls).toBeLessThan(20);
+});
+
+test('declared oversized account bodies are cancelled without consuming chunks', async () => {
+	let cancelled = false;
+	const response = new Response(new ReadableStream({ cancel() { cancelled = true; } }), { headers: { 'content-length': '2000000' } });
+	const account = await queryProviderAccount(accountSpec({ id: 'deepseek-official' }), credentials(), { fetch: async () => response });
+	expect(account.errorCode).toBe('response-too-large');
+	expect(cancelled).toBe(true);
+});
+
+test('body timeout cancels a stalled stream and retains the timeout diagnostic', async () => {
+	let cancelled = false;
+	const response = new Response(new ReadableStream({ cancel() { cancelled = true; } }));
+	const account = await queryProviderAccount(accountSpec({ id: 'deepseek-official' }), credentials(), { timeoutMs: 10, fetch: async () => response });
+	expect(account).toMatchObject({ status: 'unavailable', errorCode: 'timeout' });
+	expect(cancelled).toBe(true);
+});
+
+test('streamed account JSON decodes UTF-8 split across byte boundaries', async () => {
+	const bytes = new TextEncoder().encode(JSON.stringify({ remaining: 2, unit: 'USD', note: '余额' }));
+	let offset = 0;
+	const response = new Response(new ReadableStream({ pull(controller) { if (offset === bytes.length) controller.close(); else controller.enqueue(bytes.slice(offset, ++offset)); } }));
+	const account = await queryProviderAccount(accountSpec({ id: 'relay', baseURL: 'https://relay.example.test', apiKeyRef: 'KEY' }), credentials(), { fetch: async () => response });
+	expect(account).toMatchObject({ status: 'ok', balance: { remaining: 2 } });
+});

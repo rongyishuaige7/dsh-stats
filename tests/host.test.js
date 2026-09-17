@@ -1010,3 +1010,17 @@ test('host and remote RPC contracts require the same aggregate fields and force 
 	expect(hostAccount.parameters[0].codec.schema.parse(true)).toBe(true);
 	expect(remoteAccount.parameters[0].codec.schema.parse(undefined)).toBeUndefined();
 });
+
+test('legacy balance accepts an exhausted account and bounds streamed responses', async () => {
+	const result = await fetchDeepSeekBalance(credentials(), async () => balanceResponse([{ currency: 'CNY', total_balance: '0' }], false));
+	expect(result.accounts[0]).toMatchObject({ status: 'ok', total: 0 });
+	let cancelled = false;
+	await expect(fetchDeepSeekBalance(credentials(), async (_url, init) => {
+		expect(init.redirect).toBe('error');
+		return new Response(new ReadableStream({
+			pull(controller) { controller.enqueue(new Uint8Array(1024 * 1024 + 1)); },
+			cancel() { cancelled = true; },
+		}));
+	})).rejects.toMatchObject({ code: 'invalid-response' });
+	expect(cancelled).toBe(true);
+});

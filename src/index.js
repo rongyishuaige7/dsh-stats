@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
 import routeData from "./route-data.cjs";
-import { collectAccounts, providerViews } from "./accounts.js";
+import { collectAccounts, providerViews, responseJson } from "./accounts.js";
 
 const { normalizeIdentity, priceUsage, convertCostToCny, summarizeCostsCny, mergeCostSummariesCny } = pricing;
 
@@ -174,6 +174,7 @@ async function fetchDeepSeekBalance(credentials, fetchImpl = globalThis.fetch, n
 		try {
 			response = await fetchImpl(DEEPSEEK_BALANCE_API, {
 				headers: { authorization: `Bearer ${apiKey}` },
+				redirect: "error",
 				signal: controller.signal
 			});
 		} catch (error) {
@@ -191,8 +192,9 @@ async function fetchDeepSeekBalance(credentials, fetchImpl = globalThis.fetch, n
 			throw new DeepSeekBalanceError("http-4xx");
 		}
 		let body;
-		try { body = await response.json(); } catch { throw new DeepSeekBalanceError("invalid-response"); }
-		if (body?.is_available === false) throw new DeepSeekBalanceError("balance-unavailable");
+		try { body = await responseJson(response, controller.signal); } catch (error) {
+			throw new DeepSeekBalanceError(error?.code === "timeout" ? "fetch-timeout" : "invalid-response");
+		}
 		if (!Array.isArray(body?.balance_infos) || body.balance_infos.length === 0) throw new DeepSeekBalanceError("invalid-response");
 		const accounts = body.balance_infos.map(normalizeBalanceInfo).map((account) => ({ ...account, fetchedAt: now }));
 		return balancePayload(now, accounts);

@@ -117,3 +117,27 @@ dependency directory is preserved.
   and pass syntax checks; the built host and manifests import successfully and
   expose all four RPC methods. `npm pack --dry-run --json` verifies 16 package
   entries. The final browser artifact is 214824 bytes (59547 bytes gzip).
+
+## September 17 follow-up implementation
+
+Scope: resolve exhausted-balance handling, streamed response limits, fork usage
+ownership, fallback pricing accuracy and CSV safety; support Session v3 and the
+current published Harness; reduce projection notification and repeated read costs.
+The non-goals above still apply. Preserve historical files and immutable projection
+checkpoints, and never infer exact request context from session totals.
+
+Delivery stages (each with focused tests, build, commit and push):
+1. Share bounded account response decoding and accept valid exhausted balances.
+2. Unify own-session usage, qualify incomplete pricing and escape CSV formulas.
+3. Adapt current Harness contracts and dependency/CI compatibility checks.
+4. Optimize projection/read hot paths with real-registry benchmarks, then run
+   the complete timezone, browser, upstream contract and package validations.
+
+Risks: preview peer resolution must stay internally consistent; cached official
+logs need reliable revision evidence; per-request pricing and fork inheritance
+must survive any performance change. Browser fixtures verify the plugin UI, while
+upstream contract probes exercise real published server modules separately.
+
+Follow-up stage 1 verified: 77 account/host tests pass, including zero-balance
+refresh, chunked/declared oversize cancellation, stalled-body timeout, split UTF-8
+and legacy endpoint coverage. All four published bundles build successfully.
