@@ -7,7 +7,7 @@
 
 import pricing from "./pricing.cjs";
 
-const { normalizeAccountType, providerFamilyOf } = pricing;
+const { normalizeAccountType, providerFamilyOf, providerFamilyOfUrl } = pricing;
 const CACHE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15 * 1000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -222,11 +222,18 @@ async function configuredProviders(ctx) {
 
 function accountSpec(provider) {
 	const id = String(provider.id || "unknown").toLowerCase();
-	const family = providerFamilyOf(id);
+	const configuredBaseURL = firstNonEmpty(provider.baseURL, provider.baseUrl, provider.base_url);
+	// The endpoint URL is the one authoritative provider claim: it is where
+	// the credential is actually sent, and account adapters already enforce
+	// their host allowlists on it. So the host-inferred family takes
+	// precedence; the id family is only a fallback for a route whose baseURL
+	// is absent (a catalog route) or points at a non-official host.
+	const hostFamily = providerFamilyOfUrl(configuredBaseURL);
+	const idFamily = providerFamilyOf(id);
+	const family = hostFamily ?? (idFamily !== "unknown" ? idFamily : "unknown");
 	const configuredAccountType = nonEmpty(provider.accountType);
 	const accountType = normalizeAccountType(configuredAccountType || (family === "minimax" ? "token-plan" : "api"));
 	const subscription = accountType === "subscription" || accountType === "token-plan";
-	const configuredBaseURL = firstNonEmpty(provider.baseURL, provider.baseUrl, provider.base_url);
 	const configuredApiKeyRef = firstNonEmpty(provider.apiKeyRef, provider.apiKeyEnv, provider.api_key_ref, provider.api_key_env);
 	const configuredAccountApiKeyRef = firstNonEmpty(provider.accountApiKeyRef, provider.accountApiKeyEnv, provider.account_api_key_ref, provider.account_api_key_env);
 	let adapter = null, mode = "unsupported", defaults = null;
@@ -234,7 +241,7 @@ function accountSpec(provider) {
 	if (usageTemplate?.request && typeof usageTemplate.request === "object") {
 		adapter = "generic-usage";
 		mode = "balance";
-	} else if (id === "deepseek" || id === "deepseek-official") { adapter = "deepseek-balance"; mode = "balance"; defaults = DEFAULTS.deepseek; }
+	} else if (family === "deepseek") { adapter = "deepseek-balance"; mode = "balance"; defaults = DEFAULTS.deepseek; }
 	else if (id === "openrouter") { adapter = "openrouter-balance"; mode = "balance"; defaults = DEFAULTS.openrouter; }
 	else if (["moonshotai", "moonshotai-cn", "kimi", "kimi-api"].includes(id) && !subscription) { adapter = "moonshot-balance"; mode = "balance"; defaults = DEFAULTS.moonshot; }
 	else if (["kimi-coding", "kimi-for-coding"].includes(id) || family === "moonshot" && subscription) { adapter = "kimi-token-plan"; mode = "subscription"; defaults = DEFAULTS.kimi; }
