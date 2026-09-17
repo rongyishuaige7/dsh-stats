@@ -159,7 +159,8 @@ try {
   const stopped = once(chrome, 'exit'); chrome.kill('SIGTERM'); await Promise.race([stopped, delay(3000)]);
   if (chrome.exitCode === null && chrome.signalCode === null) { chrome.kill('SIGKILL'); await stopped; }
   await new Promise(resolve => server.close(resolve));
-  rmSync(scratch, { recursive: true, force: true });
+  // Chromium helpers can briefly finish profile writes after the parent exits.
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify({ ...report, output }, null, 2));
 }

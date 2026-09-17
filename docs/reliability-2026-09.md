@@ -163,3 +163,9 @@ is unchanged. All 210 tests pass in the default timezone and UTC; all bundles
 build unchanged. Fresh npm ci succeeds. npm 10's update resolver crashed during
 the targeted upgrade, so npm 11.6.0 was used only for lockfile resolution; normal
 npm ci remains supported and no global npm installation was changed.
+
+GitHub CI follow-up: the compatibility commit passed every job. The security
+commit exposed an intermittent Linux Chrome profile cleanup race (`ENOTEMPTY`)
+after the UI checks. The browser fixture now retries only its own temporary
+profile cleanup, allowing short-lived Chromium helper writes to finish. Local
+browser smoke still passes all views and reports no runtime errors.
