@@ -108,7 +108,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "vitest": "^3.1.4",
+    "vitest": "4.1.11",
     "ws": "^8.21.0"
   }
 }

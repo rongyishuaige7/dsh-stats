@@ -156,3 +156,10 @@ reported errors. Fresh npm ci succeeds with the unchanged resolved Harness graph
 optional remotes peers retain the older versions required by legacy client-locale.
 CI now runs the five-version contract matrix and the Chrome UI fixture. Workflow
 YAML parses locally; execution on GitHub is verified separately from local probes.
+
+Dependency security stage verified: Vitest is pinned to 4.1.11 and transitive
+js-yaml to 4.3.2. npm audit reports zero vulnerabilities. The Harness module graph
+is unchanged. All 210 tests pass in the default timezone and UTC; all bundles
+build unchanged. Fresh npm ci succeeds. npm 10's update resolver crashed during
+the targeted upgrade, so npm 11.6.0 was used only for lockfile resolution; normal
+npm ci remains supported and no global npm installation was changed.
