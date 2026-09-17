@@ -211,10 +211,10 @@ test('unchanged disk logs skip body reads and replacement files invalidate the c
 	} finally { read.mockRestore(); syncBuiltinESMExports(); }
 });
 
-test.each(['query', 'live', 'handle', 'disk'])('v2 streams and retries exclude the inherited prefix through %s', async (mode) => {
+test.each([2, 3].flatMap(version => ['query', 'live', 'handle', 'disk', 'disk-zstd'].map(mode => [version, mode])))('v%s streams and retries exclude the inherited prefix through %s', async (version, mode) => {
 	const now = Date.parse('2026-09-08T10:00:00+08:00');
 	const home = fixture({ child: projection(now) });
-	const header = { type: 'session', id: 'child', cwd: '/tmp/fixture', createdAt: now, version: 2, parentSession: 'parent', isSeeded: true };
+	const header = { type: 'session', id: 'child', cwd: '/tmp/fixture', createdAt: now, version, parentSession: 'parent', isSeeded: true };
 	const event = (type, seq, data) => ({ type, seq, time: now + seq * 100, data });
 	const stream = (inputTokens, outputTokens, time) => [{ type: 'text-chunks', time0: time, index: 0, texts: ['', 'a'], dt: [10] },
 		{ type: 'chunk', time: time + 20, chunk: { type: 'usage', usage: { inputTokens, outputTokens } } }];
@@ -236,10 +236,11 @@ test.each(['query', 'live', 'handle', 'disk'])('v2 streams and retries exclude t
 		expect([id, access]).toEqual(['child', 'read']);
 		return { header, inheritedEventCount: 1, read: async () => ({ events }), close: closed };
 	} };
-	if (mode === 'disk') {
+	if (mode === 'disk' || mode === 'disk-zstd') {
 		const dir = join(home, 'sessions', 'workspace', 'child');
 		mkdirSync(dir, { recursive: true });
-		writeFileSync(join(dir, 'session.v2.jsonl'), [header, ...events].map(JSON.stringify).join('\n') + '\n');
+		const content = Buffer.from([header, ...events].map(JSON.stringify).join('\n') + '\n');
+		writeFileSync(join(dir, `session.v${version}.jsonl${mode === 'disk-zstd' ? '.zstd' : ''}`), mode === 'disk-zstd' ? zstdCompressSync(content) : content);
 	}
 	const result = await StatsService.prototype.aggregate.call({ ctx });
 	const session = result.projects[0].sessions[0];

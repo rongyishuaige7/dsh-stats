@@ -394,7 +394,7 @@ function findSessionFile(home, sessionId) {
 	const rawIdIsSafe = sessionId !== "." && sessionId !== ".." && !/[/\\\0]/.test(sessionId);
 	for (const enc of sessionDirs(home)) {
 		const dirIds = rawIdIsSafe && encodedId !== sessionId ? [encodedId, sessionId] : [encodedId];
-		for (const dirId of dirIds) for (const suffix of ["session.v2.jsonl.zstd", "session.v2.jsonl", "session.v1.jsonl.zstd", "session.v1.jsonl", "session.jsonl.zstd", "session.jsonl"]) {
+		for (const dirId of dirIds) for (const suffix of ["session.v3.jsonl.zstd", "session.v3.jsonl", "session.v2.jsonl.zstd", "session.v2.jsonl", "session.v1.jsonl.zstd", "session.v1.jsonl", "session.jsonl.zstd", "session.jsonl"]) {
 			const cand = join(root, enc, dirId, suffix);
 			try {
 				const stat = lstatSync(cand);
@@ -892,8 +892,8 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		providerId: primary.providerId, accountType: primary.accountType,
 		usages: [...usageByStep.values()], origin, parentSession, seedLength, inheritedEventCount: count,
 		stats: derivedEvents ? derived : null, slotStats: [...slotStats.values()].sort((a, b) => a.slot - b.slot),
-		partial: Boolean(quality.partial) || malformedRecords > 0 || events.length === 0 && !header || seqGap || unknownSeed || (header?.version !== undefined && ![0, 1, 2].includes(header.version)), stale: Boolean(quality.stale), missing: false, unavailable: false,
-		malformedRecords, lastSeq, seqGap, unknownSeed, formatVersion: header?.version, futureVersion: header?.version !== undefined && ![0, 1, 2].includes(header.version),
+		partial: Boolean(quality.partial) || malformedRecords > 0 || events.length === 0 && !header || seqGap || unknownSeed || (header?.version !== undefined && ![0, 1, 2, 3].includes(header.version)), stale: Boolean(quality.stale), missing: false, unavailable: false,
+		malformedRecords, lastSeq, seqGap, unknownSeed, formatVersion: header?.version, futureVersion: header?.version !== undefined && ![0, 1, 2, 3].includes(header.version),
 		header: header || null
 	};
 }

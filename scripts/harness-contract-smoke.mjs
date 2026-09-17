@@ -11,7 +11,7 @@ assert(harnessRoot, 'DSH_HARNESS_ROOT must name an isolated Harness installation
 const requireHarness = createRequire(join(resolve(harnessRoot), 'package.json'));
 const upstream = name => import(requireHarness.resolve('@deepseek-ai/' + name));
 const version = requireHarness('@deepseek-ai/dsh-session/package.json').version;
-assert(['0.1.2-rc.1', '0.1.3-alpha.2'].includes(version), 'unsupported contract fixture version: ' + version);
+assert(['0.1.2-rc.1', '0.1.3-alpha.2', '0.1.5-rc.1', '0.1.5-rc.2', '0.1.6-alpha.1'].includes(version), 'unsupported contract fixture version: ' + version);
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = mkdtempSync(join(tmpdir(), 'dsh-stats-contract-'));
 const previousHome = process.env.DSH_HOME;

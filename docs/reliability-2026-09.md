@@ -148,3 +148,11 @@ CSV use the same own-session route usage. Legacy empty metadata-only route maps
 retain non-fork token fallback. Missing request context produces estimated pricing
 and an empty CSV context field. CSV text formulas are escaped while numeric
 negative values remain numeric. All four bundles build successfully.
+
+Follow-up stage 3 verified: all 210 tests pass, including plain/zstd v2/v3 paths.
+Real module smoke passes for 0.1.2-rc.1, 0.1.3-alpha.2, 0.1.5-rc.1,
+0.1.5-rc.2 and 0.1.6-alpha.1. Browser smoke passes with 25 screenshots and zero
+reported errors. Fresh npm ci succeeds with the unchanged resolved Harness graph;
+optional remotes peers retain the older versions required by legacy client-locale.
+CI now runs the five-version contract matrix and the Chrome UI fixture. Workflow
+YAML parses locally; execution on GitHub is verified separately from local probes.

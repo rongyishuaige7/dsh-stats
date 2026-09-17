@@ -6,6 +6,9 @@
 | `0.1.1-rc.2` | `^22.19.0 || >=24.0.0` | verified | verified | verified | official-first, fallback | verified |
 | `0.1.2-rc.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/JSONL/live Session | fixture verified |
 | `0.1.3-alpha.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v2 handles/live Session | fixture verified |
+| `0.1.5-rc.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
+| `0.1.5-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
+| `0.1.6-alpha.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 
 The rc2 row was verified with a fresh `@deepseek-ai/dsh@0.1.1-rc.2` process on 2026-08-27. `npm run smoke:rc2` launched a temporary Chrome 151 runtime, loaded the Web profile, confirmed the plugin entry and `.dss-panel`, rendered populated project/session data, selected `yi-api` and verified its USD balance card, and observed zero console errors, runtime exceptions, or failed network requests. A separate isolated run also covered the explicit empty-workspace state. The rc6 browser cell remains pending because no separate rc6 browser run was requested.
 
@@ -49,21 +52,29 @@ npm run smoke:browser
 `smoke:browser` needs Chrome; set `CHROME_BIN` outside the default macOS location.
 It starts and stops its own loopback server and temporary browser profile.
 
-For each version, install the matching upstream packages in a temporary directory:
+For each version, pin the entire upstream module closure in a fresh directory:
 
 ```bash
 smoke_root=$(mktemp -d)
-smoke_version=0.1.3-alpha.2 # repeat with 0.1.2-rc.1
-npm install --prefix "$smoke_root" --no-save --package-lock=false \
-  "@deepseek-ai/dsh-session-projection@$smoke_version" \
-  "@deepseek-ai/dsh-session-projection-cache@$smoke_version" \
-  "@deepseek-ai/dsh-session-persistence-jsonl@$smoke_version" \
-  "@deepseek-ai/dsh-token-meter@$smoke_version" \
-  "@deepseek-ai/dsh-session-stats@$smoke_version" \
-  "@deepseek-ai/dsh-storage-json@$smoke_version" \
-  "@deepseek-ai/dsh-typert-protocol@$smoke_version"
+node scripts/install-harness-fixture.mjs 0.1.5-rc.1 "$smoke_root"
 DSH_HARNESS_ROOT="$smoke_root" npm run smoke:harness
 ```
 
-These temporary installations do not change the plugin lockfile or a DSH profile.
-The optional JSONL dependencies may need native build tools on the test machine.
+Repeat with `0.1.2-rc.1`, `0.1.3-alpha.2`, `0.1.5-rc.2` and `0.1.6-alpha.1`.
+CI runs this exact matrix plus the Chrome browser fixture. Exact module versions
+prevent npm from mixing prerelease peers across RCs. These temporary installations
+do not change a DSH profile or the plugin's resolved Harness dependency versions.
+
+## September 17 update
+
+npm reports `latest=0.1.5-rc.1`, `next=0.1.5-rc.2`, `alpha=0.1.6-alpha.1`.
+All three use Session format v3. The plugin accepts v3 headers and plain/zstd v3
+files while retaining the older formats and rejecting unknown future formats.
+Current session and remote services are declared in the client arrival list.
+The retired `dsh-client-runtime` remains an optional legacy peer at its actual
+published versions; current service packages are optional peers for old hosts.
+
+The module probes check real persistence and projections; browser fixtures check
+the plugin UI. A complete current Web profile and real account API calls remain
+outside this verification. The historical rc2 full-Web result above is not a
+claim that the latest Web profile has been rerun.
