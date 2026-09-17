@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import createRpcSchemas from './rpc-schemas.cjs'
 const schemas = createRpcSchemas(z)
-const { aggregateSchema: _result$schema, balanceSchema: _balanceResult$schema, accountSchema: _accountResult$schema, providersSchema: _providersResult$schema, forceSchema: _accountForce$schema } = schemas
+const { pricingRequestSchema, pricingResultSchema, aggregateSchema: _result$schema, balanceSchema: _balanceResult$schema, accountSchema: _accountResult$schema, providersSchema: _providersResult$schema, forceSchema: _accountForce$schema } = schemas
 
 export const TYPERT = {
   package: '@rongyi7/dsh-stats',
@@ -49,6 +49,12 @@ export const TYPERT = {
       }],
       result: { mode: 'strict', typeSymbol: '@rongyi7/dsh-stats#stats/account:result', schema: _accountResult$schema },
       sourceLocation: { "file": "packages/stats/src/index.ts", "line": 1, "column": 1 },
+    },
+    {
+      id: '@rongyi7/dsh-stats#stats/pricing', service: 'stats', namespace: 'stats', method: 'pricing', invocation: { kind: 'direct' },
+      parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: '@rongyi7/dsh-stats#stats/pricing:request', schema: pricingRequestSchema } }],
+      result: { mode: 'strict', typeSymbol: '@rongyi7/dsh-stats#stats/pricing:result', schema: pricingResultSchema },
+      sourceLocation: { file: 'src/index.js', line: 1, column: 1 },
     },
   ],
   model: {

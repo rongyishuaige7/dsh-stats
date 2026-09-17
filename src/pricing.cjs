@@ -8,6 +8,12 @@
  * so an estimate is never presented as that provider's official bill.
  */
 
+const BUILTIN = require('../data/pricing/catalog.json');
+const { validateCatalog, validateOverrides } = require('./pricing-validation.cjs');
+
+function createPricing(input = BUILTIN, customRules = []) {
+const catalog = validateCatalog(input);
+const overrides = validateOverrides(customRules);
 var MILLION = 1e6;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var DEEPSEEK_CHANGE_AT = Date.parse("2026-08-17T00:00:00+08:00");
@@ -19,9 +25,9 @@ var OPENAI_RETRIEVED_AT = "2026-08-26";
 // replaceable so a future host-side rate provider can pass a newer value
 // without changing the pricing rules themselves.
 var DISPLAY_CURRENCY = "CNY";
-var USD_CNY_RATE = 6.7205;
-var FX_RETRIEVED_AT = "2026-08-26";
-var FX_SOURCE = "https://api.frankfurter.app/2026-08-26?from=USD&to=CNY";
+var USD_CNY_RATE = catalog.fx.at(-1).usdCny;
+var FX_RETRIEVED_AT = catalog.fx.at(-1).date;
+var FX_SOURCE = catalog.fx.at(-1).sourceUrl;
 // OpenRouter rows are provider-specific snapshots, not a source for the
 // model-only fallback. A model fallback must resolve to one first-party rule.
 var MODEL_FALLBACK_EXCLUDED_FAMILIES = new Set(["openrouter"]);
@@ -61,152 +67,7 @@ function providerFamilyOf(providerId) {
 	return "unknown";
 }
 
-function modelAliases(canonical, aliases) {
-	return [canonical].concat(aliases || []).map(function(value) { return String(value).toLowerCase(); });
-}
-
-function fixedRule(family, canonical, currency, rates, aliases, extra) {
-	var retrievedAt = extra && typeof extra.retrievedAt === "string" && extra.retrievedAt ? extra.retrievedAt : RETRIEVED_AT;
-	return {
-		id: family + "/" + canonical + "@" + retrievedAt,
-		family: family,
-		canonical: canonical,
-		aliases: modelAliases(canonical, aliases),
-		currency: currency,
-		sourceUrl: SOURCES[family],
-		retrievedAt: retrievedAt,
-		rates: rates,
-		reasoningIncludedInOutput: true,
-		confidence: "exact",
-		...(extra || {})
-	};
-}
-
-var RULES = [
-	{
-		...fixedRule("openai", "gpt-6-astra", "USD", null, ["openai/gpt-6-astra"], { retrievedAt: "2026-09-17", observedFrom: "2026-09-17T00:00:00Z" }),
-		contextTiers: {
-			short: { cacheRead: 1, uncached: 10, cacheWrite: 12.5, output: 50 },
-			long: { cacheRead: 2, uncached: 20, cacheWrite: 25, output: 75 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT,
-		tierMultipliers: { standard: 1, priority: 2, batch: 0.5, flex: 0.5 }
-	},
-	{
-		...fixedRule("deepseek", "deepseek-v4-pro", "CNY", null),
-		legacy: { cacheRead: 0.025, uncached: 3, cacheWrite: 3, output: 6 },
-		offPeak: { cacheRead: 0.15, uncached: 4.5, cacheWrite: 4.5, output: 13.5 },
-		peak: { cacheRead: 0.30, uncached: 9, cacheWrite: 9, output: 27 }
-	},
-	{
-		...fixedRule("deepseek", "deepseek-v4-flash", "CNY", null),
-		legacy: { cacheRead: 0.02, uncached: 1, cacheWrite: 1, output: 2 },
-		offPeak: { cacheRead: 0.05, uncached: 1.5, cacheWrite: 1.5, output: 4.5 },
-		peak: { cacheRead: 0.10, uncached: 3, cacheWrite: 3, output: 9 }
-	},
-	{
-		...fixedRule("minimax", "MiniMax-M3", "CNY", null, ["minimax-m3"]),
-		serviceTiers: {
-			standard: {
-				short: { cacheRead: 0.42, uncached: 2.1, cacheWrite: 2.1, output: 8.4 },
-				long: { cacheRead: 0.84, uncached: 4.2, cacheWrite: 4.2, output: 16.8 }
-			},
-			priority: {
-				short: { cacheRead: 0.63, uncached: 3.15, cacheWrite: 3.15, output: 12.6 },
-				long: { cacheRead: 1.26, uncached: 6.3, cacheWrite: 6.3, output: 25.2 }
-			}
-		}
-	},
-	fixedRule("minimax", "MiniMax-M2.7", "CNY", { cacheRead: 0.42, uncached: 2.1, cacheWrite: 2.625, output: 8.4 }, ["minimax-m2.7"]),
-	fixedRule("minimax", "MiniMax-M2.7-highspeed", "CNY", { cacheRead: 0.42, uncached: 4.2, cacheWrite: 2.625, output: 16.8 }, ["minimax-m2.7-highspeed"]),
-
-	{
-		...fixedRule("openai", "gpt-5.6-sol", "USD", null, ["openai/gpt-5.6-sol", "daybreak-blue-latest"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-		contextTiers: {
-			short: { cacheRead: 0.4, uncached: 4, cacheWrite: 5, output: 20 },
-			long: { cacheRead: 0.8, uncached: 8, cacheWrite: 10, output: 30 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT
-	},
-	{
-		...fixedRule("openai", "gpt-5.6-terra", "USD", null, ["openai/gpt-5.6-terra"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-		contextTiers: {
-			short: { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 12 },
-			long: { cacheRead: 0.4, uncached: 4, cacheWrite: 5, output: 18 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT
-	},
-	{
-		...fixedRule("openai", "gpt-5.6-luna", "USD", null, ["openai/gpt-5.6-luna"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-		contextTiers: {
-			short: { cacheRead: 0.02, uncached: 0.2, cacheWrite: 0.25, output: 1.2 },
-			long: { cacheRead: 0.04, uncached: 0.4, cacheWrite: 0.5, output: 1.8 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT
-	},
-	{
-		// OpenAI lists cache writes as unavailable for these models. Keep a
-		// conservative input-rate proxy and mark rows with writes estimated.
-		...fixedRule("openai", "gpt-5.4", "USD", null, ["openai/gpt-5.4"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-		contextTiers: {
-			short: { cacheRead: 0.25, uncached: 2.5, cacheWrite: 2.5, output: 15 },
-			long: { cacheRead: 0.5, uncached: 5, cacheWrite: 5, output: 30 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT, cacheWritePriceUnknown: true
-	},
-	{
-		...fixedRule("openai", "gpt-5.4-mini", "USD", null, ["openai/gpt-5.4-mini"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-		contextTiers: {
-			short: { cacheRead: 0.075, uncached: 0.75, cacheWrite: 0.75, output: 4.5 },
-			long: { cacheRead: 0.15, uncached: 1.5, cacheWrite: 1.5, output: 9 }
-		}, contextThreshold: OPENAI_LONG_CONTEXT, cacheWritePriceUnknown: true
-	},
-	fixedRule("openai", "gpt-5.6-cyber", "USD", { cacheRead: 1.25, uncached: 12.5, cacheWrite: 15.625, output: 75 }, ["openai/gpt-5.6-cyber", "daybreak-red-latest"], { retrievedAt: OPENAI_RETRIEVED_AT }),
-
-	fixedRule("anthropic", "claude-opus-5", "USD", { cacheRead: 0.5, uncached: 5, cacheWrite: 6.25, output: 25 }, ["anthropic/claude-opus-5"], { cacheWriteDurationUnknown: true }),
-	fixedRule("anthropic", "claude-sonnet-5", "USD", { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 10 }, ["anthropic/claude-sonnet-5"], { cacheWriteDurationUnknown: true }),
-	fixedRule("anthropic", "claude-sonnet-4-6", "USD", { cacheRead: 0.3, uncached: 3, cacheWrite: 3.75, output: 15 }, ["claude-sonnet-4.6", "anthropic/claude-sonnet-4.6", "anthropic/claude-sonnet-4-6"], { cacheWriteDurationUnknown: true }),
-	fixedRule("anthropic", "claude-haiku-4-5", "USD", { cacheRead: 0.1, uncached: 1, cacheWrite: 1.25, output: 5 }, ["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4-5"], { cacheWriteDurationUnknown: true }),
-
-	{
-		...fixedRule("google", "gemini-3.7-flash", "USD", { cacheRead: 0.075, uncached: 0.75, cacheWrite: 0.75, output: 3.75 }, ["google/gemini-3.7-flash"]),
-		effectiveTo: "2026-12-31T23:59:59.999Z", cacheStorageUnknown: true
-	},
-	{
-		...fixedRule("google", "gemini-3.1-pro-preview", "USD", null, ["gemini-3.1-pro-preview-customtools", "google/gemini-3.1-pro-preview"]),
-		contextTiers: {
-			short: { cacheRead: 0.2, uncached: 2, cacheWrite: 2, output: 12 },
-			long: { cacheRead: 0.4, uncached: 4, cacheWrite: 4, output: 18 }
-		}, contextThreshold: GEMINI_LONG_CONTEXT, cacheStorageUnknown: true
-	},
-	{
-		...fixedRule("google", "gemini-2.5-pro", "USD", null, ["google/gemini-2.5-pro"]),
-		contextTiers: {
-			short: { cacheRead: 0.125, uncached: 1.25, cacheWrite: 1.25, output: 10 },
-			long: { cacheRead: 0.25, uncached: 2.5, cacheWrite: 2.5, output: 15 }
-		}, contextThreshold: GEMINI_LONG_CONTEXT, cacheStorageUnknown: true
-	},
-	fixedRule("google", "gemini-2.5-flash", "USD", { cacheRead: 0.03, uncached: 0.3, cacheWrite: 0.3, output: 2.5 }, ["google/gemini-2.5-flash"], { cacheStorageUnknown: true }),
-
-	fixedRule("moonshot", "kimi-k3", "CNY", { cacheRead: 2, uncached: 20, cacheWrite: 20, output: 100 }, ["moonshotai/kimi-k3"]),
-	fixedRule("moonshot", "kimi-k2.7-code", "CNY", { cacheRead: 1.3, uncached: 6.5, cacheWrite: 6.5, output: 27 }, ["moonshotai/kimi-k2.7-code"]),
-	fixedRule("moonshot", "kimi-k2.7-code-highspeed", "CNY", { cacheRead: 2.6, uncached: 13, cacheWrite: 13, output: 54 }, ["moonshotai/kimi-k2.7-code-highspeed"]),
-	fixedRule("moonshot", "kimi-k2.6", "CNY", { cacheRead: 1.1, uncached: 6.5, cacheWrite: 6.5, output: 27 }, ["moonshotai/kimi-k2.6"]),
-
-	fixedRule("zai", "glm-5.2", "USD", { cacheRead: 0.26, uncached: 1.4, cacheWrite: 1.4, output: 4.4 }, ["z-ai/glm-5.2"]),
-	fixedRule("zai", "glm-5.1", "USD", { cacheRead: 0.26, uncached: 1.4, cacheWrite: 1.4, output: 4.4 }, ["z-ai/glm-5.1"]),
-	fixedRule("zai", "glm-5", "USD", { cacheRead: 0.2, uncached: 1, cacheWrite: 1, output: 3.2 }, ["z-ai/glm-5"]),
-	fixedRule("zai", "glm-5-turbo", "USD", { cacheRead: 0.24, uncached: 1.2, cacheWrite: 1.2, output: 4 }, ["z-ai/glm-5-turbo"]),
-	fixedRule("zai", "glm-4.7", "USD", { cacheRead: 0.11, uncached: 0.6, cacheWrite: 0.6, output: 2.2 }, ["z-ai/glm-4.7"]),
-	fixedRule("zai", "glm-4.7-flashx", "USD", { cacheRead: 0.01, uncached: 0.07, cacheWrite: 0.07, output: 0.4 }, ["z-ai/glm-4.7-flashx"]),
-	fixedRule("zai", "glm-4.7-flash", "USD", { cacheRead: 0, uncached: 0, cacheWrite: 0, output: 0 }, ["z-ai/glm-4.7-flash"]),
-
-	// OpenRouter publishes per-token prices dynamically. These rows are a dated
-	// snapshot and therefore estimated for historical usage.
-	fixedRule("openrouter", "openai/gpt-5.6-sol", "USD", { cacheRead: 0.25, uncached: 2.5, cacheWrite: 3.125, output: 15 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "openai/gpt-5.6-terra", "USD", { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 12 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "openai/gpt-5.6-luna", "USD", { cacheRead: 0.02, uncached: 0.2, cacheWrite: 0.25, output: 1.2 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "anthropic/claude-opus-5", "USD", { cacheRead: 0.5, uncached: 5, cacheWrite: 6.25, output: 25 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "anthropic/claude-sonnet-5", "USD", { cacheRead: 0.2, uncached: 2, cacheWrite: 2.5, output: 10 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "google/gemini-3.7-flash", "USD", { cacheRead: 0.0375, uncached: 0.375, cacheWrite: 0.0208333333333333, output: 1.875 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "moonshotai/kimi-k3", "USD", { cacheRead: 0.3, uncached: 3, cacheWrite: 3, output: 15 }, [], { confidence: "estimated" }),
-	fixedRule("openrouter", "z-ai/glm-5.2", "USD", { cacheRead: 0.115, uncached: 0.5, cacheWrite: 0.5, output: 3.15 }, [], { confidence: "estimated" })
-];
+var RULES = catalog.rules;
 
 function ruleMatchesModel(rule, raw) {
 	var model = String(raw || "").trim().toLowerCase();
@@ -216,12 +77,13 @@ function ruleMatchesModel(rule, raw) {
 	return false;
 }
 
-function matchingRules(family, modelRaw, at) {
+function matchingRules(family, modelRaw, at, providerId, accountType) {
 	var when = Number.isFinite(at) ? at : Date.now();
 	return RULES.filter(function(rule) {
-		if (rule.family !== family || !ruleMatchesModel(rule, modelRaw)) return false;
+		if ((rule.providerId ? rule.providerId !== providerId : rule.family !== family) || !ruleMatchesModel(rule, modelRaw)) return false;
+		if (rule.accountType && rule.accountType !== accountType) return false;
 		if (rule.effectiveFrom && when < Date.parse(rule.effectiveFrom)) return false;
-		if (rule.effectiveTo && when > Date.parse(rule.effectiveTo)) return false;
+		if (rule.effectiveTo && when >= Date.parse(rule.effectiveTo)) return false;
 		return true;
 	});
 }
@@ -229,17 +91,20 @@ function matchingRules(family, modelRaw, at) {
 function modelFallbackRules(modelRaw, at) {
 	var when = Number.isFinite(at) ? at : Date.now();
 	return RULES.filter(function(rule) {
-		if (MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) || rule.confidence !== "exact" || !ruleMatchesModel(rule, modelRaw)) return false;
+		if (MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) || rule.providerId || rule.confidence !== "exact" || !ruleMatchesModel(rule, modelRaw)) return false;
 		if (rule.effectiveFrom && when < Date.parse(rule.effectiveFrom)) return false;
-		if (rule.effectiveTo && when > Date.parse(rule.effectiveTo)) return false;
+		if (rule.effectiveTo && when >= Date.parse(rule.effectiveTo)) return false;
 		return true;
 	});
 }
 
 // Resolve provider-scoped rules first. Unknown provider ids may use a unique
 // first-party model row as an estimate, but the provider family stays unknown.
-function rulesForIdentity(family, modelRaw, at) {
-	var direct = matchingRules(family, modelRaw, at);
+function rulesForIdentity(family, modelRaw, at, providerId, accountType) {
+	var custom = overrides.filter(rule => rule.providerId === providerId && (!rule.accountType || rule.accountType === accountType)
+		&& ruleMatchesModel(rule, modelRaw) && (!rule.effectiveFrom || at >= Date.parse(rule.effectiveFrom)) && (!rule.effectiveTo || at < Date.parse(rule.effectiveTo)));
+	if (custom.length) return { matches: custom, estimatedFallback: false, custom: true };
+	var direct = matchingRules(family, modelRaw, at, providerId, accountType);
 	if (direct.length > 0 || family !== "unknown") return { matches: direct, estimatedFallback: false };
 	var fallback = modelFallbackRules(modelRaw, at);
 	return { matches: fallback, estimatedFallback: fallback.length === 1 };
@@ -255,7 +120,7 @@ function normalizeIdentity(providerId, modelRaw, accountType, at) {
 	var provider = typeof providerId === "string" && providerId.trim() ? providerId.trim() : "unknown";
 	var raw = typeof modelRaw === "string" && modelRaw.trim() ? modelRaw.trim() : "(unknown)";
 	var family = providerFamilyOf(provider);
-	var matches = rulesForIdentity(family, raw, at).matches;
+	var matches = rulesForIdentity(family, raw, at, provider, normalizeAccountType(accountType)).matches;
 	return {
 		providerId: provider,
 		providerFamily: family,
@@ -298,7 +163,10 @@ function convertCostToCny(cost, options) {
 	var currency = typeof cost.currency === "string" ? cost.currency.toUpperCase() : "";
 	if (currency === DISPLAY_CURRENCY) return { ...cost, currency: DISPLAY_CURRENCY };
 	if (cost.amount == null || currency !== "USD") return { ...cost };
-	var rate = usdCnyRate(options);
+	var fxAt = cost.pricing?.pricedAt;
+	var day = Number.isFinite(fxAt) ? new Date(fxAt).toISOString().slice(0, 10) : "9999-12-31";
+	var fx = catalog.fx.filter(row => row.date <= day).at(-1) || catalog.fx[0];
+	var rate = positiveRate(options?.usdCnyRate) || fx.usdCny;
 	if (!rate) return { ...cost };
 	// A USD list-price row converted with a fixed FX snapshot is useful for
 	// comparison, but it cannot represent the provider's settled RMB bill.
@@ -311,7 +179,8 @@ function convertCostToCny(cost, options) {
 		currency: DISPLAY_CURRENCY,
 		amount: convertedAmount,
 		exactAmount: 0,
-		estimatedAmount: convertedAmount
+		estimatedAmount: convertedAmount,
+		pricing: { ...cost.pricing, nativeAmount: cost.amount, nativeCurrency: "USD", fxRate: rate, fxDate: fx.date, fxSource: fx.sourceUrl }
 	};
 }
 
@@ -408,7 +277,7 @@ function emptyCost(status, identity, tokens, extra) {
 }
 
 function priceUsage(usage, identityInput) {
-	var at = Number.isFinite(usage && usage.slot) ? usage.slot * 30 * 60 * 1000 : Date.now();
+	var at = Number.isFinite(usage?.time) ? usage.time : Number.isFinite(usage && usage.slot) ? usage.slot * 30 * 60 * 1000 : Date.now();
 	var identity = normalizeIdentity(
 		identityInput && identityInput.providerId || usage && usage.providerId,
 		identityInput && identityInput.modelRaw || usage && (usage.modelRaw || usage.model),
@@ -416,7 +285,7 @@ function priceUsage(usage, identityInput) {
 		at
 	);
 	var tokens = tokenCounts(usage);
-	var resolved = rulesForIdentity(identity.providerFamily, identity.modelRaw, at);
+	var resolved = rulesForIdentity(identity.providerFamily, identity.modelRaw, at, identity.providerId, identity.accountType);
 	if (identity.accountType === "free") {
 		var freeMatches = resolved.matches;
 		return { ...emptyCost("free", identity, tokens), amount: 0, currency: freeMatches.length === 1 ? freeMatches[0].currency : null, unpricedTokens: 0 };
@@ -424,10 +293,10 @@ function priceUsage(usage, identityInput) {
 	if (identity.accountType === "subscription" || identity.accountType === "token-plan") {
 		return emptyCost("subscription", identity, tokens);
 	}
-	if (identity.accountType === "unknown" || identity.accountType === "relay" || identity.accountType === "local") {
+	if (identity.accountType === "unknown" || !resolved.custom && (identity.accountType === "relay" || identity.accountType === "local")) {
 		return emptyCost("unsupported", identity, tokens);
 	}
-	if (identity.providerFamily === "unknown" && !resolved.estimatedFallback) {
+	if (identity.providerFamily === "unknown" && !resolved.estimatedFallback && !resolved.custom && !resolved.matches.some(rule => rule.providerId === identity.providerId)) {
 		return emptyCost(resolved.matches.length > 1 ? "ambiguous" : "unsupported", identity, tokens);
 	}
 	var matches = resolved.matches;
@@ -436,34 +305,42 @@ function priceUsage(usage, identityInput) {
 	var rule = matches[0];
 	var rates = ratesFor(rule, usage, at);
 	var tier = normalizeServiceTier(usage?.serviceTier);
-	if (tier === "unknown") return emptyCost("unsupported", identity, tokens);
+	if (tier === "unknown" || tier !== "standard" && !rule.tierMultipliers && !rule.serviceTiers) return emptyCost("unsupported", identity, tokens);
 	if (rule.tierMultipliers) {
 		var multiplier = rule.tierMultipliers[tier];
 		if (!Number.isFinite(multiplier)) return emptyCost("unsupported", identity, tokens);
-		if (rates) rates = Object.fromEntries(Object.entries(rates).map(([key, rate]) => [key, rate * multiplier]));
+		if (rates) rates = Object.fromEntries(Object.entries(rates).map(([key, rate]) => [key, rate === null ? null : rate * multiplier]));
 	}
 	if (!rates) return emptyCost("unsupported", identity, tokens);
-	var amount = (tokens.uncached * rates.uncached + tokens.cacheRead * rates.cacheRead + tokens.cacheWrite * rates.cacheWrite + tokens.output * rates.output) / MILLION;
+	var fields = ["uncached", "cacheRead", "cacheWrite", "output"];
+	var missing = fields.filter(key => rates[key] === null && tokens[key] > 0);
+	var unpricedTokens = missing.reduce((total, key) => total + tokens[key], 0);
+	var amount = fields.reduce((total, key) => total + (rates[key] === null ? 0 : tokens[key] * rates[key]), 0) / MILLION;
+	if (unpricedTokens > 0 && fields.every(key => rates[key] === null || tokens[key] === 0)) return emptyCost("unsupported", identity, tokens);
+	if (!Number.isFinite(amount)) return emptyCost("unsupported", identity, tokens);
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
 	var uncertain = usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
 		|| rule.observedFrom && at < Date.parse(rule.observedFrom)
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
 		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
 		|| rule.cacheWritePriceUnknown && tokens.cacheWrite > 0;
-	var status = allZero ? "free" : uncertain ? "estimated" : "exact";
+	var status = unpricedTokens > 0 ? "partial" : allZero ? "free" : uncertain ? "estimated" : "exact";
 	return {
 		status: status,
 		amount: amount,
 		currency: rule.currency,
 		exactAmount: status === "exact" || status === "free" ? amount : 0,
-		estimatedAmount: status === "estimated" ? amount : 0,
-		unpricedTokens: 0,
+		estimatedAmount: status === "estimated" || status === "partial" ? amount : 0,
+		unpricedTokens: unpricedTokens,
 		ruleId: rule.id,
 		sourceUrl: rule.sourceUrl,
 		retrievedAt: rule.retrievedAt,
 		providerId: identity.providerId,
 		providerFamily: identity.providerFamily,
-		modelCanonical: rule.canonical
+		modelCanonical: rule.canonical,
+		pricing: { catalogVersion: catalog.version, ruleRevision: rule.id, pricedAt: at,
+			basis: resolved.custom ? "custom" : resolved.estimatedFallback ? "reference" : "provider",
+			historicalEstimate: !!(rule.observedFrom && at < Date.parse(rule.observedFrom)) }
 	};
 }
 
@@ -545,7 +422,8 @@ function pricingCatalog() {
 	});
 }
 
-module.exports = {
+return {
+	catalog,
 	SOURCES: SOURCES,
 	RULES: RULES,
 	DISPLAY_CURRENCY: DISPLAY_CURRENCY,
@@ -567,3 +445,6 @@ module.exports = {
 	pricingCatalog: pricingCatalog,
 	tokenCounts: tokenCounts
 };
+
+}
+module.exports = Object.assign(createPricing(), { createPricing, BUILTIN, validateCatalog, validateOverrides });

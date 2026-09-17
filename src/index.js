@@ -11,6 +11,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
+import { pricingStore } from "./pricing-store.js";
 import routeData from "./route-data.cjs";
 import { collectAccounts, providerViews, responseJson } from "./accounts.js";
 
@@ -64,7 +65,7 @@ const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
 const STATS_SCHEMA_VERSION = 2;
 const SESSION_PROJECTION_DOMAIN_VERSION = 3;
-const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: 1, title: 1, sessionListMetadata: 1, statsRoute: 2 });
+const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: 1, title: 1, sessionListMetadata: 1, statsRoute: 3 });
 
 // DeepSeek 余额查询与统计聚合解耦：余额是宿主凭证能力，不应让统计日志
 // 读取失败或网络波动改变现有 stats/aggregate 的语义。
@@ -710,7 +711,7 @@ function routeProjectionApply(state, event) {
 	};
 	const contextTokens = sample.uncached + sample.cacheRead + sample.cacheWrite;
 	const slot = Math.floor(event.time / SLOT_MS);
-	const routeKey = JSON.stringify([route.providerId, route.model, route.accountType, route.serviceTier, slot, contextTokens]);
+	const routeKey = JSON.stringify([route.providerId, route.model, route.accountType, route.serviceTier, slot, contextTokens, event.time]);
 	const previous = key !== null && state.last?.key === key ? state.last : null;
 	let routeTree = state.routeTree;
 	if (previous) routeTree = routeData.updateRoute(routeTree, previous.routeKey, (row) => {
@@ -754,7 +755,7 @@ function routeProjectionView(state) {
 
 const STATS_ROUTE_PROJECTION = Object.freeze({
 	key: "statsRoute",
-	stateVersion: 2,
+	stateVersion: 3,
 	schema: { parse: routeProjectionSchema },
 	stateSchema: { parse: routeProjectionStateSchema },
 	init: routeProjectionState,
@@ -1079,7 +1080,7 @@ function infoFromProjectionValues(values, entry) {
 		serviceTier: pricing.normalizeServiceTier(row.serviceTier),
 		contextTokens: Number.isFinite(row.contextTokens) ? row.contextTokens : undefined,
 		count: Number.isSafeInteger(row.count) && row.count > 0 ? row.count : 1,
-		pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
+		pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count) || row.count > 1,
 		uncached: nonNegativeNumber(row.uncached),
 		output: nonNegativeNumber(row.output),
 		cacheRead: nonNegativeNumber(row.cacheRead),
@@ -1228,7 +1229,7 @@ function slotDurations(times) {
 
 // 按「provider + 模型 + 账户类型 + 服务档 + 上下文 + 30 分钟槽」聚合。
 // 上下文 token 数保留到请求粒度，避免 OpenAI/Gemini/MiniMax 的不同阈值被槽聚合破坏。
-function slotUsages(usages) {
+function slotUsages(usages, engine = pricing) {
 	const m = new Map();
 	for (const u of usages) {
 		const k = Math.floor(u.time / SLOT_MS);
@@ -1236,9 +1237,10 @@ function slotUsages(usages) {
 		const serviceTier = pricing.normalizeServiceTier(u.serviceTier);
 		const contextTokens = Number.isFinite(u.contextTokens) ? u.contextTokens : u.uncached + u.cacheRead + u.cacheWrite;
 		const contextOver512k = contextTokens > LONG_CONTEXT_TOKENS;
-		const key = identityKey(identity) + "\u0000" + serviceTier + "\u0000" + contextTokens + "\u0000" + k;
+		const key = identityKey(identity) + "\u0000" + serviceTier + "\u0000" + contextTokens + "\u0000" + k + "\u0000" + u.time;
 		const cur = m.get(key) || {
 			model: identity.modelRaw,
+			time: u.time,
 			...identityFields(identity),
 			serviceTier,
 			contextTokens,
@@ -1255,7 +1257,7 @@ function slotUsages(usages) {
 		if (u.pricingIncomplete) cur.pricingIncomplete = true;
 		m.set(key, cur);
 	}
-	return [...m.values()].map(({ pricingIncomplete, ...row }) => ({ ...row, cost: convertCostToCny(priceUsage({ ...row, pricingIncomplete }, row)) }));
+	return [...m.values()].map(({ pricingIncomplete, ...row }) => ({ ...row, cost: engine.convertCostToCny(engine.priceUsage({ ...row, pricingIncomplete }, row)) }));
 }
 
 function modelUsages(rows) {
@@ -1284,7 +1286,7 @@ function modelUsages(rows) {
 	return [...grouped.values()].map(({ _costs, ...row }) => ({ ...row, cost: summarizeCostsCny(_costs) }));
 }
 
-function projectionSlotUsage(info, usage, updatedAt) {
+function projectionSlotUsage(info, usage, updatedAt, engine = pricing) {
 	const identity = rawIdentity(info.providerId, info.model, info.accountType, updatedAt);
 	const contextTokens = usage.uncached + usage.cacheRead + usage.cacheWrite;
 	const row = {
@@ -1296,7 +1298,7 @@ function projectionSlotUsage(info, usage, updatedAt) {
 		slot: Math.floor(updatedAt / SLOT_MS),
 		...usage
 	};
-	return { ...row, cost: convertCostToCny(priceUsage({ ...row, pricingIncomplete: true }, row)) };
+	return { ...row, cost: engine.convertCostToCny(engine.priceUsage({ ...row, pricingIncomplete: true }, row)) };
 }
 
 let StatsService = (() => {
@@ -1306,6 +1308,7 @@ let StatsService = (() => {
 	let _current_decorators;
 	let _providers_decorators;
 	let _account_decorators;
+	let _pricing_decorators;
 	return class StatsService extends _classSuper {
 		static {
 			const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
@@ -1313,6 +1316,7 @@ let StatsService = (() => {
 			_current_decorators = [Remote("current")];
 			_providers_decorators = [Remote("providers")];
 			_account_decorators = [Remote("account")];
+			_pricing_decorators = [Remote("pricing")];
 			__esDecorate(this, null, _aggregate_decorators, {
 				kind: "method",
 				name: "aggregate",
@@ -1345,12 +1349,22 @@ let StatsService = (() => {
 				access: { has: (obj) => "account" in obj, get: (obj) => obj.account },
 				metadata: _metadata
 			}, null, _instanceExtraInitializers);
+			__esDecorate(this, null, _pricing_decorators, {
+				kind: "method", name: "pricing", static: false, private: false,
+				access: { has: obj => "pricing" in obj, get: obj => obj.pricing }, metadata: _metadata
+			}, null, _instanceExtraInitializers);
 			if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
 		}
 		constructor(ctx) {
 			super(ctx, "stats");
 			// 触发 @Remote 装饰器 initializer，把 aggregate 标记注册到 Typert（mark 幂等）。
 			__runInitializers(this, _instanceExtraInitializers);
+			if (typeof ctx?.effect === "function") ctx.effect(() => {
+				const store = pricingStore(this, dshHome());
+				void store.refresh();
+				const timer = setInterval(() => { void store.refresh(); }, 3600000); timer.unref?.();
+				return () => clearInterval(timer);
+			}, "dsh-stats: pricing updates");
 			// Register the route projection only when the host exposes the official
 			// registry. The registration is scoped to this service's Cordis fiber and
 			// is therefore removed automatically when the plugin unloads.
@@ -1362,8 +1376,10 @@ let StatsService = (() => {
 			}
 		}
 
-		async aggregate() {
+		async aggregate(overridePricing) {
 			const home = dshHome();
+			const priceStore = pricingStore(this, home);
+			const priceEngine = overridePricing || priceStore.snapshot();
 			const warnings = [];
 			const hostCtx = this.ctx || {};
 			const workspaceRegistry = contextService(hostCtx, "workspaceRegistry");
@@ -1727,8 +1743,8 @@ let StatsService = (() => {
 					reasoning: totalReasoning
 				};
 				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
-				let perSlotUsage = slotUsages(info.usages);
-				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [projectionSlotUsage(info, projectionUsage, updatedAt)];
+				let perSlotUsage = slotUsages(info.usages, priceEngine);
+				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [projectionSlotUsage(info, projectionUsage, updatedAt, priceEngine)];
 				const modelUsage = modelUsages(perSlotUsage);
 				const primaryIdentity = rawIdentity(info.providerId, info.model, info.accountType, updatedAt);
 				const sessionCost = summarizeCostsCny(perSlotUsage.map((row) => row.cost));
@@ -1840,6 +1856,7 @@ let StatsService = (() => {
 			});
 			projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 			const cost = mergeCostSummariesCny(projects.map((project) => project.cost));
+			if (!overridePricing && cost.unpricedTokens > 0 && this.ctx) void priceStore.refresh({ unknown: true });
 
 			const projectIndex = new Map();
 			projects.forEach((p, i) => projectIndex.set(p.id, i));
@@ -1879,8 +1896,29 @@ let StatsService = (() => {
 				projects,
 				cost,
 				timeline: { slotMinutes: SLOT_MINUTES, days },
-				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), degraded: warnings.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings }
+				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint: priceStore.fingerprint, degraded: warnings.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings }
 			};
+		}
+
+		async pricing(request = { action: "status" }) {
+			const store = pricingStore(this, dshHome());
+			if (request.action === "refresh") return store.refresh({ force: true });
+			if (request.action === "rollback") return store.rollback(request.version, request.revision);
+			if (request.action === "preview" || request.action === "save") {
+				const overrides = JSON.parse(request.overridesJson);
+				if (request.action === "save") return store.save({ revision: request.revision, autoUpdate: request.autoUpdate, overrides });
+				const before = await this.aggregate();
+				const after = await this.aggregate(store.preview(overrides));
+				const changed = [];
+				const old = new Map(before.projects.flatMap(p => p.sessions).map(s => [s.id, s]));
+				for (const session of after.projects.flatMap(p => p.sessions)) {
+					const previous = old.get(session.id);
+					if (previous && JSON.stringify(previous.cost) !== JSON.stringify(session.cost)) changed.push({ sessionId: session.id, updatedAt: session.updatedAt, before: previous.cost, after: session.cost });
+				}
+				return { ...store.status(), previewJson: JSON.stringify({ changed, before: before.cost, after: after.cost }) };
+			}
+			if (request.action !== "status") throw new Error("pricing-action-invalid");
+			return store.status();
 		}
 
 		async providers() {

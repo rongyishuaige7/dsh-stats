@@ -174,7 +174,8 @@ test('request context and counts survive cold projection replay without mutating
 	const second = definition.apply(first, events[1]);
 	expect(JSON.stringify(first)).toBe(saved);
 	definition.stateSchema.parse(JSON.parse(JSON.stringify(second)));
-	expect(definition.view(second).routes[0]).toMatchObject({ contextTokens: 300000, count: 2, uncached: 600000 });
+	expect(definition.view(second).routes).toHaveLength(2);
+	expect(definition.view(second).routes.reduce((sum, row) => sum + row.uncached, 0)).toBe(600000);
 	const base = { workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['current'] }] } };
 	const live = await StatsService.prototype.aggregate.call({ ctx: { ...base, sessions: { get: () => ({ header, inheritedEventCount: 0, snapshotEvents: () => events }) } } });
 	const cold = await StatsService.prototype.aggregate.call({ ctx: { ...base,

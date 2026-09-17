@@ -19,11 +19,12 @@ const _costSummary$schema = z.object({
   unpricedTokens: z.number().nonnegative(), unknownRows: z.number().int().nonnegative(),
 }).strict()
 const _cost$schema = z.object({
-  status: z.enum(['exact', 'estimated', 'free', 'subscription', 'unsupported', 'ambiguous']),
+  status: z.enum(['exact', 'estimated', 'free', 'subscription', 'unsupported', 'ambiguous', 'partial']),
   amount: z.number().nonnegative().nullable(), currency: z.string().nullable(),
   exactAmount: z.number().nonnegative(), estimatedAmount: z.number().nonnegative(), unpricedTokens: z.number().nonnegative(),
   ruleId: z.string().nullable(), sourceUrl: z.string().url().nullable(), retrievedAt: z.string().nullable(),
   providerId: z.string(), providerFamily: z.string(), modelCanonical: z.string(),
+  pricing: z.object({ catalogVersion: z.number().int().positive().optional(), ruleRevision: z.string().optional(), pricedAt: z.number().nonnegative().optional(), basis: z.enum(['custom', 'reference', 'provider']).optional(), historicalEstimate: z.boolean().optional(), nativeAmount: z.number().nonnegative().optional(), nativeCurrency: z.string().optional(), fxRate: z.number().positive().optional(), fxDate: z.string().optional(), fxSource: z.string().optional() }).strict().optional(),
 }).strict()
 const _modelUsage$schema = z.object({
   model: z.string(), providerId: z.string(), providerFamily: z.string(), modelRaw: z.string(), modelCanonical: z.string(), accountType: z.string(),
@@ -40,7 +41,7 @@ const _slotStat$schema = z.object({
 }).strict()
 const _usage$schema = z.object({
   model: z.string(), providerId: z.string(), providerFamily: z.string(), modelRaw: z.string(), modelCanonical: z.string(), accountType: z.string(),
-  serviceTier: z.enum(['standard', 'priority', 'batch', 'flex', 'unknown']), contextTokens: z.number().nonnegative(), contextOver512k: z.boolean(), slot: z.number().int().nonnegative(),
+  serviceTier: z.enum(['standard', 'priority', 'batch', 'flex', 'unknown']), contextTokens: z.number().nonnegative(), contextOver512k: z.boolean(), slot: z.number().int().nonnegative(), time: z.number().nonnegative().optional(),
   uncached: z.number().nonnegative(), output: z.number().nonnegative(),
   cacheRead: z.number().nonnegative(), cacheWrite: z.number().nonnegative(), reasoning: z.number().nonnegative(),
   cost: _cost$schema,
@@ -61,7 +62,7 @@ const _project$schema = z.object({
 const _result$schema = z.object({
   projects: z.array(_project$schema), cost: _costSummary$schema,
   timeline: z.object({ slotMinutes: z.number().int().positive(), days: z.array(z.object({ date: z.string(), dayTotalMs: z.number().nonnegative(), slotBlocks: z.array(z.object({ slot: z.number().int().nonnegative(), projectId: z.string(), name: z.string(), colorIndex: z.number().int().nonnegative(), ms: z.number().nonnegative() }).strict()) }).strict()) }).strict(),
-  meta: z.object({ schemaVersion: z.literal(2), source: z.literal('host'), generatedAt: z.number().nonnegative(), degraded: z.boolean(), warnings: z.array(z.object({ code: z.string(), message: z.string(), sessionId: z.string().optional() }).strict()) }).strict(),
+  meta: z.object({ schemaVersion: z.literal(2), source: z.literal('host'), pricingVersion: z.number().int().positive().optional(), pricingFingerprint: z.string().optional(), generatedAt: z.number().nonnegative(), degraded: z.boolean(), warnings: z.array(z.object({ code: z.string(), message: z.string(), sessionId: z.string().optional() }).strict()) }).strict(),
 }).strict()
 const _balanceAccount$schema = z.object({
   provider: z.literal('deepseek'), name: z.string(), status: z.enum(['ok', 'stale', 'unconfigured', 'error']),
@@ -97,6 +98,9 @@ const _accountResult$schema = z.object({
   warnings: z.array(z.object({ providerId: z.string(), code: z.string(), message: z.string() }).strict()),
 }).strict()
 const _accountForce$schema = z.boolean().optional()
+const pricingRequestSchema = z.object({ action: z.enum(['status', 'refresh', 'preview', 'save', 'rollback']), revision: z.number().int().nonnegative().optional(), version: z.number().int().positive().optional(), autoUpdate: z.boolean().optional(), overridesJson: z.string().max(262144).optional() }).strict().optional();
+const pricingResultSchema = z.object({ version: z.number().int().positive(), publishedAt: z.string(), fingerprint: z.string(), lastCheckAt: z.number().nullable(), lastSuccessAt: z.number().nullable(), error: z.string().nullable(), revision: z.number().int().nonnegative(), autoUpdate: z.boolean(), pinnedVersion: z.number().nullable(), catalogJson: z.string().max(4194304), overridesJson: z.string().max(262144), history: z.array(z.number().int().positive()), previewJson: z.string().optional() }).strict();
+
 
 
 // Schema v1 is accepted only at the browser boundary for older plugin hosts.
@@ -128,6 +132,7 @@ const parseAccountResult = value => validate(_accountResult$schema, value);
 const parseProvidersResult = value => validate(_providersResult$schema, value);
 
 return {
+  pricingRequestSchema, pricingResultSchema, parsePricingResult: value => validate(pricingResultSchema, value),
   aggregateSchema: _result$schema, balanceSchema: _balanceResult$schema,
   accountSchema: _accountResult$schema, providersSchema: _providersResult$schema, forceSchema: _accountForce$schema,
   parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult
