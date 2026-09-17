@@ -225,3 +225,13 @@ projections mark the session partial and do not import a fork parent's token tot
 Valid empty own projections remain exact zero, and parent metadata survives the
 client fallback path. All bundles build; the browser fixture passes 25 screenshots
 with no reported runtime, console or network errors.
+
+Browser startup diagnostics: the performance commit's GitHub run timed out before
+Chrome exposed its debugging port; the old fixture discarded Chrome stderr, so
+the original cause could not be established. Startup now has its own 30-second
+deadline, reports early process exits immediately, and retains a bounded stderr
+tail with exit/signal details in failure reports. Browser sandbox settings remain
+unchanged. A synthetic exit-23 launcher confirms failure reporting in under one
+second; the real local Chrome fixture passes all 25 screenshots. All 216 tests
+also pass in UTC, all four bundles pass syntax checks, npm audit finds zero
+vulnerabilities, and the package preview contains only the 16 intended entries.

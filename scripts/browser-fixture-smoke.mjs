@@ -36,7 +36,27 @@ const url = 'http://127.0.0.1:' + server.address().port;
 const chrome = spawn(chromePath, [
   '--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
   '--remote-debugging-port=0', '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank'
-], { stdio: 'ignore', detached: process.platform !== 'win32' });
+], { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+let chromeError;
+let chromeStderr = '';
+chrome.on('error', error => { chromeError = error; });
+chrome.stderr.setEncoding('utf8');
+chrome.stderr.on('data', chunk => { chromeStderr = (chromeStderr + chunk).slice(-8192); });
+async function chromePort() {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    if (chromeError) throw chromeError;
+    if (chrome.exitCode !== null || chrome.signalCode !== null) {
+      throw new Error('Chrome exited before startup: ' + (chrome.signalCode || chrome.exitCode));
+    }
+    try {
+      const port = Number(readFileSync(join(scratch, 'chrome/DevToolsActivePort'), 'utf8').split('\n')[0]);
+      if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await delay(100);
+  }
+  throw new Error('Timed out after 30s: Chrome startup');
+}
 let socket;
 let nextId = 0;
 const pending = new Map();
@@ -79,8 +99,7 @@ async function layout(name) {
   assert(pageSize.scroll <= pageSize.width + 1, name + ' page overflow: ' + JSON.stringify(pageSize));
 }
 try {
-  let port;
-  await waitFor(() => { port = Number(readFileSync(join(scratch, 'chrome/DevToolsActivePort'), 'utf8').split('\n')[0]); return port > 0; }, 'Chrome startup');
+  const port = await chromePort();
   const pages = await (await fetch('http://127.0.0.1:' + port + '/json')).json();
   socket = new WebSocket(pages.find(page => page.type === 'page').webSocketDebuggerUrl);
   socket.on('message', raw => {
@@ -152,6 +171,7 @@ try {
   report.status = 'passed';
 } catch (error) {
   report.status = 'failed'; report.failure = error.stack;
+  report.chrome = { exitCode: chrome.exitCode, signal: chrome.signalCode, stderr: chromeStderr };
   if (socket?.readyState === WebSocket.OPEN) await capture('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
@@ -160,6 +180,7 @@ try {
   if (socket?.readyState === WebSocket.OPEN) await command('Browser.close').catch(() => {});
   socket?.close();
   const stopBrowser = signal => {
+    if (!chrome.pid) return;
     try {
       // Chrome's launcher may exit before its helpers. This process group was
       // created exclusively for this fixture, so it never includes user Chrome.
@@ -167,7 +188,7 @@ try {
       else chrome.kill(signal);
     } catch (error) { if (error.code !== 'ESRCH') throw error; }
   };
-  if (chrome.exitCode === null && chrome.signalCode === null) {
+  if (chrome.pid && chrome.exitCode === null && chrome.signalCode === null) {
     const stopped = once(chrome, 'exit');
     stopBrowser('SIGTERM'); await Promise.race([stopped, delay(3000)]);
     if (chrome.exitCode === null && chrome.signalCode === null) { stopBrowser('SIGKILL'); await stopped; }
