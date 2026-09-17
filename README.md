@@ -53,13 +53,13 @@ dsh web
 固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.3.0
+dsh plugin --profile web add @rongyi7/dsh-stats@0.3.1
 ```
 
 安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.1.tgz
 ```
 
 验证插件是否已注册：
@@ -69,6 +69,8 @@ dsh --profile web --dump-config
 ```
 
 输出中应能看到 `stats` 和 `@rongyi7/dsh-stats`。**不要**用 `npm install --prefix ~/.dsh/profiles/web ...` 直接改写 DSH profile；profile 由 pnpm 管理，官方 `dsh plugin` 命令会处理依赖和 bundle 注册。
+
+若新版 pnpm 提示 `ERR_PNPM_ADDING_TO_ROOT`，使用 `dsh plugin --profile web add -w @rongyi7/dsh-stats`。这里的 workspace root 是该 Web profile 的目录。
 </details>
 
 ## ✨ 核心能力

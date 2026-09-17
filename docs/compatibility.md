@@ -6,7 +6,7 @@
 | `0.1.1-rc.2` | `^22.19.0 || >=24.0.0` | verified | verified | verified | official-first, fallback | verified |
 | `0.1.2-rc.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/JSONL/live Session | fixture verified |
 | `0.1.3-alpha.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v2 handles/live Session | fixture verified |
-| `0.1.5-rc.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
+| `0.1.5-rc.1` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v3 handles/live Session | full Web verified |
 | `0.1.5-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 | `0.1.6-alpha.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 
@@ -75,6 +75,15 @@ The retired `dsh-client-runtime` remains an optional legacy peer at its actual
 published versions; current service packages are optional peers for old hosts.
 
 The module probes check real persistence and projections; browser fixtures check
-the plugin UI. A complete current Web profile and real account API calls remain
-outside this verification. The historical rc2 full-Web result above is not a
-claim that the latest Web profile has been rerun.
+the plugin UI. For the 0.3.1 release, a fresh complete `0.1.5-rc.1` Web profile
+also passed: 231 upstream modules pinned to that release, official `dsh plugin`
+tarball installation, bundle registration, authenticated browser entry, exact
+host statistics, all four tabs, and desktop/mobile screenshots. A synthetic v3
+zstd session displays one project, one session, 12.3K input and 678 output tokens.
+Chrome reports no console errors, runtime exceptions or failed requests. The
+account page correctly reports missing credentials; no real provider API is used.
+Current pnpm requires `add -w` because the profile is a workspace root.
+
+Full Web runs for `0.1.5-rc.2` and `0.1.6-alpha.1` remain unverified; their module
+contract and independent UI fixture coverage is unchanged. See
+[0.3.1 release verification](release-0.3.1.md).

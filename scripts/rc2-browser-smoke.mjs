@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -7,7 +7,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { once } from "node:events";
 import WebSocket from "ws";
 
-const targetUrl = process.env.DSH_RC2_URL || "http://127.0.0.1:58538/";
+// A private URL file permits the current Harness launch-token exchange without
+// placing the credential in process arguments or test reports.
+const targetUrl = process.env.DSH_WEB_URL_FILE ? readFileSync(process.env.DSH_WEB_URL_FILE, "utf8").trim()
+	: process.env.DSH_WEB_URL || process.env.DSH_RC2_URL || "http://127.0.0.1:58538/";
 const chromePath = process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const configuredTimeoutMs = Number(process.env.DSH_SMOKE_TIMEOUT_MS);
 const timeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0 ? configuredTimeoutMs : 45_000;
@@ -170,7 +173,7 @@ class CdpPage {
 
 const startedAt = new Date().toISOString();
 const result = {
-	targetUrl,
+	targetUrl: pageUrl(targetUrl),
 	startedAt,
 	status: "blocked",
 	panel: false,
@@ -186,15 +189,24 @@ const result = {
 let chrome;
 let userDataDir;
 let page;
+async function capture(name) {
+	const directory = process.env.DSH_SMOKE_ARTIFACT_DIR;
+	if (!directory) return;
+	mkdirSync(directory, { recursive: true });
+	const screenshot = await page.command("Page.captureScreenshot", { format: "png" });
+	const path = join(directory, "web-" + name + ".png");
+	writeFileSync(path, Buffer.from(screenshot.data, "base64"));
+	result.artifacts[name] = path;
+}
 try {
 	const deadline = Date.now() + timeoutMs;
 	const port = await freePort();
 	userDataDir = mkdtempSync(join(tmpdir(), "dsh-stats-rc2-smoke-"));
 	chrome = spawn(chromePath, [
-		"--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+		"--headless=new", "--disable-gpu", "--disable-dev-shm-usage",
 		`--user-data-dir=${userDataDir}`, `--remote-debugging-port=${port}`,
 		"--window-size=1440,1000", "about:blank"
-	], { stdio: ["ignore", "pipe", "pipe"] });
+	], { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
 	chrome.stderr.on("data", () => {});
 	const version = await waitForJson(`http://127.0.0.1:${port}/json/version`, deadline);
 	const tabs = await waitForJson(`http://127.0.0.1:${port}/json`, deadline);
@@ -220,6 +232,8 @@ try {
 		const options = await page.evaluate("[...document.querySelectorAll('[role=option], [role=dialog] button')].map((node) => node.innerText.trim()).filter(Boolean)");
 		result.workspaceOptions = options?.slice(0, 20) || [];
 		if (result.workspaceOptions.length === 0) result.workspaceSelection = "no-options";
+		await page.command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+		await page.command("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 	}
 	const statsClicked = (await page.clickButton({ aria: "用量" }))
 		|| (await page.clickButton({ text: "用量" }))
@@ -234,7 +248,29 @@ try {
 	await waitForPage(page, "Boolean(document.querySelector('.dss-panel'))", deadline, "stats panel");
 	result.panel = true;
 	result.dataVisible = Boolean(await page.evaluate("(() => { const text = document.querySelector('.dss-panel')?.innerText || ''; return text.includes('DSH 用量') || text.includes('DSH Usage') || text.includes('项目统计') || text.includes('Project Stats'); })()"));
+	if (process.env.DSH_SMOKE_EXPECT_HOST === "1") {
+		await waitForPage(page, "Boolean(document.querySelector('.dss-data-status.exact'))", deadline, "exact host statistics");
+		result.hostStats = true;
+	}
+	if (process.env.DSH_SMOKE_EXPECT_PROJECT) {
+		await waitForPage(page, `document.querySelector('.dss-panel')?.innerText.includes(${JSON.stringify(process.env.DSH_SMOKE_EXPECT_PROJECT)})`, deadline, "populated project statistics");
+		result.projectData = true;
+	}
+	// Current Web mounts the credentials dialog asynchronously after the shell.
+	// Wait for its close transition before capturing or inspecting the panel.
+	if (await page.clickButton({ text: "稍后配置" }) || await page.clickButton({ text: "Set up later" })) {
+		result.onboardingDismissed = true;
+		await delay(300);
+	}
 	result.panelText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 1_500) || "";
+	result.summaryCards = await page.evaluate("[...document.querySelectorAll('.dss-cards .dss-card')].map(node => ({ label: node.querySelector('.k')?.textContent, value: node.querySelector('.v')?.textContent }))");
+	await capture("overview");
+	for (const texts of [["开发时间线", "Timeline"], ["用量趋势", "Usage Trends"], ["项目总览", "Overview"]]) {
+		if (!await page.clickText(texts, ".dss-panel button")) throw new Error("stats tab not found: " + texts[1]);
+		await delay(150);
+		await capture(texts[1].toLowerCase().replaceAll(" ", "-"));
+	}
+	result.statsTabs = true;
 	const accountClicked = (await page.clickText(["账户余额", "Account Balance"], ".dss-panel button"));
 	if (!accountClicked) throw new Error("账户余额/Account Balance tab not found");
 	await waitForPage(page, "Boolean(document.querySelector('.dss-balance, .dss-balance-state.error'))", deadline, "account balance view");
@@ -270,7 +306,6 @@ try {
 	if (screenshotDir) {
 		const desktop = await page.command("Page.captureScreenshot", { format: "png" });
 		result.artifacts.desktop = join(screenshotDir, "rc2-desktop.png");
-		const { writeFileSync, mkdirSync } = await import("node:fs");
 		mkdirSync(screenshotDir, { recursive: true });
 		writeFileSync(result.artifacts.desktop, Buffer.from(desktop.data, "base64"));
 		await page.command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -278,23 +313,35 @@ try {
 		result.artifacts.mobile = join(screenshotDir, "rc2-mobile.png");
 		writeFileSync(result.artifacts.mobile, Buffer.from(mobile.data, "base64"));
 	}
+	if (result.consoleErrors.length || result.runtimeExceptions.length || result.failedRequests.length) {
+		throw new Error("browser reported console, runtime or network failures");
+	}
 	result.status = result.panel && result.dataVisible && result.accountTab ? "passed" : "blocked";
 	if (!result.panel) result.blockedReason = "统计入口未能渲染 .dss-panel";
 	else if (!result.dataVisible) result.blockedReason = "统计面板未显示预期标题";
 	else if (!result.accountTab) result.blockedReason = "账户余额页未能渲染";
-	else if (result.workspaceSelection === "no-options") result.note = "rc2 runtime 面板通过，但隔离实例没有可选择的 workspace，数据为空";
+	else if (result.workspaceSelection === "no-options" && !result.projectData) result.note = "workspace picker options were not detected; inspect panelText for the statistics data state";
 	result.chromeVersion = version.Browser || null;
 } catch (error) {
 	result.status = "blocked";
 	result.blockedReason = redact(error?.message || error);
 } finally {
+	if (page?.socket?.readyState === WebSocket.OPEN) await page.command("Browser.close").catch(() => {});
 	page?.close();
-	if (chrome && !chrome.killed) {
-		chrome.kill("SIGTERM");
-		await Promise.race([once(chrome, "exit"), delay(1_000)]);
+	const stopChrome = signal => {
+		if (!chrome?.pid) return;
+		try { process.platform === "win32" ? chrome.kill(signal) : process.kill(-chrome.pid, signal); }
+		catch (error) { if (error.code !== "ESRCH") throw error; }
+	};
+	if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
+		const stopped = once(chrome, "exit");
+		stopChrome("SIGTERM");
+		await Promise.race([stopped, delay(1_000)]);
+		if (chrome.exitCode === null && chrome.signalCode === null) { stopChrome("SIGKILL"); await stopped; }
 	}
+	stopChrome("SIGKILL");
 	if (userDataDir) {
-		try { rmSync(userDataDir, { recursive: true, force: true }); }
+		try { rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 		catch (error) { result.cleanupWarning = redact(error?.message || error); }
 	}
 }

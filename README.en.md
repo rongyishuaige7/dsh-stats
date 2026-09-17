@@ -51,13 +51,13 @@ Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.3.0
+dsh plugin --profile web add @rongyi7/dsh-stats@0.3.1
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.1.tgz
 ```
 
 Verify the bundle registration:
@@ -67,6 +67,8 @@ dsh --profile web --dump-config
 ```
 
 You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **Do not** use `npm install --prefix ~/.dsh/profiles/web ...` to mutate a DSH profile: profiles are managed by pnpm, and the official `dsh plugin` command keeps the dependency graph and bundle registration intact.
+
+If a newer pnpm reports `ERR_PNPM_ADDING_TO_ROOT`, use `dsh plugin --profile web add -w @rongyi7/dsh-stats`. The workspace root here is the Web profile directory.
 </details>
 
 ## ✨ Core capabilities

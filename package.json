@@ -1,6 +1,6 @@
 {
   "name": "@rongyi7/dsh-stats",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "DSH Usage：按项目查看 Token、开发时间和费用，并查询账户余额",
   "type": "module",
   "main": "lib/index.js",
@@ -28,6 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:rc2": "node scripts/rc2-browser-smoke.mjs",
+    "smoke:web": "node scripts/rc2-browser-smoke.mjs",
     "smoke:harness": "node scripts/harness-contract-smoke.mjs",
     "smoke:browser": "node scripts/browser-fixture-smoke.mjs"
   },
