@@ -109,9 +109,18 @@ try {
 
   // Keep workspace membership deterministic; persistence, cache, projections and
   // the plugin service itself are the actual published implementations.
+  let persistenceReads = 0;
+  const countedPersistence = new Proxy(ctx.sessionPersistence, { get(target, key) {
+    const value = target[key];
+    if (typeof value !== 'function') return value;
+    return (...args) => {
+      if (['open', 'inspect', 'load', 'readFrom'].includes(key)) persistenceReads++;
+      return value.apply(target, args);
+    };
+  } });
   const service = { ctx: {
     workspaceRegistry: { list: () => [{ id: 'contract', path: header.cwd, sessionIds: [header.id] }] },
-    sessionPersistence: ctx.sessionPersistence, sessionProjections: ctx.sessionProjections,
+    sessionPersistence: countedPersistence, sessionProjections: ctx.sessionProjections,
     sessionProjectionCache: ctx.sessionProjectionCache,
   } };
   const result = await StatsService.prototype.aggregate.call(service);
@@ -125,6 +134,15 @@ try {
   assert(Math.abs(session.cost.totals[0].amount - 1.2768) < 1e-8);
   assert(!result.meta.warnings.some(row => /FAILED|INVALID|UNSUPPORTED/.test(row.code)), JSON.stringify(result.meta.warnings));
   report.checks.push('StatsService aggregate + shared wire schema: 2 calls, 600000 input, CNY 1.2768');
+  const firstReadOpens = persistenceReads;
+  persistenceReads = 0;
+  const unchanged = await StatsService.prototype.aggregate.call(service);
+  assert.deepEqual(unchanged.projects, result.projects);
+  if (typeof ctx.sessionPersistence.stat === 'function') {
+    assert.equal(persistenceReads, 0, 'unchanged official revisions must avoid reopening event logs');
+    report.repeatedReads = { firstReadOpens, secondReadOpens: persistenceReads };
+    report.checks.push('unchanged backend revisions reuse normalized statistics without reopening logs');
+  }
   const detached = JSON.parse(JSON.stringify(observation));
   const live = sessionModule.Session.fromRestore(header.id, detached.events, detached.meta, detached.inheritedEventCount, 'detached');
   const liveResult = await StatsService.prototype.aggregate.call({ ctx: { ...service.ctx, sessions: { get: id => id === header.id ? live : undefined } } });

@@ -175,3 +175,45 @@ while helper processes keep writing. The fixture now requests CDP Browser.close,
 terminates its exclusively owned process group, and records report.json before
 cleanup so an assertion failure cannot be masked. The complete local browser
 fixture passes with this lifecycle change; GitHub verification follows the push.
+
+## Follow-up performance architecture and evidence
+
+- Wire readers reuse ordered immutable rows. Updates replace/remove the changed
+  bucket and insert new buckets in order; unchanged rows are not recopied or
+  revalidated. Weak caches do not retain predecessor states or raw event bodies.
+  No request contexts are coalesced, and no notifications are dropped.
+- Normalized official reads are cached only across matching backend revision and
+  header observations before/after a successful read. Cache ownership follows
+  StatsService, and service/identity changes, stat failures and live promotion
+  invalidate reuse. Query-only hosts without visible live-session state and hosts
+  without revision support always read fresh. Cache limits: 128 entries and
+  100000 weighted usage/timing records; raw conversation bodies are never retained.
+- All 213 tests pass in the default timezone and UTC. Tests exercise same-seq
+  replacement, a revision changing during a read, stat failure, live promotion,
+  caller mutation, retry/replacement buckets and immutable checkpoint equivalence.
+- All five real upstream contract probes pass. On revision-capable releases the
+  two-session fixture opens 2 logs on the first aggregate and 0 on the unchanged
+  second aggregate, with identical project results.
+
+Real `0.1.5-rc.1` registry benchmark, cumulative time for all submitted requests:
+
+| Requests | No subscriber (ms) | With subscriber (ms) |
+| --- | ---: | ---: |
+| 500 | 9.8 | 26.5 |
+| 1000 | 14.6 | 75.0 |
+| 2000 | 29.9 | 270.9 |
+| 4000 | 62.7 | 1127.3 |
+
+The September 17 audit measured 13476 ms for 4000 subscribed updates; an additional
+pre-change run during implementation measured 22338 ms under different machine
+load. Treat these as local measurements, not portable latency guarantees. The
+probe validates every notification's row count, retained first view, token totals,
+request counts and JSON checkpoint restoration. It does not measure network
+serialization or browser rendering. Whole-value wire delivery still emits
+O(n²) rows across n updates; this change reduces local reconstruction overhead.
+
+Reproduce after building:
+
+```bash
+DSH_HARNESS_ROOT=/path/to/isolated/harness node scripts/harness-projection-benchmark.mjs
+```

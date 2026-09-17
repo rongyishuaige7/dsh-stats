@@ -588,7 +588,11 @@ function routeProjectionState(header = null, count) {
 	};
 }
 
+const validatedRouteRows = new WeakSet();
+const validatedRouteViews = new WeakSet();
+
 function routeProjectionSchema(value) {
+	if (validatedRouteViews.has(value)) return value;
 	const record = objectRecord(value);
 	if (!record || !objectRecord(record.current) || !Array.isArray(record.routes)) throw new TypeError("invalid statsRoute projection");
 	if (record.origin !== null && typeof record.origin !== "string") throw new TypeError("invalid statsRoute origin");
@@ -596,9 +600,11 @@ function routeProjectionSchema(value) {
 	if (record.seedLength !== null && (!Number.isSafeInteger(record.seedLength) || record.seedLength < 0)) throw new TypeError("invalid statsRoute seedLength");
 	if (typeof record.current.providerId !== "string" || (record.current.model !== null && typeof record.current.model !== "string") || typeof record.current.accountType !== "string" || !["standard", "priority"].includes(record.current.serviceTier)) throw new TypeError("invalid statsRoute current route");
 	for (const row of record.routes) {
+		if (validatedRouteRows.has(row)) continue;
 		if (!objectRecord(row) || (row.model !== null && typeof row.model !== "string") || typeof row.providerId !== "string" || typeof row.accountType !== "string" || !["standard", "priority"].includes(row.serviceTier) || !Number.isSafeInteger(row.slot) || row.slot < 0 || !Number.isFinite(row.time) || row.time < 0) throw new TypeError("invalid statsRoute row");
 		for (const key of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning", "contextTokens"]) if (!Number.isFinite(row[key]) || row[key] < 0) throw new TypeError("invalid statsRoute token count");
 		if (!Number.isSafeInteger(row.count) || row.count < 1) throw new TypeError("invalid statsRoute request count");
+		if (Object.isFrozen(row)) validatedRouteRows.add(row);
 	}
 	return value;
 }
@@ -722,17 +728,28 @@ function routeProjectionApply(state, event) {
 	return { ...state, current: route, routeTree, last: key === null ? null : { key, routeKey, ...sample } };
 }
 
+const routeViews = new WeakMap();
 function routeProjectionView(state) {
-	const routes = routeData.routeRows(state).map((row) => ({ ...row })).sort((a, b) => a.slot - b.slot || a.providerId.localeCompare(b.providerId) || String(a.model ?? "").localeCompare(String(b.model ?? "")));
-	const primary = routeData.primaryRoute(routes, state.current);
-	return {
+	let cached = routeViews.get(state.routeTree);
+	if (!cached || !Object.isFrozen(state.routeTree)) {
+		const routes = routeData.routeRows(state).map((row) => Object.isFrozen(row) ? row : Object.freeze({ ...row }));
+		cached = { routes: Object.freeze(routes), primary: routeData.primaryRoute(routes, null) };
+		if (Object.isFrozen(state.routeTree)) routeViews.set(state.routeTree, cached);
+	}
+	const { routes } = cached;
+	const primary = cached.primary || state.current;
+	const view = {
 		origin: state.origin,
 		parentSession: state.parentSession,
 		seedLength: state.seedLength,
 		inheritedEventCount: state.inheritedEventCount,
-		current: { providerId: primary.providerId, model: primary.model, accountType: primary.accountType, serviceTier: primary.serviceTier },
+		current: Object.freeze({ providerId: primary.providerId, model: primary.model, accountType: primary.accountType, serviceTier: primary.serviceTier }),
 		routes
 	};
+	routeProjectionSchema(view);
+	Object.freeze(view);
+	validatedRouteViews.add(view);
+	return view;
 }
 
 const STATS_ROUTE_PROJECTION = Object.freeze({
@@ -896,6 +913,44 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		malformedRecords, lastSeq, seqGap, unknownSeed, formatVersion: header?.version, futureVersion: header?.version !== undefined && ![0, 1, 2, 3].includes(header.version),
 		header: header || null
 	};
+}
+
+// Cache normalized statistics, never raw conversation bodies. A persistence
+// revision must be observed before and after the read; live/unversioned sources
+// always use their authoritative services. Weak ownership follows StatsService.
+const officialReadCaches = new WeakMap();
+function officialReadCache(owner) {
+	let cache = officialReadCaches.get(owner);
+	if (!cache) { cache = { entries: new Map(), weight: 0 }; officialReadCaches.set(owner, cache); }
+	return cache;
+}
+function forgetOfficialRead(cache, id) {
+	const old = cache.entries.get(id);
+	if (old) cache.weight -= old.weight;
+	cache.entries.delete(id);
+}
+function rememberOfficialRead(cache, id, entry) {
+	forgetOfficialRead(cache, id);
+	if (entry.weight > 100000) return;
+	cache.entries.set(id, entry);
+	cache.weight += entry.weight;
+	while (cache.entries.size > 128 || cache.weight > 100000) forgetOfficialRead(cache, cache.entries.keys().next().value);
+}
+async function officialReadRevision(ctx, id, warnings) {
+	const sessions = contextService(ctx, "sessions");
+	if (sessions?.get?.(id)) return null;
+	// A query-only service can prefer live logs invisible to this context.
+	if (contextService(ctx, "sessionQuery") && typeof sessions?.get !== "function") return null;
+	const persistence = contextService(ctx, "sessionPersistence");
+	if (typeof persistence?.stat !== "function") return null;
+	try {
+		const observed = await persistence.stat(id);
+		if (typeof observed?.revision !== "string" || !observed.revision || !objectRecord(observed.header)) return null;
+		return JSON.stringify([observed.revision, observed.header]);
+	} catch (error) {
+		warnings.push({ code: "OFFICIAL_REVISION_FAILED", sessionId: id, message: error?.message || String(error) });
+		return null;
+	}
 }
 
 async function officialSessionSource(ctx, sessionId) {
@@ -1316,6 +1371,8 @@ let StatsService = (() => {
 			const sessionQuery = contextService(hostCtx, "sessionQuery");
 			const sessionProjections = contextService(hostCtx, "sessionProjections");
 			const projectionCache = contextService(hostCtx, "sessionProjectionCache");
+			const readCache = officialReadCache(this);
+			const readServices = [persistence, sessionQuery, sessionProjections, projectionCache];
 			const officialWorkspaceAvailable = typeof workspaceRegistry?.list === "function";
 			const officialProjectionAvailable = typeof projectionCache?.coldSnapshot === "function"
 				|| typeof sessionProjections?.restoreFloor === "function" && typeof persistence?.readFrom === "function";
@@ -1451,48 +1508,72 @@ let StatsService = (() => {
 				let officialValues = null;
 				let cacheOnly = false;
 				const liveSession = contextService(hostCtx, "sessions")?.get?.(sessionId);
-				// Let the official cache service answer first. Its cold ladder uses the
-				// stored watermark and only replays the log suffix when necessary.
-				if (!liveSession && officialProjectionAvailable) {
-					try {
-						officialValues = await officialProjectionValues(hostCtx, null, entry, warnings, sessionId, projectionDomainVersion);
-					} catch (error) {
-						warnings.push({ code: "OFFICIAL_PROJECTION_FAILED", sessionId, message: error?.message || String(error) });
+				const revision = await officialReadRevision(hostCtx, sessionId, warnings);
+				const metadataKey = JSON.stringify([projectionDomainVersion, entry?.identity]);
+				const cachedRead = readCache.entries.get(sessionId);
+				const reuseRead = revision !== null && cachedRead?.revision === revision && cachedRead.metadataKey === metadataKey &&
+					readServices.every((service, index) => service === cachedRead.services[index]);
+				if (reuseRead) {
+					({ info, officialSource, officialValues } = structuredClone(cachedRead.value));
+					warnings.push(...cachedRead.warnings.map(row => ({ ...row })));
+				} else {
+					forgetOfficialRead(readCache, sessionId);
+					const warningStart = warnings.length;
+					// Let the official cache service answer first. Its cold ladder uses the
+					// stored watermark and only replays the log suffix when necessary.
+					if (!liveSession && officialProjectionAvailable) {
+						try {
+							officialValues = await officialProjectionValues(hostCtx, null, entry, warnings, sessionId, projectionDomainVersion);
+						} catch (error) {
+							warnings.push({ code: "OFFICIAL_PROJECTION_FAILED", sessionId, message: error?.message || String(error) });
+						}
 					}
-				}
-				const routeProjectionAvailable = objectRecord(officialValues?.statsRoute) !== null;
-				const projectionValuesAvailable = objectRecord(officialValues) !== null && (
-					objectRecord(officialValues?.sessionStats) !== null
-					|| objectRecord(officialValues?.tokenUsage) !== null
-					|| routeProjectionAvailable
-				);
-				if (!liveSession && projectionValuesAvailable) {
-					// Official projection values are already cut at one validated
-					// watermark. Use them directly for cold sessions, including hosts
-					// where the optional route projection is not mounted.
-					info = infoFromProjectionValues(officialValues, entry);
-					if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
-					const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
-					if (officialUsage) usageTotals = {
-						uncachedInputTokens: officialUsage.uncached, outputTokens: officialUsage.output,
-						cacheReadTokens: officialUsage.cacheRead, cacheWriteTokens: officialUsage.cacheWrite
-					};
-					cacheOnly = true;
-					warnings.push({ code: routeProjectionAvailable ? "OFFICIAL_ROUTE_PROJECTION_USED" : "OFFICIAL_PROJECTION_VALUES_USED", sessionId, message: routeProjectionAvailable ? "model route and token buckets came from the official projection cache" : "session statistics and token usage came from the official projection cache" });
-				} else try {
-					officialSource = await officialSessionSource(hostCtx, sessionId);
-					if (officialSource) {
-						info = deriveSessionInfoFromEvents(officialSource.events, officialSource.header, { inheritedEventCount: officialSource.inheritedEventCount });
-						if (!officialValues) officialValues = await officialProjectionValues(hostCtx, officialSource, entry, warnings, sessionId, projectionDomainVersion);
+					const routeProjectionAvailable = objectRecord(officialValues?.statsRoute) !== null;
+					const projectionValuesAvailable = objectRecord(officialValues) !== null && (
+						objectRecord(officialValues?.sessionStats) !== null
+						|| objectRecord(officialValues?.tokenUsage) !== null
+						|| routeProjectionAvailable
+					);
+					if (!liveSession && projectionValuesAvailable) {
+						// Official projection values are already cut at one validated
+						// watermark. Use them directly for cold sessions, including hosts
+						// where the optional route projection is not mounted.
+						info = infoFromProjectionValues(officialValues, entry);
 						if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
 						const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
 						if (officialUsage) usageTotals = {
 							uncachedInputTokens: officialUsage.uncached, outputTokens: officialUsage.output,
 							cacheReadTokens: officialUsage.cacheRead, cacheWriteTokens: officialUsage.cacheWrite
 						};
+						cacheOnly = true;
+						warnings.push({ code: routeProjectionAvailable ? "OFFICIAL_ROUTE_PROJECTION_USED" : "OFFICIAL_PROJECTION_VALUES_USED", sessionId, message: routeProjectionAvailable ? "model route and token buckets came from the official projection cache" : "session statistics and token usage came from the official projection cache" });
+					} else try {
+						officialSource = await officialSessionSource(hostCtx, sessionId);
+						if (officialSource) {
+							info = deriveSessionInfoFromEvents(officialSource.events, officialSource.header, { inheritedEventCount: officialSource.inheritedEventCount });
+							if (!officialValues) officialValues = await officialProjectionValues(hostCtx, officialSource, entry, warnings, sessionId, projectionDomainVersion);
+							if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
+							const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
+							if (officialUsage) usageTotals = {
+								uncachedInputTokens: officialUsage.uncached, outputTokens: officialUsage.output,
+								cacheReadTokens: officialUsage.cacheRead, cacheWriteTokens: officialUsage.cacheWrite
+							};
+						}
+					} catch (error) {
+						warnings.push({ code: "OFFICIAL_PERSISTENCE_FAILED", sessionId, message: error?.message || String(error) });
 					}
-				} catch (error) {
-					warnings.push({ code: "OFFICIAL_PERSISTENCE_FAILED", sessionId, message: error?.message || String(error) });
+					if (revision !== null && officialSource && info && !info.partial && !info.stale &&
+						warnings.slice(warningStart).every(row => row.code.startsWith("OFFICIAL_") && row.code.endsWith("_USED"))) {
+						const afterRevision = await officialReadRevision(hostCtx, sessionId, warnings);
+						if (afterRevision === revision) rememberOfficialRead(readCache, sessionId, {
+							revision, metadataKey, services: readServices,
+							weight: 1 + info.usages.length * 2 + info.times.length + info.slotStats.length,
+							warnings: warnings.slice(warningStart).map(row => ({ ...row })),
+							value: structuredClone({ info, officialValues, officialSource: {
+								header: officialSource.header, source: officialSource.source, inheritedEventCount: officialSource.inheritedEventCount
+							} })
+						});
+					}
 				}
 				if (!info && !officialSource && officialValues) {
 					info = infoFromProjectionValues(officialValues, entry);
@@ -1516,6 +1597,10 @@ let StatsService = (() => {
 					info = { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
 				}
 				if (officialValues) {
+					if (objectRecord(officialValues.sessionStats)) statsRow = officialValues.sessionStats;
+					const officialUsage = normalizeProjectionUsage(officialValues.tokenUsage);
+					if (officialUsage) usageTotals = { uncachedInputTokens: officialUsage.uncached, outputTokens: officialUsage.output,
+						cacheReadTokens: officialUsage.cacheRead, cacheWriteTokens: officialUsage.cacheWrite };
 					if (officialValues.title === null || typeof officialValues.title === "string") title = officialValues.title;
 					meta = objectRecord(officialValues.sessionListMetadata) || meta;
 					if (Number.isFinite(meta.lastPromptAt) && meta.lastPromptAt >= 0) lastPromptAt = meta.lastPromptAt;

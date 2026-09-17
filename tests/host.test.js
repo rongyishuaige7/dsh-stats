@@ -1043,3 +1043,77 @@ test.each(['query', 'live'])('inherited-only fork ignores official token totals 
 	expect(session.slotUsage).toEqual([]);
 	expect(result.meta.warnings.some(row => row.code === 'SESSION_USAGE_FALLBACK')).toBe(false);
 });
+
+test('revision cache reuses official reads and invalidates replacements, failures and live promotion', async () => {
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	fixture({ cached: projection(now) });
+	let revision = 'a', input = 10, failStat = false, live;
+	const header = { id: 'cached', version: 3, createdAt: now, cwd: '/tmp/fixture', isSeeded: false };
+	const events = () => [{ type: 'assistant/message', seq: 0, time: now, data: { turn: 0, step: 0, usage: { inputTokens: input, outputTokens: 2 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } } } }];
+	const readSession = vi.fn(async () => ({ header, inheritedEventCount: 0, events: events() }));
+	const owner = { ctx: {
+		sessions: { get: () => live },
+		sessionQuery: { readSession },
+		sessionPersistence: { stat: async () => { if (failStat) throw new Error('fixture stat failed'); return { header, revision }; } },
+	} };
+	const read = () => StatsService.prototype.aggregate.call(owner);
+	const first = await read();
+	expect(readSession).toHaveBeenCalledTimes(1);
+	first.projects[0].sessions[0].slotUsage[0].uncached = 999;
+	const second = await read();
+	expect(readSession).toHaveBeenCalledTimes(1);
+	expect(second.projects[0].sessions[0].stats.uncached).toBe(10);
+	revision = 'replacement-with-same-sequence'; input = 20;
+	expect((await read()).projects[0].sessions[0].stats.uncached).toBe(20);
+	expect(readSession).toHaveBeenCalledTimes(2);
+	failStat = true; input = 30;
+	const failedRevision = await read();
+	expect(readSession).toHaveBeenCalledTimes(3);
+	expect(failedRevision.projects[0].sessions[0].stats.uncached).toBe(30);
+	expect(failedRevision.meta.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'OFFICIAL_REVISION_FAILED' })]));
+	failStat = false;
+	await read();
+	live = { header, inheritedEventCount: 0, snapshotEvents: events };
+	input = 40;
+	expect((await read()).projects[0].sessions[0].stats.uncached).toBe(40);
+	expect(readSession).toHaveBeenCalledTimes(4);
+});
+
+test('a revision changed during the official read is never cached', async () => {
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	fixture({ cached: projection(now) });
+	let revision = 0;
+	const header = { id: 'cached', version: 3, createdAt: now, cwd: '/tmp/fixture' };
+	const load = vi.fn(async () => { revision++; return { header, events: [] }; });
+	const owner = { ctx: { sessionPersistence: { stat: async () => ({ header, revision: String(revision) }), load } } };
+	await StatsService.prototype.aggregate.call(owner);
+	await StatsService.prototype.aggregate.call(owner);
+	expect(load).toHaveBeenCalledTimes(2);
+});
+
+test('incremental wire views match cold checkpoints across replacement, retry and route changes', () => {
+	const definition = captureRouteProjection();
+	const header = { id: 'view-cache', version: 3, createdAt: 1000 };
+	let state = definition.init(header, 0);
+	const snapshots = [];
+	for (let i = 0; i < 80; i++) {
+		const event = { type: 'assistant/message', seq: i, time: 1800000 * (i % 3 + 1), data: {
+			turn: Math.floor(i / 3), step: 0,
+			message: { source: { provider: i % 2 ? 'minimax' : 'deepseek', model: i % 2 ? 'MiniMax-M3' : 'deepseek-v4-flash' } },
+			usage: { inputTokens: i % 4 ? 300000 : 600000, outputTokens: i + 1 },
+		} };
+		state = definition.apply(state, event);
+		const view = definition.wire.viewSchema.parse(definition.wire.view(state));
+		const cold = definition.stateSchema.parse(JSON.parse(JSON.stringify(state)));
+		expect(definition.wire.view(cold)).toEqual(view);
+		if (i % 9 === 0) snapshots.push([view, JSON.stringify(view)]);
+		if (i % 7 === 0) state = definition.apply(state, { type: 'llm/retry-started', data: event.data });
+	}
+	for (const [view, json] of snapshots) {
+		expect(JSON.stringify(view)).toBe(json);
+		expect(() => { view.routes[0].uncached = 123; }).toThrow(TypeError);
+	}
+	const malformed = JSON.parse(JSON.stringify(state));
+	malformed.routeTree = { invalid: {} };
+	expect(() => definition.stateSchema.parse(malformed)).toThrow();
+});
