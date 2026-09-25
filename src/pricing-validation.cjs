@@ -1,7 +1,7 @@
 // Shared, bounded validation for local, remote, and browser price snapshots.
 const FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const TIERS = ['standard', 'priority', 'batch', 'flex'];
-const RULE_KEYS = new Set(['id', 'family', 'canonical', 'aliases', 'currency', 'sourceUrl', 'retrievedAt', 'rates', 'reasoningIncludedInOutput', 'confidence', 'legacy', 'offPeak', 'peak', 'contextTiers', 'contextThreshold', 'serviceTiers', 'tierMultipliers', 'effectiveFrom', 'effectiveTo', 'observedFrom', 'providerId', 'accountType', 'cacheWriteDurationUnknown', 'cacheStorageUnknown', 'cacheWritePriceUnknown', 'note']);
+const RULE_KEYS = new Set(['id', 'family', 'canonical', 'aliases', 'currency', 'sourceUrl', 'retrievedAt', 'rates', 'reasoningIncludedInOutput', 'confidence', 'legacy', 'offPeak', 'peak', 'contextTiers', 'contextThreshold', 'serviceTiers', 'tierMultipliers', 'effectiveFrom', 'effectiveTo', 'observedFrom', 'providerId', 'accountType', 'cacheWriteDurationUnknown', 'cacheStorageUnknown', 'cacheWritePriceUnknown', 'note', 'timeOfUse']);
 function check(ok, label) { if (!ok) throw new TypeError('Invalid pricing: ' + label); }
 function record(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function text(value, limit = 250) { return typeof value === 'string' && value.length > 0 && value.length <= limit && !/[\x00-\x1f]/.test(value); }
@@ -27,8 +27,16 @@ function rule(value, custom) {
   if (value.effectiveFrom && value.effectiveTo) check(Date.parse(value.effectiveFrom) < Date.parse(value.effectiveTo), 'effective interval');
   for (const k of ['cacheWriteDurationUnknown', 'cacheStorageUnknown', 'cacheWritePriceUnknown']) if (value[k] !== undefined) check(typeof value[k] === 'boolean', k);
   if (value.note !== undefined) check(text(value.note, 1000), 'note');
-  const modes = [value.rates != null, value.legacy != null, value.contextTiers != null, value.serviceTiers != null].filter(Boolean).length;
+  const modes = [value.rates != null, value.legacy != null, value.contextTiers != null, value.serviceTiers != null, value.timeOfUse != null].filter(Boolean).length;
   check(modes === 1, 'one rate mode required');
+  if (value.timeOfUse) {
+    const t = value.timeOfUse, c = t.calendar;
+    check(value.family === 'deepseek' && record(t) && Object.keys(t).every(k => ['peak', 'offPeak', 'calendar'].includes(k)), 'time of use');
+    rates(t.peak); rates(t.offPeak);
+    const day = v => typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+    check(record(c) && Object.keys(c).every(k => ['from', 'to', 'holidays', 'sourceUrl'].includes(k)) && day(c.from) && day(c.to) && c.from <= c.to && source(c.sourceUrl), 'calendar');
+    check(Array.isArray(c.holidays) && c.holidays.length <= 1000 && new Set(c.holidays).size === c.holidays.length && c.holidays.every(d => day(d) && d >= c.from && d <= c.to), 'calendar holidays');
+  }
   if (value.rates != null) rates(value.rates);
   if (value.legacy) { check(value.family === 'deepseek', 'legacy family'); rates(value.legacy); rates(value.peak); rates(value.offPeak); }
   if (value.contextTiers) { tiers(value.contextTiers); check(Number.isSafeInteger(value.contextThreshold) && value.contextThreshold > 0, 'context threshold'); }
@@ -54,8 +62,9 @@ const validated = new WeakSet();
 function validateCatalog(input) {
   if (validated.has(input)) return input;
   check(record(input) && Object.keys(input).every(k => ['schemaVersion', 'version', 'publishedAt', 'rules', 'fx'].includes(k)), 'catalog fields');
-  check(input.schemaVersion === 1 && Number.isSafeInteger(input.version) && input.version > 0 && timestamp(input.publishedAt), 'catalog version');
+  check([1, 2].includes(input.schemaVersion) && Number.isSafeInteger(input.version) && input.version > 0 && timestamp(input.publishedAt), 'catalog version');
   rules(input.rules, false);
+  check(input.schemaVersion >= 2 || input.rules.every(r => !r.timeOfUse), 'time of use requires schema 2');
   check(Array.isArray(input.fx) && input.fx.length > 0 && input.fx.length <= 10000, 'FX entries');
   let previous = '';
   for (const fx of input.fx) {

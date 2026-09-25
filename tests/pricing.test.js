@@ -7,6 +7,35 @@ const {
 } = pricing;
 const slot = Math.floor(Date.parse('2026-08-17T10:00:00+08:00') / 1800000);
 
+test('V4.1 Flash uses verified prices, Beijing boundaries, holidays and weekends', () => {
+ const quote = date => priceUsage({ model: 'deepseek-flash', providerId: 'deepseek', time: Date.parse(date + '+08:00'), uncached: 1000000, cacheRead: 1000000, output: 1000000 });
+ for (const time of ['08:59:59', '12:00:00', '13:59:59', '18:00:00']) expect(quote('2026-09-28T' + time).amount).toBe(5.02);
+ for (const time of ['09:00:00', '11:59:59', '14:00:00', '17:59:59']) expect(quote('2026-09-28T' + time)).toMatchObject({ status: 'exact', amount: 10.04 });
+ for (const day of ['2026-09-26', '2026-09-27', '2026-10-01', '2026-10-05', '2026-10-07', '2026-10-10']) expect(quote(day + 'T10:00:00').amount).toBe(5.02);
+ expect(quote('2026-09-25T17:59:00').amount).toBe(5.02);
+ expect(quote('2027-01-04T10:00:00')).toMatchObject({ status: 'estimated', pricing: { calendarEstimate: true } });
+ expect(quote('2026-09-14T10:00:00')).toMatchObject({ status: 'estimated', pricing: { historicalEstimate: true } });
+});
+
+test('new aliases retain old historical rules and subscription semantics', () => {
+ const cut = Date.parse(pricing.BUILTIN.rules.find(r => r.canonical === 'deepseek-v4-flash' && r.timeOfUse).effectiveFrom);
+ const row = { model: 'deepseek-v4-flash', providerId: 'deepseek', uncached: 1000000, output: 1000 };
+ expect(priceUsage({ ...row, time: cut - 1 }).ruleId).not.toBe(priceUsage({ ...row, time: cut }).ruleId);
+ for (const model of ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']) {
+  expect(priceUsage({ ...row, model, time: cut })).toMatchObject({ status: 'exact', amount: 1.004 });
+  expect(priceUsage({ ...row, model, time: cut, accountType: 'subscription' }).status).toBe('subscription');
+ }
+ expect(priceUsage({ ...row, model: 'deepseek-v4-pro', time: cut }).amount).toBeCloseTo(4.5135);
+});
+
+test('time-of-use catalogs require schema 2 and reject invalid calendars', () => {
+ const catalog = structuredClone(pricing.BUILTIN);
+ expect(() => pricing.validateCatalog({ ...catalog, schemaVersion: 1 })).toThrow('schema 2');
+ const rule = catalog.rules.find(r => r.timeOfUse);
+ rule.timeOfUse.calendar.holidays.push('2026-02-30');
+ expect(() => pricing.validateCatalog(catalog)).toThrow('calendar');
+});
+
 test('Astra prices each request at the 272K boundary and applies service tiers', () => {
 	const base = usage({ model: 'gpt-6-astra', providerId: 'yi-api', uncached: 1000, cacheRead: 2000, cacheWrite: 100, output: 100, contextTokens: 272000 });
 	const short = priceUsage(base);

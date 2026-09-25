@@ -7,7 +7,7 @@ import { PricingStore, verifyEnvelope } from '../src/pricing-store.js';
 
 const homes = [];
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-const now = Date.parse('2026-09-18T00:00:00Z');
+const now = Date.parse(pricing.BUILTIN.publishedAt) + 86400000;
 const base = structuredClone(pricing.BUILTIN);
 function envelope(catalog) { const payload = JSON.stringify(catalog); return { payload, signature: sign(null, Buffer.from(payload), privateKey).toString('base64') }; }
 function fixture(fetchImpl) { const home = mkdtempSync(join(tmpdir(), 'pricing-test-')); homes.push(home); return new PricingStore(home, { fetchImpl, now: () => now, publicKey }); }

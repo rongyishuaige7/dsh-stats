@@ -234,6 +234,15 @@ function deepSeekPeak(slot) {
 	return minutes >= 9 * 60 && minutes < 12 * 60 || minutes >= 14 * 60 && minutes < 18 * 60;
 }
 
+// DeepSeek excludes weekends, including make-up work weekends.
+// Future weekday peaks remain estimates until that calendar is reviewed.
+function timeOfUsePeriod(rule, at) {
+  const bj = new Date(at + BEIJING_OFFSET_MS), day = bj.toISOString().slice(0, 10);
+  const c = rule.timeOfUse.calendar;
+  const potentialPeak = bj.getUTCDay() >= 1 && bj.getUTCDay() <= 5 && deepSeekPeak(Math.floor(at / 1800000));
+  return { peak: potentialPeak && !c.holidays.includes(day), uncertain: potentialPeak && (day < c.from || day > c.to) };
+}
+
 function normalizeServiceTier(value) {
 	if (value === "fast") return "priority";
 	if (value == null || value === "auto" || value === "default") return "standard";
@@ -241,6 +250,7 @@ function normalizeServiceTier(value) {
 }
 
 function ratesFor(rule, usage, at) {
+	if (rule.timeOfUse) return rule.timeOfUse[timeOfUsePeriod(rule, at).peak ? "peak" : "offPeak"];
 	var contextTokens = Number.isFinite(usage && usage.contextTokens)
 		? usage.contextTokens
 		: usage && usage.contextOver512k === true
@@ -320,7 +330,7 @@ function priceUsage(usage, identityInput) {
 	if (unpricedTokens > 0 && fields.every(key => rates[key] === null || tokens[key] === 0)) return emptyCost("unsupported", identity, tokens);
 	if (!Number.isFinite(amount)) return emptyCost("unsupported", identity, tokens);
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
-	var uncertain = usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
+	var uncertain = !!(rule.timeOfUse && timeOfUsePeriod(rule, at).uncertain) || usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
 		|| rule.observedFrom && at < Date.parse(rule.observedFrom)
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
 		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
@@ -341,6 +351,7 @@ function priceUsage(usage, identityInput) {
 		modelCanonical: rule.canonical,
 		pricing: { catalogVersion: catalog.version, ruleRevision: rule.id, pricedAt: at,
 			basis: resolved.custom ? "custom" : resolved.estimatedFallback ? "reference" : "provider",
+			calendarEstimate: !!(rule.timeOfUse && timeOfUsePeriod(rule, at).uncertain),
 			historicalEstimate: !!(rule.observedFrom && at < Date.parse(rule.observedFrom)) }
 	};
 }

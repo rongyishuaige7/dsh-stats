@@ -24,7 +24,7 @@ const _cost$schema = z.object({
   exactAmount: z.number().nonnegative(), estimatedAmount: z.number().nonnegative(), unpricedTokens: z.number().nonnegative(),
   ruleId: z.string().nullable(), sourceUrl: z.string().url().nullable(), retrievedAt: z.string().nullable(),
   providerId: z.string(), providerFamily: z.string(), modelCanonical: z.string(),
-  pricing: z.object({ catalogVersion: z.number().int().positive().optional(), ruleRevision: z.string().optional(), pricedAt: z.number().nonnegative().optional(), basis: z.enum(['custom', 'reference', 'provider']).optional(), historicalEstimate: z.boolean().optional(), nativeAmount: z.number().nonnegative().optional(), nativeCurrency: z.string().optional(), fxRate: z.number().positive().optional(), fxDate: z.string().optional(), fxSource: z.string().optional() }).strict().optional(),
+  pricing: z.object({ catalogVersion: z.number().int().positive().optional(), ruleRevision: z.string().optional(), pricedAt: z.number().nonnegative().optional(), basis: z.enum(['custom', 'reference', 'provider']).optional(), historicalEstimate: z.boolean().optional(), calendarEstimate: z.boolean().optional(), nativeAmount: z.number().nonnegative().optional(), nativeCurrency: z.string().optional(), fxRate: z.number().positive().optional(), fxDate: z.string().optional(), fxSource: z.string().optional() }).strict().optional(),
 }).strict()
 const _modelUsage$schema = z.object({
   model: z.string(), providerId: z.string(), providerFamily: z.string(), modelRaw: z.string(), modelCanonical: z.string(), accountType: z.string(),

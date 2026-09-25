@@ -1,0 +1,11 @@
+{
+  "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+  "retrievedAt": "2026-09-25T09:46:38.308Z",
+  "sha256": "65bcf660c742a826f59600b8396fa370e8d85ac5b11b78f1b2dbda2aa6ea1d20",
+  "models": [
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-flash-vision-exp",
+    "deepseek-v4-pro"
+  ]
+}

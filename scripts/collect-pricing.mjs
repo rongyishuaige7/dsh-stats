@@ -1,12 +1,14 @@
 // Runs in the maintainer workflow, never on a user's session corpus.
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { createPrivateKey, sign, verify } from 'node:crypto';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { createPrivateKey, sign, verify, createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import pricing from '../src/pricing.cjs';
 import trust from '../src/pricing-trust.cjs';
 
 const OPENAI = 'https://developers.openai.com/api/docs/pricing.md';
 const OPENROUTER = 'https://openrouter.ai/api/v1/models';
+const DEEPSEEK = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing';
+const DEEPSEEK_BASELINE = JSON.parse(readFileSync(new URL('../data/pricing/deepseek-observation.json', import.meta.url), 'utf8'));
 const RATE_FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const sameRates = (a, b) => Boolean(a && b) && RATE_FIELDS.every(k => a[k] === b[k]);
 function stable(value) {
@@ -15,6 +17,14 @@ function stable(value) {
   return value;
 }
 function dollar(value) { if (value === '-') return null; if (!/^\$\d+(?:\.\d+)?$/.test(value)) throw new Error('unrecognized price'); return Number(value.slice(1)); }
+export function deepSeekObservation(html) {
+  const article = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
+  if (!article || !/<table\b/i.test(article)) throw new Error('DeepSeek pricing page changed');
+  const text = article.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ').trim();
+  const models = [...new Set(text.match(/deepseek-[a-z0-9.-]+/g) || [])].sort();
+  if (!models.length || !text.includes('缓存') || !text.includes('高峰')) throw new Error('DeepSeek pricing page incomplete');
+  return { sha256: createHash('sha256').update(text).digest('hex'), models };
+}
 export function parseOpenAI(markdown) {
   const section = markdown.split('### Standard pricing data')[1]?.split('### Batch pricing data')[0];
   if (!section) throw new Error('OpenAI pricing table changed');
@@ -63,7 +73,7 @@ async function get(url, json = false) {
   finally { await reader.cancel().catch(() => {}); }
   const text = Buffer.concat(chunks).toString('utf8'); return json ? JSON.parse(text) : text;
 }
-export async function collect({ fetchSource = get, at = new Date().toISOString(), baseCatalog = pricing.BUILTIN } = {}) {
+export async function collect({ fetchSource = get, at = new Date().toISOString(), baseCatalog = pricing.BUILTIN, deepSeekBaseline = DEEPSEEK_BASELINE } = {}) {
   const catalog = structuredClone(baseCatalog);
   const candidates = [], failures = []; let changes = 0;
   try {
@@ -80,6 +90,11 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
       candidates.push({ source: OPENAI, model: row.model, reason: 'Review model identity, service tiers, context threshold and effective date', rates: row });
     }
   } catch (error) { failures.push({ source: OPENAI, error: error.message }); }
+  try {
+    const observation = deepSeekObservation(await fetchSource(DEEPSEEK));
+    if (observation.sha256 !== deepSeekBaseline.sha256) candidates.push({ source: DEEPSEEK, reason: 'Review changed official DeepSeek rates, aliases, calendar and effective date', observation });
+    for (const model of observation.models) if (!catalog.rules.some(r => r.family === 'deepseek' && r.aliases.includes(model) && !r.effectiveTo)) candidates.push({ source: DEEPSEEK, model, reason: 'Missing active official model coverage' });
+  } catch (error) { failures.push({ source: DEEPSEEK, error: error.message }); }
   try {
     const response = await fetchSource(OPENROUTER, true);
     if (!Array.isArray(response.data) || response.data.length < 10) throw new Error('model-list-incomplete');

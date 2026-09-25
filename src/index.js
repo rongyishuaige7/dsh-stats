@@ -1257,7 +1257,26 @@ function slotUsages(usages, engine = pricing) {
 		if (u.pricingIncomplete) cur.pricingIncomplete = true;
 		m.set(key, cur);
 	}
-	return [...m.values()].map(({ pricingIncomplete, ...row }) => ({ ...row, cost: engine.convertCostToCny(engine.priceUsage({ ...row, pricingIncomplete }, row)) }));
+	return [...m.values()].map(({ pricingIncomplete, ...row }) => pricedUsage(row, pricingIncomplete, engine));
+}
+
+// Keep the pricing qualification on this observation without changing the RPC
+// shape. A preview must never read a generating session a second time.
+function pricedUsage(row, incomplete, engine) {
+	const result = { ...row, cost: engine.convertCostToCny(engine.priceUsage({ ...row, pricingIncomplete: incomplete }, row)) };
+	Object.defineProperty(result, "_pricingIncomplete", { value: incomplete === true });
+	return result;
+}
+
+function repriceSnapshot(snapshot, engine) {
+	const projects = snapshot.projects.map(project => {
+		const sessions = project.sessions.map(session => {
+			const slotUsage = session.slotUsage.map(row => pricedUsage(row, row._pricingIncomplete, engine));
+			return { ...session, slotUsage, modelUsage: modelUsages(slotUsage), cost: engine.summarizeCostsCny(slotUsage.map(row => row.cost)) };
+		});
+		return { ...project, sessions, cost: engine.mergeCostSummariesCny(sessions.map(session => session.cost)) };
+	});
+	return { ...snapshot, projects, cost: engine.mergeCostSummariesCny(projects.map(project => project.cost)) };
 }
 
 function modelUsages(rows) {
@@ -1298,7 +1317,7 @@ function projectionSlotUsage(info, usage, updatedAt, engine = pricing) {
 		slot: Math.floor(updatedAt / SLOT_MS),
 		...usage
 	};
-	return { ...row, cost: engine.convertCostToCny(engine.priceUsage({ ...row, pricingIncomplete: true }, row)) };
+	return pricedUsage(row, true, engine);
 }
 
 let StatsService = (() => {
@@ -1910,7 +1929,7 @@ let StatsService = (() => {
 				if (request.action === "save") return store.save({ revision: request.revision, autoUpdate: request.autoUpdate, overrides, fingerprint: request.fingerprint });
 				const engine = store.snapshot(), fingerprint = store.fingerprint;
 				const before = await this.aggregate(engine);
-				const after = await this.aggregate(pricing.createPricing(engine.catalog, overrides));
+				const after = repriceSnapshot(before, pricing.createPricing(engine.catalog, overrides));
 				if (store.status().fingerprint !== fingerprint) throw new Error("pricing-settings-conflict");
 				const changed = [];
 				const old = new Map(before.projects.flatMap(p => p.sessions).map(s => [s.id, s]));

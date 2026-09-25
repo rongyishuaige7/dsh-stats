@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
-  "version": 2026091704,
-  "publishedAt": "2026-09-17T21:20:40.511Z",
+  "schemaVersion": 2,
+  "version": 2026092501,
+  "publishedAt": "2026-09-25T09:45:27Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -70,7 +70,8 @@
         "uncached": 9,
         "cacheWrite": 9,
         "output": 27
-      }
+      },
+      "effectiveTo": "2026-09-25T09:45:27Z"
     },
     {
       "id": "deepseek/deepseek-v4-flash@2026-08-18",
@@ -102,7 +103,8 @@
         "uncached": 3,
         "cacheWrite": 3,
         "output": 9
-      }
+      },
+      "effectiveTo": "2026-09-25T09:45:27Z"
     },
     {
       "id": "minimax/MiniMax-M3@2026-08-18",
@@ -6059,6 +6061,216 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-09-17T21:20:40.511Z"
+    },
+    {
+      "family": "deepseek",
+      "currency": "CNY",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "retrievedAt": "2026-09-25",
+      "observedFrom": "2026-09-25T09:45:27Z",
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "note": "北京时间周一至周五（不含中国节假日）09:00–12:00、14:00–18:00 为峰时；周末（含调休上班日）及节假日为谷时。核验前的现价回估为 estimated；保留旧模型的历史区间。",
+      "id": "deepseek/deepseek-flash@2026-09-25",
+      "canonical": "deepseek-flash",
+      "aliases": [
+        "deepseek-flash"
+      ],
+      "timeOfUse": {
+        "peak": {
+          "uncached": 2,
+          "cacheRead": 0.04,
+          "cacheWrite": null,
+          "output": 8
+        },
+        "offPeak": {
+          "uncached": 1,
+          "cacheRead": 0.02,
+          "cacheWrite": null,
+          "output": 4
+        },
+        "calendar": {
+          "from": "2026-01-01",
+          "to": "2026-12-31",
+          "holidays": [
+            "2026-01-01",
+            "2026-01-02",
+            "2026-01-03",
+            "2026-02-15",
+            "2026-02-16",
+            "2026-02-17",
+            "2026-02-18",
+            "2026-02-19",
+            "2026-02-20",
+            "2026-02-21",
+            "2026-02-22",
+            "2026-02-23",
+            "2026-04-04",
+            "2026-04-05",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-02",
+            "2026-05-03",
+            "2026-05-04",
+            "2026-05-05",
+            "2026-06-19",
+            "2026-06-20",
+            "2026-06-21",
+            "2026-09-25",
+            "2026-09-26",
+            "2026-09-27",
+            "2026-10-01",
+            "2026-10-02",
+            "2026-10-03",
+            "2026-10-04",
+            "2026-10-05",
+            "2026-10-06",
+            "2026-10-07"
+          ],
+          "sourceUrl": "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm"
+        }
+      }
+    },
+    {
+      "family": "deepseek",
+      "currency": "CNY",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "retrievedAt": "2026-09-25",
+      "observedFrom": "2026-09-25T09:45:27Z",
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "note": "北京时间周一至周五（不含中国节假日）09:00–12:00、14:00–18:00 为峰时；周末（含调休上班日）及节假日为谷时。核验前的现价回估为 estimated；保留旧模型的历史区间。",
+      "id": "deepseek/deepseek-v4-flash@2026-09-25",
+      "canonical": "deepseek-v4-flash",
+      "aliases": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "timeOfUse": {
+        "peak": {
+          "uncached": 2,
+          "cacheRead": 0.04,
+          "cacheWrite": null,
+          "output": 8
+        },
+        "offPeak": {
+          "uncached": 1,
+          "cacheRead": 0.02,
+          "cacheWrite": null,
+          "output": 4
+        },
+        "calendar": {
+          "from": "2026-01-01",
+          "to": "2026-12-31",
+          "holidays": [
+            "2026-01-01",
+            "2026-01-02",
+            "2026-01-03",
+            "2026-02-15",
+            "2026-02-16",
+            "2026-02-17",
+            "2026-02-18",
+            "2026-02-19",
+            "2026-02-20",
+            "2026-02-21",
+            "2026-02-22",
+            "2026-02-23",
+            "2026-04-04",
+            "2026-04-05",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-02",
+            "2026-05-03",
+            "2026-05-04",
+            "2026-05-05",
+            "2026-06-19",
+            "2026-06-20",
+            "2026-06-21",
+            "2026-09-25",
+            "2026-09-26",
+            "2026-09-27",
+            "2026-10-01",
+            "2026-10-02",
+            "2026-10-03",
+            "2026-10-04",
+            "2026-10-05",
+            "2026-10-06",
+            "2026-10-07"
+          ],
+          "sourceUrl": "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm"
+        }
+      },
+      "effectiveFrom": "2026-09-25T09:45:27Z"
+    },
+    {
+      "family": "deepseek",
+      "currency": "CNY",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "retrievedAt": "2026-09-25",
+      "observedFrom": "2026-09-25T09:45:27Z",
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "note": "北京时间周一至周五（不含中国节假日）09:00–12:00、14:00–18:00 为峰时；周末（含调休上班日）及节假日为谷时。核验前的现价回估为 estimated；保留旧模型的历史区间。",
+      "id": "deepseek/deepseek-v4-pro@2026-09-25",
+      "canonical": "deepseek-v4-pro",
+      "aliases": [
+        "deepseek-v4-pro"
+      ],
+      "timeOfUse": {
+        "peak": {
+          "uncached": 9,
+          "cacheRead": 0.3,
+          "cacheWrite": null,
+          "output": 27
+        },
+        "offPeak": {
+          "uncached": 4.5,
+          "cacheRead": 0.15,
+          "cacheWrite": null,
+          "output": 13.5
+        },
+        "calendar": {
+          "from": "2026-01-01",
+          "to": "2026-12-31",
+          "holidays": [
+            "2026-01-01",
+            "2026-01-02",
+            "2026-01-03",
+            "2026-02-15",
+            "2026-02-16",
+            "2026-02-17",
+            "2026-02-18",
+            "2026-02-19",
+            "2026-02-20",
+            "2026-02-21",
+            "2026-02-22",
+            "2026-02-23",
+            "2026-04-04",
+            "2026-04-05",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-02",
+            "2026-05-03",
+            "2026-05-04",
+            "2026-05-05",
+            "2026-06-19",
+            "2026-06-20",
+            "2026-06-21",
+            "2026-09-25",
+            "2026-09-26",
+            "2026-09-27",
+            "2026-10-01",
+            "2026-10-02",
+            "2026-10-03",
+            "2026-10-04",
+            "2026-10-05",
+            "2026-10-06",
+            "2026-10-07"
+          ],
+          "sourceUrl": "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm"
+        }
+      },
+      "effectiveFrom": "2026-09-25T09:45:27Z"
     }
   ],
   "fx": [

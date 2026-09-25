@@ -146,6 +146,39 @@ function captureRouteProjection() {
 	return definition;
 }
 
+test('pricing preview reads a generating session once and reprices the same usage', async () => {
+ const now = Date.parse('2026-09-08T10:00:00+08:00');
+ fixture({ current: projection(now) });
+ let reads = 0;
+ const service = { aggregate: StatsService.prototype.aggregate, ctx: {
+  workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['current'] }] },
+  sessions: { get: () => ({ header: { id: 'current', version: 3, cwd: '/tmp/fixture', createdAt: now }, inheritedEventCount: 0,
+   snapshotEvents: () => Array.from({ length: ++reads }, (_, turn) => ({ type: 'assistant/message', seq: turn, time: now + turn,
+    data: { turn, step: 0, usage: { inputTokens: 1000, outputTokens: 100 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } } } })) }) }
+ } };
+ const result = JSON.parse((await StatsService.prototype.pricing.call(service, { action: 'preview', overridesJson: '[]' })).previewJson);
+ expect(reads).toBe(1);
+ expect(result.changed).toEqual([]);
+ expect(result.before).toEqual(result.after);
+ const rule = { id: 'test', providerId: 'deepseek', family: 'deepseek', canonical: 'deepseek-v4-flash', aliases: ['deepseek-v4-flash'], currency: 'CNY',
+  rates: { uncached: 1, cacheRead: 0, cacheWrite: null, output: 2 }, sourceUrl: null, retrievedAt: '2026-09-25', confidence: 'estimated', reasoningIncludedInOutput: true };
+ const changed = JSON.parse((await StatsService.prototype.pricing.call(service, { action: 'preview', overridesJson: JSON.stringify([rule]) })).previewJson);
+ expect(reads).toBe(2);
+ expect(changed.changed).toHaveLength(1);
+ expect(changed.after.totals[0].amount).toBeCloseTo(0.0024);
+});
+
+test('preview keeps projection-only prices estimated after applying an exact rule', async () => {
+ const now = Date.parse('2026-09-08T10:00:00+08:00');
+ fixture({ current: projection(now, { usage: { uncachedInputTokens: 1000, outputTokens: 100 } }) });
+ const service = { aggregate: StatsService.prototype.aggregate };
+ const rule = { id: 'test', providerId: 'unknown', family: 'unknown', canonical: '(unknown)', aliases: ['(unknown)'], currency: 'CNY',
+  rates: { uncached: 1, cacheRead: 0, cacheWrite: 0, output: 2 }, sourceUrl: null, retrievedAt: '2026-09-25', confidence: 'exact', reasoningIncludedInOutput: true };
+ const result = JSON.parse((await StatsService.prototype.pricing.call(service, { action: 'preview', overridesJson: JSON.stringify([rule]) })).previewJson);
+ expect(result.after.status).toBe('estimated');
+ expect(result.after.totals[0].exactAmount).toBe(0);
+});
+
 test.each(['header', 'snapshot'])('persistence %s listings retain sessions without workspace membership', async (shape) => {
 	const now = Date.parse('2026-09-08T10:00:00+08:00');
 	fixture({});

@@ -35,10 +35,13 @@ function ruleDraft(rule) {
 function ruleDetails(rule, t) {
   const rows = rule.contextTiers ? [[t('price.standard'), rule.contextTiers.short], [t('price.long'), rule.contextTiers.long]]
     : rule.serviceTiers ? Object.entries(rule.serviceTiers).flatMap(([tier, rates]) => [[tier, rates.short], [tier + ' ' + t('price.long'), rates.long]])
+    : rule.timeOfUse ? [[t('price.peak'), rule.timeOfUse.peak], [t('price.offPeak'), rule.timeOfUse.offPeak]]
     : rule.legacy ? [[t('price.legacy'), rule.legacy], [t('price.peak'), rule.peak], [t('price.offPeak'), rule.offPeak]] : [['', rule.rates]];
   return e(React.Fragment, null,
     rows.map(([label, rates]) => e('div', { key: label }, label ? e('strong', null, label) : null,
       e('dl', { className: 'dss-price-rates' }, fields.map(k => e('div', { key: k }, e('dt', null, t('price.' + k)), e('dd', null, rates?.[k] == null ? t('pricing.pending') : String(rates[k]))))))),
+    rule.note ? e('p', null, rule.note) : null,
+    rule.timeOfUse ? e('p', null, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer' }, t('price.source'))) : null,
     rule.contextThreshold ? e('p', null, t('price.threshold') + ': ' + rule.contextThreshold) : null,
     rule.tierMultipliers ? e('p', null, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
     rule.effectiveFrom ? e('p', null, t('price.from') + ': ' + new Date(rule.effectiveFrom).toLocaleString()) : null,
