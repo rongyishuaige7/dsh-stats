@@ -8,7 +8,9 @@
 | `0.1.3-alpha.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v2 handles/live Session | fixture verified |
 | `0.1.5-rc.1` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v3 handles/live Session | full Web verified |
 | `0.1.5-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
+| `0.1.5-rc.3` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 | `0.1.6-alpha.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
+| `0.1.7-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v4 handles/live Session | fixture verified |
 
 The rc2 row was verified with a fresh `@deepseek-ai/dsh@0.1.1-rc.2` process on 2026-08-27. `npm run smoke:rc2` launched a temporary Chrome 151 runtime, loaded the Web profile, confirmed the plugin entry and `.dss-panel`, rendered populated project/session data, selected `yi-api` and verified its USD balance card, and observed zero console errors, runtime exceptions, or failed network requests. A separate isolated run also covered the explicit empty-workspace state. The rc6 browser cell remains pending because no separate rc6 browser run was requested.
 

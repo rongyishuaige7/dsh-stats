@@ -60,3 +60,30 @@ bundles build and pass syntax checks. Regression cases include changing live
 usage during previews, projection-only estimates, holidays, make-up weekends,
 peak boundaries, unknown calendars, historical aliases and source monitoring.
 Signing the reviewed schema 2 catalog follows this implementation push.
+
+## Stage 2: SettingsForms, navigation and Session V4
+
+On 2026-09-27 npm reports `latest=0.1.5-rc.3`, `next=0.1.7-rc.2`.
+
+- Provider enumeration uses `settings.describe({ redactSecrets: true })`, which
+  every supported release from 0.1.2-rc.1 to 0.1.7-rc.2 provides. Module
+  ownership comes from `configEditor.entries()` (published from 0.1.7) so
+  renamed entry ids still resolve; hosts without it keep the default ids.
+  Settings failures, invalid descriptors and duplicate identities now reject
+  before any credential lookup or network request.
+- Session navigation prefers `uiWorkspace.openSession`. Its target contract
+  differs: 0.1.5/0.1.6 accept a plain id and forward it to `sessions.open`,
+  while 0.1.7 accepts `SessionId | SubagentAddress` and replaces `open` with
+  `retain`. Subagent addresses are passed only when `sessions.retain` exists;
+  older hosts keep the `open` → `openSubagent` fallback.
+- Session format 4 files and headers are read; unknown later formats remain
+  degraded.
+- Peer ranges add `^0.1.7-rc.2` and still exclude 0.1.8. The retired
+  `dsh-client-runtime` range is unchanged.
+
+Stage 2 verification: 249 tests pass in local timezone and UTC; all four
+bundles build and pass syntax checks. Real module contracts pass for 0.1.2-rc.1,
+0.1.3-alpha.2, 0.1.5-rc.1, 0.1.5-rc.2, 0.1.5-rc.3, 0.1.6-alpha.1 and 0.1.7-rc.2
+(Session formats 0/2/3/3/3/3/4); CI now runs all seven. The Chrome fixture
+passes 7 checks with no errors. Full Web profiles for 0.1.5-rc.3 and 0.1.7-rc.2,
+real account requests and live subagent navigation were not run.
