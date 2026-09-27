@@ -804,3 +804,34 @@ test('project CSV exports provider-scoped pricing audit fields per usage slice',
 	});
 	expect(row.costAmount).toBeCloseTo(0.0039, 8);
 });
+
+
+test('current UI workspace owner opens regular sessions and durable subagent addresses', async () => {
+	const address = { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' };
+	const sessions = { open: vi.fn(), retain: vi.fn(), subagentAddress: () => address };
+	const workspace = { openSession: vi.fn() };
+	await openStatsSession(sessions, { id: 'main' }, workspace);
+	await openStatsSession(sessions, { id: 'child', subagent: true }, workspace);
+	expect(workspace.openSession.mock.calls).toEqual([['main'], [address]]);
+	expect(sessions.open).not.toHaveBeenCalled();
+	expect(sessions.retain).not.toHaveBeenCalled();
+});
+
+test('Harness 0.1.5 UI owner receives plain ids while subagents keep the controller fallback', async () => {
+	const address = { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' };
+	const sessions = { open: vi.fn(() => { throw new Error('not listed'); }), openSubagent: vi.fn(), subagentAddress: () => address };
+	const workspace = { openSession: vi.fn() };
+	await openStatsSession(sessions, { id: 'main' }, workspace);
+	await openStatsSession(sessions, { id: 'child', subagent: true }, workspace);
+	expect(workspace.openSession.mock.calls).toEqual([['main']]);
+	expect(sessions.open).toHaveBeenCalledWith('child');
+	expect(sessions.openSubagent).toHaveBeenCalledWith(address);
+});
+
+test('navigation failures reject without switching owners or pretending success', async () => {
+	const sessions = { open: vi.fn(), retain: vi.fn() };
+	await expect(openStatsSession(sessions, { id: 'main' }, { openSession: () => { throw new Error('failed'); } })).rejects.toThrow('failed');
+	expect(sessions.open).not.toHaveBeenCalled();
+	await expect(openStatsSession({ retain: vi.fn() }, { id: 'main' })).rejects.toThrow('navigation is unavailable');
+	await expect(openStatsSession({ open: async () => { throw new Error('async failure'); } }, { id: 'main' })).rejects.toThrow('async failure');
+});

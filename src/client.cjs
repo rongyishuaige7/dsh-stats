@@ -2731,11 +2731,21 @@ function subagentAddressFor(sessions, session) {
 	}
 }
 
-async function openStatsSession(sessions, session) {
-	if (!sessions || typeof sessions.open !== "function") throw new Error("sessions.open is unavailable");
+async function openStatsSession(sessions, session, uiWorkspace) {
 	if (!session || typeof session.id !== "string" || !session.id) throw new Error("session id is unavailable");
+	// Harness 0.1.7 replaced sessions.open with retain(target), and its UI owner
+	// accepts durable subagent addresses. Earlier owners forward a plain id to
+	// sessions.open, so subagents keep the controller fallback below there.
+	var targetContract = typeof sessions?.retain === "function";
+	if (typeof uiWorkspace?.openSession === "function" && (targetContract || !session.subagent)) {
+		// The UI owner retains the session, selects it and reveals Conversation.
+		// A controller retain() alone cannot perform navigation.
+		await uiWorkspace.openSession(targetContract && subagentAddressFor(sessions, session) || session.id);
+		return;
+	}
+	if (!sessions || typeof sessions.open !== "function") throw new Error("session navigation is unavailable");
 	try {
-		sessions.open(session.id);
+		await sessions.open(session.id);
 		return;
 	} catch (openError) {
 		if (!session.subagent || typeof sessions.openSubagent !== "function") throw openError;
@@ -2745,7 +2755,7 @@ async function openStatsSession(sessions, session) {
 			address = subagentAddressFor(sessions, session);
 		}
 		if (!address) throw openError;
-		sessions.openSubagent(address);
+		await sessions.openSubagent(address);
 	}
 }
 
@@ -2812,9 +2822,17 @@ async function apply(ctx) {
 	}
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-stats: dictionaries");
 	const openStore = createOpenStore();
+	let workspaceNavigation = null;
+	// Do not await: older hosts have no uiWorkspace. Cordis owns this optional
+	// child lifetime and reloads it if the navigation service is replaced.
+	ctx.inject(["uiWorkspace"], (childCtx) => {
+		const navigation = childCtx.uiWorkspace;
+		workspaceNavigation = navigation;
+		return () => { if (workspaceNavigation === navigation) workspaceNavigation = null; };
+	});
 	const onOpenSession = async (session) => {
 		try {
-			await openStatsSession(ctx.sessions, session);
+			await openStatsSession(ctx.sessions, session, workspaceNavigation);
 			openStore.close();
 		} catch (error) {
 			console.warn("[dsh-stats] 无法打开会话 " + (session?.id || "(unknown)") + ":", error);

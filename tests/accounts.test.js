@@ -452,3 +452,52 @@ test('streamed account JSON decodes UTF-8 split across byte boundaries', async (
 	const account = await queryProviderAccount(accountSpec({ id: 'relay', baseURL: 'https://relay.example.test', apiKeyRef: 'KEY' }), credentials(), { fetch: async () => response });
 	expect(account).toMatchObject({ status: 'ok', balance: { remaining: 2 } });
 });
+
+
+test('SettingsForms enumerates redacted descriptors and renamed module entries', async () => {
+	const describe = vi.fn(() => [
+		{ ns: 'custom-deepseek', value: { apiKeyEnv: 'DS_KEY', baseURL: 'https://api.deepseek.com' } },
+		{ ns: 'route-a', value: { providers: { relay: { apiKeyEnv: 'RELAY_KEY', baseURL: 'https://relay.example.test' } } } },
+		{ ns: 'route-b', value: { providers: { openrouter: { accountApiKeyEnv: 'OR_MANAGEMENT' } } } },
+		{ ns: 'llm-pi-ai', value: { providers: { wrong: {} } } },
+	]);
+	const ctx = { settings: { describe, get: vi.fn(() => { throw new Error('must not use legacy'); }) },
+		configEditor: { entries: () => [
+			{ options: { id: 'custom-deepseek', name: '@deepseek-ai/dsh-llm-deepseek' } },
+			{ options: { id: 'route-a', name: '@deepseek-ai/dsh-llm-pi-ai' } },
+			{ options: { id: 'route-b', name: '@deepseek-ai/dsh-llm-pi-ai' } },
+			{ options: { id: 'llm-pi-ai', name: '@example/unrelated' } },
+		] } };
+	const providers = await configuredProviders(ctx);
+	expect(describe).toHaveBeenCalledWith({ redactSecrets: true });
+	expect(ctx.settings.get).not.toHaveBeenCalled();
+	expect(providers.map(p => p.id)).toEqual(['deepseek-official', 'relay', 'openrouter']);
+	expect(providers[0].apiKeyRef).toBe('DS_KEY');
+	expect(accountSpec(providers[2]).apiKeyRef).toBe('OR_MANAGEMENT');
+});
+
+test('SettingsForms honors disabled entries and absent provider modules', async () => {
+	const ctx = { settings: { describe: () => [{ ns: 'llm-deepseek', value: {} }] },
+		configEditor: { entries: () => [{ disabled: true, options: { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek' } }] } };
+	expect(await configuredProviders(ctx)).toEqual([]);
+	expect(await configuredProviders({ settings: { describe: () => [] } })).toEqual([]);
+});
+
+test.each(['describe', 'get'])('settings %s failures are explicit and sanitized before credentials or network access', async (method) => {
+	const ctx = { settings: { [method]: () => { throw new Error('secret-test-value'); } }, credentials: { resolve: vi.fn() } };
+	const fetch = vi.fn();
+	await expect(collectAccounts({}, ctx, { deps: { fetch } })).rejects.toThrow('provider-settings-unavailable');
+	expect(ctx.credentials.resolve).not.toHaveBeenCalled();
+	expect(fetch).not.toHaveBeenCalled();
+});
+
+test('invalid descriptors and conflicting provider identities fail without selecting an account', async () => {
+	for (const descriptors of [null, {}, [{ ns: 'llm-pi-ai', value: null }], [{ ns: 'llm-pi-ai', value: {} }, { ns: 'llm-pi-ai', value: {} }]]) {
+		await expect(configuredProviders({ settings: { describe: () => descriptors } })).rejects.toThrow('provider-settings-invalid');
+	}
+	for (const name of ['deepseek', 'pi-ai']) {
+		const ctx = { settings: { describe: () => ['a', 'b'].map(ns => ({ ns, value: { providers: { relay: {} } } })) },
+			configEditor: { entries: () => ['a', 'b'].map(id => ({ options: { id, name: '@deepseek-ai/dsh-llm-' + name } })) } };
+		await expect(configuredProviders(ctx)).rejects.toThrow('provider-settings-conflict');
+	}
+});

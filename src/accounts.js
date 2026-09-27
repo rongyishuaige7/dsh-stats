@@ -165,8 +165,45 @@ function serviceFrom(ctx, name) {
 	}
 }
 
-async function setting(settings, name) {
-	try { return await settings?.get?.(name); } catch { return null; }
+async function providerSettings(ctx) {
+	const settings = serviceFrom(ctx, "settings");
+	if (typeof settings?.describe === "function") {
+		let descriptors, entries;
+		try {
+			descriptors = await settings.describe({ redactSecrets: true });
+			const editor = serviceFrom(ctx, "configEditor");
+			entries = typeof editor?.entries === "function" ? await editor.entries() : [];
+		} catch { throw new Error("provider-settings-unavailable"); }
+		if (!Array.isArray(descriptors) || !Array.isArray(entries)) throw new Error("provider-settings-invalid");
+		const modules = new Map([["llm-deepseek", "deepseek"], ["llm-pi-ai", "pi"]]);
+		for (const entry of entries) {
+			const id = entry?.options?.id;
+			if (typeof id !== "string") throw new Error("provider-settings-invalid");
+			// Entry ids are user-editable. Resolve ownership from module metadata,
+			// without reading configuration layers or unredacted credentials.
+			modules.delete(id);
+			if (entry.disabled || entry.options.disabled) continue;
+			if (entry.options.name === "@deepseek-ai/dsh-llm-deepseek") modules.set(id, "deepseek");
+			if (entry.options.name === "@deepseek-ai/dsh-llm-pi-ai") modules.set(id, "pi");
+		}
+		const result = { deepseek: [], pi: [] }, seen = new Set();
+		for (const descriptor of descriptors) {
+			if (!descriptor || typeof descriptor.ns !== "string" || seen.has(descriptor.ns)) throw new Error("provider-settings-invalid");
+			seen.add(descriptor.ns);
+			const family = modules.get(descriptor.ns);
+			if (!family) continue;
+			if (!objectRecord(descriptor.value)) throw new Error("provider-settings-invalid");
+			result[family].push(descriptor.value);
+		}
+		// DeepSeek exposes one fixed provider id: do not silently choose an account.
+		if (result.deepseek.length > 1) throw new Error("provider-settings-conflict");
+		return result;
+	}
+	if (!settings) return { deepseek: [{}], pi: [] };
+	if (typeof settings.get !== "function") throw new Error("provider-settings-unsupported");
+	try {
+		return { deepseek: [await settings.get("llm-deepseek") || {}], pi: [await settings.get("llm-pi-ai")].filter(Boolean) };
+	} catch { throw new Error("provider-settings-unavailable"); }
 }
 
 function displayName(id, configured) {
@@ -186,9 +223,8 @@ function displayName(id, configured) {
 
 /** Enumerate connection metadata from Harness settings without resolving keys. */
 async function configuredProviders(ctx) {
-	const settings = serviceFrom(ctx, "settings");
-	const deepseek = await setting(settings, "llm-deepseek");
-	const providers = [{
+	const configs = await providerSettings(ctx);
+	const providers = configs.deepseek.map((deepseek) => ({
 		id: "deepseek-official",
 		displayName: "DeepSeek",
 		apiKeyRef: profileApiKeyRef(deepseek),
@@ -197,8 +233,8 @@ async function configuredProviders(ctx) {
 		accountType: nonEmpty(deepseek?.accountType) || "api",
 		accountUsage: profileUsageTemplate(deepseek),
 		source: "deepseek"
-	}];
-	const pi = await setting(settings, "llm-pi-ai");
+	}));
+	for (const pi of configs.pi) {
 	if (pi && typeof pi === "object" && pi.providers && typeof pi.providers === "object") {
 		for (const [id, profile] of Object.entries(pi.providers)) {
 			if (!profile || typeof profile !== "object" || !nonEmpty(id)) continue;
@@ -215,8 +251,12 @@ async function configuredProviders(ctx) {
 			});
 		}
 	}
+	}
 	const unique = new Map();
-	for (const provider of providers) if (!unique.has(provider.id)) unique.set(provider.id, provider);
+	for (const provider of providers) {
+		if (unique.has(provider.id)) throw new Error("provider-settings-conflict");
+		unique.set(provider.id, provider);
+	}
 	return [...unique.values()];
 }
 
