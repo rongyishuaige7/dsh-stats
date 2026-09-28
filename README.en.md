@@ -51,13 +51,13 @@ Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.4.0
+dsh plugin --profile web add @rongyi7/dsh-stats@0.4.1
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.1.tgz
 ```
 
 Verify the bundle registration:
@@ -272,8 +272,8 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 Compatibility covers Harness `0.1.2-rc.1` through `0.1.7-rc.2`. npm `latest`
 (`0.1.5-rc.3`) and `next` (`0.1.7-rc.2`) are verified in complete Web hosts; the
 other releases pass real module contract checks. See the
-[compatibility matrix](docs/compatibility.md). Harness 0.1.7 needs a plugin release
-after 0.4.0; the published 0.4.0 does not load on 0.1.7.
+[compatibility matrix](docs/compatibility.md). Harness 0.1.7 needs plugin 0.4.1 or later;
+0.4.0 does not load on 0.1.7.
 
 ```bash
 npm install

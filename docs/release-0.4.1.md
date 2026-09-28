@@ -42,3 +42,33 @@ subagent navigation.
 Delivery gates: release-commit CI, `v0.4.1` tag publication, public registry
 verification, registry package reinstalled into both isolated profiles, and a
 backed-up upgrade of the local production Web profile with browser validation.
+
+Delivery completed on 2026-09-28:
+
+- Release commit `84ce046` and tag `v0.4.1` are pushed. Release CI
+  [36387253125](https://github.com/rongyishuaige7/dsh-stats/actions/runs/36387253125)
+  and npm publication
+  [36387366997](https://github.com/rongyishuaige7/dsh-stats/actions/runs/36387366997)
+  succeeded. The registry serves `latest=0.4.1` (shasum `a29feb6b…`); its
+  contents and integrity match the local release pack byte for byte.
+- The registry package, reinstalled into the isolated 0.1.5-rc.3 and 0.1.7-rc.2
+  profiles, passes the same full Web checks.
+- The local production Web profile (`$DSH_HOME/profiles/web`, launcher Harness
+  0.1.5-rc.2) was stopped before the upgrade. Backup:
+  `$DSH_HOME/backups/dsh-stats-0.4.1-20260928-144503/` (profile, pricing data,
+  session fingerprints, published package). The upgrade used the profile's own
+  pnpm 11.21.0; pnpm added the fresh version to `minimumReleaseAgeExclude`.
+  Installed files match the registry package.
+- On a temporary start at 127.0.0.1:3080 the host refreshed the price catalog
+  from schema 1 `2026091704` to schema 2 `2026092502`. Host statistics, all
+  tabs, price settings and six account providers render with zero console,
+  runtime or network errors. The status is "incomplete data": the launcher's
+  own persistence reports 59 unreadable historical records (26 subagent
+  sessions with a newer descriptor version, 25 unmigrated v0 logs, 8 seed or
+  sequence defects). The launcher is unchanged, so these predate this release;
+  0.4.0 was not reinstalled to compare.
+- The server was stopped again, restoring the prior state. All 123 session logs
+  are byte-identical to the pre-upgrade fingerprints.
+- The Web probe records the final data status and diagnostics, and
+  `DSH_SMOKE_EXPECT_HOST=settled` accepts incomplete host data for real
+  profiles; `=1` still requires exact data.

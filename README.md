@@ -31,7 +31,7 @@
 
 需要已安装的 DeepSeek Harness `web` profile，以及 Node.js `>= 22`。
 
-兼容 Harness `0.1.2-rc.1` 至 `0.1.7-rc.2`。npm `latest`（`0.1.5-rc.3`）和 `next`（`0.1.7-rc.2`）已在完整 Web 宿主中验证，其余版本通过真实模块接口检查，详见 [兼容性矩阵](docs/compatibility.md)。Harness 0.1.7 需要 0.4.0 之后发布的插件版本，已发布的 0.4.0 在 0.1.7 上无法加载。
+兼容 Harness `0.1.2-rc.1` 至 `0.1.7-rc.2`。npm `latest`（`0.1.5-rc.3`）和 `next`（`0.1.7-rc.2`）已在完整 Web 宿主中验证，其余版本通过真实模块接口检查，详见 [兼容性矩阵](docs/compatibility.md)。Harness 0.1.7 需要插件 0.4.1 及以上，0.4.0 在 0.1.7 上无法加载。
 
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
@@ -53,13 +53,13 @@ dsh web
 固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.4.0
+dsh plugin --profile web add @rongyi7/dsh-stats@0.4.1
 ```
 
 安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.0.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.1.tgz
 ```
 
 验证插件是否已注册：
