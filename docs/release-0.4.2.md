@@ -39,3 +39,26 @@ Delivery gates: release-commit CI, `v0.4.2` tag publication (first run of the
 Node 24 publish workflow), public registry verification, registry package
 reinstalled into both isolated profiles, and a backed-up upgrade of the local
 production Web profile with browser validation.
+
+Delivery completed on 2026-09-28:
+
+- Release commit `b83bbda` and tag `v0.4.2` are pushed. Release CI
+  [36412090389](https://github.com/rongyishuaige7/dsh-stats/actions/runs/36412090389)
+  and npm publication
+  [36412207034](https://github.com/rongyishuaige7/dsh-stats/actions/runs/36412207034)
+  succeeded; the Node 24 publish workflow works. The registry serves
+  `latest=0.4.2` (shasum `69b8fb39…`). Its contents match the local pack; the
+  archives differ only in the mode of `LICENSE` and `cordis.patch.yml` (0600 in
+  the local checkout, 0644 in CI).
+- The registry package, reinstalled into the isolated 0.1.7-rc.2 and 0.1.5-rc.3
+  profiles, passes the same full Web checks.
+- The local production Web profile (launcher Harness 0.1.5-rc.2) was stopped
+  before the upgrade. Backup: `$DSH_HOME/backups/dsh-stats-0.4.2-20260928-185837/`.
+  The upgrade used the profile's pnpm 11.21.0; installed files match the registry.
+- On a temporary start at 127.0.0.1:3080 the catalog refreshed from 2026092502 to
+  2026092503 with a numeric `lastSuccessAt` (the state that crashed before
+  `5448d89`). Host statistics, all tabs, price settings and six account providers
+  render with zero console, runtime or network errors; data status stays
+  "incomplete" for the same 59 historical records as 0.4.1.
+- The server was stopped again. All 124 session logs match the pre-upgrade
+  fingerprints.
