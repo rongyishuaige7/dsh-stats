@@ -248,9 +248,20 @@ try {
 	await waitForPage(page, "Boolean(document.querySelector('.dss-panel'))", deadline, "stats panel");
 	result.panel = true;
 	result.dataVisible = Boolean(await page.evaluate("(() => { const text = document.querySelector('.dss-panel')?.innerText || ''; return text.includes('DSH 用量') || text.includes('DSH Usage') || text.includes('项目统计') || text.includes('Project Stats'); })()"));
-	if (process.env.DSH_SMOKE_EXPECT_HOST === "1") {
-		await waitForPage(page, "Boolean(document.querySelector('.dss-data-status.exact'))", deadline, "exact host statistics");
-		result.hostStats = true;
+	const expectHost = process.env.DSH_SMOKE_EXPECT_HOST;
+	if (expectHost === "1" || expectHost === "settled") {
+		// "1" requires exact host data; "settled" also accepts incomplete host data
+		// (real profiles can hold archived forks or sessions without logs).
+		const ready = expectHost === "1" ? ".dss-data-status.exact" : ".dss-data-status.exact, .dss-data-status.partial";
+		try {
+			await waitForPage(page, `Boolean(document.querySelector(${JSON.stringify(ready)}))`, deadline, expectHost === "1" ? "exact host statistics" : "settled host statistics");
+			result.hostStats = true;
+		} finally {
+			// Record the observed state either way so a timeout is diagnosable.
+			result.dataStatus = await page.evaluate("document.querySelector('.dss-data-status')?.className || null").catch(() => null);
+			result.dataDiagnostics = String(await page.evaluate("document.querySelector('.dss-data-diagnostics div')?.textContent || ''").catch(() => ""))
+				.replace(/(Bearer\s+)[^\s"']+/gi, "$1[redacted]").slice(0, 8_000);
+		}
 	}
 	if (process.env.DSH_SMOKE_EXPECT_PROJECT) {
 		await waitForPage(page, `document.querySelector('.dss-panel')?.innerText.includes(${JSON.stringify(process.env.DSH_SMOKE_EXPECT_PROJECT)})`, deadline, "populated project statistics");
