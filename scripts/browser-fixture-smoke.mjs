@@ -88,11 +88,20 @@ async function evaluate(expression) {
 }
 const until = (expression, description = expression) => waitFor(() => evaluate('Boolean(' + expression + ')'), description);
 async function click(selector) {
+  // React renders asynchronously after the fixture reports ready.
+  await until(`document.querySelector(${JSON.stringify(selector)})`, selector);
   assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.click(); return true; })()`), selector);
   await delay(100);
 }
 async function refresh() { await click('.dss-head-actions .dss-export:nth-child(2)'); }
 async function tab(index) { await click('.dss-tabs button:nth-child(' + index + ')'); }
+// Page.navigate can return before the old document is replaced; clear its ready
+// flag first so the wait cannot pass on the page being navigated away from.
+async function navigate(path) {
+  await evaluate('window.__fixture && (window.__fixture.ready = false)').catch(() => {});
+  await command('Page.navigate', { url: url + path });
+  await until('window.__fixture?.ready');
+}
 async function capture(name) {
   const result = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const filename = name + '.png'; writeFileSync(join(output, filename), Buffer.from(result.data, 'base64')); report.screenshots.push(filename);
@@ -120,8 +129,7 @@ try {
   await once(socket, 'open');
   await command('Runtime.enable'); await command('Page.enable'); await command('Network.enable');
   // Runs first, while the stored tab preference is still the default overview.
-  await command('Page.navigate', { url: url + '/?lang=zh' });
-  await until('window.__fixture?.ready');
+  await navigate('/?lang=zh');
   await evaluate('window.__fixture.bumpSessions()'); await delay(200);
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'closed panel must not aggregate session updates');
   await click('.dss-trigger');
@@ -140,8 +148,8 @@ try {
   const views = {};
   for (const query of ['lang=zh', 'stats=error&lang=zh']) for (const timezoneId of ['Asia/Shanghai', 'America/Los_Angeles']) {
     await command('Emulation.setTimezoneOverride', { timezoneId });
-    await command('Page.navigate', { url: url + '/?' + query });
-    await until('window.__fixture?.ready'); await click('.dss-trigger');
+    await navigate('/?' + query);
+    await click('.dss-trigger');
     await until('document.querySelector(".dss-data-status.' + (query.startsWith('stats=error') ? 'fallback' : 'exact') + '")');
     const texts = [];
     for (const index of [1, 2, 3]) { await tab(index); texts.push(await evaluate('document.querySelector(".dss-body").innerText')); }
@@ -153,8 +161,7 @@ try {
   report.checks.push('host and local-fallback views identical in Asia/Shanghai and America/Los_Angeles');
   for (const [name, width, height, lang] of [['desktop',1440,1000,'zh'], ['mobile',390,844,'zh'], ['narrow',320,740,'en']]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
-    await command('Page.navigate', { url: url + '/?lang=' + lang });
-    await until('window.__fixture?.ready');
+    await navigate('/?lang=' + lang);
     await click('.dss-trigger');
     await tab(1);
     await until('document.querySelector(".dss-data-status.exact")');
@@ -196,14 +203,14 @@ try {
   await evaluate('window.__fixture.statsMode = "error"'); await refresh();
   await until('document.querySelector(".dss-data-status.stale")');
   await layout('stale'); await capture('narrow-stale');
-  await command('Page.navigate', { url: url + '/?stats=error&lang=en' });
-  await until('window.__fixture?.ready'); await click('.dss-trigger');
+  await navigate('/?stats=error&lang=en');
+  await click('.dss-trigger');
   await until('document.querySelector(".dss-data-status.fallback")');
   assert(await evaluate('document.querySelector(".dss-data-status").textContent.includes(window.__fixture.t("source.local"))'));
   await layout('fallback'); await capture('narrow-fallback');
   report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data and local fallback');
-  await command('Page.navigate', { url: url + '/?stats=partial&lang=en' });
-  await until('window.__fixture?.ready'); await click('.dss-trigger'); await tab(1);
+  await navigate('/?stats=partial&lang=en');
+  await click('.dss-trigger'); await tab(1);
   const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
   await priceButton('price.title');
   await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
@@ -224,8 +231,8 @@ try {
   await until('document.querySelector(".dss-pricing").textContent.includes(window.__fixture.t("price.refreshFailed"))');
   await layout('pricing-failure'); await capture('narrow-pricing-failure');
   report.checks.push('price settings: missing models, custom price preview/save/edit and offline refresh retains prices');
-  await command('Page.navigate', { url: url + '/?theme=dark&lang=en' });
-  await until('window.__fixture?.ready'); await click('.dss-trigger'); await tab(4);
+  await navigate('/?theme=dark&lang=en');
+  await click('.dss-trigger'); await tab(4);
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();
   await until('document.querySelector(".dss-balance-status.stale")');
   await layout('dark-stale-balance'); await capture('narrow-dark-stale-balance');
