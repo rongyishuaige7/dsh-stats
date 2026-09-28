@@ -1,4 +1,5 @@
 const pairs = {
+  beijing: ['北京时间', 'Beijing time'], timesBeijing: ['生效时间按北京时间（UTC+8）填写', 'Times are Beijing time (UTC+8)'],
   edit: ['编辑', 'Edit'], replace: ['更新草稿', 'Update draft'], conflict: ['价格设置已在其他页面更新，请重新打开后再保存', 'Prices changed in another window. Reopen settings before saving.'],
   standard: ['标准上下文', 'Standard context'], legacy: ['历史费率', 'Historical rates'], peak: ['高峰', 'Peak'], offPeak: ['非高峰', 'Off-peak'], observed: ['核验时间（此前为估算）', 'Observed at (earlier usage is estimated)'],
   title: ['价格设置', 'Price settings'], failed: ['操作失败，请重试', 'Operation failed. Please retry.'],

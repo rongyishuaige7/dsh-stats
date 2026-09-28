@@ -2,13 +2,25 @@ const React = require('react');
 const pricing = require('./pricing.cjs');
 const e = React.createElement;
 const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
+// Price rules follow Beijing time like the rest of the panel: datetime-local
+// values and displayed times are UTC+8 regardless of the browser timezone.
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+function beijingInput(value) {
+  return value ? new Date(Date.parse(value) + BEIJING_OFFSET_MS).toISOString().slice(0, 16) : '';
+}
+function fromBeijingInput(value) {
+  const ms = Date.parse(value + '+08:00');
+  if (!Number.isFinite(ms)) throw new RangeError('Invalid time value');
+  return new Date(ms).toISOString();
+}
+const fmtBeijing = value => beijingInput(value).replace('T', ' ');
 function blankDraft(provider = '', model = '') {
   return { provider, model, currency: 'CNY', uncached: '', cacheRead: '', cacheWrite: '', output: '', from: '', to: '', threshold: '', longUncached: '', longCacheRead: '', longCacheWrite: '', longOutput: '', priority: '', batch: '', flex: '', accountType: 'api' };
 }
 function draftRule(draft, existing, now = new Date()) {
   const number = text => text.trim() === '' ? null : Number(text);
   const rates = Object.fromEntries(fields.map(k => [k, number(draft[k])]));
-  const date = value => value ? new Date(value).toISOString() : undefined;
+  const date = value => value ? fromBeijingInput(value) : undefined;
   const rule = { id: 'custom/' + draft.provider.trim() + '/' + draft.model.trim() + '@' + now.toISOString(),
     providerId: draft.provider.trim(), family: pricing.providerFamilyOf(draft.provider), canonical: draft.model.trim(), aliases: [draft.model.trim().toLowerCase()],
     currency: draft.currency, sourceUrl: null, retrievedAt: now.toISOString().slice(0, 10), confidence: 'estimated', reasoningIncludedInOutput: true,
@@ -23,8 +35,7 @@ function draftRule(draft, existing, now = new Date()) {
   return rule;
 }
 function ruleDraft(rule) {
-  const local = value => { if (!value) return ''; const d = new Date(value); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
-  const draft = { ...blankDraft(rule.providerId, rule.canonical), currency: rule.currency, accountType: rule.accountType || 'api', from: local(rule.effectiveFrom), to: local(rule.effectiveTo), threshold: rule.contextThreshold == null ? '' : String(rule.contextThreshold) };
+  const draft = { ...blankDraft(rule.providerId, rule.canonical), currency: rule.currency, accountType: rule.accountType || 'api', from: beijingInput(rule.effectiveFrom), to: beijingInput(rule.effectiveTo), threshold: rule.contextThreshold == null ? '' : String(rule.contextThreshold) };
   for (const key of fields) {
     draft[key] = String((rule.contextTiers?.short || rule.rates)?.[key] ?? '');
     draft['long' + key[0].toUpperCase() + key.slice(1)] = String(rule.contextTiers?.long?.[key] ?? '');
@@ -44,9 +55,9 @@ function ruleDetails(rule, t) {
     rule.timeOfUse ? e('p', null, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer' }, t('price.source'))) : null,
     rule.contextThreshold ? e('p', null, t('price.threshold') + ': ' + rule.contextThreshold) : null,
     rule.tierMultipliers ? e('p', null, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
-    rule.effectiveFrom ? e('p', null, t('price.from') + ': ' + new Date(rule.effectiveFrom).toLocaleString()) : null,
-    rule.effectiveTo ? e('p', null, t('price.to') + ': ' + new Date(rule.effectiveTo).toLocaleString()) : null,
-    rule.observedFrom ? e('p', null, t('price.observed') + ': ' + new Date(rule.observedFrom).toLocaleString()) : null);
+    rule.effectiveFrom ? e('p', null, t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom) + ' ' + t('price.beijing')) : null,
+    rule.effectiveTo ? e('p', null, t('price.to') + ': ' + fmtBeijing(rule.effectiveTo) + ' ' + t('price.beijing')) : null,
+    rule.observedFrom ? e('p', null, t('price.observed') + ': ' + fmtBeijing(rule.observedFrom) + ' ' + t('price.beijing')) : null);
 }
 function missingModels(projects) {
   const rows = new Map();
@@ -109,7 +120,7 @@ function PricingPanel({ remote, projects, onChanged, t }) {
       e('div', { className: 'dss-price-actions' },
         e('label', null, e('input', { type: 'checkbox', checked: autoUpdate, onChange: ev => { setAutoUpdate(ev.target.checked); setDirty(true); setPreview(null); } }), ' ', t('price.auto')),
         button(t('price.refresh'), () => call({ action: 'refresh' }), dirty)),
-      e('p', { className: 'dss-price-muted' }, t('price.updated') + ' ' + (status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleString() : t('price.builtin')) + ' · ' + status.version),
+      e('p', { className: 'dss-price-muted' }, t('price.updated') + ' ' + (status.lastSuccessAt ? fmtBeijing(status.lastSuccessAt) + ' ' + t('price.beijing') : t('price.builtin')) + ' · ' + status.version),
       status.error ? e('p', { role: 'status' }, t('price.refreshFailed'), e('details', null, e('summary', null, t('source.details')), status.error)) : null,
       missingModels(projects).length ? e('div', null, e('h4', null, t('price.missing')),
         missingModels(projects).map(row => e('div', { key: row.provider + '/' + row.model, className: 'dss-price-row' },
@@ -125,6 +136,7 @@ function PricingPanel({ remote, projects, onChanged, t }) {
           e('label', { className: 'dss-price-field' }, t('price.currency'), e('select', { value: draft.currency, onChange: ev => edit('currency', ev.target.value) }, ['CNY', 'USD'].map(v => e('option', { key: v }, v)))),
           ...fields.map(k => input(k, t('price.' + k)))),
         e('details', null, e('summary', null, t('price.conditions')),
+          e('p', { className: 'dss-price-muted' }, t('price.timesBeijing')),
           e('div', { className: 'dss-price-grid' }, input('from', t('price.from'), 'datetime-local'), input('to', t('price.to'), 'datetime-local'), input('threshold', t('price.threshold')),
             ...fields.map(k => input('long' + k[0].toUpperCase() + k.slice(1), t('price.long') + ' ' + t('price.' + k))),
             ...['priority', 'batch', 'flex'].map(k => input(k, k + ' ' + t('price.multiplier'))),
@@ -145,4 +157,4 @@ function PricingPanel({ remote, projects, onChanged, t }) {
           status.history.filter(v => v !== status.version).map(version => e('div', { key: version, className: 'dss-price-row' }, String(version), button(t('price.rollback'), () => call({ action: 'rollback', version, revision: status.revision }), dirty)))))
     ));
 }
-module.exports = { PricingPanel, draftRule, missingModels, blankDraft, ruleDraft };
+module.exports = { PricingPanel, draftRule, missingModels, blankDraft, ruleDraft, fmtBeijing };

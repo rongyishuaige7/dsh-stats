@@ -1,6 +1,6 @@
 import { parseOpenAI, openRouterRule, appendObservedRule, collect, deepSeekObservation } from '../scripts/collect-pricing.mjs';
 import pricing from '../src/pricing.cjs';
-import { draftRule, blankDraft, ruleDraft, missingModels } from '../src/pricing-panel.cjs';
+import { draftRule, blankDraft, ruleDraft, missingModels, fmtBeijing } from '../src/pricing-panel.cjs';
 const at = '2026-09-18T00:00:00.000Z';
 const deepSeekHtml = '<article><table><tr><td>deepseek-flash 缓存 高峰 2</td></tr></table></article>';
 const deepSeekBaseline = deepSeekObservation(deepSeekHtml);
@@ -54,6 +54,17 @@ test('collection separates reviewed official candidates and publishes only valid
   const failed = await collect({ fetchSource: async () => { throw new Error('offline'); }, at });
   expect(failed.report.failures).toHaveLength(3);
   expect(failed.catalog).toEqual(pricing.BUILTIN);
+});
+
+test('custom price times are Beijing time regardless of the host timezone', () => {
+  const draft = { ...blankDraft('yi-api', 'gpt-6-astra'), uncached: '1', output: '2', from: '2026-09-17T08:00', to: '2026-10-01T00:00' };
+  const rule = draftRule(draft, [], new Date(at));
+  expect(rule.effectiveFrom).toBe('2026-09-17T00:00:00.000Z');
+  expect(rule.effectiveTo).toBe('2026-09-30T16:00:00.000Z');
+  expect(ruleDraft(rule).from).toBe('2026-09-17T08:00');
+  expect(ruleDraft(rule).to).toBe('2026-10-01T00:00');
+  expect(fmtBeijing('2026-09-17T00:00:00.000Z')).toBe('2026-09-17 08:00');
+  expect(() => draftRule({ ...draft, from: 'not-a-time' }, [])).toThrow();
 });
 
 test('custom price editor round-trips context tiers and keeps blanks distinct from zero', () => {
