@@ -18,6 +18,27 @@ test('official parser distinguishes missing and free rates, and fails closed on 
   expect(() => parseOpenAI(markdown.replace('$10', 'contact sales'))).toThrow();
 });
 
+test('official parser maps long-context annotations and honours the unknown cache-write convention', async () => {
+  const annotated = `### Standard pricing data
+| gpt-6-astra | $10 | $1 | $12.5 | $50 | $20 | $2 | $25 | $75 |
+| gpt-5.4 (<272K context length) | $2.50 | $0.25 | - | $15.00 | $5.00 | $0.50 | - | $22.50 |
+| gpt-5.4-mini | $0.75 | $0.075 | - | $4.50 | - | - | - | - |
+| gpt-4o (legacy tier) | $1 | - | - | $2 | - | - | - | - |
+### Batch pricing data`;
+  const rows = parseOpenAI(annotated);
+  expect(rows.map(r => r.model)).toEqual(['gpt-6-astra', 'gpt-5.4', 'gpt-5.4-mini']);
+  expect(rows[1]).toMatchObject({ threshold: 272000, long: { output: 22.5, cacheWrite: null } });
+  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('deepseek') ? deepSeekHtml : annotated;
+  // Reviewed rules estimate unpublished cache writes at the input price: not a change.
+  const reviewed = await collect({ fetchSource, at, deepSeekBaseline });
+  expect(reviewed.report.candidates.filter(c => c.source.includes('openai'))).toEqual([]);
+  // A differing long-context rate is still proposed for review.
+  const stale = structuredClone(pricing.BUILTIN);
+  stale.rules.find(r => r.family === 'openai' && r.canonical === 'gpt-5.4' && !r.effectiveTo).contextTiers.long.output = 30;
+  const changed = await collect({ fetchSource, at, baseCatalog: stale, deepSeekBaseline });
+  expect(changed.report.candidates.filter(c => c.source.includes('openai')).map(c => c.model)).toEqual(['gpt-5.4']);
+});
+
 test('structured collector scopes models to OpenRouter and rejects unsupported billing dimensions', () => {
   const rule = openRouterRule(model(), at);
   expect(rule).toMatchObject({ family: 'openrouter', rates: { uncached: 1, output: 2, cacheRead: 0, cacheWrite: null } });

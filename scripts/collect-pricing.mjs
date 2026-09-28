@@ -33,10 +33,12 @@ export function parseOpenAI(markdown) {
   for (const line of section.split('\n')) {
     const cells = line.split('|').slice(1, -1).map(v => v.trim());
     if (cells.length !== 9 || !/^(gpt-|chatgpt-|o\d)/.test(cells[0])) continue;
-    // Annotated names need explicit mapping, not heuristic removal of suffixes.
-    if (!/^[a-z0-9][a-z0-9.-]+$/.test(cells[0])) continue;
+    // Annotated names need explicit mapping, not heuristic removal of suffixes:
+    // only the long-context threshold annotation is understood; others are skipped.
+    const name = /^([a-z0-9][a-z0-9.-]+)(?: \(<(\d+)K context length\))?$/.exec(cells[0]);
+    if (!name) continue;
     const values = cells.slice(1).map(dollar);
-    rows.push({ model: cells[0], short: { uncached: values[0], cacheRead: values[1], cacheWrite: values[2], output: values[3] },
+    rows.push({ model: name[1], ...(name[2] ? { threshold: Number(name[2]) * 1000 } : {}), short: { uncached: values[0], cacheRead: values[1], cacheWrite: values[2], output: values[3] },
       long: values.slice(4).every(v => v === null) ? null : { uncached: values[4], cacheRead: values[5], cacheWrite: values[6], output: values[7] } });
   }
   if (rows.length < 3) throw new Error('OpenAI pricing table incomplete');
@@ -82,8 +84,10 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
     for (const row of rows) {
       const existing = catalog.rules.find(r => r.family === 'openai' && r.canonical === row.model && !r.effectiveTo);
       if (existing) {
-        const same = sameRates(existing.contextTiers?.short || existing.rates, row.short)
-          && (row.long ? sameRates(existing.contextTiers?.long, row.long) : !existing.contextTiers);
+        // The catalog estimates unpublished cache writes at the input price (cacheWritePriceUnknown).
+        const matches = (rates, parsed) => sameRates(rates, parsed && existing.cacheWritePriceUnknown && parsed.cacheWrite === null ? { ...parsed, cacheWrite: parsed.uncached } : parsed);
+        const same = matches(existing.contextTiers?.short || existing.rates, row.short)
+          && (row.long ? matches(existing.contextTiers?.long, row.long) && (!row.threshold || row.threshold === existing.contextThreshold) : !existing.contextTiers);
         // Website changes are proposed for review, not activated automatically.
         if (!same) candidates.push({ source: OPENAI, model: row.model, reason: 'Review changed official rates and effective date', rates: row });
         continue;
