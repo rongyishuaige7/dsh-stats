@@ -483,6 +483,18 @@ test('SettingsForms honors disabled entries and absent provider modules', async 
 	expect(await configuredProviders({ settings: { describe: () => [] } })).toEqual([]);
 });
 
+test('absent optional services on Cordis contexts do not fail provider enumeration', async () => {
+	const settings = { describe: () => [{ ns: 'llm-deepseek', value: { apiKeyEnv: 'DS_KEY' } }] };
+	// Cordis throws when reading a service that is neither injected nor provided.
+	const ctx = new Proxy({ settings }, { get: (target, prop) => {
+		if (prop in target) return target[prop];
+		throw new Error(`cannot get property "${String(prop)}" without inject`);
+	} });
+	const providers = await configuredProviders(ctx);
+	expect(providers.map(p => p.id)).toEqual(['deepseek-official']);
+	expect(providers[0].apiKeyRef).toBe('DS_KEY');
+});
+
 test.each(['describe', 'get'])('settings %s failures are explicit and sanitized before credentials or network access', async (method) => {
 	const ctx = { settings: { [method]: () => { throw new Error('secret-test-value'); } }, credentials: { resolve: vi.fn() } };
 	const fetch = vi.fn();

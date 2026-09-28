@@ -161,7 +161,9 @@ function serviceFrom(ctx, name) {
 	try {
 		return ctx?.reflect?.get?.(name, false) || ctx?.get?.(name) || ctx?.[name] || null;
 	} catch {
-		return ctx?.[name] || null;
+		// Cordis throws for services that are neither injected nor provided
+		// (configEditor before Harness 0.1.7): treat them as absent.
+		try { return ctx?.[name] || null; } catch { return null; }
 	}
 }
 
