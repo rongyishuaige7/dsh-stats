@@ -58,11 +58,18 @@ window.__ModuleLoader__ = { async load({ factory }) {
   const trigger = slots.find(slot => slot.definition.id === 'stats');
   const props = panel.definition.inject();
   const store = props.hooks.statsOpen;
-  const summaries = { byId: {} };
-  for (const session of data.estimated.projects.flatMap(project => project.sessions)) summaries.byId[session.id] = {
+  const byId = {};
+  for (const session of data.estimated.projects.flatMap(project => project.sessions)) byId[session.id] = {
     id: session.id, title: session.title, updatedAt: session.updatedAt,
     projectionValues: { tokenUsage: { uncachedInputTokens: session.stats.uncached, outputTokens: session.stats.output } }
   };
+  // Observable session store: each read of byId marks a client-side aggregation.
+  fixture.sessionReads = 0;
+  const sessionListeners = new Set();
+  const snapshot = () => ({ get byId() { fixture.sessionReads++; return byId; } });
+  let summaries = snapshot();
+  const subscribeSessions = listener => { sessionListeners.add(listener); return () => sessionListeners.delete(listener); };
+  fixture.bumpSessions = () => { summaries = snapshot(); sessionListeners.forEach(listener => listener()); };
   const workspaces = { items: data.estimated.projects.map(project => ({ workspaceId: project.id, path: project.path, sessionIds: project.sessions.map(session => session.id) })) };
   function App() {
     return React.createElement(React.Fragment, null,
@@ -70,7 +77,7 @@ window.__ModuleLoader__ = { async load({ factory }) {
         React.createElement(trigger.component, { ...trigger.definition.inject(), wide: true, t: fixture.t })),
       React.createElement(panel.component, { ...props, t: fixture.t,
         useStatsOpen: selector => selector(useSyncExternalStore(store.subscribe, store.getSnapshot)),
-        useSessions: selector => selector(summaries), useWorkspaces: selector => selector(workspaces) })
+        useSessions: selector => selector(useSyncExternalStore(subscribeSessions, () => summaries)), useWorkspaces: selector => selector(workspaces) })
     );
   }
   createRoot(document.getElementById('app')).render(React.createElement(App));

@@ -119,6 +119,38 @@ try {
   });
   await once(socket, 'open');
   await command('Runtime.enable'); await command('Page.enable'); await command('Network.enable');
+  // Runs first, while the stored tab preference is still the default overview.
+  await command('Page.navigate', { url: url + '/?lang=zh' });
+  await until('window.__fixture?.ready');
+  await evaluate('window.__fixture.bumpSessions()'); await delay(200);
+  assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'closed panel must not aggregate session updates');
+  await click('.dss-trigger');
+  await until('document.querySelector(".dss-data-status.exact")');
+  await evaluate('window.__fixture.sessionReads = 0; window.__fixture.bumpSessions()'); await delay(200);
+  assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'host data must not be recomputed from session updates');
+  const accountCalls = () => evaluate('window.__fixture.calls.filter(row => row[0] === "account").map(row => row[1])');
+  assert.deepEqual(await accountCalls(), [], 'balance must not be queried outside its tab');
+  await tab(4); await until('document.querySelector(".dss-balance-name")');
+  assert.deepEqual(await accountCalls(), [false]);
+  await refresh(); await delay(300);
+  await tab(1); await tab(4); await until('document.querySelector(".dss-balance-name")'); await delay(300);
+  assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
+  await tab(1);
+  report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
+  const views = {};
+  for (const query of ['lang=zh', 'stats=error&lang=zh']) for (const timezoneId of ['Asia/Shanghai', 'America/Los_Angeles']) {
+    await command('Emulation.setTimezoneOverride', { timezoneId });
+    await command('Page.navigate', { url: url + '/?' + query });
+    await until('window.__fixture?.ready'); await click('.dss-trigger');
+    await until('document.querySelector(".dss-data-status.' + (query.startsWith('stats=error') ? 'fallback' : 'exact') + '")');
+    const texts = [];
+    for (const index of [1, 2, 3]) { await tab(index); texts.push(await evaluate('document.querySelector(".dss-body").innerText')); }
+    await tab(1);
+    (views[query] ||= []).push(texts);
+  }
+  await command('Emulation.setTimezoneOverride', { timezoneId: '' });
+  for (const [query, [shanghai, losAngeles]] of Object.entries(views)) assert.deepEqual(losAngeles, shanghai, query + ' views depend on the browser timezone');
+  report.checks.push('host and local-fallback views identical in Asia/Shanghai and America/Los_Angeles');
   for (const [name, width, height, lang] of [['desktop',1440,1000,'zh'], ['mobile',390,844,'zh'], ['narrow',320,740,'en']]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
     await command('Page.navigate', { url: url + '/?lang=' + lang });

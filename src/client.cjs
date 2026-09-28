@@ -17,6 +17,8 @@ var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var MAX_VISIBLE_PROJECTS = 7;
 var MAX_VISIBLE_TIMELINE_DAYS = 3;
 var MAX_VISIBLE_MODELS = 3;
+// Stable placeholder while the panel is closed and no host data has arrived.
+var EMPTY_VIEW = { projects: [], timeline: { days: [] }, remote: false };
 
 // ------------------------------------------------------------------
 // 格式化
@@ -1605,6 +1607,7 @@ function StatsDataStatus({ state, remote, projects, t }) {
 
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
+	var isOpen = !!(open && open.open);
 	var sessionsSnap = props.useSessions((s) => s);
 	var workspacesSnap = props.useWorkspaces((w) => w);
 	var onClose = props.onClose;
@@ -1658,12 +1661,17 @@ function StatsPanel(props) {
 		return () => clearInterval(id);
 	}, [open, aggregateRemote]);
 
+	// Balance is a live snapshot shown only on its tab; other tabs do not query providers.
+	var balanceActive = isOpen && tab === "balance";
 	useEffect(() => {
-		if (!open || !open.open) return;
+		if (!balanceActive) return;
 		if (!balanceRemote) { setBalanceState({ kind: "unavailable", error: null }); return; }
 		var cancelled = false;
+		var force = balanceRefreshRequest.force;
+		// A manual refresh bypasses the host cache once; re-entering the tab uses it again.
+		if (force) setBalanceRefreshRequest(function(request) { return { tick: request.tick, force: false }; });
 		setBalanceState(function(prev) { return { kind: balanceData ? "refreshing" : "loading", error: null }; });
-		balanceRemote(balanceRefreshRequest.force).then(function(result) {
+		balanceRemote(force).then(function(result) {
 			if (cancelled) return;
 			setBalanceData(result);
 			var first = result.accounts && result.accounts[0];
@@ -1674,22 +1682,26 @@ function StatsPanel(props) {
 			setBalanceState({ kind: balanceData ? "stale" : "error", error: error?.message || String(error) });
 		});
 		return function() { cancelled = true; };
-	}, [open, balanceRemote, balanceRefreshRequest.tick]);
+	}, [balanceActive, balanceRemote, balanceRefreshRequest.tick]);
 
-	var data = useMemo(() => {
-			if (remoteData && remoteData.projects) {
-				var projects = remoteData.projects.map((p) => ({
-					...p, stats: display(p.stats),
-					sessions: (p.sessions || []).map((s) => ({ ...s, subagent: s.subagent === true, stats: display(s.stats) }))
-				}));
-			return { projects, timeline: remoteData.timeline || { days: [] }, remote: true, meta: remoteData.meta };
-		}
+	// Host data does not depend on browser session snapshots; keep it stable across session events.
+	var remoteView = useMemo(() => {
+		if (!remoteData || !remoteData.projects) return null;
+		var projects = remoteData.projects.map((p) => ({
+			...p, stats: display(p.stats),
+			sessions: (p.sessions || []).map((s) => ({ ...s, subagent: s.subagent === true, stats: display(s.stats) }))
+		}));
+		return { projects, timeline: remoteData.timeline || { days: [] }, remote: true, meta: remoteData.meta };
+	}, [remoteData]);
+	// Client aggregation runs only while the panel is open and host data is absent.
+	var fallbackView = useMemo(() => {
+		if (remoteView || !isOpen) return null;
 		var summaries = sessionsSnap && sessionsSnap.byId ? Object.values(sessionsSnap.byId) : [];
 		var archivedIds = workspacesSnap?.archivedSessionIds || workspacesSnap?.global?.archivedSessionIds || [];
 		var projects = aggregate(summaries, workspacesSnap && workspacesSnap.items, t, archivedIds);
-		var timeline = buildTimeline(projects, 30);
-		return { projects, timeline, remote: false };
-	}, [remoteData, sessionsSnap, workspacesSnap]);
+		return { projects, timeline: buildTimeline(projects, 30), remote: false };
+	}, [remoteView, isOpen, sessionsSnap, workspacesSnap]);
+	var data = remoteView || fallbackView || EMPTY_VIEW;
 
 	// hooks 必须在早退之前调用（React 规则：每次渲染 hooks 数量一致）
 	// 颜色基于全量项目顺序分配；按日过滤只筛数据，不得让同一项目重新编号。
