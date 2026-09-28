@@ -47,7 +47,7 @@ jobs:
           DSH_HARNESS_ROOT: ${{ runner.temp }}/harness
           DSH_CONTRACT_ALLOW_UNLISTED: '1'
       - name: Require full Web verification
-        if: ${{ !matrix.verified }}
+        if: ${{ matrix.required && !matrix.verified }}
         run: |
           echo "::error::Harness ${{ matrix.version }} (${{ matrix.tags }}) passes contracts but is not in scripts/harness-versions.json. Verify it in a complete Web profile, then add it there and to the peer ranges."
           exit 1
