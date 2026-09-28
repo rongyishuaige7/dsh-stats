@@ -87,3 +87,31 @@ bundles build and pass syntax checks. Real module contracts pass for 0.1.2-rc.1,
 (Session formats 0/2/3/3/3/3/4); CI now runs all seven. The Chrome fixture
 passes 7 checks with no errors. Full Web profiles for 0.1.5-rc.3 and 0.1.7-rc.2,
 real account requests and live subagent navigation were not run.
+
+## Full Web verification (2026-09-28)
+
+Isolated launchers, `DSH_HOME` and pnpm stores; the packed plugin installed
+through `dsh plugin --profile web add -w`; one synthetic zstd session written by
+the official persistence writer (v3 on 0.1.5-rc.3, v4 on 0.1.7-rc.2). The
+module contracts and browser fixture above did not catch these defects:
+
+- 0.1.5-rc.3: the account page reported `provider-settings-unavailable`.
+  Reading the not-yet-published `configEditor` service throws on the Cordis
+  context; absent optional services are now treated as unavailable.
+- 0.1.7-rc.2: the typert loader rejected the host face (`result codec has no
+  create() factory`), which failed the whole loader and withdrew other official
+  definitions; the browser registry has the same check. Every strict codec now
+  provides both `schema` (0.1.5) and `create()` (0.1.7).
+- 0.1.7-rc.2: the sidebar entry crashed (React #130) because primitives dropped
+  `IconDataOutline16`/`IconCloseOutline16`; the `…Regular` icons are used there.
+- 0.1.7-rc.2: `llm-deepseek` is now `@deepseek-ai/dsh-llm-deepseek-api-key`, so
+  DeepSeek vanished from the account page. It is recognized again; the new
+  account-login module (`deepseek-account`) has no API key for the balance
+  endpoint and is not queried.
+
+Both profiles then show exact host statistics for the project (12.3K input,
+678 output, CNY 0.02), all four tabs and DeepSeek as unconfigured, with zero
+console errors, runtime exceptions or failed requests. CI contract checks now
+validate the manifest with each release's own `validateTypertManifest`, and the
+fixture installer pins exact Cordis peers (0.1.5-rc.3 uses cordis 4.0.2). Real
+account requests and live subagent navigation remain unverified.
