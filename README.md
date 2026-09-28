@@ -279,7 +279,12 @@ npm pack --dry-run
 
 ```text
 src/index.js              # 宿主 StatsService 与 aggregate/account RPC
-src/client.cjs            # 客户端入口、React UI 与 fallback
+src/client.cjs            # 客户端入口、React 视图与 apply()
+src/client-format.cjs     # 格式化与人民币费用计算
+src/client-data.cjs       # 日期窗口、投影聚合、时间线与趋势数据
+src/client-remote.cjs     # Typert 远程描述符、账户 RPC 与会话跳转
+src/client-locale.cjs     # 中英文界面文案
+src/client-styles.cjs     # 面板样式
 src/pricing.cjs           # Provider 级、按生效时间的计价内核
 src/route-data.cjs        # 保留单请求上下文与调用次数的不可变用量索引
 src/accounts.js           # 官方余额/额度适配器（仅宿主使用凭证）

@@ -284,7 +284,12 @@ npm pack --dry-run
 
 ```text
 src/index.js                # host StatsService and aggregate/account RPC
-src/client.cjs              # client entry, React UI, and fallback
+src/client.cjs              # client entry, React views, and apply()
+src/client-format.cjs       # formatting and CNY cost helpers
+src/client-data.cjs         # date windows, projection aggregation, timeline and trend data
+src/client-remote.cjs       # Typert remote descriptors, account RPC, session navigation
+src/client-locale.cjs       # zh/en UI strings
+src/client-styles.cjs       # panel styles
 src/pricing.cjs             # provider-scoped, effective-dated pricing
 src/route-data.cjs          # immutable usage index retaining request context and counts
 src/accounts.js             # official balance/quota adapters (host only)
