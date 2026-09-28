@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 // npm's prerelease peer ranges can select the next RC and mix incompatible
 // Harness modules. Pin the complete upstream module closure to one release.
 const [version, directory] = process.argv.slice(2);
-assert(/^0\.1\.\d+-(?:rc|alpha)\.\d+$/.test(version || ''), 'provide an exact supported Harness prerelease');
+assert(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version || ''), 'provide an exact Harness version');
 assert(directory, 'provide an isolated fixture directory');
 const root = resolve(directory);
 assert(!existsSync(join(root, 'package.json')) && !existsSync(join(root, 'node_modules')), 'fixture directory already contains an installation');

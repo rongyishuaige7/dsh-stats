@@ -269,9 +269,9 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 
 ## 🛠️ Local development
 
-Compatibility covers Harness `0.1.2-rc.1` through `0.1.7-rc.2`. npm `latest`
-(`0.1.5-rc.3`) and `next` (`0.1.7-rc.2`) are verified in complete Web hosts; the
-other releases pass real module contract checks. See the
+Compatibility covers Harness `0.1.2-rc.1` through `0.1.7-rc.2`. `0.1.5-rc.3` and
+`0.1.7-rc.2` are verified in complete Web hosts; the other releases pass real
+module contract checks. See the
 [compatibility matrix](docs/compatibility.md). Harness 0.1.7 needs plugin 0.4.1 or later;
 0.4.0 does not load on 0.1.7.
 

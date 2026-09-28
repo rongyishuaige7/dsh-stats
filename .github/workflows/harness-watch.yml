@@ -1,0 +1,53 @@
+name: Harness watch
+
+# Probe the Harness releases npm currently serves, so a new latest/next that
+# breaks the plugin, or that still needs full Web verification, surfaces early.
+on:
+  schedule:
+    - cron: '41 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tags:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.tags.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - id: tags
+        run: node scripts/harness-dist-tags.mjs
+
+  contracts:
+    name: ${{ matrix.tags }} ${{ matrix.version }}
+    needs: tags
+    runs-on: ubuntu-24.04
+    continue-on-error: ${{ !matrix.required }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.tags.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install coherent published Harness modules
+        run: node scripts/install-harness-fixture.mjs "${{ matrix.version }}" "$RUNNER_TEMP/harness"
+      - name: Verify real persistence and projection contracts
+        run: npm run smoke:harness
+        env:
+          DSH_HARNESS_ROOT: ${{ runner.temp }}/harness
+          DSH_CONTRACT_ALLOW_UNLISTED: '1'
+      - name: Require full Web verification
+        if: ${{ !matrix.verified }}
+        run: |
+          echo "::error::Harness ${{ matrix.version }} (${{ matrix.tags }}) passes contracts but is not in scripts/harness-versions.json. Verify it in a complete Web profile, then add it there and to the peer ranges."
+          exit 1

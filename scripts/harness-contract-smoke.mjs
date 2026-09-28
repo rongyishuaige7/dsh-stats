@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -11,7 +11,10 @@ assert(harnessRoot, 'DSH_HARNESS_ROOT must name an isolated Harness installation
 const requireHarness = createRequire(join(resolve(harnessRoot), 'package.json'));
 const upstream = name => import(requireHarness.resolve('@deepseek-ai/' + name));
 const version = requireHarness('@deepseek-ai/dsh-session/package.json').version;
-assert(['0.1.2-rc.1', '0.1.3-alpha.2', '0.1.5-rc.1', '0.1.5-rc.2', '0.1.6-alpha.1', '0.1.5-rc.3', '0.1.7-rc.2'].includes(version), 'unsupported contract fixture version: ' + version);
+// harness-versions.json lists fully verified releases; the scheduled Harness
+// watch sets DSH_CONTRACT_ALLOW_UNLISTED=1 to probe new npm dist-tags.
+const verified = JSON.parse(readFileSync(new URL('./harness-versions.json', import.meta.url), 'utf8'));
+assert(verified.includes(version) || process.env.DSH_CONTRACT_ALLOW_UNLISTED === '1', 'unlisted contract fixture version: ' + version);
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = mkdtempSync(join(tmpdir(), 'dsh-stats-contract-'));
 const previousHome = process.env.DSH_HOME;

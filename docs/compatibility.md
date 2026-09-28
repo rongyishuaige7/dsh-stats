@@ -62,8 +62,13 @@ node scripts/install-harness-fixture.mjs 0.1.5-rc.1 "$smoke_root"
 DSH_HARNESS_ROOT="$smoke_root" npm run smoke:harness
 ```
 
-Repeat with `0.1.2-rc.1`, `0.1.3-alpha.2`, `0.1.5-rc.2` and `0.1.6-alpha.1`.
-CI runs this exact matrix plus the Chrome browser fixture. Exact module versions
+Repeat for every release in `scripts/harness-versions.json`, the single list of
+verified releases. CI builds its contract matrix from that file, and a unit test
+checks that the peer ranges cover each listed release and exclude the next
+unverified patch. The daily `Harness watch` workflow runs the same contracts
+against npm `latest`, `next` and `alpha`; it fails when `latest` or `next` breaks
+the contracts or is not yet listed (`alpha` is informational). Add a release to
+the list only after complete Web verification. Exact module versions
 prevent npm from mixing prerelease peers across RCs. These temporary installations
 do not change a DSH profile or the plugin's resolved Harness dependency versions.
 
