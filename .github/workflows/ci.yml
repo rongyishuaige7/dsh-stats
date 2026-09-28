@@ -8,13 +8,13 @@ on:
 jobs:
   build:
     name: Build & verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -44,14 +44,17 @@ jobs:
         run: npm pack --dry-run
 
       - name: Browser fixture
-        run: npm run smoke:browser
+        run: |
+          export CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME_BIN" || { echo "::error::No Chrome or Chromium on this runner"; exit 1; }
+          echo "Chrome: $CHROME_BIN"
+          npm run smoke:browser
         env:
-          CHROME_BIN: /usr/bin/google-chrome
           DSH_SMOKE_OUTPUT: browser-results
 
       - name: Upload browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-results
           path: browser-results
@@ -59,25 +62,25 @@ jobs:
 
   versions:
     name: Verified Harness versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       list: ${{ steps.read.outputs.list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: read
         run: echo "list=$(jq -c . scripts/harness-versions.json)" >> "$GITHUB_OUTPUT"
 
   harness:
     name: Harness ${{ matrix.version }} contracts
     needs: versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         version: ${{ fromJSON(needs.versions.outputs.list) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
