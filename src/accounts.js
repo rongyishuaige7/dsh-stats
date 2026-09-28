@@ -185,7 +185,9 @@ async function providerSettings(ctx) {
 			// without reading configuration layers or unredacted credentials.
 			modules.delete(id);
 			if (entry.disabled || entry.options.disabled) continue;
-			if (entry.options.name === "@deepseek-ai/dsh-llm-deepseek") modules.set(id, "deepseek");
+			// Harness 0.1.7 renamed the API-key module; its account-login sibling
+			// (dsh-llm-deepseek-account) has no API key for the balance endpoint.
+			if (entry.options.name === "@deepseek-ai/dsh-llm-deepseek" || entry.options.name === "@deepseek-ai/dsh-llm-deepseek-api-key") modules.set(id, "deepseek");
 			if (entry.options.name === "@deepseek-ai/dsh-llm-pi-ai") modules.set(id, "pi");
 		}
 		const result = { deepseek: [], pi: [] }, seen = new Set();

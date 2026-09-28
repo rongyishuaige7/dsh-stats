@@ -483,6 +483,19 @@ test('SettingsForms honors disabled entries and absent provider modules', async 
 	expect(await configuredProviders({ settings: { describe: () => [] } })).toEqual([]);
 });
 
+test('Harness 0.1.7 renamed DeepSeek API-key module is recognized; account-login module is not', async () => {
+	const ctx = { settings: { describe: () => [
+		{ ns: 'llm-deepseek', value: { apiKeyEnv: 'DEEPSEEK_API_KEY' } },
+		{ ns: 'llm-deepseek-account', value: { baseURL: 'https://api.deepseek.com' } },
+	] }, configEditor: { entries: () => [
+		{ options: { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key' } },
+		{ options: { id: 'llm-deepseek-account', name: '@deepseek-ai/dsh-llm-deepseek-account' } },
+	] } };
+	const providers = await configuredProviders(ctx);
+	expect(providers.map(p => p.id)).toEqual(['deepseek-official']);
+	expect(providers[0].apiKeyRef).toBe('DEEPSEEK_API_KEY');
+});
+
 test('absent optional services on Cordis contexts do not fail provider enumeration', async () => {
 	const settings = { describe: () => [{ ns: 'llm-deepseek', value: { apiKeyEnv: 'DS_KEY' } }] };
 	// Cordis throws when reading a service that is neither injected nor provided.
