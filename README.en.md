@@ -51,13 +51,13 @@ Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.3.1
+dsh plugin --profile web add @rongyi7/dsh-stats@0.4.0
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.1.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.0.tgz
 ```
 
 Verify the bundle registration:
@@ -181,6 +181,10 @@ Account queries run only in the host. The references below are variable names, n
 | Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
 | MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise) plus official compatibility paths | `MINIMAX_API_KEY` |
 
+The DeepSeek account sign-in provider added in Harness 0.1.7 (`deepseek-account`)
+has no API key for the official balance endpoint, so the account page does not list
+it; the API-key provider is queried as before.
+
 `accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps the last successful snapshot and marks it stale. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
 
 ## 🔐 Credential and privacy boundary
@@ -265,9 +269,11 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 
 ## 🛠️ Local development
 
-Compatibility includes `0.1.2-rc.1` and `0.1.3-alpha.2`, verified against their
-published service implementations. See the [compatibility matrix](docs/compatibility.md)
-for the distinction between module checks and complete Web host verification.
+Compatibility covers Harness `0.1.2-rc.1` through `0.1.7-rc.2`. npm `latest`
+(`0.1.5-rc.3`) and `next` (`0.1.7-rc.2`) are verified in complete Web hosts; the
+other releases pass real module contract checks. See the
+[compatibility matrix](docs/compatibility.md). Harness 0.1.7 needs a plugin release
+after 0.4.0; the published 0.4.0 does not load on 0.1.7.
 
 ```bash
 npm install

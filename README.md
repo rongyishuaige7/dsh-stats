@@ -31,7 +31,7 @@
 
 需要已安装的 DeepSeek Harness `web` profile，以及 Node.js `>= 22`。
 
-兼容范围包括 `0.1.2-rc.1` 和 `0.1.3-alpha.2`。这两个版本已通过真实模块接口检查；完整 Web 宿主验证的范围见 [兼容性矩阵](docs/compatibility.md)。
+兼容 Harness `0.1.2-rc.1` 至 `0.1.7-rc.2`。npm `latest`（`0.1.5-rc.3`）和 `next`（`0.1.7-rc.2`）已在完整 Web 宿主中验证，其余版本通过真实模块接口检查，详见 [兼容性矩阵](docs/compatibility.md)。Harness 0.1.7 需要 0.4.0 之后发布的插件版本，已发布的 0.4.0 在 0.1.7 上无法加载。
 
 ```bash
 dsh plugin --profile web add @rongyi7/dsh-stats
@@ -53,13 +53,13 @@ dsh web
 固定版本：
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.3.1
+dsh plugin --profile web add @rongyi7/dsh-stats@0.4.0
 ```
 
 安装本地 tarball：
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.3.1.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.0.tgz
 ```
 
 验证插件是否已注册：
@@ -181,6 +181,8 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 | Kimi For Coding | `/coding/v1/usages` | `KIMI_API_KEY` |
 | Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
 | MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise)（含官方兼容路径） | `MINIMAX_API_KEY` |
+
+Harness 0.1.7 新增的 DeepSeek 账户登录方式（`deepseek-account`）不使用 API Key，官方余额接口无法查询，账户页不会列出它；API Key 方式照常查询。
 
 Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求，点击刷新会明确绕过这层缓存；遇到网络错误、限流或异常响应时，会保留同一配置的上一次成功快照并标记为“已过期”。未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api` 时不会当作订阅额度查询。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
 
