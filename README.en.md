@@ -20,7 +20,7 @@
 <p align="center"><strong>Usage by project</strong> · <strong>Model-based cost</strong> · <strong>Keys stay local</strong> · <strong>One-click export</strong></p>
 
 <p align="center">
-  <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="Light-mode project overview with masked identity fields and aggregate metrics" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="Light-mode project overview with masked identity fields and aggregate metrics" width="100%"></a>
   <br>
   <sub>Light mode · masked project identity · click for the complete project overview</sub>
 </p>
@@ -93,7 +93,7 @@ These are light-mode captures of the running UI. Dense views use the full README
 Summary cards cover projects, sessions, tokens, LLM/tool time, and spend. Project rows support sorting, filtering, and expandable session details.
 
 <p align="center">
-  <a href="docs/images/overview.png"><img src="docs/images/overview.png" alt="Complete project overview with masked project identity fields" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Complete project overview with masked project identity fields" width="100%"></a>
 </p>
 
 ### Development timeline
@@ -101,7 +101,7 @@ Summary cards cover projects, sessions, tokens, LLM/tool time, and spend. Projec
 Each row is one day and each color is one project. Overlapping activity shares the same time slot, while hover reveals each project's duration.
 
 <p align="center">
-  <a href="docs/images/timeline.png"><img src="docs/images/timeline.png" alt="Development timeline with masked project identity fields" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Development timeline with masked project identity fields" width="100%"></a>
 </p>
 
 ### Usage trends
@@ -109,7 +109,7 @@ Each row is one day and each color is one project. Overlapping activity shares t
 Input and output use separate colors. The activity heatmap is date-selectable, while model distribution combines tokens, share, and cost.
 
 <p align="center">
-  <a href="docs/images/trends.png"><img src="docs/images/trends.png" alt="Usage trends, activity heatmap, and model distribution" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap, and model distribution" width="100%"></a>
 </p>
 
 ### Balances and quotas
@@ -118,8 +118,8 @@ DeepSeek shows available, topped-up, and gifted balances. MiniMax shows the curr
 
 <table>
   <tr>
-    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="docs/images/balance.png"><img src="docs/images/balance.png" alt="DeepSeek demo balance screen" width="100%"></a></td>
-    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="docs/images/balance-minimax.png"><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan demo quota screen" width="100%"></a></td>
+    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="DeepSeek demo balance screen" width="100%"></a></td>
+    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance-minimax.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance-minimax.png" alt="MiniMax Coding Plan demo quota screen" width="100%"></a></td>
   </tr>
 </table>
 

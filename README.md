@@ -20,7 +20,7 @@
 <p align="center"><strong>按项目看用量</strong> · <strong>按模型算费用</strong> · <strong>密钥留在本机</strong> · <strong>数据一键导出</strong></p>
 
 <p align="center">
-  <a href="docs/images/overview.png"><img src="docs/images/hero-overview.png" alt="浅色模式项目总览：汇总指标与项目身份均已脱敏" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="浅色模式项目总览：汇总指标与项目身份均已脱敏" width="100%"></a>
   <br>
   <sub>浅色模式 · 项目身份已打码 · 点击查看完整项目总览</sub>
 </p>
@@ -95,7 +95,7 @@ dsh --profile web --dump-config
 汇总项目数、会话、Token、LLM/工具时长和消费；项目卡支持排序、筛选和展开会话明细。
 
 <p align="center">
-  <a href="docs/images/overview.png"><img src="docs/images/overview.png" alt="项目身份已打码的完整项目总览界面" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="项目身份已打码的完整项目总览界面" width="100%"></a>
 </p>
 
 ### 开发时间线
@@ -103,7 +103,7 @@ dsh --profile web --dump-config
 每行对应一天，颜色对应项目；重叠活动按同一时间槽合并显示，悬停可以查看各项目时长。
 
 <p align="center">
-  <a href="docs/images/timeline.png"><img src="docs/images/timeline.png" alt="项目身份已打码的开发时间线界面" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="项目身份已打码的开发时间线界面" width="100%"></a>
 </p>
 
 ### 用量趋势
@@ -111,7 +111,7 @@ dsh --profile web --dump-config
 输入与输出使用不同颜色；活动热力图可按日期查看，模型分布会同时呈现 Token、占比和消费金额。
 
 <p align="center">
-  <a href="docs/images/trends.png"><img src="docs/images/trends.png" alt="用量趋势、活动热力图和模型分布界面" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="用量趋势、活动热力图和模型分布界面" width="100%"></a>
 </p>
 
 ### 账户余额与额度
@@ -120,8 +120,8 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 
 <table>
   <tr>
-    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="docs/images/balance.png"><img src="docs/images/balance.png" alt="DeepSeek 演示余额界面" width="100%"></a></td>
-    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="docs/images/balance-minimax.png"><img src="docs/images/balance-minimax.png" alt="MiniMax Coding Plan 演示额度界面" width="100%"></a></td>
+    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="DeepSeek 演示余额界面" width="100%"></a></td>
+    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance-minimax.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance-minimax.png" alt="MiniMax Coding Plan 演示额度界面" width="100%"></a></td>
   </tr>
 </table>
 
