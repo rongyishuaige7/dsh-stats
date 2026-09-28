@@ -10,8 +10,9 @@ var useState = react.useState;
 var useMemo = react.useMemo;
 var useEffect = react.useEffect;
 var Fragment = react.Fragment;
-var IconDataOutline16 = primitives.IconDataOutline16;
-var IconCloseOutline16 = primitives.IconCloseOutline16;
+// Harness 0.1.7 primitives dropped the size-suffixed icons; Regular takes the same size prop.
+var IconDataOutline16 = primitives.IconDataOutline16 || primitives.IconDataOutlineRegular;
+var IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var MAX_VISIBLE_PROJECTS = 7;
 var MAX_VISIBLE_TIMELINE_DAYS = 3;
@@ -2714,6 +2715,12 @@ const STATS_REMOTE_CONTRIBUTION = {
 
 			}]
 };
+// Harness 0.1.7 registries require codec.create(); 0.1.5 registries read codec.schema.
+STATS_REMOTE_CONTRIBUTION.descriptors.forEach(function(row) {
+	[row.result].concat(row.parameters.map(function(p) { return p.codec; })).forEach(function(codec) {
+		if (codec && codec.mode === "strict" && typeof codec.create !== "function") codec.create = function() { return codec.schema; };
+	});
+});
 
 function subagentAddressFor(sessions, session) {
 	if (!sessions || !session?.subagent || typeof session.id !== "string") return null;
@@ -2887,7 +2894,7 @@ async function apply(ctx) {
 module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
-	StatsDataStatus, BalanceView, readAccountRemote,
+	StatsDataStatus, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,

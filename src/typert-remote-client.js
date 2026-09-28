@@ -55,4 +55,11 @@ export const TYPERT_REMOTE = {
   ],
 }
 
+// Harness 0.1.7 registries require codec.create(); 0.1.5 registries read codec.schema.
+for (const row of TYPERT_REMOTE.descriptors) {
+  for (const codec of [row.result, ...row.parameters.map(p => p.codec)]) {
+    if (codec?.mode === 'strict' && typeof codec.create !== 'function') codec.create = () => codec.schema
+  }
+}
+
 export default TYPERT_REMOTE

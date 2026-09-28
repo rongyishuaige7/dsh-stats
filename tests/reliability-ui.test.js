@@ -3,7 +3,19 @@ import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { StatsDataStatus, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate } = require('../src/client.cjs').__test;
+const { StatsDataStatus, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate, STATS_REMOTE_CONTRIBUTION } = require('../src/client.cjs').__test;
+
+test('every strict codec serves both Harness 0.1.5 schema and 0.1.7 create() contracts', () => {
+	const faces = [TYPERT.invocations, TYPERT_REMOTE.descriptors, STATS_REMOTE_CONTRIBUTION.descriptors];
+	let count = 0;
+	for (const rows of faces) for (const row of rows) for (const codec of [row.result, ...row.parameters.map(p => p.codec)]) {
+		expect(codec.mode).toBe('strict');
+		expect(typeof codec.schema.parse).toBe('function');
+		expect(codec.create()).toBe(codec.schema);
+		count++;
+	}
+	expect(count).toBe(21);
+});
 
 const account = {
 	id: 'deepseek-official', displayName: 'DeepSeek', providerFamily: 'deepseek', mode: 'balance', adapter: 'deepseek-balance',

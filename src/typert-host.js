@@ -63,3 +63,10 @@ export const TYPERT = {
     "objects": []
   },
 }
+
+// Harness 0.1.7 loaders call codec.create(); 0.1.5 loaders validate codec.schema.
+for (const row of TYPERT.invocations) {
+  for (const codec of [row.result, ...row.parameters.map(p => p.codec)]) {
+    if (codec?.mode === 'strict' && typeof codec.create !== 'function') codec.create = () => codec.schema
+  }
+}
