@@ -4,7 +4,21 @@
 > 集成进 DSH Web 侧边栏，作为官方风格插件。
 >
 > 状态：**✅ 已实施（Tier 1 + Tier 2 + 成本计算 + 打磨）**，运行中面板显示「精确（宿主）」。
-> 实施中踩坑与修正见 README.md「数据流（Tier 2）」；本节保留原始设计。
+> 第 1–10 节保留 2026-08 的原始设计；与当前实现不一致之处，以下方「当前实现」为准。
+
+---
+
+## 当前实现（2026-09，0.4.2）
+
+- **包与构建**：包名 `@rongyi7/dsh-stats`。`scripts/build.mjs` 用 esbuild 把 `src/` 打成 `lib/`（随包发布，勿手改）；没有 tsdown 或 typert-generator。
+- **Typert 描述符**：手写在 `src/typert-host.js`、`src/typert-remote-client.js` 和客户端内联描述符中，共用 `src/rpc-schemas.cjs` 的 zod schema。每个严格 codec 同时提供 `schema`（Harness 0.1.5）和 `create()`（0.1.7）。
+- **模块**：宿主 `index.js`（StatsService）+ `host-util` / `host-balance` / `host-sessions` / `host-usage`；客户端 `client.cjs`（React 视图与 `apply()`）+ `client-format` / `client-data` / `client-remote` / `client-locale` / `client-styles`；计价 `pricing.cjs`、`pricing-store.js`、`pricing-panel.cjs`；账户 `accounts.js`。
+- **时间**：时间线、峰谷时段、日期范围和价格设置统一按北京时间（UTC+8），不随宿主或浏览器时区变化。
+- **状态**：React `useState` + `localStorage` 偏好（`usePref`），没有 zustand。
+- **安装**：只用 `dsh plugin --profile web add -w <包或 tarball>`，不要用 npm/pnpm 直接改 profile。
+- **兼容**：Harness `0.1.2-rc.1` 至 `0.1.7-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
+- **计价**：签名价格目录、自定义费率与复核流程见 [动态价格](docs/pricing-updates.md)。
+- **验证**：CI 跑单元测试（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture；每日 Harness watch 检查 npm latest/next/alpha。发版前在隔离的完整 Web profile 中验证，记录见 `docs/release-*.md`。
 
 ---
 
