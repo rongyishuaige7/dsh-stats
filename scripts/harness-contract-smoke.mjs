@@ -26,6 +26,9 @@ const sessionModule = await upstream('dsh-session');
 const ctx = new Context();
 const handles = [];
 const report = { version, format: sessionModule.SESSION_FORMAT_VERSION, checks: [] };
+// Each release's own loader decides whether the host face registers (0.1.7 added codec.create()).
+(await upstream('dsh-typert-loader')).validateTypertManifest('@rongyi7/dsh-stats', TYPERT);
+report.checks.push('TYPERT manifest accepted by the published typert-loader');
 
 function eventLog(input, turn, seqOffset = 0) {
   const time = Date.parse('2026-09-08T02:00:00Z') + turn * 10_000;
