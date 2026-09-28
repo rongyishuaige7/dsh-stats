@@ -64,6 +64,10 @@ test('custom price times are Beijing time regardless of the host timezone', () =
   expect(ruleDraft(rule).from).toBe('2026-09-17T08:00');
   expect(ruleDraft(rule).to).toBe('2026-10-01T00:00');
   expect(fmtBeijing('2026-09-17T00:00:00.000Z')).toBe('2026-09-17 08:00');
+  // status.lastSuccessAt is a millisecond number; invalid values render empty instead of throwing.
+  expect(fmtBeijing(Date.parse('2026-09-17T00:00:00.000Z'))).toBe('2026-09-17 08:00');
+  expect(fmtBeijing(NaN)).toBe('');
+  expect(fmtBeijing('not-a-time')).toBe('');
   expect(() => draftRule({ ...draft, from: 'not-a-time' }, [])).toThrow();
 });
 

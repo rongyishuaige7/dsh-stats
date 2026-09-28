@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { pricingStore } from '../../src/pricing-store.js';
 import { StatsService } from '../../src/index.js';
 
@@ -44,6 +46,12 @@ export async function browserData(home) {
         windows: [{ kind: 'weekly', usedPercent: 32, remainingPercent: 68, resetsAt: now + 86400000 }] }
     ], warnings: [] };
     service.aggregate = engine => StatsService.prototype.aggregate.call(service, engine);
+    // Start from a synced store, as a real host is after its startup refresh:
+    // lastSuccessAt is then a millisecond timestamp the panel must display.
+    const pricingDir = join(home, 'plugins', 'dsh-stats', 'pricing');
+    mkdirSync(pricingDir, { recursive: true });
+    const envelope = JSON.parse(readFileSync(new URL('../../data/pricing/latest.json', import.meta.url), 'utf8'));
+    writeFileSync(join(pricingDir, 'current.json'), JSON.stringify({ envelope, lastSuccessAt: now }));
     pricingStore(service, home).fetch = async () => { throw new Error('fixture-offline'); };
     const pricingRequest = async request => {
       const previous = process.env.DSH_HOME; process.env.DSH_HOME = home;

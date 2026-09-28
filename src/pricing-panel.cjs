@@ -5,8 +5,10 @@ const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 // Price rules follow Beijing time like the rest of the panel: datetime-local
 // values and displayed times are UTC+8 regardless of the browser timezone.
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+// Accepts ISO strings (rule times) and millisecond numbers (status.lastSuccessAt).
 function beijingInput(value) {
-  return value ? new Date(Date.parse(value) + BEIJING_OFFSET_MS).toISOString().slice(0, 16) : '';
+  const ms = value == null || value === '' ? NaN : new Date(value).getTime();
+  return Number.isFinite(ms) ? new Date(ms + BEIJING_OFFSET_MS).toISOString().slice(0, 16) : '';
 }
 function fromBeijingInput(value) {
   const ms = Date.parse(value + '+08:00');
