@@ -7,7 +7,8 @@ import trust from '../src/pricing-trust.cjs';
 
 const OPENAI = 'https://developers.openai.com/api/docs/pricing.md';
 const OPENROUTER = 'https://openrouter.ai/api/v1/models';
-const DEEPSEEK = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing';
+// Canonical form: the slashless URL now 302-redirects and get() rejects redirects.
+const DEEPSEEK = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/';
 const DEEPSEEK_BASELINE = JSON.parse(readFileSync(new URL('../data/pricing/deepseek-observation.json', import.meta.url), 'utf8'));
 const RATE_FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const sameRates = (a, b) => Boolean(a && b) && RATE_FIELDS.every(k => a[k] === b[k]);
