@@ -341,7 +341,8 @@ try {
 	const stopChrome = signal => {
 		if (!chrome?.pid) return;
 		try { process.platform === "win32" ? chrome.kill(signal) : process.kill(-chrome.pid, signal); }
-		catch (error) { if (error.code !== "ESRCH") throw error; }
+		// macOS returns EPERM for a group that only holds exited (zombie) members.
+		catch (error) { if (error.code !== "ESRCH" && error.code !== "EPERM") throw error; }
 	};
 	if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
 		const stopped = once(chrome, "exit");
