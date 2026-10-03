@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026092520,
-  "publishedAt": "2026-10-03T11:37:22.645Z",
+  "version": 2026092521,
+  "publishedAt": "2026-10-03T16:15:53.800Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -9419,7 +9419,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-09-29T22:13:36.409Z"
+      "effectiveFrom": "2026-09-29T22:13:36.409Z",
+      "effectiveTo": "2026-10-03T16:15:53.800Z"
     },
     {
       "id": "openrouter/z-ai/glm-5.2@2026-09-29T22:13:36.409Z",
@@ -10636,7 +10637,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-02T05:34:18.739Z"
+      "effectiveFrom": "2026-10-02T05:34:18.739Z",
+      "effectiveTo": "2026-10-03T16:15:53.800Z"
     },
     {
       "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b@2026-10-02T05:34:18.739Z",
@@ -11084,6 +11086,48 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-03T11:37:22.645Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro-0813@2026-10-03T16:15:53.800Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro-0813",
+      "aliases": [
+        "deepseek/deepseek-v4-pro-0813"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-03",
+      "observedFrom": "2026-10-03T16:15:53.800Z",
+      "rates": {
+        "uncached": 0.22,
+        "output": 4.199999999999999,
+        "cacheRead": 0.14,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-03T16:15:53.800Z"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k3@2026-10-03T16:15:53.800Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k3",
+      "aliases": [
+        "moonshotai/kimi-k3"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-03",
+      "observedFrom": "2026-10-03T16:15:53.800Z",
+      "rates": {
+        "uncached": 0.9900000000000001,
+        "output": 13,
+        "cacheRead": 0.7999999999999999,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-03T16:15:53.800Z"
     }
   ],
   "fx": [
