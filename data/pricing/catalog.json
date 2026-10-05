@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026092525,
-  "publishedAt": "2026-10-04T21:22:26.708Z",
+  "version": 2026092526,
+  "publishedAt": "2026-10-05T05:36:13.703Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -11004,7 +11004,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-03T05:16:15.736Z"
+      "effectiveFrom": "2026-10-03T05:16:15.736Z",
+      "effectiveTo": "2026-10-05T05:36:13.703Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-03T05:16:15.736Z",
@@ -11437,7 +11438,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-04T21:22:26.708Z"
+      "effectiveFrom": "2026-10-04T21:22:26.708Z",
+      "effectiveTo": "2026-10-05T05:36:13.703Z"
     },
     {
       "id": "openrouter/moonshotai/kimi-k3@2026-10-04T21:22:26.708Z",
@@ -11479,7 +11481,71 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-04T21:22:26.708Z"
+      "effectiveFrom": "2026-10-04T21:22:26.708Z",
+      "effectiveTo": "2026-10-05T05:36:13.703Z"
+    },
+    {
+      "id": "openrouter/~z-ai/glm-latest@2026-10-05T05:36:13.703Z",
+      "family": "openrouter",
+      "canonical": "~z-ai/glm-latest",
+      "aliases": [
+        "~z-ai/glm-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-05",
+      "observedFrom": "2026-10-05T05:36:13.703Z",
+      "rates": {
+        "uncached": 0.03,
+        "output": 12,
+        "cacheRead": 0.03,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-05T05:36:13.703Z"
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3.5-lightning@2026-10-05T05:36:13.703Z",
+      "family": "openrouter",
+      "canonical": "nvidia/nemotron-3.5-lightning",
+      "aliases": [
+        "nvidia/nemotron-3.5-lightning"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-05",
+      "observedFrom": "2026-10-05T05:36:13.703Z",
+      "rates": {
+        "uncached": 0.06,
+        "output": 0.16,
+        "cacheRead": 0.03,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-05T05:36:13.703Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-05T05:36:13.703Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-05",
+      "observedFrom": "2026-10-05T05:36:13.703Z",
+      "rates": {
+        "uncached": 0.6,
+        "output": 15,
+        "cacheRead": 0.44999999999999996,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-05T05:36:13.703Z"
     }
   ],
   "fx": [
