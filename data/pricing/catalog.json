@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026092548,
-  "publishedAt": "2026-10-13T00:37:21.519Z",
+  "version": 2026092549,
+  "publishedAt": "2026-10-13T14:08:43.863Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -14798,7 +14798,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-13T00:37:21.519Z"
+      "effectiveFrom": "2026-10-13T00:37:21.519Z",
+      "effectiveTo": "2026-10-13T14:08:43.863Z"
     },
     {
       "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-13T00:37:21.519Z",
@@ -14819,7 +14820,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-13T00:37:21.519Z"
+      "effectiveFrom": "2026-10-13T00:37:21.519Z",
+      "effectiveTo": "2026-10-13T14:08:43.863Z"
     },
     {
       "id": "openrouter/minimax/minimax-m2.7@2026-10-13T00:37:21.519Z",
@@ -14862,6 +14864,88 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-13T00:37:21.519Z"
+    },
+    {
+      "id": "openrouter/scaledown/summarize@2026-10-13T14:08:43.863Z",
+      "family": "openrouter",
+      "canonical": "scaledown/summarize",
+      "aliases": [
+        "scaledown/summarize"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-13",
+      "observedFrom": "2026-10-13T14:08:43.863Z",
+      "rates": {
+        "uncached": 0.04,
+        "output": 0,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true
+    },
+    {
+      "id": "openrouter/scaledown/extract@2026-10-13T14:08:43.863Z",
+      "family": "openrouter",
+      "canonical": "scaledown/extract",
+      "aliases": [
+        "scaledown/extract"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-13",
+      "observedFrom": "2026-10-13T14:08:43.863Z",
+      "rates": {
+        "uncached": 0.04,
+        "output": 0,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-13T14:08:43.863Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek/deepseek-v4-pro"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-13",
+      "observedFrom": "2026-10-13T14:08:43.863Z",
+      "rates": {
+        "uncached": 0.442656,
+        "output": 0.885312,
+        "cacheRead": 0.036888,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-13T14:08:43.863Z"
+    },
+    {
+      "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-13T14:08:43.863Z",
+      "family": "openrouter",
+      "canonical": "google/gemma-4-26b-a4b-it",
+      "aliases": [
+        "google/gemma-4-26b-a4b-it"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-13",
+      "observedFrom": "2026-10-13T14:08:43.863Z",
+      "rates": {
+        "uncached": 0.09,
+        "output": 0.3,
+        "cacheRead": 0.049999999999999996,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-13T14:08:43.863Z"
     }
   ],
   "fx": [
