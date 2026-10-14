@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026092552,
-  "publishedAt": "2026-10-14T11:48:49.192Z",
+  "version": 2026092553,
+  "publishedAt": "2026-10-14T17:08:16.902Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -15234,7 +15234,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-14T04:50:31.113Z"
+      "effectiveFrom": "2026-10-14T04:50:31.113Z",
+      "effectiveTo": "2026-10-14T17:08:16.902Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-14T04:50:31.113Z",
@@ -15277,7 +15278,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-14T04:50:31.113Z"
+      "effectiveFrom": "2026-10-14T04:50:31.113Z",
+      "effectiveTo": "2026-10-14T17:08:16.902Z"
     },
     {
       "id": "openrouter/z-ai/glm-5.1@2026-10-14T04:50:31.113Z",
@@ -15403,7 +15405,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-14T11:48:49.192Z"
+      "effectiveFrom": "2026-10-14T11:48:49.192Z",
+      "effectiveTo": "2026-10-14T17:08:16.902Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-14T11:48:49.192Z",
@@ -15424,7 +15427,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-14T11:48:49.192Z"
+      "effectiveFrom": "2026-10-14T11:48:49.192Z",
+      "effectiveTo": "2026-10-14T17:08:16.902Z"
     },
     {
       "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-14T11:48:49.192Z",
@@ -15446,6 +15450,90 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-14T11:48:49.192Z"
+    },
+    {
+      "id": "openrouter/~z-ai/glm-latest@2026-10-14T17:08:16.902Z",
+      "family": "openrouter",
+      "canonical": "~z-ai/glm-latest",
+      "aliases": [
+        "~z-ai/glm-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-14",
+      "observedFrom": "2026-10-14T17:08:16.902Z",
+      "rates": {
+        "uncached": 0.063,
+        "output": 4.4,
+        "cacheRead": 0.0586,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-14T17:08:16.902Z"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k3@2026-10-14T17:08:16.902Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k3",
+      "aliases": [
+        "moonshotai/kimi-k3"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-14",
+      "observedFrom": "2026-10-14T17:08:16.902Z",
+      "rates": {
+        "uncached": 0.5,
+        "output": 15,
+        "cacheRead": 0.28,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-14T17:08:16.902Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-14T17:08:16.902Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-14",
+      "observedFrom": "2026-10-14T17:08:16.902Z",
+      "rates": {
+        "uncached": 0.39999999999999997,
+        "output": 14,
+        "cacheRead": 0.3,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-14T17:08:16.902Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-14T17:08:16.902Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek/deepseek-v4-pro"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-14",
+      "observedFrom": "2026-10-14T17:08:16.902Z",
+      "rates": {
+        "uncached": 0.41063999999999995,
+        "output": 0.8212799999999999,
+        "cacheRead": 0.03422,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-14T17:08:16.902Z"
     }
   ],
   "fx": [
