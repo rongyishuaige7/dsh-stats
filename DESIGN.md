@@ -8,7 +8,7 @@
 
 ---
 
-## 当前实现（2026-09，0.4.2）
+## 当前实现（2026-10，0.4.3）
 
 - **包与构建**：包名 `@rongyi7/dsh-stats`。`scripts/build.mjs` 用 esbuild 把 `src/` 打成 `lib/`（随包发布，勿手改）；没有 tsdown 或 typert-generator。
 - **Typert 描述符**：手写在 `src/typert-host.js`、`src/typert-remote-client.js` 和客户端内联描述符中，共用 `src/rpc-schemas.cjs` 的 zod schema。每个严格 codec 同时提供 `schema`（Harness 0.1.5）和 `create()`（0.1.7）。
