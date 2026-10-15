@@ -1151,3 +1151,67 @@ test('incremental wire views match cold checkpoints across replacement, retry an
 	malformed.routeTree = { invalid: {} };
 	expect(() => definition.stateSchema.parse(malformed)).toThrow();
 });
+
+test('accepts session_projcache domain version 7 and tokenUsage row version 2', async () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-test-'));
+	createdHomes.push(home);
+	mkdirSync(join(home, 'storages'), { recursive: true });
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+		tables: { workspaces: { fixture: { title: 'Fixture', path: '/tmp/fixture', sessionIds: ['s1'] } } },
+		global: { archivedSessionIds: [] },
+	}));
+	writeFileSync(join(home, 'storages', 'session_projcache.json'), JSON.stringify({
+		unit: { version: 7 },
+		tables: {
+			sessions: {
+				s1: {
+					identity: { id: 's1', createdAt: 1000, cwd: '/tmp/fixture' },
+					rows: {
+						tokenUsage: { ver: 2, seq: 1, val: { totals: { uncachedInputTokens: 100, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+						sessionStats: { ver: 1, seq: 1, val: { turns: 1, steps: 1, llmMs: 100, toolMs: 50, ttftMs: 20, ttftSteps: 1, decodeMs: 80, decodeTokens: 200 } }
+					}
+				}
+			}
+		}
+	}));
+	writeLog(home, 's1', [
+		{ type: 'session', seq: 0, time: 1000, data: { id: 's1', createdAt: 1000, cwd: '/tmp/fixture' } },
+		{ type: 'assistant/message', seq: 1, time: 2000, data: { turn: 0, step: 0, usage: { inputTokens: 100, outputTokens: 200 }, message: { source: { provider: 'deepseek', model: 'deepseek-chat' } } } }
+	]);
+	process.env.DSH_HOME = home;
+	const result = await aggregate();
+	expect(result.meta.warnings.some(w => w.code === 'SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED')).toBe(false);
+	expect(result.meta.warnings.some(w => w.code === 'SESSION_CACHE_ROW_VERSION_UNSUPPORTED')).toBe(false);
+	expect(result.projects[0].sessions[0].stats.uncached).toBe(100);
+	expect(result.projects[0].sessions[0].stats.llmMs).toBe(100);
+});
+
+test('reads per-record session_projcache directory when single file is absent', async () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-test-'));
+	createdHomes.push(home);
+	mkdirSync(join(home, 'storages', 'session_projcache', 'sessions'), { recursive: true });
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({
+		tables: { workspaces: { fixture: { title: 'Fixture', path: '/tmp/fixture', sessionIds: ['s-per-record'] } } },
+		global: { archivedSessionIds: [] },
+	}));
+	writeFileSync(join(home, 'storages', 'session_projcache', 'sessions', 's-per-record.json'), JSON.stringify({
+		version: 7,
+		record: {
+			identity: { id: 's-per-record', createdAt: 5000, cwd: '/tmp/fixture' },
+			rows: {
+				tokenUsage: { ver: 2, seq: 1, val: { totals: { uncachedInputTokens: 500, outputTokens: 600, cacheReadTokens: 50, cacheWriteTokens: 0 } } },
+				sessionStats: { ver: 1, seq: 1, val: { turns: 2, steps: 2, llmMs: 300, toolMs: 100, ttftMs: 50, ttftSteps: 2, decodeMs: 250, decodeTokens: 600 } }
+			}
+		}
+	}));
+	writeLog(home, 's-per-record', [
+		{ type: 'session', seq: 0, time: 5000, data: { id: 's-per-record', createdAt: 5000, cwd: '/tmp/fixture' } },
+		{ type: 'assistant/message', seq: 1, time: 6000, data: { turn: 0, step: 0, usage: { inputTokens: 500, outputTokens: 600 }, message: { source: { provider: 'deepseek', model: 'deepseek-chat' } } } }
+	]);
+	process.env.DSH_HOME = home;
+	const result = await aggregate();
+	expect(result.meta.warnings.some(w => w.code === 'SESSION_CACHE_READ_FAILED')).toBe(false);
+	expect(result.projects[0].sessions[0].stats.uncached).toBe(500);
+	expect(result.projects[0].sessions[0].stats.llmMs).toBe(300);
+});
+

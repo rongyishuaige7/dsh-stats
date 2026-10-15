@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
 import routeData from "./route-data.cjs";
-import { PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readStable, scanZstdFrames } from "./host-util.js";
+import { PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, isSupportedProjectionDomainVersion, isSupportedRowVersion, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readStable, scanZstdFrames } from "./host-util.js";
 import { emptyRaw } from "./host-usage.js";
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
@@ -147,7 +147,7 @@ function normalizeProjectionUsage(value) {
 function projectionCheckpoint(entry, sessionId, header, warnings, domainVersion) {
 	const checkpoint = {};
 	if (!objectRecord(entry)) return checkpoint;
-	if (domainVersion !== undefined && domainVersion !== SESSION_PROJECTION_DOMAIN_VERSION) {
+	if (domainVersion !== undefined && !isSupportedProjectionDomainVersion(domainVersion)) {
 		warnings.push({ code: "SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED", sessionId, message: `projection cache domain version ${String(domainVersion)} is not supported` });
 		return checkpoint;
 	}
@@ -180,7 +180,7 @@ function projectionCheckpoint(entry, sessionId, header, warnings, domainVersion)
 			warnings.push({ code: "SESSION_CACHE_ROW_INVALID", sessionId, message: `projection row ${key} had invalid ver/seq and was ignored` });
 			continue;
 		}
-		if (PROJECTION_ROW_VERSIONS[key] !== undefined && row.ver !== PROJECTION_ROW_VERSIONS[key]) {
+		if (PROJECTION_ROW_VERSIONS[key] !== undefined && !isSupportedRowVersion(key, row.ver)) {
 			warnings.push({ code: "SESSION_CACHE_ROW_VERSION_UNSUPPORTED", sessionId, message: `projection row ${key} version ${row.ver} is not supported` });
 			continue;
 		}
@@ -263,7 +263,7 @@ function routeProjectionStateSchema(value) {
 // row before using it, then let the same cold-value normalizer handle both the
 // persisted state (`routes: {}`) and the client view (`routes: []`).
 function routeProjectionValueFromEntry(entry, sessionId, header, warnings, domainVersion) {
-	if (domainVersion !== undefined && domainVersion !== SESSION_PROJECTION_DOMAIN_VERSION) return null;
+	if (domainVersion !== undefined && !isSupportedProjectionDomainVersion(domainVersion)) return null;
 	const row = entry?.rows?.statsRoute;
 	if (!objectRecord(row) || !Object.prototype.hasOwnProperty.call(row, "val")) return null;
 	const versioned = Object.prototype.hasOwnProperty.call(row, "ver") || Object.prototype.hasOwnProperty.call(row, "seq");
@@ -656,7 +656,7 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 					warnings.push({ code: "SESSION_CACHE_IDENTITY_MISMATCH", sessionId, message: "official projection snapshot identity did not match the requested lifecycle" });
 				} else if (lifecycleMismatch) {
 					warnings.push({ code: "SESSION_CACHE_LIFECYCLE_MISMATCH", sessionId, message: `official projection snapshot ${lifecycleMismatch} did not match the session lifecycle` });
-				} else if (snapshotVersion !== undefined && snapshotVersion !== SESSION_PROJECTION_DOMAIN_VERSION) {
+				} else if (snapshotVersion !== undefined && !isSupportedProjectionDomainVersion(snapshotVersion)) {
 					warnings.push({ code: "SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED", sessionId, message: `official projection snapshot version ${String(snapshotVersion)} is not supported` });
 				} else if (snapshotSeq !== undefined && (!Number.isSafeInteger(snapshotSeq) || snapshotSeq < -1)) {
 					warnings.push({ code: "SESSION_CACHE_WATERMARK_INVALID", sessionId, message: "official projection snapshot watermark was invalid" });

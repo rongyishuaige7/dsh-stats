@@ -1,5 +1,5 @@
 // Shared host constants and small date, identity and file helpers.
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import pricing from "./pricing.cjs";
@@ -16,8 +16,17 @@ const MIN_INTERVAL_MS = 60 * 1000;
 const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
 const STATS_SCHEMA_VERSION = 2;
+const SESSION_PROJECTION_DOMAIN_VERSIONS = Object.freeze(new Set([3, 4, 5, 6, 7]));
 const SESSION_PROJECTION_DOMAIN_VERSION = 3;
-const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: 1, title: 1, sessionListMetadata: 1, statsRoute: 3 });
+function isSupportedProjectionDomainVersion(version) {
+	return version === undefined || SESSION_PROJECTION_DOMAIN_VERSIONS.has(version);
+}
+const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: Object.freeze([1, 2]), title: 1, sessionListMetadata: 1, statsRoute: 3 });
+function isSupportedRowVersion(key, ver) {
+	const expected = PROJECTION_ROW_VERSIONS[key];
+	if (expected === undefined) return true;
+	return Array.isArray(expected) ? expected.includes(ver) : ver === expected;
+}
 
 function credentialsService(ctx) {
 	try {
@@ -81,6 +90,43 @@ function readJson(file) {
 		return { ok: true, value: JSON.parse(readFileSync(file, "utf8")), error: null };
 	} catch (error) {
 		return { ok: false, value: null, error };
+	}
+}
+
+function readSessionProjcache(home) {
+	const singleFile = join(home, "storages", "session_projcache.json");
+	const singleRead = readJson(singleFile);
+	if (singleRead.ok) return singleRead;
+
+	const sessionsDir = join(home, "storages", "session_projcache", "sessions");
+	try {
+		const entries = readdirSync(sessionsDir, { withFileTypes: true });
+		const sessionsTable = {};
+		let detectedVersion = 7;
+		for (const entry of entries) {
+			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+			const id = entry.name.slice(0, -5);
+			try {
+				const content = JSON.parse(readFileSync(join(sessionsDir, entry.name), "utf8"));
+				if (content && typeof content === "object") {
+					if (Number.isSafeInteger(content.version)) detectedVersion = content.version;
+					const record = content.record || content;
+					if (record && typeof record === "object") {
+						sessionsTable[id] = record;
+					}
+				}
+			} catch {}
+		}
+		return {
+			ok: true,
+			value: {
+				unit: { version: detectedVersion },
+				tables: { sessions: sessionsTable }
+			},
+			error: null
+		};
+	} catch {
+		return singleRead;
 	}
 }
 
@@ -179,4 +225,4 @@ function activityIntervals(times) {
 	return intervals.map(([a, b]) => [a, Math.max(b, a + MIN_INTERVAL_MS)]);
 }
 
-export { LONG_CONTEXT_TOKENS, PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, accountTypeOf, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, identityKey, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readJson, readStable, scanZstdFrames };
+export { LONG_CONTEXT_TOKENS, PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, SESSION_PROJECTION_DOMAIN_VERSIONS, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, accountTypeOf, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, identityKey, isSupportedProjectionDomainVersion, isSupportedRowVersion, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readJson, readSessionProjcache, readStable, scanZstdFrames };

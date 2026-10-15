@@ -11,7 +11,7 @@ import pricing from "./pricing.cjs";
 import { pricingStore } from "./pricing-store.js";
 import { collectAccounts, providerViews } from "./accounts.js";
 const { summarizeCostsCny, mergeCostSummariesCny } = pricing;
-import { SESSION_PROJECTION_DOMAIN_VERSION, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, rawIdentity, readJson } from "./host-util.js";
+import { SESSION_PROJECTION_DOMAIN_VERSION, isSupportedProjectionDomainVersion, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, rawIdentity, readJson, readSessionProjcache } from "./host-util.js";
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
 import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";
 import { addRaw, emptyRaw, modelUsages, projectionSlotUsage, repriceSnapshot, slotDurations, slotUsages } from "./host-usage.js";
@@ -156,7 +156,7 @@ let StatsService = (() => {
 				wsJson = wsRead.value;
 			}
 			if (!officialProjectionAvailable) {
-				sessionsRead = readJson(join(home, "storages", "session_projcache.json"));
+				sessionsRead = readSessionProjcache(home);
 				if (!sessionsRead.ok) warnings.push({ code: "SESSION_CACHE_READ_FAILED", message: sessionsRead.error?.message || "session projection cache read failed" });
 			}
 			if (officialWorkspaceAvailable) {
@@ -185,7 +185,7 @@ let StatsService = (() => {
 			const rawSessionsTable = sessionsRead.value?.tables?.sessions;
 			const sessionsTable = objectRecord(rawSessionsTable) || {};
 			const projectionDomainVersion = sessionsRead.value?.unit?.version;
-			if (projectionDomainVersion !== undefined && projectionDomainVersion !== SESSION_PROJECTION_DOMAIN_VERSION) warnings.push({ code: "SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED", message: `projection cache domain version ${String(projectionDomainVersion)} is not supported` });
+			if (projectionDomainVersion !== undefined && !isSupportedProjectionDomainVersion(projectionDomainVersion)) warnings.push({ code: "SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED", message: `projection cache domain version ${String(projectionDomainVersion)} is not supported` });
 			if (sessionsRead.ok && !objectRecord(rawSessionsTable)) warnings.push({ code: "SESSION_TABLE_SHAPE_INVALID", message: "session projection table was missing or not an object; the value was ignored" });
 			let persistedHeaders = [];
 			let sessionListResolved = false;
