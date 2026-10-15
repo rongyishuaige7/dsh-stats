@@ -11,6 +11,7 @@
 | `0.1.5-rc.3` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v3 handles/live Session | full Web verified |
 | `0.1.6-alpha.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 | `0.1.7-rc.2` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v4 handles/live Session | full Web verified |
+| `0.2.0-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v4 handles/per-record/live Session | fixture verified |
 
 The rc2 row was verified with a fresh `@deepseek-ai/dsh@0.1.1-rc.2` process on 2026-08-27. `npm run smoke:rc2` launched a temporary Chrome 151 runtime, loaded the Web profile, confirmed the plugin entry and `.dss-panel`, rendered populated project/session data, selected `yi-api` and verified its USD balance card, and observed zero console errors, runtime exceptions, or failed network requests. A separate isolated run also covered the explicit empty-workspace state. The rc6 browser cell remains pending because no separate rc6 browser run was requested.
 
@@ -94,3 +95,12 @@ Current pnpm requires `add -w` because the profile is a workspace root.
 Full Web runs for `0.1.5-rc.2` and `0.1.6-alpha.1` remain unverified; their module
 contract and independent UI fixture coverage is unchanged. See
 [0.3.1 release verification](release-0.3.1.md).
+
+## October 2026 verification (Harness 0.2.0-rc.2)
+
+npm reports `latest` and `next` as `0.2.0-rc.2`, `alpha` as `0.2.1-alpha.3`.
+`0.2.0-rc.2` introduces architectural updates across storage, projection domains, and token metering:
+- **Storage layout**: `dsh-storage-json` added per-record storage layout (`storages/session_projcache/sessions/<id>.json`). The plugin implements dual reading: checking per-record directories when the single-file `storages/session_projcache.json` is absent.
+- **Projection domain versions**: `dsh-session-projection-cache` bumped its domain version from 3 to 7 (`compatibleVersions: [3, 4, 5, 6]`). The plugin accepts projection domain versions 3 through 7.
+- **Token meter state**: `dsh-token-meter` bumped `stateVersion` to 2 to track `last` state for `llm/retry-started` transaction rollback. The plugin supports both version 1 and 2 row payloads.
+- **Module verification**: Pinned in an isolated fixture, passing all 6 checks in `scripts/harness-contract-smoke.mjs` (manifest, official persistence read/write, projection checkpoint/restore, StatsService aggregate with MiniMax M3 slot pricing, revision caching, and live Session snapshot agreement).
