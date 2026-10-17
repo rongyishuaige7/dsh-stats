@@ -269,7 +269,7 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 
 ## 🛠️ Local development
 
-Compatibility covers Harness `0.1.2-rc.1` through `0.2.0-rc.2`. `0.1.5-rc.3` and
+Compatibility covers Harness `0.1.3-alpha.2` through `0.2.0-rc.2`. `0.1.5-rc.3` and
 `0.1.7-rc.2` are verified in complete Web hosts; the other releases pass real
 module contract checks. See the
 [compatibility matrix](docs/compatibility.md). Harness 0.1.7+ needs plugin 0.4.1 or later;

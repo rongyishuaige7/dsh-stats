@@ -16,7 +16,7 @@
 - **时间**：时间线、峰谷时段、日期范围和价格设置统一按北京时间（UTC+8），不随宿主或浏览器时区变化。
 - **状态**：React `useState` + `localStorage` 偏好（`usePref`），没有 zustand。
 - **安装**：只用 `dsh plugin --profile web add -w <包或 tarball>`，不要用 npm/pnpm 直接改 profile。
-- **兼容**：Harness `0.1.2-rc.1` 至 `0.2.0-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
+- **兼容**：Harness `0.1.3-alpha.2` 至 `0.2.0-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
 - **计价**：签名价格目录、自定义费率与复核流程见 [动态价格](docs/pricing-updates.md)。
 - **验证**：CI 跑单元测试（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture；每日 Harness watch 检查 npm latest/next/alpha。发版前在隔离的完整 Web profile 中验证，记录见 `docs/release-*.md`。
 
