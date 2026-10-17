@@ -8,7 +8,7 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail, limitProjectCards,
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
 
@@ -652,18 +652,13 @@ test('timelinePageDays slices an already ordered timeline', () => {
 	expect(timelinePageDays(days, 9, 2)).toEqual([]);
 });
 
-test('session detail windows main and sub-agent rows', () => {
-	const main = [1, 2, 3];
-	const sub = [4, 5];
-	expect(limitSessionDetail(main, sub, false, 3)).toMatchObject({ main: [1, 2, 3], sub: [], hidden: 2, total: 5 });
-	expect(limitSessionDetail(main, sub, true, 3)).toMatchObject({ main, sub, hidden: 0, total: 5 });
-	expect(limitSessionDetail([1, 2], [3, 4], false, 3)).toMatchObject({ main: [1, 2], sub: [3], hidden: 1, total: 4 });
-});
-
-test('project cards are windowed with an explicit show-all path', () => {
-	const projects = [1, 2, 3];
-	expect(limitProjectCards(projects, false, 2)).toMatchObject({ projects: [1, 2], hidden: 1, total: 3 });
-	expect(limitProjectCards(projects, true, 2)).toMatchObject({ projects, hidden: 0, total: 3 });
+test('paged lists retain every row, bound every page and clamp after filtering', () => {
+	const rows = Array.from({ length: 205 }, (_, i) => i);
+	const pages = [0, 1, 2].map(page => pageRows(rows, page, 100));
+	expect(pages.map(page => page.rows.length)).toEqual([100, 100, 5]);
+	expect(pages.flatMap(page => page.rows)).toEqual(rows);
+	expect(pageRows(rows.slice(0, 12), 2, 100)).toMatchObject({ currentPage: 0, pageCount: 1, total: 12 });
+	expect(pageRows([], 10, 50)).toMatchObject({ rows: [], currentPage: 0, pageCount: 1 });
 });
 
 test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {

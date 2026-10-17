@@ -75,8 +75,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--d
 	".dss-sess .st{color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}" +
 	".dss-sess-model{text-align:right!important;transform:translateX(var(--dss-data-shift))!important}" +
 	".dss-sess-cost{grid-column:10;text-align:left!important}" +
-	".dss-sess-more{display:block;margin:8px 8px 4px}" +
-	".dss-projects-more{display:block;margin:10px auto 0}" +
+	".dss-pages{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px;font-size:12px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-tag{font-size:10px;font-weight:600;color:#4f8cff;background:rgba(79,140,255,.14);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}" +
 	".dss-group{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7280);padding:9px 12px 3px}" +
 	".dss-hint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:11.5px;margin-bottom:10px}" +

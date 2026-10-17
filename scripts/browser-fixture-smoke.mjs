@@ -319,6 +319,62 @@ try {
   await until('document.querySelector(".dss-balance-status.stale")');
   await layout('dark-stale-balance'); await capture('narrow-dark-stale-balance');
   report.checks.push('dark-theme stale account state');
+  await navigate('/?stats=large&lang=zh');
+  await click('.dss-trigger'); await tab(1);
+  await until('document.querySelector(".dss-data-status.exact")');
+  await click('.dss-nav .dss-tabs button:nth-child(2)');
+  await until('document.querySelectorAll(".dss-pcard").length === 50');
+  const summaryBeforePaging = await evaluate('document.querySelector(".dss-cards").innerText');
+  async function collectPages(scope, rowSelector, readRow) {
+    const found = [];
+    for (;;) {
+      const rows = await evaluate(`[...document.querySelectorAll(${JSON.stringify(rowSelector)})].map(node => ${readRow})`);
+      assert(rows.length <= (scope === 'sessions' ? 100 : 50), scope + ' mounted row budget');
+      found.push(...rows);
+      if (await evaluate(`document.querySelector('[data-pages="${scope}"] button:last-child').disabled`)) break;
+      await click(`[data-pages="${scope}"] button:last-child`);
+    }
+    assert.equal(new Set(found).size, found.length, scope + ' duplicated rows');
+    return found;
+  }
+  const projectIds = await collectPages('projects', '.dss-pcard', 'node.dataset.projectId');
+  assert.equal(projectIds.length, 120, 'all projects reachable');
+  // Sorting must return to page one; legend paging must not alter project data.
+  await click('.dss-sortbar-dir'); await click('.dss-sortbar-dir');
+  assert(await evaluate('document.querySelector("[data-pages=projects] button").disabled'));
+  const legendNames = await collectPages('legend', '.dss-chip', 'node.textContent');
+  assert.equal(legendNames.length, 120, 'all legend filters reachable');
+  assert.equal(await evaluate('document.querySelector(".dss-cards").innerText'), summaryBeforePaging, 'paging must not change totals');
+  await click('[data-project-id="large-0"] .dss-pcard-head');
+  const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
+  assert.equal(sessionIds.length, 205, 'main and subagent sessions all reachable');
+  assert(await evaluate('document.querySelector(".dss-group").textContent.includes("95")'));
+  await click('.dss-sess-title');
+  assert(sessionIds.includes(await evaluate('window.__fixture.openedSession')), 'paged sessions retain navigation');
+  await click('.dss-trigger'); await tab(2);
+  await until('document.querySelector(".dss-timeline-limit")');
+  const recentDay = await evaluate('document.querySelector(".dss-day").id');
+  const datesSeen = [];
+  for (;;) {
+    const dates = await evaluate('[...document.querySelectorAll(".dss-day")].map(node => node.id)');
+    assert(dates.length <= 30, 'timeline mounted day budget'); datesSeen.push(...dates);
+    if (await evaluate('document.querySelector(".dss-timeline-limit button:nth-of-type(2)").disabled')) break;
+    await click('.dss-timeline-limit button:nth-of-type(2)');
+  }
+  assert.equal(datesSeen.length, 75, 'all history dates reachable');
+  assert.equal(new Set(datesSeen).size, 75, 'history pages do not overlap');
+  await click('.dss-timeline-limit button:last-child');
+  assert.equal(await evaluate('document.querySelector(".dss-day").id'), recentDay, 'recent button returns to newest page');
+  for (const [width, lang] of [[320,'zh'], [641,'en'], [1440,'en']]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    await navigate('/?stats=large&lang=' + lang); await click('.dss-trigger');
+    await tab(1); await layout('large-pages-' + width);
+    await click('[data-project-id="large-0"] .dss-pcard-head');
+    await layout('large-sessions-' + width);
+    await evaluate('document.querySelector(".dss-pcards-wrap").scrollIntoView({ block: "start" })');
+    await capture('large-pages-' + width);
+  }
+  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, sort reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

@@ -37,6 +37,26 @@ export async function browserData(home) {
     for (const session of Object.values(sessions)) session.events[2].data.message.source.model = 'fixture-unpriced';
     const unsupported = await StatsService.prototype.aggregate.call(service);
     unsupported.meta = { ...partial.meta };
+    // Cross every UI page boundary using real host aggregation, including a
+    // session page containing both main conversations and subagents.
+    const largeSessions = {};
+    const largeWorkspaces = Array.from({ length: 120 }, (_, index) => ({
+      id: 'large-' + index, title: 'Large project ' + index, path: '/fixture/large-' + index,
+      sessionIds: Array.from({ length: index === 0 ? 205 : 1 }, (_, row) => 'large-' + index + '-' + row),
+    }));
+    for (const [index, ws] of largeWorkspaces.entries()) for (const [row, id] of ws.sessionIds.entries()) {
+      const time = now - (row % 75) * 86400000;
+      const template = structuredClone(sessions['api-service-0']);
+      template.header = { ...template.header, id, cwd: ws.path, createdAt: time, origin: index === 0 && row >= 110 ? 'subagent' : null };
+      template.events.forEach((event, seq) => { event.time = time + seq * 15000; });
+      template.events[2].data.message.source = { provider: 'deepseek', model: 'deepseek-v4-flash' };
+      largeSessions[id] = template;
+    }
+    const large = await StatsService.prototype.aggregate.call({ ctx: {
+      workspaceRegistry: { list: () => largeWorkspaces },
+      sessionQuery: { listSessions: async () => Object.values(largeSessions).map(({ header }) => ({ header })), readSession: async id => largeSessions[id] },
+    } });
+    large.meta = { ...estimated.meta };
     const base = { providerFamily: 'deepseek', mode: 'balance', adapter: 'deepseek-balance', status: 'ok', stale: false,
       fetchedAt: now, lastSuccessAt: now, errorCode: null, missingCredential: null, actionUrl: 'https://platform.deepseek.com/top_up', plan: null, windows: [] };
     const accounts = { generatedAt: now, accounts: [
@@ -58,7 +78,7 @@ export async function browserData(home) {
       try { return await StatsService.prototype.pricing.call(service, request); }
       finally { if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous; }
     };
-    return { estimated, partial, unsupported, accounts, pricingRequest };
+    return { estimated, partial, unsupported, large, accounts, pricingRequest };
   } finally {
     if (previousHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previousHome;

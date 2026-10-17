@@ -101,42 +101,39 @@ function projectColorIndex(project, indexes, fallbackIndex) {
 }
 
 var SESSION_DETAIL_LIMIT = 100;
-// A selected project can contain hundreds of sessions; mount only the first
-// window and let the user expand the rest explicitly.
-function limitSessionDetail(mainSessions, subSessions, showAll, limit) {
-	var main = Array.isArray(mainSessions) ? mainSessions : [];
-	var sub = Array.isArray(subSessions) ? subSessions : [];
-	var total = main.length + sub.length;
-	if (showAll || !Number.isFinite(limit) || limit <= 0) return { main, sub, hidden: 0, total };
-	var visibleMain = main.slice(0, limit);
-	var remaining = Math.max(0, limit - visibleMain.length);
-	var visibleSub = sub.slice(0, remaining);
-	return { main: visibleMain, sub: visibleSub, hidden: total - visibleMain.length - visibleSub.length, total };
+var PROJECT_CARD_LIMIT = 50;
+function pageRows(rows, page, size) {
+	rows = Array.isArray(rows) ? rows : [];
+	size = Number.isSafeInteger(size) && size > 0 ? size : PROJECT_CARD_LIMIT;
+	var pageCount = Math.max(1, Math.ceil(rows.length / size));
+	var currentPage = Math.min(Math.max(0, Math.floor(page) || 0), pageCount - 1);
+	return { rows: rows.slice(currentPage * size, (currentPage + 1) * size), currentPage, pageCount, total: rows.length };
 }
 
-var PROJECT_CARD_LIMIT = 50;
-function limitProjectCards(projects, showAll, limit) {
-	var rows = Array.isArray(projects) ? projects : [];
-	var total = rows.length;
-	if (showAll || !Number.isFinite(limit) || limit <= 0) return { projects: rows, hidden: 0, total };
-	var visible = rows.slice(0, limit);
-	return { projects: visible, hidden: total - visible.length, total };
+function PageControls({ window, onPage, t, name }) {
+	if (window.pageCount <= 1) return null;
+	return e("div", { className: "dss-pages", "data-pages": name },
+		e("button", { type: "button", className: "dss-export", disabled: window.currentPage === 0, onClick: () => onPage(window.currentPage - 1) }, t("w.previousPage")),
+		e("span", { "aria-live": "polite" }, t("w.page").replace("%d", String(window.currentPage + 1)).replace("%d", String(window.pageCount))),
+		e("button", { type: "button", className: "dss-export", disabled: window.currentPage === window.pageCount - 1, onClick: () => onPage(window.currentPage + 1) }, t("w.nextPage"))
+	);
 }
 
 function Legend(props) {
 	var projects = props.projects;
 	var hidden = props.hidden;
 	var onToggle = props.onToggle;
-	return e("div", { className: "dss-legend" },
-		projects.map(function(p, i) {
+	var [page, setPage] = useState(0);
+	var window = pageRows(projects, page, PROJECT_CARD_LIMIT);
+	return e("div", null, e("div", { className: "dss-legend" },
+		window.rows.map(function(p, i) {
 			return e("span", {
 				key: p.id, className: "dss-chip" + (hidden[p.id] ? " off" : ""),
-				"data-color": String(projectColorIndex(p, props.colorIndexes, i)), onClick: () => onToggle(p.id)
+				"data-color": String(projectColorIndex(p, props.colorIndexes, window.currentPage * PROJECT_CARD_LIMIT + i)), onClick: () => onToggle(p.id)
 			},
 				e("span", { className: "sw" }), p.name
 			);
-		})
-	);
+		})), e(PageControls, { window, onPage: setPage, t: props.t, name: "legend" }));
 }
 
 function sortValue(p, key) {
@@ -180,10 +177,9 @@ function ProjectsTable(props) {
 	var dayMode = props.dayMode === true; // 按日模式：隐藏"最近活跃"（项目级元数据与单日切片语义冲突）
 	var sortPair = useState({ key: "cost", dir: -1 });
 	var sort = sortPair[0], setSort = sortPair[1];
-	var expansionPair = useState(null);
-	var expandedProject = expansionPair[0], setExpandedProject = expansionPair[1];
-	var projectExpansionPair = useState(false);
-	var showAllProjects = projectExpansionPair[0], setShowAllProjects = projectExpansionPair[1];
+	var [sessionPage, setSessionPage] = useState({ id: null, page: 0 });
+	var [projectPage, setProjectPage] = useState(0);
+	var viewport = react.useRef(null);
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -193,7 +189,8 @@ function ProjectsTable(props) {
 		var va = sortValue(a, effSortKey), vb = sortValue(b, effSortKey);
 		return (va > vb ? 1 : (va < vb ? -1 : 0)) * sort.dir;
 	});
-	var limitedProjects = limitProjectCards(sorted, showAllProjects, PROJECT_CARD_LIMIT);
+	var projectWindow = pageRows(sorted, projectPage, PROJECT_CARD_LIMIT);
+	var changeProjectPage = function(page) { setProjectPage(page); if (viewport.current) viewport.current.scrollTop = 0; };
 
 	var SORT_FIELDS = [
 		{ key: "cost", label: t("th.cost") },
@@ -212,18 +209,18 @@ function ProjectsTable(props) {
 		e("select", {
 			className: "dss-sortbar-select",
 			value: effSortKey,
-			onChange: function(ev) { setSort({ key: ev.target.value, dir: sort.dir }); }
+				onChange: function(ev) { setSort({ key: ev.target.value, dir: sort.dir }); changeProjectPage(0); }
 		},
 			SORT_FIELDS.map(function(f) { return e("option", { key: f.key, value: f.key }, f.label); })
 		),
 		e("button", {
 			className: "dss-sortbar-dir",
-			onClick: function() { setSort(function(s) { return { key: s.key, dir: -s.dir }; }); },
+				onClick: function() { setSort(function(s) { return { key: s.key, dir: -s.dir }; }); changeProjectPage(0); },
 			title: t("sort.toggle")
 		}, sort.dir > 0 ? t("sort.asc") + " ↑" : t("sort.desc") + " ↓")
 	);
 
-	var cards = limitedProjects.projects.map(function(p) {
+	var cards = projectWindow.rows.map(function(p) {
 		var i = projectColorIndex(p, props.colorIndexes, fallbackColorIndexes.get(p.id));
 		var s = p.stats;
 		var isSel = selected === p.id;
@@ -245,7 +242,7 @@ function ProjectsTable(props) {
 					var costDetail = sessionCostSummary(sd);
 					var sessionCost = e(CostValue, { summary: costDetail, t });
 					var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null, sd.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : sd.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null,];
-				return e("div", { className: "dss-sess", key: sd.id },
+					return e("div", { className: "dss-sess", key: sd.id, "data-session-id": sd.id },
 					onOpenSession ? e("button", {
 						type: "button",
 						className: "ti dss-sess-title",
@@ -263,33 +260,22 @@ function ProjectsTable(props) {
 					e("span", { className: "st dss-cost dss-sess-cost", title: fmtCostSummary(costDetail, t) }, sessionCost)
 				);
 			};
-			var showAllSessions = expandedProject === selected;
-			var limited = limitSessionDetail(mainSessions, subSessions, showAllSessions, SESSION_DETAIL_LIMIT);
-			var detailChildren = limited.main.map(sessRow);
-			if (limited.sub.length) {
-				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + limited.sub.length + ")")]);
-				detailChildren = detailChildren.concat(limited.sub.map(sessRow));
-			}
-			if (limited.hidden > 0) {
-				detailChildren = detailChildren.concat([e("button", {
-					type: "button",
-					key: "show-all-sessions",
-					className: "dss-export dss-sess-more",
-					onClick: function(ev) { ev.stopPropagation(); setExpandedProject(selected); }
-				}, t("w.showAllSessions").replace("%d", String(limited.total)))]);
-			} else if (showAllSessions && limited.total > SESSION_DETAIL_LIMIT) {
-				detailChildren = detailChildren.concat([e("button", {
-					type: "button",
-					key: "show-recent-sessions",
-					className: "dss-export dss-sess-more",
-					onClick: function(ev) { ev.stopPropagation(); setExpandedProject(null); }
-				}, t("w.showRecentSessions").replace("%d", String(SESSION_DETAIL_LIMIT)))]);
-			}
-			detail = e("div", { className: "dss-pcard-detail" }, detailChildren);
+			var sessionWindow = pageRows(mainSessions.concat(subSessions), sessionPage.id === p.id ? sessionPage.page : 0, SESSION_DETAIL_LIMIT);
+			var detailChildren = [];
+			var subgroup = false;
+			sessionWindow.rows.forEach(function(sd) {
+				if (sd.subagent && !subgroup) {
+					subgroup = true;
+					detailChildren.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + subSessions.length + ")"));
+				}
+				detailChildren.push(sessRow(sd));
+			});
+			detail = e("div", { className: "dss-pcard-detail" },
+				e(PageControls, { window: sessionWindow, onPage: page => setSessionPage({ id: p.id, page }), t, name: "sessions" }), detailChildren);
 		}
 
-		var toggleProject = function() { onSelect(p.id); };
-		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16) },
+		var toggleProject = function() { setSessionPage({ id: p.id, page: 0 }); onSelect(p.id); };
+		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16), "data-project-id": p.id },
 			e("div", {
 				className: "dss-pcard-head",
 				role: "button",
@@ -329,18 +315,10 @@ function ProjectsTable(props) {
 
 	return e("div", { className: "dss-pcards-wrap" },
 		toolbar,
-		e("div", { className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
+		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
 			e("div", { className: "dss-pcards" }, cards)
 		),
-		limitedProjects.hidden > 0 ? e("button", {
-			type: "button",
-			className: "dss-export dss-projects-more",
-			onClick: function() { setShowAllProjects(true); }
-		}, t("w.showAllProjects").replace("%d", String(limitedProjects.total))) : showAllProjects && limitedProjects.total > PROJECT_CARD_LIMIT ? e("button", {
-			type: "button",
-			className: "dss-export dss-projects-more",
-			onClick: function() { setShowAllProjects(false); }
-		}, t("w.showRecentProjects").replace("%d", String(PROJECT_CARD_LIMIT))) : null
+		e(PageControls, { window: projectWindow, onPage: changeProjectPage, t, name: "projects" })
 	);
 }
 
@@ -415,7 +393,7 @@ function timelineTipRows(blocks) {
 }
 
 // All-mode timeline rows are cheap individually but can grow to years. Render
-// one 30-day page by default and let the user page or opt into full history.
+// one 30-day page at a time, including when browsing the full history.
 var TIMELINE_PAGE_DAYS = 30;
 
 function showTimelineBlocksTip(date, slot, blocks, ev) {
@@ -429,14 +407,13 @@ function TimelineView(props) {
 	var slotMs = slotMinutes * 60000;
 	var tt = props.tt;
 	var dayMode = props.dayMode === true;
-	var [showAllDays, setShowAllDays] = useState(false);
 	var [page, setPage] = useState(0);
 
 	var days = timeline.days || [];
 	var allDisplayDays = timelineDisplayDays(days, dayMode);
 	var pageCount = Math.max(1, Math.ceil(allDisplayDays.length / TIMELINE_PAGE_DAYS));
 	var currentPage = Math.min(page, pageCount - 1);
-	var displayDays = showAllDays ? allDisplayDays : timelinePageDays(allDisplayDays, currentPage, TIMELINE_PAGE_DAYS);
+	var displayDays = timelinePageDays(allDisplayDays, currentPage, TIMELINE_PAGE_DAYS);
 	var maxDay = displayDays.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
 	var layout = timelineLayout(displayDays.length, dayMode);
@@ -447,28 +424,25 @@ function TimelineView(props) {
 	return e("div", null,
 		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
 		allDisplayDays.length > TIMELINE_PAGE_DAYS ? e("div", { className: "dss-timeline-limit" },
-			e("span", null, showAllDays
-				? tt("hint.timeline.limitAll").replace("%d", String(allDisplayDays.length))
-				: tt("hint.timeline.page").replace("%d", String(currentPage + 1)).replace("%d", String(pageCount))),
-			!showAllDays ? e(Fragment, null,
-				e("button", {
-					type: "button",
-					className: "dss-export",
-					disabled: currentPage === 0,
-					onClick: () => setPage(Math.max(0, currentPage - 1))
-				}, tt("hint.timeline.newer")),
-				e("button", {
-					type: "button",
-					className: "dss-export",
-					disabled: currentPage >= pageCount - 1,
-					onClick: () => setPage(Math.min(pageCount - 1, currentPage + 1))
-				}, tt("hint.timeline.older"))
-			) : null,
+			e("span", { "aria-live": "polite" }, tt("hint.timeline.page").replace("%d", String(currentPage + 1)).replace("%d", String(pageCount))),
 			e("button", {
 				type: "button",
 				className: "dss-export",
-				onClick: () => setShowAllDays(!showAllDays)
-			}, showAllDays ? tt("hint.timeline.showRecent").replace("%d", String(TIMELINE_PAGE_DAYS)) : tt("hint.timeline.showAll"))
+				disabled: currentPage === 0,
+				onClick: () => setPage(Math.max(0, currentPage - 1))
+				}, tt("hint.timeline.newer")),
+			e("button", {
+				type: "button",
+				className: "dss-export",
+				disabled: currentPage >= pageCount - 1,
+				onClick: () => setPage(Math.min(pageCount - 1, currentPage + 1))
+				}, tt("hint.timeline.older")),
+			e("button", {
+				type: "button",
+				className: "dss-export",
+				disabled: currentPage === 0,
+				onClick: () => setPage(0)
+				}, tt("hint.timeline.showRecent").replace("%d", String(TIMELINE_PAGE_DAYS)))
 		) : null,
 		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
 		displayDays.length > 1 ? e("div", { className: "dss-heat" },
@@ -969,7 +943,7 @@ function StatsPanel(props) {
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
-					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle }),
+					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
@@ -1623,5 +1597,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail, limitProjectCards
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows
 };
