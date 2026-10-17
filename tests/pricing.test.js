@@ -244,7 +244,7 @@ test('currency-less free usage mixed with unpriced usage is partial, not free', 
 });
 
 test('unknown proxy provider with gemini-3.8-flash and reasoning suffixes is priced via estimated fallback', () => {
-	for (const suffix of ['', '-high', '-medium', '-low', '-thinking', '-thought']) {
+	for (const suffix of ['', '-high', '-medium', '-low', '-none', '-thinking', '-thought', '-thinking-high']) {
 		const res = priceUsage({
 			providerId: 'cpa',
 			model: 'gemini-3.8-flash' + suffix,
@@ -261,4 +261,24 @@ test('unknown proxy provider with gemini-3.8-flash and reasoning suffixes is pri
 		expect(res.amount).toBeCloseTo(4.575);
 	}
 });
+
+test('anthropic dated model aliases with reasoning suffixes match and price accurately', () => {
+	for (const suffix of ['', '-thinking', '-high', '-thinking-high']) {
+		const res = priceUsage({
+			providerId: 'cpa',
+			model: 'claude-sonnet-5-20260301' + suffix,
+			uncached: 1000000,
+			output: 1000000,
+		});
+		expect(res).toMatchObject({
+			status: 'estimated',
+			currency: 'USD',
+			modelCanonical: 'claude-sonnet-5',
+			unpricedTokens: 0,
+		});
+		// rates: uncached 2.0, output 10.0 => 12.0
+		expect(res.amount).toBeCloseTo(12.0);
+	}
+});
+
 

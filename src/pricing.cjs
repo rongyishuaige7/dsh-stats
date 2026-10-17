@@ -100,19 +100,31 @@ function providerFamilyOf(providerId) {
 	return "unknown";
 }
 
-function ruleMatchesModel(rule, raw) {
-	var model = String(raw || "").trim().toLowerCase();
+function matchModelAlias(rule, model) {
 	if (rule.aliases.indexOf(model) >= 0) return true;
 	// Anthropic dated model ids are stable aliases of the named family.
 	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
 		&& /^20[0-9]{6}$/.test(model.slice(rule.canonical.length + 1))) return true;
+	return false;
+}
 
-	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -thinking, -thought)
-	var stripped = model.replace(/-(?:high|medium|low|thinking|thought)$/i, "");
-	if (stripped !== model && rule.aliases.indexOf(stripped) >= 0) return true;
+function ruleMatchesModel(rule, raw) {
+	var model = String(raw || "").trim().toLowerCase();
+	if (matchModelAlias(rule, model)) return true;
+
+	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -none, -thinking, -thought)
+	// Supports compound suffixes (e.g. -thinking-high) by stripping iteratively.
+	var stripped = model;
+	var prev;
+	do {
+		prev = stripped;
+		stripped = stripped.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
+		if (stripped !== prev && matchModelAlias(rule, stripped)) return true;
+	} while (stripped !== prev);
 
 	return false;
 }
+
 
 function matchingRules(family, modelRaw, at, providerId, accountType) {
 	var when = Number.isFinite(at) ? at : Date.now();

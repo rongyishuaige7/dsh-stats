@@ -144,10 +144,14 @@ function PricingPanel({ remote, projects, onChanged, t }) {
   const used = new Set();
   const addUsed = m => {
     if (!m) return;
-    const str = String(m).toLowerCase();
+    let str = String(m).toLowerCase();
     used.add(str);
-    const stripped = str.replace(/-(?:high|medium|low|thinking|thought)$/i, "");
-    if (stripped !== str) used.add(stripped);
+    let prev;
+    do {
+      prev = str;
+      str = str.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
+      if (str !== prev) used.add(str);
+    } while (str !== prev);
   };
   for (const p of projects || []) {
     for (const s of p.sessions || []) {
