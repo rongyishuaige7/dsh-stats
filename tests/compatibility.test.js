@@ -43,3 +43,9 @@ test('current peers are supported without requiring the retired client runtime',
 test('engines.dsh defines runtime range covering all supported releases', () => {
 	expect(packageJson.engines?.dsh).toBe('>=0.1.0-rc.6 <0.3.0');
 });
+
+test('peer ranges exclude the defective 0.1.2-rc.1 release', () => {
+	for (const [name, range] of Object.entries(packageJson.peerDependencies)) {
+		expect(range, name).not.toContain('^0.1.2-rc.1');
+	}
+});
