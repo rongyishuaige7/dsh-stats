@@ -9,7 +9,7 @@
  */
 
 const BUILTIN = require('../data/pricing/catalog.json');
-const { validateCatalog, validateOverrides } = require('./pricing-validation.cjs');
+const { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, validateCatalog, validateOverrides } = require('./pricing-validation.cjs');
 
 function createPricing(input = BUILTIN, customRules = []) {
 const catalog = validateCatalog(input);
@@ -539,6 +539,8 @@ return {
 	summarizeCostsCny: summarizeCostsCny,
 	mergeCostSummariesCny: mergeCostSummariesCny,
 	emptyCostSummary: emptyCostSummary,
+	MAX_CATALOG_BYTES: MAX_CATALOG_BYTES,
+	MAX_OVERRIDES_BYTES: MAX_OVERRIDES_BYTES,
 	tokenCounts: tokenCounts
 };
 

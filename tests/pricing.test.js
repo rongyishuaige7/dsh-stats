@@ -453,3 +453,8 @@ test('custom provider rules are matched case-insensitively', () => {
 	const quote = engine.priceUsage({ providerId: 'yi-api', model: 'case-model', time: Date.now(), uncached: 1000000, output: 0, cacheRead: 0, cacheWrite: 0 });
 	expect(quote).toMatchObject({ status: 'estimated', ruleId: 'custom/case' });
 });
+
+test('pricing payload limits are shared by host and browser', () => {
+	expect(pricing.MAX_CATALOG_BYTES).toBe(8 * 1024 * 1024);
+	expect(pricing.MAX_OVERRIDES_BYTES).toBe(1024 * 1024);
+});

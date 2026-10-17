@@ -1,3 +1,9 @@
+// Shared payload guardrails for the host, browser and RPC boundary. A catalog
+// can grow with provider coverage, and custom overrides can be much larger than
+// a single rule; keep these limits in one place so they cannot drift.
+const MAX_CATALOG_BYTES = 8 * 1024 * 1024;
+const MAX_OVERRIDES_BYTES = 1 * 1024 * 1024;
+
 // Shared, bounded validation for local, remote, and browser price snapshots.
 const FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const TIERS = ['standard', 'priority', 'batch', 'flex'];
@@ -75,4 +81,4 @@ function validateCatalog(input) {
   const result = freeze(JSON.parse(JSON.stringify(input))); validated.add(result); return result;
 }
 function validateOverrides(input) { rules(input, true); return freeze(JSON.parse(JSON.stringify(input))); }
-module.exports = { validateCatalog, validateOverrides };
+module.exports = { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, validateCatalog, validateOverrides };

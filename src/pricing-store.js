@@ -5,7 +5,7 @@ import pricing from './pricing.cjs';
 import trust from './pricing-trust.cjs';
 import builtinEnvelope from '../data/pricing/latest.json' with { type: 'json' };
 
-const HOUR = 3600000, MAX_BYTES = 4 * 1024 * 1024;
+const HOUR = 3600000, MAX_BYTES = pricing.MAX_CATALOG_BYTES;
 // A crash between creating the lock and writing its pid leaves an empty file.
 // Reclaim malformed locks only after a generous idle window so a live writer is
 // never stolen.

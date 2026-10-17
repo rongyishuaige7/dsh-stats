@@ -1,5 +1,6 @@
 // The host imports zod as ESM; the browser bundles it. Keep the schema
 // definitions independent of module-loading semantics in both artifacts.
+const { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES } = require('./pricing-validation.cjs');
 module.exports = function createRpcSchemas(z) {
 
 const _stats$schema = z.object({
@@ -98,8 +99,8 @@ const _accountResult$schema = z.object({
   warnings: z.array(z.object({ providerId: z.string(), code: z.string(), message: z.string() }).strict()),
 }).strict()
 const _accountForce$schema = z.boolean().optional()
-const pricingRequestSchema = z.object({ action: z.enum(['status', 'refresh', 'preview', 'save', 'rollback']), fingerprint: z.string().max(64).optional(), revision: z.number().int().nonnegative().optional(), version: z.number().int().positive().optional(), autoUpdate: z.boolean().optional(), overridesJson: z.string().max(262144).optional() }).strict().optional();
-const pricingResultSchema = z.object({ version: z.number().int().positive(), publishedAt: z.string(), fingerprint: z.string(), lastCheckAt: z.number().nullable(), lastSuccessAt: z.number().nullable(), error: z.string().nullable(), revision: z.number().int().nonnegative(), autoUpdate: z.boolean(), pinnedVersion: z.number().nullable(), catalogJson: z.string().max(4194304), overridesJson: z.string().max(262144), history: z.array(z.number().int().positive()), previewJson: z.string().optional() }).strict();
+const pricingRequestSchema = z.object({ action: z.enum(['status', 'refresh', 'preview', 'save', 'rollback']), fingerprint: z.string().max(64).optional(), revision: z.number().int().nonnegative().optional(), version: z.number().int().positive().optional(), autoUpdate: z.boolean().optional(), overridesJson: z.string().max(MAX_OVERRIDES_BYTES).optional() }).strict().optional();
+const pricingResultSchema = z.object({ version: z.number().int().positive(), publishedAt: z.string(), fingerprint: z.string(), lastCheckAt: z.number().nullable(), lastSuccessAt: z.number().nullable(), error: z.string().nullable(), revision: z.number().int().nonnegative(), autoUpdate: z.boolean(), pinnedVersion: z.number().nullable(), catalogJson: z.string().max(MAX_CATALOG_BYTES), overridesJson: z.string().max(MAX_OVERRIDES_BYTES), history: z.array(z.number().int().positive()), previewJson: z.string().optional() }).strict();
 
 
 
