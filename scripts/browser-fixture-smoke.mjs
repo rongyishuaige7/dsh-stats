@@ -41,6 +41,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = 'http://127.0.0.1:' + server.address().port;
+report.runtime = { pid: process.pid, url, purpose: 'isolated browser fixture' };
 const chrome = spawn(chromePath, [
   '--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
   '--remote-debugging-port=0', '--user-data-dir=' + join(scratch, 'chrome'), 'about:blank'
@@ -114,6 +115,29 @@ async function layout(name) {
   assert.deepEqual(issues, [], name + ' content overflow');
   const pageSize = await evaluate(`({ width: innerWidth, scroll: document.documentElement.scrollWidth, nodes: [...document.querySelectorAll('body *')].filter(node => node.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map(node => [node.className, node.getBoundingClientRect().right]) })`);
   assert(pageSize.scroll <= pageSize.width + 1, name + ' page overflow: ' + JSON.stringify(pageSize));
+  const overlaps = await evaluate(`(() => {
+    const issues = [], rect = node => node.getBoundingClientRect();
+    const overlaps = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    const head = document.querySelector('.dss-head'), bounds = rect(head);
+    const controls = [...head.children].filter(node => node.getClientRects().length);
+    for (const [i, node] of controls.entries()) {
+      const r = rect(node);
+      if (r.width < 1 || r.left < bounds.left || r.right > bounds.right + 1) issues.push('header clipped: ' + node.className);
+      for (const other of controls.slice(i + 1)) if (overlaps(r, rect(other))) issues.push('header overlap');
+    }
+    for (const card of document.querySelectorAll('.dss-price-rule')) {
+      const summary = card.querySelector('summary'), boundary = rect(summary);
+      for (const selector of ['.dss-price-rule-lead','.dss-price-rule-trail']) {
+        const group = card.querySelector(selector), r = rect(group), children = [...group.children];
+        if (r.right > boundary.right + 1 || group.scrollWidth > group.clientWidth + 2) issues.push('card clipped: ' + card.textContent.slice(0, 80));
+        for (const [i, child] of children.entries()) for (const other of children.slice(i + 1)) if (overlaps(rect(child), rect(other))) issues.push('card text overlap');
+      }
+      if (overlaps(rect(card.querySelector('.dss-price-rule-lead')), rect(card.querySelector('.dss-price-rule-trail')))) issues.push('model/rate overlap');
+      for (const value of card.querySelectorAll('.dss-price-rate-v')) if (value.scrollWidth > value.clientWidth + 2) issues.push('rate clipped');
+    }
+    return issues.slice(0, 10);
+  })()`);
+  assert.deepEqual(overlaps, [], name + ' internal overlap or clipping');
 }
 try {
   const port = await chromePort();
@@ -179,6 +203,13 @@ try {
     await layout(name + '-subscription'); await capture(name + '-subscription');
     report.checks.push(name + ': all four tabs, provider selection and layout');
   }
+  for (const width of [641, 700, 768, 1024, 1100, 1101]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await navigate('/?lang=en'); await click('.dss-trigger');
+    for (const index of [1, 2, 3, 4]) { await tab(index); await layout('header-' + width + '-' + index); }
+    if (width === 641) await capture('intermediate-header');
+  }
+  report.checks.push('English header boundaries 641/700/768/1024/1100/1101px: all controls visible and disjoint');
   await evaluate('window.__fixture.accountMode = "error"'); await refresh();
   await until('document.querySelector(".dss-balance-status.stale")');
   assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "current").length'), 0);
@@ -210,10 +241,12 @@ try {
   await layout('fallback'); await capture('narrow-fallback');
   report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data and local fallback');
   await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000'); // Catalog phases as of 2026-10-17; usage fixtures remain in September.
   await click('.dss-trigger'); await tab(1);
   const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
   await priceButton('price.title');
   await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule").length'), 0, 'collapsed catalog mounts no cards');
   const catalogSummary = await evaluate(`(() => {
     const summary = [...document.querySelectorAll('summary')].find(s => s.textContent.includes(window.__fixture.t('price.catalog')));
     if (!summary) return 'missing summary';
@@ -221,9 +254,48 @@ try {
     return 'clicked summary';
   })()`);
   if (catalogSummary !== 'clicked summary') throw new Error('Failed to expand price catalog');
-  await delay(100);
+  await until('document.querySelectorAll(".dss-price-rule").length > 0');
   const rulesCount = await evaluate(`document.querySelectorAll('.dss-price-rule').length`);
-  if (!rulesCount || rulesCount === 0) throw new Error('Expected price rules in catalog, got ' + rulesCount);
+  assert(rulesCount > 0 && rulesCount <= 25, 'catalog pages are bounded');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-body").length'), 0);
+  await click('.dss-price-rule summary');
+  await until('document.querySelector(".dss-price-rule-body")');
+  await priceButton('price.next');
+  await until('document.querySelector(".dss-price-pagination span").textContent.startsWith("2 /")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-body").length'), 0);
+  const search = value => evaluate(`(() => { const input = document.querySelector('.dss-price-search-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await search('deepseek');
+  await until('(!document.querySelector(".dss-price-pagination") || document.querySelector(".dss-price-pagination span").textContent.startsWith("1 /")) && [...document.querySelectorAll(".dss-price-rule")].every(n => n.textContent.toLowerCase().includes("deepseek"))');
+  assert(await evaluate('[...document.querySelectorAll(".dss-price-rule")].every(n => n.dataset.phase === "current")'));
+  await click('.dss-price-history-filter input');
+  await until('document.querySelector(".dss-price-rule[data-phase=historical]")');
+  assert(await evaluate('document.querySelector(".dss-price-badge").textContent.includes("rules")'));
+  await search('');
+  await until('document.querySelectorAll(".dss-price-rule").length === 25');
+  // Inspect every rule, including historical periods, at the narrowest width.
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  let inspected = 0;
+  while (true) {
+    await layout('narrow-price-page'); inspected += await evaluate('document.querySelectorAll(".dss-price-rule").length');
+    if (await evaluate('document.querySelector(".dss-price-pagination button:last-child").disabled')) break;
+    const previous = await evaluate('document.querySelector(".dss-price-pagination span").textContent');
+    await priceButton('price.next');
+    await until('document.querySelector(".dss-price-pagination span").textContent !== ' + JSON.stringify(previous));
+  }
+  assert.equal(inspected, JSON.parse(readFileSync(join(root, 'data/pricing/catalog.json'), 'utf8')).rules.length, 'all signed catalog periods inspected');
+  await priceButton('price.previous');
+  await search('deepseek');
+  await until('document.querySelector(".dss-price-pagination span").textContent.startsWith("1 /")');
+  await click('.dss-price-rule summary'); await until('document.querySelector(".dss-price-rule-body")');
+  for (const width of [320, 390, 641, 700, 768, 1024, 1440]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    await layout('pricing-' + width);
+    if (width === 320 || width === 641) { await evaluate('document.querySelector(".dss-pricing").scrollIntoView()'); await capture('prices-' + width); }
+  }
+  await click('.dss-price-catalog-section > summary');
+  await until('!document.querySelector(".dss-price-rule")');
+  report.checks.push('catalog: lazy cards and bodies, 25-row pages, search reset, history labels/counts, all ' + inspected + ' rules at 320px, expanded cards at seven widths');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
   await priceButton('price.configure');
   for (const [field, value] of [['uncached','1'],['output','2'],['cacheRead','0']]) {
     await evaluate(`(() => { const input = document.querySelector('[aria-label="' + window.__fixture.t('price.${field}') + '"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);

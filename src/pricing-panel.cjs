@@ -1,7 +1,9 @@
 const React = require('react');
 const pricing = require('./pricing.cjs');
+const { fmtRateValue, usedModelKeys, catalogGroups, selectCatalog } = require('./pricing-view.cjs');
 const e = React.createElement;
 const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
+const PAGE_SIZE = 25;
 // Price rules follow Beijing time like the rest of the panel: datetime-local
 // values and displayed times are UTC+8 regardless of the browser timezone.
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -44,12 +46,6 @@ function ruleDraft(rule) {
   }
   for (const key of ['priority', 'batch', 'flex']) draft[key] = String(rule.tierMultipliers?.[key] ?? '');
   return draft;
-}
-function fmtRateValue(val, currency) {
-  if (val == null || val === '') return '—';
-  const sym = currency === 'USD' ? '$' : currency === 'CNY' ? '¥' : (currency ? currency + ' ' : '');
-  if (val === 0) return sym + '0';
-  return sym + String(val);
 }
 function formatMatchedCount(t, count) {
   const tpl = t('price.matchedCount');
@@ -101,16 +97,39 @@ function missingModels(projects) {
   }
   return [...rows.values()].sort((a, b) => b.tokens - a.tokens);
 }
+const PriceRuleCard = React.memo(function PriceRuleCard({ rule, phase, isUsed, t }) {
+  const [open, setOpen] = React.useState(false);
+  const primary = primaryRates(rule);
+  const rates = primary && (primary.input != null || primary.output != null)
+    ? formatQuickRates(t, fmtRateValue(primary.input, primary.currency), fmtRateValue(primary.output, primary.currency)) : null;
+  return e('details', { className: 'dss-price-rule dss-price-rule-card', open, onToggle: ev => setOpen(ev.currentTarget.open), 'data-phase': phase },
+    e('summary', { className: 'dss-price-rule-summary' },
+      e('div', { className: 'dss-price-rule-lead' },
+        e('span', { className: 'dss-price-provider-tag' }, rule.providerId || rule.family),
+        e('span', { className: 'dss-price-canonical-name', title: rule.canonical }, rule.canonical),
+        isUsed ? e('span', { className: 'dss-price-used-tag' }, t('price.inUse')) : null),
+      e('div', { className: 'dss-price-rule-trail' },
+        e('span', { className: 'dss-price-phase' }, t('price.' + phase)),
+        rates ? e('span', { className: 'dss-price-summary-rate' }, rates) : null,
+        e('span', { className: 'dss-price-chevron', 'aria-hidden': 'true' }))),
+    open ? e('div', { className: 'dss-price-rule-body' }, ruleDetails(rule, t),
+      e('div', { className: 'dss-price-rule-meta' },
+        e('span', null, rule.currency + ' / 1M tokens · ' + rule.retrievedAt),
+        rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗') : null)) : null);
+});
 function PricingPanel({ remote, projects, onChanged, t }) {
   const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
   const [overrides, setOverrides] = React.useState([]), [draft, setDraft] = React.useState(blankDraft), [search, setSearch] = React.useState('');
   const [preview, setPreview] = React.useState(null), [autoUpdate, setAutoUpdate] = React.useState(true), [dirty, setDirty] = React.useState(false);
   const [advanced, setAdvanced] = React.useState(false), [editingId, setEditingId] = React.useState(null);
+  const [catalogOpen, setCatalogOpen] = React.useState(false), [includeHistory, setIncludeHistory] = React.useState(false);
+  const [page, setPage] = React.useState(0), [catalogAt, setCatalogAt] = React.useState(Date.now);
   const fail = err => setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed'));
   function accept(result) {
     pricing.validateCatalog(JSON.parse(result.catalogJson));
     const rules = pricing.validateOverrides(JSON.parse(result.overridesJson));
     setStatus(result); setOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setDraft(blankDraft()); setEditingId(null);
+    setCatalogAt(Date.now());
   }
   async function call(request, mode = 'accept') {
     setBusy(true); setError('');
@@ -140,68 +159,15 @@ function PricingPanel({ remote, projects, onChanged, t }) {
     return e('label', { key, className: 'dss-price-field' }, label, e('input', { type, min: type === 'number' ? '0' : undefined, step: type === 'number' ? 'any' : undefined,
       value: draft[key], onChange: ev => edit(key, ev.target.value), 'aria-label': label }));
   }
-  const catalog = status ? JSON.parse(status.catalogJson) : null;
-  const used = new Set();
-  const addUsed = m => {
-    if (!m) return;
-    let str = String(m).toLowerCase();
-    used.add(str);
-    let prev;
-    do {
-      prev = str;
-      str = str.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
-      if (str !== prev) used.add(str);
-    } while (str !== prev);
-  };
-  for (const p of projects || []) {
-    for (const s of p.sessions || []) {
-      addUsed(s?.modelRaw);
-      addUsed(s?.model);
-      addUsed(s?.modelCanonical);
-      if (Array.isArray(s?.modelUsage)) {
-        for (const mu of s.modelUsage) {
-          addUsed(mu?.modelRaw);
-          addUsed(mu?.model);
-          addUsed(mu?.modelCanonical);
-        }
-      }
-      if (Array.isArray(s?.slotUsage)) {
-        for (const u of s.slotUsage) {
-          addUsed(u?.modelRaw);
-          addUsed(u?.model);
-          addUsed(u?.modelCanonical);
-        }
-      }
-    }
-  }
-  const allRules = [...(catalog?.rules || [])];
+  const catalog = React.useMemo(() => status ? pricing.validateCatalog(JSON.parse(status.catalogJson)) : null, [status?.catalogJson]);
+  const used = React.useMemo(() => usedModelKeys(projects, catalog), [projects, catalog]);
+  const groups = React.useMemo(() => catalogGroups(catalog, used, catalogAt), [catalog, used, catalogAt]);
+  const selection = React.useMemo(() => selectCatalog(groups, search, includeHistory), [groups, search, includeHistory]);
+  const missing = React.useMemo(() => missingModels(projects), [projects]);
   const hasSearch = Boolean(search && search.trim());
-  let filtered = [];
-  let usedMatchingCount = 0;
-  if (hasSearch) {
-    const q = search.trim().toLowerCase();
-    filtered = allRules.filter(rule => {
-      const hay = (rule.canonical + ' ' + (rule.providerId || rule.family || '')).toLowerCase();
-      if (hay.includes(q)) return true;
-      return Array.isArray(rule.aliases) && rule.aliases.some(a => String(a).toLowerCase().includes(q));
-    });
-  } else {
-    const usedRules = [];
-    const otherRules = [];
-    for (const rule of allRules) {
-      const isUsed = Array.isArray(rule.aliases) && rule.aliases.some(a => used.has(String(a).toLowerCase()));
-      if (isUsed) usedRules.push(rule);
-      else otherRules.push(rule);
-    }
-    usedMatchingCount = usedRules.length;
-    otherRules.sort((a, b) => {
-      const aDeep = (a.family === 'deepseek' || a.providerId === 'deepseek') ? 0 : 1;
-      const bDeep = (b.family === 'deepseek' || b.providerId === 'deepseek') ? 0 : 1;
-      if (aDeep !== bDeep) return aDeep - bDeep;
-      return a.canonical.localeCompare(b.canonical);
-    });
-    filtered = usedRules.length ? [...usedRules, ...otherRules] : otherRules;
-  }
+  const pageCount = Math.max(1, Math.ceil(selection.rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleRules = selection.rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const amount = summary => summary?.totals?.map(row => row.currency + ' ' + row.amount.toFixed(4)).join(' + ') || t('pricing.pending');
   const button = (label, onClick, disabled = false) => e('button', { type: 'button', className: 'dss-export', disabled: busy || disabled, onClick }, label);
   return e('section', { className: 'dss-pricing', 'aria-label': t('price.title') },
@@ -213,8 +179,8 @@ function PricingPanel({ remote, projects, onChanged, t }) {
         button(t('price.refresh'), () => call({ action: 'refresh' }), dirty)),
       e('p', { className: 'dss-price-muted' }, t('price.updated') + ' ' + (status.lastSuccessAt ? fmtBeijing(status.lastSuccessAt) + ' ' + t('price.beijing') : t('price.builtin')) + ' · ' + status.version),
       status.error ? e('p', { role: 'status' }, t('price.refreshFailed'), e('details', null, e('summary', null, t('source.details')), status.error)) : null,
-      missingModels(projects).length ? e('div', null, e('h4', null, t('price.missing')),
-        missingModels(projects).map(row => e('div', { key: row.provider + '/' + row.model, className: 'dss-price-row' },
+      missing.length ? e('div', null, e('h4', null, t('price.missing')),
+        missing.map(row => e('div', { key: row.provider + '/' + row.model, className: 'dss-price-row' },
           e('span', null, row.provider + ' / ' + row.model), button(t('price.configure'), () => { setDraft(blankDraft(row.provider, row.model)); setEditingId(null); setAdvanced(true); })))) : null,
       e('details', { open: advanced, onToggle: ev => setAdvanced(ev.currentTarget.open) },
         e('summary', null, t('price.custom') + (overrides.length ? ' (' + overrides.length + ')' : '')),
@@ -237,50 +203,29 @@ function PricingPanel({ remote, projects, onChanged, t }) {
         button(t('price.save'), () => call({ action: 'save', fingerprint: preview.fingerprint, revision: status.revision, autoUpdate, overridesJson: JSON.stringify(overrides) }), !preview),
         button(t('price.cancel'), () => accept(status))) : null,
       preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after)) : null,
-      e('details', { className: 'dss-price-catalog-section' },
+      e('details', { className: 'dss-price-catalog-section', open: catalogOpen, onToggle: ev => setCatalogOpen(ev.currentTarget.open) },
         e('summary', { className: 'dss-price-section-summary' }, t('price.catalog')),
+        catalogOpen ? e(React.Fragment, null,
         e('div', { className: 'dss-price-catalog-toolbar' },
-          e('input', { type: 'search', className: 'dss-price-search-input', value: search, onChange: ev => setSearch(ev.target.value), placeholder: t('price.search'), 'aria-label': t('price.search') }),
+          e('input', { type: 'search', className: 'dss-price-search-input', value: search, onChange: ev => { setSearch(ev.target.value); setPage(0); }, placeholder: t('price.search'), 'aria-label': t('price.search') }),
+          e('label', { className: 'dss-price-history-filter' }, e('input', { type: 'checkbox', checked: includeHistory, onChange: ev => { setIncludeHistory(ev.target.checked); setPage(0); } }), ' ', t('price.includeHistory')),
           e('div', { className: 'dss-price-catalog-info' },
-            e('span', { className: 'dss-price-muted' }, hasSearch ? t('price.searchFilter') : (usedMatchingCount > 0 ? t('price.usedFirst') : t('price.builtinModels'))),
-            e('span', { className: 'dss-price-badge' }, formatMatchedCount(t, filtered.length))
+            e('span', { className: 'dss-price-muted' }, hasSearch ? t('price.searchFilter') : (used.size > 0 ? t('price.usedFirst') : t('price.builtinModels'))),
+            e('span', { className: 'dss-price-badge' }, formatMatchedCount(t, selection.modelCount) + ' · ' + t('price.ruleCount').replace('%d', String(selection.rows.length)))
           )
         ),
         e('div', { className: 'dss-price-catalog-list' },
-          filtered.length === 0 ? e('div', { className: 'dss-price-empty' }, t('price.noMatch')) :
-          filtered.map(rule => {
-            const isUsed = Array.isArray(rule.aliases) && rule.aliases.some(a => used.has(String(a).toLowerCase()));
-            const provider = rule.providerId || rule.family || '';
-            const primary = primaryRates(rule);
-            const ratePreview = primary && (primary.input != null || primary.output != null)
-              ? formatQuickRates(t, fmtRateValue(primary.input, primary.currency), fmtRateValue(primary.output, primary.currency))
-              : null;
-            return e('details', { key: rule.id, className: 'dss-price-rule dss-price-rule-card' },
-              e('summary', { className: 'dss-price-rule-summary' },
-                e('div', { className: 'dss-price-rule-lead' },
-                  provider ? e('span', { className: 'dss-price-provider-tag' }, provider) : null,
-                  e('span', { className: 'dss-price-canonical-name', title: rule.canonical }, rule.canonical),
-                  isUsed ? e('span', { className: 'dss-price-used-tag' }, t('price.inUse')) : null
-                ),
-                e('div', { className: 'dss-price-rule-trail' },
-                  ratePreview ? e('span', { className: 'dss-price-summary-rate' }, ratePreview) : null,
-                  e('span', { className: 'dss-price-chevron', 'aria-hidden': 'true' })
-                )
-              ),
-              e('div', { className: 'dss-price-rule-body' },
-                ruleDetails(rule, t),
-                e('div', { className: 'dss-price-rule-meta' },
-                  e('span', null, (rule.currency || 'CNY') + ' / 1M tokens · ' + (rule.retrievedAt || '')),
-                  rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, (t('price.source') || '官网定价') + ' ↗') : null
-                )
-              )
-            );
-          })
+          visibleRules.length === 0 ? e('div', { className: 'dss-price-empty' }, t('price.noMatch')) :
+          visibleRules.map(row => e(PriceRuleCard, { key: row.rule.id, ...row, t }))
         ),
+        pageCount > 1 ? e('nav', { className: 'dss-price-pagination', 'aria-label': t('price.pages') },
+          button(t('price.previous'), () => setPage(currentPage - 1), currentPage === 0),
+          e('span', null, (currentPage + 1) + ' / ' + pageCount),
+          button(t('price.next'), () => setPage(currentPage + 1), currentPage + 1 >= pageCount)) : null,
         e('details', { className: 'dss-price-history-section' },
           e('summary', null, t('price.history')),
           e('p', { className: 'dss-price-muted' }, t('price.rollbackHint')),
-          status.history.filter(v => v !== status.version).map(version => e('div', { key: version, className: 'dss-price-row' }, String(version), button(t('price.rollback'), () => call({ action: 'rollback', version, revision: status.revision }), dirty)))))
+          status.history.filter(v => v !== status.version).map(version => e('div', { key: version, className: 'dss-price-row' }, String(version), button(t('price.rollback'), () => call({ action: 'rollback', version, revision: status.revision }), dirty))))) : null)
     ));
 }
 module.exports = { PricingPanel, draftRule, missingModels, blankDraft, ruleDraft, fmtBeijing };

@@ -56,3 +56,18 @@ variants, all active literal aliases, effort suffixes, account/date boundaries,
 Gemini expiry and signed rollback/restart without injected rules. All four
 bundles build. The same 10,000-row OpenRouter probe now takes about 13ms locally
 (unknown-provider fallback about 17ms); no rates or signed data were changed.
+
+## Slice 2 results
+
+272 tests pass and all four bundles build. The collapsed catalog now mounts
+zero rule cards; an open page mounts at most 25 cards and only expanded cards
+mount detailed prices. Counts distinguish provider/model pairs from rules;
+historical and upcoming prices require an explicit filter and carry labels.
+Used-model priority respects providers and real thinking variants.
+
+The real Chrome fixture passes with 30 screenshots and no browser errors:
+all 804 rules checked internally at 320px, expanded cards at seven widths,
+header controls at 641/700/768/1024/1100/1101px, pagination, search resets,
+history filters and custom price preview/save/edit/offline refresh. Both browser
+timezones retain identical usage views. Test-owned server and browser exited;
+no local service was replaced or retained.

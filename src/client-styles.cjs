@@ -257,6 +257,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--d
 	".dss-tip-title{font-weight:650;margin-bottom:5px;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-tip-row{display:flex;justify-content:space-between;gap:14px;line-height:1.6;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-tip-row b{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7eaf0)}" +
+	"@media (max-width:1100px){.dss-head{flex-wrap:wrap}.dss-head h2{min-width:max-content}.dss-head>.dss-tabs{order:3;flex-basis:100%}.dss-head-actions{margin-left:auto}}" +
 	"@media (min-width:768px){.dss-sess-cost{width:calc(100% - 8px)}}" +
 	"@media (max-width:767px){.dss-sess{--dss-data-shift:10px}}" +
 	"@media (max-width:640px){.dss-trends .dss-model-split{grid-template-columns:minmax(0,1fr)}.dss-model-split>.dss-ring-wrap{min-width:0;max-width:100%}.dss-ring-wrap>.dss-ring-legend{width:auto;flex:1;min-width:0}.dss-model-split>.dss-model-list-viewport{min-width:0;max-width:100%}}" +
