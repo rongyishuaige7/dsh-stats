@@ -10,7 +10,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--d
 	".dss-trigger-label{white-space:nowrap;overflow:hidden}" +
 	".dss-panel{width:min(1180px,100%);background:var(--dsw-alias-bg-layer-1,#161a21);border:1px solid var(--dsw-alias-border-inverted,#2a303c);border-radius:16px;box-shadow:var(--dsw-shadow-lv3,0 20px 60px rgba(0,0,0,.5));color:var(--dsw-alias-label-primary,#e7eaf0);display:flex;flex-direction:column;overflow:hidden}" +
 	".dss-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border,#2a303c)}" +
-	".dss-head h2{margin:0;font-size:15px;font-weight:650;white-space:nowrap;flex:none}" +
+	".dss-head h2{margin:0;font-size:15px;font-weight:650;flex:1;min-width:0;white-space:nowrap}" +
 	".dss-tabs{display:flex;gap:4px}" +
 	".dss-tabs button{background:none;border:none;color:var(--dsw-alias-label-secondary,#a6adbb);font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}" +
 	".dss-tabs button.on{background:rgba(79,140,255,.14);color:var(--dsw-alias-label-primary,#e7eaf0);font-weight:600}" +
