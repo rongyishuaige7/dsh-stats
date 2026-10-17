@@ -142,28 +142,40 @@ function PricingPanel({ remote, projects, onChanged, t }) {
   }
   const catalog = status ? JSON.parse(status.catalogJson) : null;
   const used = new Set();
+  const addUsed = m => {
+    if (!m) return;
+    const str = String(m).toLowerCase();
+    used.add(str);
+    const stripped = str.replace(/-(?:high|medium|low|thinking|thought)$/i, "");
+    if (stripped !== str) used.add(stripped);
+  };
   for (const p of projects || []) {
     for (const s of p.sessions || []) {
-      if (s?.modelRaw) used.add(String(s.modelRaw).toLowerCase());
-      if (s?.model) used.add(String(s.model).toLowerCase());
-      if (s?.modelCanonical) used.add(String(s.modelCanonical).toLowerCase());
+      addUsed(s?.modelRaw);
+      addUsed(s?.model);
+      addUsed(s?.modelCanonical);
       if (Array.isArray(s?.modelUsage)) {
         for (const mu of s.modelUsage) {
-          if (mu?.modelRaw) used.add(String(mu.modelRaw).toLowerCase());
-          if (mu?.model) used.add(String(mu.model).toLowerCase());
-          if (mu?.modelCanonical) used.add(String(mu.modelCanonical).toLowerCase());
+          addUsed(mu?.modelRaw);
+          addUsed(mu?.model);
+          addUsed(mu?.modelCanonical);
         }
       }
       if (Array.isArray(s?.slotUsage)) {
         for (const u of s.slotUsage) {
-          if (u?.modelRaw) used.add(String(u.modelRaw).toLowerCase());
-          if (u?.model) used.add(String(u.model).toLowerCase());
-          if (u?.modelCanonical) used.add(String(u.modelCanonical).toLowerCase());
+          addUsed(u?.modelRaw);
+          addUsed(u?.model);
+          addUsed(u?.modelCanonical);
         }
       }
     }
   }
-  const allRules = catalog?.rules || [];
+  const allRules = [...(catalog?.rules || [])];
+  for (const supp of pricing.SUPPLEMENTAL_RULES || []) {
+    if (!allRules.some(r => r.canonical === supp.canonical && (r.providerId || r.family) === (supp.providerId || supp.family))) {
+      allRules.push(supp);
+    }
+  }
   const hasSearch = Boolean(search && search.trim());
   let filtered = [];
   let usedMatchingCount = 0;

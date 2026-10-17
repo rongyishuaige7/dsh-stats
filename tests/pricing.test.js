@@ -242,3 +242,23 @@ test('currency-less free usage mixed with unpriced usage is partial, not free', 
 	expect(free).toMatchObject({ status: 'free', amount: 0, currency: null, unpricedTokens: 0 });
 	expect(summary).toMatchObject({ status: 'partial', totals: [], unpricedTokens: 1100, unknownRows: 1 });
 });
+
+test('unknown proxy provider with gemini-3.8-flash and reasoning suffixes is priced via estimated fallback', () => {
+	for (const suffix of ['', '-high', '-medium', '-low', '-thinking', '-thought']) {
+		const res = priceUsage({
+			providerId: 'cpa',
+			model: 'gemini-3.8-flash' + suffix,
+			uncached: 1000000,
+			cacheRead: 1000000,
+			output: 1000000,
+		});
+		expect(res).toMatchObject({
+			status: 'estimated',
+			currency: 'USD',
+			modelCanonical: 'gemini-3.8-flash',
+			unpricedTokens: 0,
+		});
+		expect(res.amount).toBeCloseTo(4.575);
+	}
+});
+

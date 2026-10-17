@@ -478,6 +478,28 @@
       "cacheStorageUnknown": true
     },
     {
+      "id": "google/gemini-3.8-flash@2026-08-18",
+      "family": "google",
+      "canonical": "gemini-3.8-flash",
+      "aliases": [
+        "gemini-3.8-flash",
+        "google/gemini-3.8-flash"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "retrievedAt": "2026-08-18",
+      "rates": {
+        "cacheRead": 0.075,
+        "uncached": 0.75,
+        "cacheWrite": 0.75,
+        "output": 3.75
+      },
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "effectiveTo": "2026-12-31T23:59:59.999Z",
+      "cacheStorageUnknown": true
+    },
+    {
       "id": "google/gemini-3.1-pro-preview@2026-08-18",
       "family": "google",
       "canonical": "gemini-3.1-pro-preview",

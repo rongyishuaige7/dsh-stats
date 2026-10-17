@@ -11,9 +11,42 @@
 const BUILTIN = require('../data/pricing/catalog.json');
 const { validateCatalog, validateOverrides } = require('./pricing-validation.cjs');
 
+const SUPPLEMENTAL_RULES = [
+	{
+		id: "google/gemini-3.8-flash@2026-08-18",
+		family: "google",
+		canonical: "gemini-3.8-flash",
+		aliases: [
+			"gemini-3.8-flash",
+			"google/gemini-3.8-flash"
+		],
+		currency: "USD",
+		sourceUrl: "https://ai.google.dev/gemini-api/docs/pricing",
+		retrievedAt: "2026-08-18",
+		rates: {
+			cacheRead: 0.075,
+			uncached: 0.75,
+			cacheWrite: 0.75,
+			output: 3.75
+		},
+		reasoningIncludedInOutput: true,
+		confidence: "exact",
+		effectiveTo: "2026-12-31T23:59:59.999Z",
+		cacheStorageUnknown: true
+	}
+];
+
 function createPricing(input = BUILTIN, customRules = []) {
 const catalog = validateCatalog(input);
 const overrides = validateOverrides(customRules);
+var catalogRules = catalog.rules || [];
+var RULES = [...catalogRules];
+for (var supp of SUPPLEMENTAL_RULES) {
+	if (!RULES.some(r => r.canonical === supp.canonical && (r.providerId || r.family) === (supp.providerId || supp.family))) {
+		RULES.push(supp);
+	}
+}
+var effectiveCatalog = { ...catalog, rules: RULES };
 var MILLION = 1e6;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var DEEPSEEK_CHANGE_AT = Date.parse("2026-08-17T00:00:00+08:00");
@@ -67,14 +100,17 @@ function providerFamilyOf(providerId) {
 	return "unknown";
 }
 
-var RULES = catalog.rules;
-
 function ruleMatchesModel(rule, raw) {
 	var model = String(raw || "").trim().toLowerCase();
 	if (rule.aliases.indexOf(model) >= 0) return true;
 	// Anthropic dated model ids are stable aliases of the named family.
 	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
 		&& /^20[0-9]{6}$/.test(model.slice(rule.canonical.length + 1))) return true;
+
+	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -thinking, -thought)
+	var stripped = model.replace(/-(?:high|medium|low|thinking|thought)$/i, "");
+	if (stripped !== model && rule.aliases.indexOf(stripped) >= 0) return true;
+
 	return false;
 }
 
@@ -435,7 +471,7 @@ function pricingCatalog() {
 }
 
 return {
-	catalog,
+	catalog: effectiveCatalog,
 	SOURCES: SOURCES,
 	RULES: RULES,
 	DISPLAY_CURRENCY: DISPLAY_CURRENCY,
@@ -443,6 +479,7 @@ return {
 	FX_RETRIEVED_AT: FX_RETRIEVED_AT,
 	FX_SOURCE: FX_SOURCE,
 	providerFamilyOf: providerFamilyOf,
+	ruleMatchesModel: ruleMatchesModel,
 	normalizeAccountType: normalizeAccountType,
 	normalizeServiceTier: normalizeServiceTier,
 	normalizeIdentity: normalizeIdentity,
@@ -455,8 +492,9 @@ return {
 	mergeCostSummariesCny: mergeCostSummariesCny,
 	emptyCostSummary: emptyCostSummary,
 	pricingCatalog: pricingCatalog,
-	tokenCounts: tokenCounts
+	tokenCounts: tokenCounts,
+	SUPPLEMENTAL_RULES: SUPPLEMENTAL_RULES
 };
 
 }
-module.exports = Object.assign(createPricing(), { createPricing, BUILTIN, validateCatalog, validateOverrides });
+module.exports = Object.assign(createPricing(), { createPricing, BUILTIN, validateCatalog, validateOverrides, SUPPLEMENTAL_RULES });
