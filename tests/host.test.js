@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { zstdCompressSync } from 'node:zlib';
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { infoFromProjectionValues } from '../src/host-sessions.js';
+import { readJson, scanZstdFrames } from '../src/host-util.js';
 import { TYPERT } from '../src/typert-host.js';
 import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
@@ -1274,5 +1275,25 @@ test('warning details are capped while degradation is preserved', async () => {
 	expect(result.meta.warnings).toHaveLength(201);
 	expect(result.meta.warnings[200]).toMatchObject({ code: 'WARNINGS_TRUNCATED' });
 	expect(result.meta.degraded).toBe(true);
+});
+
+test('readJson accepts a UTF-8 BOM and scanZstdFrames skips skippable frames', () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-json-'));
+	createdHomes.push(home);
+	const file = join(home, 'bom.json');
+	writeFileSync(file, '\uFEFF{"ok":true}');
+	expect(readJson(file)).toMatchObject({ ok: true, value: { ok: true } });
+
+	const payload = Buffer.from('{"type":"session"}\n');
+	const frame = zstdCompressSync(payload);
+	const skip = Buffer.alloc(12);
+	skip.writeUInt32LE(0x184D2A50, 0);
+	skip.writeUInt32LE(4, 4);
+	skip.write('test', 8);
+	const scanned = scanZstdFrames(Buffer.concat([skip, frame]));
+	expect(scanned.truncated).toBe(false);
+	expect(scanned.frames).toHaveLength(1);
+	expect(scanned.frames[0].start).toBe(12);
+	expect(zstdDecompressSync(Buffer.concat([skip, frame]).subarray(scanned.frames[0].start, scanned.frames[0].end)).toString()).toBe(payload.toString());
 });
 

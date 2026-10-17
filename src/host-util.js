@@ -49,7 +49,20 @@ function scanZstdFrames(buffer) {
 	while (offset < buffer.length) {
 		const start = offset;
 		if (buffer.length - offset < 4) { truncated = true; break; }
-		if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) throw new Error("corrupt Zstandard session log: invalid frame magic");
+		const magic = buffer.readUInt32LE(offset);
+		if (magic !== ZSTD_MAGIC) {
+			// Zstandard skippable frames use 0x184D2A50..0x184D2A5F. They are
+			// valid in a stream but carry no session data; skip their payload.
+			if ((magic >>> 4) === 0x184D2A5) {
+				if (buffer.length - offset < 8) { truncated = true; break; }
+				const size = buffer.readUInt32LE(offset + 4);
+				const end = offset + 8 + size;
+				if (end > buffer.length) { truncated = true; break; }
+				offset = end;
+				continue;
+			}
+			throw new Error("corrupt Zstandard session log: invalid frame magic");
+		}
 		offset += 4;
 		if (offset >= buffer.length) { truncated = true; break; }
 		const descriptor = buffer.readUInt8(offset);
@@ -85,9 +98,14 @@ function scanZstdFrames(buffer) {
 	return { frames, truncated };
 }
 
+const MAX_JSON_BYTES = 64 * 1024 * 1024;
 function readJson(file) {
 	try {
-		return { ok: true, value: JSON.parse(readFileSync(file, "utf8")), error: null };
+		const stat = statSync(file);
+		if (stat.size > MAX_JSON_BYTES) return { ok: false, value: null, error: new Error(`JSON file is too large: ${stat.size} bytes`) };
+		let text = readFileSync(file, "utf8");
+		if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+		return { ok: true, value: JSON.parse(text), error: null };
 	} catch (error) {
 		return { ok: false, value: null, error };
 	}
@@ -101,22 +119,23 @@ function readSessionProjcache(home) {
 	const sessionsDir = join(home, "storages", "session_projcache", "sessions");
 	try {
 		const entries = readdirSync(sessionsDir, { withFileTypes: true });
-		const sessionsTable = {};
-		let detectedVersion = 7;
+		const sessionsTable = Object.create(null);
+		const versions = new Set();
 		for (const entry of entries) {
 			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
 			const id = entry.name.slice(0, -5);
-			try {
-				const content = JSON.parse(readFileSync(join(sessionsDir, entry.name), "utf8"));
-				if (content && typeof content === "object") {
-					if (Number.isSafeInteger(content.version)) detectedVersion = content.version;
-					const record = content.record || content;
-					if (record && typeof record === "object") {
-						sessionsTable[id] = record;
-					}
+			const contentRead = readJson(join(sessionsDir, entry.name));
+			if (!contentRead.ok) continue;
+			const content = contentRead.value;
+			if (content && typeof content === "object") {
+				if (Number.isSafeInteger(content.version)) versions.add(content.version);
+				const record = content.record || content;
+				if (record && typeof record === "object") {
+					sessionsTable[id] = record;
 				}
-			} catch {}
+			}
 		}
+		const detectedVersion = versions.size === 0 ? 7 : Math.max(...versions);
 		return {
 			ok: true,
 			value: {
