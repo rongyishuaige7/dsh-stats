@@ -9,6 +9,17 @@ import { emptyRaw } from "./host-usage.js";
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
 let sessionsDirCache = { home: null, at: 0, dirs: [] };
+// A decoded session cache is keyed by file path, but the lookup itself used to
+// rescan every workspace directory on each aggregate. Cache the validated path
+// (including misses) briefly so repeated refreshes stay O(1) per session.
+const SESSION_PATH_TTL_MS = 5000;
+const SESSION_PATH_LIMIT = 2000;
+const sessionPathCache = new Map();
+function rememberSessionFile(home, sessionId, file) {
+	const key = home + "\u0000" + sessionId;
+	sessionPathCache.set(key, { file, at: Date.now() });
+	while (sessionPathCache.size > SESSION_PATH_LIMIT) sessionPathCache.delete(sessionPathCache.keys().next().value);
+}
 function sessionDirs(home) {
 	const now = Date.now();
 	if (sessionsDirCache.home !== home || now - sessionsDirCache.at > 5000) {
@@ -20,7 +31,21 @@ function sessionDirs(home) {
 function findSessionFile(home, sessionId) {
 	if (typeof sessionId !== "string" || !sessionId) return null;
 	let root;
-	try { root = realpathSync(join(home, "sessions")); } catch { return null; }
+	try { root = realpathSync(join(home, "sessions")); } catch { rememberSessionFile(home, sessionId, null); return null; }
+	const cacheKey = home + "\u0000" + sessionId;
+	const cached = sessionPathCache.get(cacheKey);
+	if (cached && Date.now() - cached.at < SESSION_PATH_TTL_MS) {
+		if (cached.file === null) return null;
+		try {
+			const stat = lstatSync(cached.file);
+			if (stat.isFile() && !stat.isSymbolicLink()) {
+				const real = realpathSync(cached.file);
+				const rel = relative(root, real);
+				if (rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel)) return real;
+			}
+		} catch { /* Replaced, removed or unsafe; rescan below. */ }
+		sessionPathCache.delete(cacheKey);
+	}
 	const encodedId = encodeSegment(sessionId);
 	// The current JSONL backend always uses encodeSegment(). A few rc6
 	// installations wrote safe ids literally, so retain that compatibility path
@@ -35,10 +60,14 @@ function findSessionFile(home, sessionId) {
 				if (!stat.isFile() || stat.isSymbolicLink()) continue;
 				const real = realpathSync(cand);
 				const rel = relative(root, real);
-				if (rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel)) return real;
+				if (rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel)) {
+					rememberSessionFile(home, sessionId, real);
+					return real;
+				}
 			} catch { /* Missing or unsafe candidate. */ }
 		}
 	}
+	rememberSessionFile(home, sessionId, null);
 	return null;
 }
 
