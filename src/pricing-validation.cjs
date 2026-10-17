@@ -3,6 +3,16 @@
 // a single rule; keep these limits in one place so they cannot drift.
 const MAX_CATALOG_BYTES = 8 * 1024 * 1024;
 const MAX_OVERRIDES_BYTES = 1 * 1024 * 1024;
+// JSON encoding a valid catalog string can double its quotes, backslashes and
+// whitespace. Reserve separate space for the signature and cache metadata.
+const MAX_ENVELOPE_BYTES = 2 * MAX_CATALOG_BYTES + 1024;
+const MAX_CACHE_BYTES = MAX_ENVELOPE_BYTES + 1024;
+function utf8ByteLength(value) { return new TextEncoder().encode(value).byteLength; }
+function snapshotJson(value, limit, label) {
+  const json = JSON.stringify(value);
+  check(utf8ByteLength(json) <= limit, label + ' bytes');
+  return json;
+}
 
 // Shared, bounded validation for local, remote, and browser price snapshots.
 const FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
@@ -78,7 +88,7 @@ function validateCatalog(input) {
     check(/^\d{4}-\d\d-\d\d$/.test(fx.date) && Number.isFinite(Date.parse(fx.date)) && fx.date > previous, 'FX date order');
     check(Number.isFinite(fx.usdCny) && fx.usdCny > 0 && fx.usdCny <= 100 && typeof fx.sourceUrl === 'string' && (() => { try { const url = new URL(fx.sourceUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.hash; } catch { return false; } })(), 'FX rate'); previous = fx.date;
   }
-  const result = freeze(JSON.parse(JSON.stringify(input))); validated.add(result); return result;
+  const result = freeze(JSON.parse(snapshotJson(input, MAX_CATALOG_BYTES, 'catalog'))); validated.add(result); return result;
 }
-function validateOverrides(input) { rules(input, true); return freeze(JSON.parse(JSON.stringify(input))); }
-module.exports = { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, validateCatalog, validateOverrides };
+function validateOverrides(input) { rules(input, true); return freeze(JSON.parse(snapshotJson(input, MAX_OVERRIDES_BYTES, 'overrides'))); }
+module.exports = { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, MAX_ENVELOPE_BYTES, MAX_CACHE_BYTES, utf8ByteLength, validateCatalog, validateOverrides };

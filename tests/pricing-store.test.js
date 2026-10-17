@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import pricing from '../src/pricing.cjs';
 import { PricingStore, verifyEnvelope } from '../src/pricing-store.js';
+import limits from '../src/pricing-validation.cjs';
+import { parsePricingResult, pricingRequestSchema } from '../src/rpc-client.js';
 
 const homes = [];
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -180,4 +182,47 @@ test('status reuses the catalog history until the directory changes', () => {
   const future = new Date(Date.now() + 2000);
   utimesSync(store.dir, future, future);
   expect(store.status().history).toEqual([3, 2]);
+});
+
+test('large escaped catalogs survive download, disk restart, rollback and browser RPC', async () => {
+  const catalog = { ...base, version: base.version + 1, rules: Array.from({ length: 3100 }, (_, i) => custom({
+    id: 'large-' + i, canonical: 'large-' + i, aliases: ['large-' + i],
+    sourceUrl: 'https://example.com/pricing', note: '"\\'.repeat(500),
+  })) };
+  const signed = envelope(catalog), transfer = JSON.stringify(signed);
+  expect(Buffer.byteLength(signed.payload)).toBeLessThan(limits.MAX_CATALOG_BYTES);
+  expect(Buffer.byteLength(transfer)).toBeGreaterThan(limits.MAX_CATALOG_BYTES);
+  expect(Buffer.byteLength(transfer)).toBeLessThan(limits.MAX_ENVELOPE_BYTES);
+  const store = fixture(async () => new Response(transfer));
+  const result = await store.refresh();
+  expect(result.error).toBeNull();
+  expect(parsePricingResult(result).version).toBe(catalog.version);
+  const restored = new PricingStore(homes.at(-1), { publicKey });
+  expect(restored.catalog.version).toBe(catalog.version);
+  expect(restored.error).toBeNull();
+  expect(parsePricingResult(restored.rollback(catalog.version, 0)).version).toBe(catalog.version);
+  expect(new PricingStore(homes.at(-1), { publicKey }).catalog.version).toBe(catalog.version);
+});
+
+test('host and RPC limits count UTF-8 bytes for multibyte overrides and catalog strings', () => {
+  const overrides = Array.from({ length: 400 }, (_, i) => custom({ id: 'utf8-' + i, canonical: 'utf8-' + i, aliases: ['utf8-' + i], note: '中'.repeat(1000) }));
+  const json = JSON.stringify(overrides);
+  expect(json.length).toBeLessThan(limits.MAX_OVERRIDES_BYTES);
+  expect(Buffer.byteLength(json)).toBeGreaterThan(limits.MAX_OVERRIDES_BYTES);
+  expect(() => pricing.validateOverrides(overrides)).toThrow('overrides bytes');
+  expect(pricingRequestSchema.safeParse({ action: 'save', overridesJson: json }).success).toBe(false);
+  const store = fixture(vi.fn());
+  expect(() => parsePricingResult({ ...store.status(), catalogJson: '中'.repeat(Math.ceil(limits.MAX_CATALOG_BYTES / 3)) })).toThrow('UTF-8');
+  expect(() => parsePricingResult({ ...store.status(), catalogJson: 'a'.repeat(limits.MAX_CATALOG_BYTES) })).not.toThrow();
+});
+
+test.each([true, false])('oversized envelope is rejected and cancelled (content-length: %s)', async (header) => {
+  let cancelled = false;
+  const store = fixture(async () => new Response(new ReadableStream({
+    pull(controller) { controller.enqueue(new Uint8Array(limits.MAX_ENVELOPE_BYTES + 1)); },
+    cancel() { cancelled = true; },
+  }), { headers: header ? { 'content-length': String(limits.MAX_ENVELOPE_BYTES + 1) } : {} }));
+  expect((await store.refresh()).error).toBe('pricing-response-too-large');
+  expect(cancelled).toBe(true);
+  expect(store.catalog.version).toBe(base.version);
 });

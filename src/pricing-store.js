@@ -3,17 +3,21 @@ import { join } from 'node:path';
 import { verify, createHash, randomUUID } from 'node:crypto';
 import pricing from './pricing.cjs';
 import trust from './pricing-trust.cjs';
+import limits from './pricing-validation.cjs';
 import builtinEnvelope from '../data/pricing/latest.json' with { type: 'json' };
 
-const HOUR = 3600000, MAX_BYTES = pricing.MAX_CATALOG_BYTES;
+const HOUR = 3600000;
+const { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, MAX_ENVELOPE_BYTES, MAX_CACHE_BYTES } = limits;
 // A crash between creating the lock and writing its pid leaves an empty file.
 // Reclaim malformed locks only after a generous idle window so a live writer is
 // never stolen.
 const LOCK_STALE_MS = 10 * 60 * 1000;
 const stores = new WeakMap();
-function read(file) {
-  if (statSync(file).size > MAX_BYTES) throw new Error('pricing-file-too-large');
-  return JSON.parse(readFileSync(file, 'utf8'));
+function read(file, limit = MAX_CACHE_BYTES) {
+  if (statSync(file).size > limit) throw new Error('pricing-file-too-large');
+  const bytes = readFileSync(file);
+  if (bytes.byteLength > limit) throw new Error('pricing-file-too-large');
+  return JSON.parse(bytes.toString('utf8'));
 }
 function atomic(file, value) {
   const temp = file + '.' + randomUUID() + '.tmp';
@@ -21,7 +25,7 @@ function atomic(file, value) {
   try { renameSync(temp, file); } finally { try { unlinkSync(temp); } catch {} }
 }
 export function verifyEnvelope(envelope, publicKey = trust.publicKey) {
-  if (!envelope || typeof envelope.payload !== 'string' || Buffer.byteLength(envelope.payload) > MAX_BYTES || typeof envelope.signature !== 'string'
+  if (!envelope || typeof envelope.payload !== 'string' || Buffer.byteLength(envelope.payload) > MAX_CATALOG_BYTES || typeof envelope.signature !== 'string'
     || !verify(null, Buffer.from(envelope.payload), publicKey, Buffer.from(envelope.signature, 'base64'))) throw new Error('pricing-signature-invalid');
   return pricing.validateCatalog(JSON.parse(envelope.payload));
 }
@@ -34,11 +38,11 @@ export class PricingStore {
     this.history = [];
     this.historyStamp = null;
     this.settings = { revision: 0, autoUpdate: true, pinnedVersion: null, overrides: [] };
-    try { this.settings = this.validateSettings(read(join(this.dir, 'settings.json'))); }
+    try { this.settings = this.validateSettings(read(join(this.dir, 'settings.json'), MAX_OVERRIDES_BYTES + 1024)); }
     catch (error) { if (error.code !== 'ENOENT') { this.error = 'pricing-settings-invalid'; this.settingsInvalid = true; } }
     try {
       const cached = this.settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
-        : { envelope: read(join(this.dir, 'catalog-' + this.settings.pinnedVersion + '.json')) };
+        : { envelope: read(join(this.dir, 'catalog-' + this.settings.pinnedVersion + '.json'), MAX_ENVELOPE_BYTES) };
       const catalog = verifyEnvelope(cached.envelope, publicKey);
       if (catalog.version >= this.catalog.version || this.settings.pinnedVersion === catalog.version) {
         this.catalog = catalog; this.envelope = cached.envelope;
@@ -66,11 +70,11 @@ export class PricingStore {
     if (stampKey === this.diskStamp) return;
     try {
       let settings = this.settings;
-      try { settings = this.validateSettings(read(join(this.dir, 'settings.json'))); }
+      try { settings = this.validateSettings(read(join(this.dir, 'settings.json'), MAX_OVERRIDES_BYTES + 1024)); }
       catch (error) { if (error.code !== 'ENOENT') { this.settingsInvalid = true; throw new Error('pricing-settings-invalid'); } }
       let cached;
       try { cached = settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
-        : { envelope: read(join(this.dir, 'catalog-' + settings.pinnedVersion + '.json')) }; }
+        : { envelope: read(join(this.dir, 'catalog-' + settings.pinnedVersion + '.json'), MAX_ENVELOPE_BYTES) }; }
       catch (error) { if (error.code !== 'ENOENT' || settings.pinnedVersion !== null) throw new Error('pricing-cache-invalid'); }
       const catalog = cached ? verifyEnvelope(cached.envelope, this.publicKey) : this.catalog;
       this.settings = settings; this.settingsInvalid = false;
@@ -93,7 +97,7 @@ export class PricingStore {
       let dead = false;
       let ownerKnown = false;
       try {
-        const owner = read(lock);
+        const owner = read(lock, 1024);
         if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
           ownerKnown = true;
           try { process.kill(owner.pid, 0); } catch (err) { dead = err.code === 'ESRCH'; }
@@ -148,10 +152,10 @@ export class PricingStore {
     try {
       const response = await this.fetch(this.url, { signal: controller.signal, redirect: 'error', headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('pricing-http-' + response.status);
-      if (Number(response.headers.get('content-length')) > MAX_BYTES) { await response.body?.cancel(); throw new Error('pricing-response-too-large'); }
+      if (Number(response.headers.get('content-length')) > MAX_ENVELOPE_BYTES) { await response.body?.cancel(); throw new Error('pricing-response-too-large'); }
       const reader = response.body.getReader(); let length = 0; const chunks = [];
       try {
-        for (;;) { const { done, value } = await reader.read(); if (done) break; length += value.byteLength; if (length > MAX_BYTES) throw new Error('pricing-response-too-large'); chunks.push(Buffer.from(value)); }
+        for (;;) { const { done, value } = await reader.read(); if (done) break; length += value.byteLength; if (length > MAX_ENVELOPE_BYTES) throw new Error('pricing-response-too-large'); chunks.push(Buffer.from(value)); }
       } finally { await reader.cancel().catch(() => {}); }
       const envelope = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const catalog = verifyEnvelope(envelope, this.publicKey);
@@ -162,7 +166,7 @@ export class PricingStore {
         const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
         if (catalog.version < highest) throw new Error('pricing-version-regressed');
         let previous;
-        try { previous = verifyEnvelope(read(join(this.dir, 'catalog-' + catalog.version + '.json')), this.publicKey); }
+        try { previous = verifyEnvelope(read(join(this.dir, 'catalog-' + catalog.version + '.json'), MAX_ENVELOPE_BYTES), this.publicKey); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         if ((previous && JSON.stringify(catalog) !== JSON.stringify(previous))
           || catalog.version === this.catalog.version && JSON.stringify(catalog) !== JSON.stringify(this.catalog)) throw new Error('pricing-version-conflict');
@@ -202,7 +206,7 @@ export class PricingStore {
       if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
       if (revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
       if (!Number.isSafeInteger(version) || version <= 0) throw new Error('pricing-version-invalid');
-      const envelope = read(join(this.dir, 'catalog-' + version + '.json'));
+      const envelope = read(join(this.dir, 'catalog-' + version + '.json'), MAX_ENVELOPE_BYTES);
       const catalog = verifyEnvelope(envelope, this.publicKey);
       if (catalog.version !== version) throw new Error('pricing-version-invalid');
       // The settings file is the single commit point; startup follows its pin.
