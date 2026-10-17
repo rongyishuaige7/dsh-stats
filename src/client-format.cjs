@@ -116,16 +116,27 @@ function usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccount
 function usageCost(usage, fallbackModel, fallbackProvider, fallbackAccountType) {
 	return usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType).amount;
 }
+// A session/project summary is derived from immutable view objects but is read
+// many times (summary cards, sorting, cards, CSV). Cache per object identity.
+const sessionCostCache = new WeakMap();
+const projectCostCache = new WeakMap();
 function sessionCostSummary(s) {
+	const cached = sessionCostCache.get(s);
+	if (cached) return cached;
+	let summary;
 	if (s.slotUsage && s.slotUsage.length) {
-		return summarizeCosts(s.slotUsage.map(function(usage) {
+		summary = summarizeCosts(s.slotUsage.map(function(usage) {
+			return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
+		}));
+	} else if (s.cost && Array.isArray(s.cost.totals)) {
+		summary = convertCostSummaryToCny(s.cost);
+	} else {
+		summary = summarizeCosts(sessionExportUsages(s).map(function(usage) {
 			return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
 		}));
 	}
-	if (s.cost && Array.isArray(s.cost.totals)) return convertCostSummaryToCny(s.cost);
-	return summarizeCosts(sessionExportUsages(s).map(function(usage) {
-		return usageCostDetail(usage, s.modelRaw || s.model, s.providerId, s.accountType);
-	}));
+	sessionCostCache.set(s, summary);
+	return summary;
 }
 // 数值返回值仅保留给旧接口/测试；新 UI 与兼容路径都使用 CNY summary。
 function sessionCost(s) {
@@ -133,7 +144,11 @@ function sessionCost(s) {
 	return (summary.status === "exact" || summary.status === "estimated") && summary.totals.length === 1 ? summary.totals[0].amount : null;
 }
 function projectCostSummary(p) {
-	return mergeCostSummaries((p.sessions || []).map(sessionCostSummary));
+	const cached = projectCostCache.get(p);
+	if (cached) return cached;
+	const summary = mergeCostSummaries((p.sessions || []).map(sessionCostSummary));
+	projectCostCache.set(p, summary);
+	return summary;
 }
 function sessionExportUsages(session) {
 	if (Array.isArray(session?.slotUsage) && session.slotUsage.length) return session.slotUsage;

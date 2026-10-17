@@ -198,6 +198,18 @@ test('cost sorting compares the unified RMB totals', () => {
 	expect(compareProjectCost(cnyHigh, usd)).toBeLessThan(0);
 });
 
+test('project and session cost summaries are memoized per view object', () => {
+	const session = {
+		model: 'deepseek-v4-flash', updatedAt: Date.parse('2026-09-10T02:00:00Z'),
+		stats: { uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0 },
+	};
+	const sessionSummary = client.__test.sessionCostSummary(session);
+	expect(client.__test.sessionCostSummary(session)).toBe(sessionSummary);
+	const project = { sessions: [session] };
+	const projectSummary = client.__test.projectCostSummary(project);
+	expect(client.__test.projectCostSummary(project)).toBe(projectSummary);
+});
+
 test('estimated and partial summaries render only confirmed RMB amounts', () => {
 	const estimated = { status: 'estimated', totals: [{ currency: 'USD', amount: 0.00082844, exactAmount: 0, estimatedAmount: 0.00082844 }], unpricedTokens: 0, unknownRows: 0 };
 	const partial = { status: 'partial', totals: [{ currency: 'USD', amount: 0.00082844, exactAmount: 0.00082844, estimatedAmount: 0 }], unpricedTokens: 100, unknownRows: 1 };
