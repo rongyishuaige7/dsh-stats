@@ -6,7 +6,7 @@ const {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct, fmtCostSummary,
 	applyDate, activityDates, fmtDateCN,
-	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
+	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
@@ -643,6 +643,13 @@ test('timelineDisplayDays caps all-mode rows but leaves day mode intact', () => 
 	const days = [{ date: '2026-01-01' }, { date: '2026-02-01' }, { date: '2026-03-01' }];
 	expect(timelineDisplayDays(days, false, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
 	expect(timelineDisplayDays(days, true, 2)).toHaveLength(3);
+});
+
+test('timelinePageDays slices an already ordered timeline', () => {
+	const days = [{ date: '2026-03-01' }, { date: '2026-02-01' }, { date: '2026-01-01' }];
+	expect(timelinePageDays(days, 0, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
+	expect(timelinePageDays(days, 1, 2).map(day => day.date)).toEqual(['2026-01-01']);
+	expect(timelinePageDays(days, 9, 2)).toEqual([]);
 });
 
 test('session detail windows main and sub-agent rows', () => {

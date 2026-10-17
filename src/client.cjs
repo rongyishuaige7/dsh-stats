@@ -382,13 +382,20 @@ function timelineDisplayDays(days, dayMode, limit) {
 	return ordered;
 }
 
+function timelinePageDays(orderedDays, page, pageSize) {
+	var ordered = Array.isArray(orderedDays) ? orderedDays : [];
+	var size = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : ordered.length;
+	var start = Math.max(0, Math.floor(page) * size);
+	return ordered.slice(start, start + size);
+}
+
 function timelineTipRows(blocks) {
 	return blocks.map(function(b) { return [b.name, fmtDuration(b.ms)]; });
 }
 
 // All-mode timeline rows are cheap individually but can grow to years. Render
-// the newest window by default and let the user opt into the full history.
-var MAX_TIMELINE_RENDER_DAYS = 90;
+// one 30-day page by default and let the user page or opt into full history.
+var TIMELINE_PAGE_DAYS = 30;
 
 function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
@@ -402,12 +409,13 @@ function TimelineView(props) {
 	var tt = props.tt;
 	var dayMode = props.dayMode === true;
 	var [showAllDays, setShowAllDays] = useState(false);
+	var [page, setPage] = useState(0);
 
 	var days = timeline.days || [];
 	var allDisplayDays = timelineDisplayDays(days, dayMode);
-	var renderLimit = dayMode || showAllDays ? Infinity : MAX_TIMELINE_RENDER_DAYS;
-	var displayDays = timelineDisplayDays(days, dayMode, renderLimit);
-	var truncated = !dayMode && allDisplayDays.length > displayDays.length;
+	var pageCount = Math.max(1, Math.ceil(allDisplayDays.length / TIMELINE_PAGE_DAYS));
+	var currentPage = Math.min(page, pageCount - 1);
+	var displayDays = showAllDays ? allDisplayDays : timelinePageDays(allDisplayDays, currentPage, TIMELINE_PAGE_DAYS);
 	var maxDay = displayDays.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
 	var layout = timelineLayout(displayDays.length, dayMode);
@@ -417,15 +425,29 @@ function TimelineView(props) {
 
 	return e("div", null,
 		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
-		allDisplayDays.length > MAX_TIMELINE_RENDER_DAYS ? e("div", { className: "dss-timeline-limit" },
-			e("span", null, truncated
-				? tt("hint.timeline.limit").replace("%d", String(MAX_TIMELINE_RENDER_DAYS))
-				: tt("hint.timeline.limitAll").replace("%d", String(allDisplayDays.length))),
+		allDisplayDays.length > TIMELINE_PAGE_DAYS ? e("div", { className: "dss-timeline-limit" },
+			e("span", null, showAllDays
+				? tt("hint.timeline.limitAll").replace("%d", String(allDisplayDays.length))
+				: tt("hint.timeline.page").replace("%d", String(currentPage + 1)).replace("%d", String(pageCount))),
+			!showAllDays ? e(Fragment, null,
+				e("button", {
+					type: "button",
+					className: "dss-export",
+					disabled: currentPage === 0,
+					onClick: () => setPage(Math.max(0, currentPage - 1))
+				}, tt("hint.timeline.newer")),
+				e("button", {
+					type: "button",
+					className: "dss-export",
+					disabled: currentPage >= pageCount - 1,
+					onClick: () => setPage(Math.min(pageCount - 1, currentPage + 1))
+				}, tt("hint.timeline.older"))
+			) : null,
 			e("button", {
 				type: "button",
 				className: "dss-export",
 				onClick: () => setShowAllDays(!showAllDays)
-			}, truncated ? tt("hint.timeline.showAll") : tt("hint.timeline.showRecent").replace("%d", String(MAX_TIMELINE_RENDER_DAYS)))
+			}, showAllDays ? tt("hint.timeline.showRecent").replace("%d", String(TIMELINE_PAGE_DAYS)) : tt("hint.timeline.showAll"))
 		) : null,
 		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
 		displayDays.length > 1 ? e("div", { className: "dss-heat" },
@@ -1578,7 +1600,7 @@ module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
-	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail
 };
