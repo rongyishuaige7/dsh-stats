@@ -393,15 +393,14 @@ let StatsService = (() => {
 					};
 				}
 				if (!officialSource && !officialValues) try {
-					// The legacy decoder is synchronous for compatibility with rc6. Yield
-					// between sessions so a large fallback scan does not monopolize the
-					// host event loop while official services are unavailable.
+					// Retain fairness between cached sessions as well as within the
+					// bounded asynchronous legacy reader/replay.
 					await new Promise((resolve) => setImmediate(resolve));
-					info = sessionInfo(home, sessionId);
+					info = await sessionInfo(home, sessionId);
 				} catch (err) {
 					const message = err?.message || String(err);
 					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（使用 projection cache）:`, message);
-					warnings.push({ code: "SESSION_DECODE_FAILED", sessionId, message });
+					warnings.push({ code: err?.code === "SESSION_LOG_BUDGET_EXCEEDED" ? err.code : "SESSION_DECODE_FAILED", sessionId, message });
 					info = { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
 				}
 				if (officialValues) {

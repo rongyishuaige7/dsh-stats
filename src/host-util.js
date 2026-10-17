@@ -42,11 +42,12 @@ function dshHome() {
 	return process.env.DSH_HOME || join(homedir(), ".dsh");
 }
 
-function scanZstdFrames(buffer) {
-	const frames = [];
+function* scanZstdFrameSteps(buffer) {
 	let truncated = false;
 	let offset = 0;
+	let work = 0;
 	while (offset < buffer.length) {
+		if (++work % 512 === 0) yield null;
 		const start = offset;
 		if (buffer.length - offset < 4) { truncated = true; break; }
 		const magic = buffer.readUInt32LE(offset);
@@ -78,6 +79,7 @@ function scanZstdFrames(buffer) {
 		if (offset + headerBytes > buffer.length) { truncated = true; break; }
 		offset += headerBytes;
 		for (;;) {
+			if (++work % 512 === 0) yield null;
 			if (offset + 3 > buffer.length) { truncated = true; offset = buffer.length; break; }
 			const blockHeader = buffer.readUIntLE(offset, 3);
 			offset += 3;
@@ -93,9 +95,17 @@ function scanZstdFrames(buffer) {
 		if (truncated) break;
 		if (checksum && offset + 4 > buffer.length) { truncated = true; break; }
 		if (checksum) offset += 4;
-		frames.push({ start, end: offset });
+		yield { start, end: offset };
 	}
-	return { frames, truncated };
+	return { truncated };
+}
+
+function scanZstdFrames(buffer) {
+	const frames = [];
+	const steps = scanZstdFrameSteps(buffer);
+	let step;
+	while (!(step = steps.next()).done) if (step.value) frames.push(step.value);
+	return { frames, truncated: step.value.truncated };
 }
 
 const MAX_JSON_BYTES = 64 * 1024 * 1024;
@@ -160,23 +170,6 @@ function readSessionProjcache(home) {
 	} catch {
 		return finish(singleRead);
 	}
-}
-
-// JSONL persistence appends while the host may be reading it. Retry a stable
-// stat/read/stat snapshot so an active file is never decoded from a torn tail.
-function readStable(file, attempts = 3) {
-	let last = null;
-	for (let i = 0; i < attempts; i++) {
-		const before = statSync(file);
-		const buf = readFileSync(file);
-		const after = statSync(file);
-		last = {
-			buf, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs, size: after.size, ino: after.ino,
-			stable: before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs && before.size === after.size && before.ino === after.ino
-		};
-		if (last.stable) return last;
-	}
-	return last;
 }
 
 // 北京时间（UTC+8，无夏令时）：日期/时段切分显式用北京时区，与宿主机时区无关
@@ -257,4 +250,4 @@ function activityIntervals(times) {
 	return intervals.map(([a, b]) => [a, Math.max(b, a + MIN_INTERVAL_MS)]);
 }
 
-export { LONG_CONTEXT_TOKENS, PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, SESSION_PROJECTION_DOMAIN_VERSIONS, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, accountTypeOf, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, identityKey, isSupportedProjectionDomainVersion, isSupportedRowVersion, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readJson, readSessionProjcache, readStable, scanZstdFrames };
+export { LONG_CONTEXT_TOKENS, PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, SESSION_PROJECTION_DOMAIN_VERSIONS, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, accountTypeOf, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, identityKey, isSupportedProjectionDomainVersion, isSupportedRowVersion, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readJson, readSessionProjcache, scanZstdFrames, scanZstdFrameSteps };

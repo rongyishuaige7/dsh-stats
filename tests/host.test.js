@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,7 @@ import { pricingStore } from '../src/pricing-store.js';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { infoFromProjectionValues } from '../src/host-sessions.js';
 import { readJson, readSessionProjcache, scanZstdFrames } from '../src/host-util.js';
+import { LEGACY_LOG_LIMITS } from '../src/host-log.js';
 import { TYPERT } from '../src/typert-host.js';
 import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
@@ -233,7 +234,7 @@ test('unchanged disk logs skip body reads and replacement files invalidate the c
 	const records = [{ type: 'session', time: now }, { type: 'assistant/message', seq: 0, time: now + 1,
 		data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 1 }, message: { source: { provider: 'minimax', model: 'MiniMax-M3' } } } }];
 	writePlainLog(home, 'cached', records);
-	const read = vi.spyOn(fs, 'readFileSync');
+	const read = vi.spyOn(fs.promises, 'open');
 	syncBuiltinESMExports();
 	try {
 		await aggregate();
@@ -764,6 +765,27 @@ test('a truncated active tail keeps committed frames and reports partial quality
 	expect(result.projects[0].sessions[0].quality).toBe('partial');
 	expect(result.projects[0].sessions[0].stats.turns).toBe(1);
 	expect(result.meta.warnings.some((warning) => warning.code === 'SESSION_LOG_PARTIAL')).toBe(true);
+});
+
+test('over-budget legacy logs degrade explicitly while preserving projection totals and other sessions', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	const home = fixture({ huge: projection(now, { usage: { uncachedInputTokens: 42 } }), good: projection(now) });
+	writePlainLog(home, 'huge', []);
+	truncateSync(join(home, 'sessions', 'workspace', 'huge', 'session.jsonl'), LEGACY_LOG_LIMITS.fileBytes + 1);
+	writeLog(home, 'good', [{ type: 'assistant/message', seq: 0, time: now,
+		data: { turn: 0, step: 0, usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } } } }]);
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	try {
+		const result = await aggregate();
+		const byId = new Map(result.projects[0].sessions.map(row => [row.id, row]));
+		expect(result.meta.degraded).toBe(true);
+		expect(result.meta.warnings).toEqual(expect.arrayContaining([
+			expect.objectContaining({ code: 'SESSION_LOG_BUDGET_EXCEEDED', sessionId: 'huge' })
+		]));
+		expect(byId.get('huge')).toMatchObject({ quality: 'partial', stats: { uncached: 42 } });
+		expect(byId.get('good')).toMatchObject({ quality: 'exact', stats: { uncached: 7, output: 2 } });
+		TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+	} finally { warn.mockRestore(); }
 });
 
 test('timeline merges overlapping sessions within one project', async () => {

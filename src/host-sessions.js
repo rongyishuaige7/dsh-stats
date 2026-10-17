@@ -1,10 +1,12 @@
 // Session logs: discovery, zstd decoding, projection state and derived session info.
-import { readdirSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, lstatSync, realpathSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
-import { zstdDecompressSync } from "node:zlib";
+import { setImmediate as yieldToHost } from "node:timers/promises";
 import pricing from "./pricing.cjs";
 import routeData from "./route-data.cjs";
-import { PROJECTION_ROW_VERSIONS, isSupportedProjectionDomainVersion, isSupportedRowVersion, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readStable, scanZstdFrames } from "./host-util.js";
+import { PROJECTION_ROW_VERSIONS, isSupportedProjectionDomainVersion, isSupportedRowVersion, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity } from "./host-util.js";
+import { LEGACY_LOG_LIMITS, LOG_BATCH_SIZE, logLimitError, readSessionRecords, readStable } from "./host-log.js";
 import { emptyRaw } from "./host-usage.js";
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
@@ -87,10 +89,11 @@ function encodeSegment(raw) {
 	return out;
 }
 
-function expandStorageRecord(record) {
-	if (!record || typeof record !== "object") return [record];
+function* expandStorageRecord(record, remaining = Infinity, eventLimit = LEGACY_LOG_LIMITS.events) {
+	if (remaining < 1) throw logLimitError("expanded events", eventLimit);
+	if (!record || typeof record !== "object") { yield record; return; }
 	const type = record.type;
-	if (type !== "text-chunks" && type !== "reasoning-chunks" && type !== "tool-call-chunks") return [record];
+	if (type !== "text-chunks" && type !== "reasoning-chunks" && type !== "tool-call-chunks") { yield record; return; }
 	const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
 		&& Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 	const data = record.data;
@@ -101,6 +104,7 @@ function expandStorageRecord(record) {
 	if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("corrupt session log: malformed packed chunk data");
 	const membersKey = type === "tool-call-chunks" ? "args" : "texts";
 	const members = data[membersKey];
+	if (Array.isArray(members) && members.length > remaining) throw logLimitError("expanded events", eventLimit);
 	const keys = type === "tool-call-chunks"
 		? (Object.prototype.hasOwnProperty.call(data, "name") ? ["turn", "step", "index", "id", "name", "dt", "args"] : ["turn", "step", "index", "id", "dt", "args"])
 		: ["turn", "step", "index", "dt", "texts"];
@@ -111,18 +115,23 @@ function expandStorageRecord(record) {
 	if (!Array.isArray(data.dt) || data.dt.length !== members.length - 1 || data.dt.some((dt) => !Number.isSafeInteger(dt))) throw new Error("corrupt session log: invalid packed chunk offsets");
 	if (type === "tool-call-chunks" && (typeof data.id !== "string" || (Object.prototype.hasOwnProperty.call(data, "name") && typeof data.name !== "string"))) throw new Error("corrupt session log: invalid packed tool call");
 	if (!Number.isSafeInteger(record.seq0 + members.length - 1)) throw new Error("corrupt session log: packed chunk sequence overflow");
+	// Validate the whole batch before emitting any event, preserving atomic
+	// rejection of malformed packed records without allocating their expansion.
 	let time = record.time0;
-	return members.map((value, index) => {
-		if (index > 0) {
-			time += data.dt[index - 1];
-			if (!Number.isSafeInteger(time)) throw new Error("corrupt session log: packed chunk time overflow");
-		}
+	for (const dt of data.dt) {
+		time += dt;
+		if (!Number.isSafeInteger(time)) throw new Error("corrupt session log: packed chunk time overflow");
+	}
+	time = record.time0;
+	for (let index = 0; index < members.length; index++) {
+		const value = members[index];
+		if (index > 0) time += data.dt[index - 1];
 		let chunk;
 		if (type === "text-chunks") chunk = { type: "text-delta", index: data.index, text: value };
 		else if (type === "reasoning-chunks") chunk = { type: "reasoning-delta", index: data.index, text: value };
 		else chunk = { type: "tool-call-delta", index: data.index, id: data.id, ...(data.name !== undefined ? { name: data.name } : {}), argumentsDelta: value };
-		return { type: "assistant/chunk", seq: record.seq0 + index, time, data: { turn: data.turn, step: data.step, chunk } };
-	});
+		yield { type: "assistant/chunk", seq: record.seq0 + index, time, data: { turn: data.turn, step: data.step, chunk } };
+	}
 }
 
 function contextService(ctx, name) {
@@ -407,22 +416,31 @@ const STATS_ROUTE_PROJECTION = Object.freeze({
 	wire: { viewSchema: { parse: routeProjectionSchema }, view: routeProjectionView }
 });
 
-function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
+function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits = null) {
 	const events = [];
 	let malformedRecords = 0;
+	let work = 0;
+	let firstHeader = null, seedMarker = null;
+	if (limits && rawEvents?.length > limits.records) throw logLimitError("records", limits.records);
 	for (const raw of Array.isArray(rawEvents) ? rawEvents : []) {
+		if (++work % LOG_BATCH_SIZE === 0) yield;
 		try {
-			const expanded = expandStorageRecord(raw);
+			const expanded = expandStorageRecord(raw, limits ? limits.events - events.length : Infinity, limits?.events);
 			for (const event of expanded) {
+				if (++work % LOG_BATCH_SIZE === 0) yield;
 				if (!objectRecord(event)) malformedRecords++;
-				else events.push(event);
+				else {
+					events.push(event);
+					if (!firstHeader && event.type === "session") firstHeader = event;
+					if (!seedMarker && event.type === "session/end-seed" && event.data?.inherited === true) seedMarker = event;
+				}
 			}
-		} catch {
+		} catch (error) {
+			if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") throw error;
 			malformedRecords++;
 		}
 	}
-	header = header || events.find((event) => event?.type === "session") || null;
-	const seedMarker = events.find((event) => event?.type === "session/end-seed" && event.data?.inherited === true);
+	header = header || firstHeader;
 	const count = inheritedCount(header, quality.inheritedEventCount ?? seedMarker?.seq);
 	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength);
 	const times = [];
@@ -445,10 +463,14 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		row[field] += value;
 		slotStats.set(slot, row);
 	};
-	const addInterval = (field, start, end) => {
+	let slotOperations = 0;
+	const addInterval = function* (field, start, end) {
 		if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
 		const first = Math.floor(start / SLOT_MS), last = Math.floor((end - 1) / SLOT_MS);
+		if (limits && (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last - first + 1 > limits.slotOperations - slotOperations)) throw logLimitError("interval slots", limits.slotOperations);
+		slotOperations += last - first + 1;
 		for (let slot = first; slot <= last; slot++) {
+			if (++work % LOG_BATCH_SIZE === 0) yield;
 			const overlap = Math.min(end, (slot + 1) * SLOT_MS) - Math.max(start, slot * SLOT_MS);
 			if (overlap > 0) addSlot(slot * SLOT_MS, field, overlap);
 		}
@@ -461,6 +483,7 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 	let expectedSeq = 0;
 	let seqGap = false;
 	for (const ev of events) {
+		if (++work % LOG_BATCH_SIZE === 0) yield;
 		const evSeq = ev?.seq;
 		if (evSeq !== undefined && (!Number.isSafeInteger(evSeq) || evSeq < 0)) { malformedRecords++; continue; }
 		if (Number.isSafeInteger(evSeq)) {
@@ -515,11 +538,11 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 			if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && openStep.firstTokenTime === null) openStep.firstTokenTime = streamFirstTokenTime(ev.data?.stream);
 			if (ev.type === "assistant/attempt") continue;
 			if (openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step && Number.isFinite(t)) {
-				const llm = Math.max(0, t - openStep.startTime); derived.llmMs += llm; addInterval("llmMs", openStep.startTime, t);
+				const llm = Math.max(0, t - openStep.startTime); derived.llmMs += llm; yield* addInterval("llmMs", openStep.startTime, t);
 				if (openStep.firstTokenTime !== null) {
 					const ttft = Math.max(0, openStep.firstTokenTime - openStep.startTime); derived.ttftMs += ttft; derived.ttftSteps++; addSlot(openStep.firstTokenTime, "ttftMs", ttft); addSlot(openStep.firstTokenTime, "ttftSteps", 1);
 					const out = Number.isFinite(u?.outputTokens) && u.outputTokens >= 0 ? u.outputTokens : null;
-					if (out !== null) { const decode = Math.max(0, t - openStep.firstTokenTime); derived.decodeMs += decode; derived.decodeTokens += out; addInterval("decodeMs", openStep.firstTokenTime, t); addSlot(t, "decodeTokens", out); }
+					if (out !== null) { const decode = Math.max(0, t - openStep.firstTokenTime); derived.decodeMs += decode; derived.decodeTokens += out; yield* addInterval("decodeMs", openStep.firstTokenTime, t); addSlot(t, "decodeTokens", out); }
 				}
 				derivedEvents++; openStep = null;
 			}
@@ -528,7 +551,7 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 			if (typeof callId === "string" && Number.isFinite(t)) pendingCalls.set(callId, t);
 		} else if (ev.type === "tool/result") {
 			const callId = ev.data?.message?.source?.callId;
-			if (typeof callId === "string" && pendingCalls.has(callId) && Number.isFinite(t)) { const start = pendingCalls.get(callId); const tool = Math.max(0, t - start); derived.toolMs += tool; addInterval("toolMs", start, t); pendingCalls.delete(callId); derivedEvents++; }
+			if (typeof callId === "string" && pendingCalls.has(callId) && Number.isFinite(t)) { const start = pendingCalls.get(callId); const tool = Math.max(0, t - start); derived.toolMs += tool; yield* addInterval("toolMs", start, t); pendingCalls.delete(callId); derivedEvents++; }
 		} else if (ev.type === "step/end") {
 			derived.steps++; addSlot(t, "steps", 1); derivedEvents++;
 			if (lastTurn !== ev.data?.turn) { derived.turns++; addSlot(t, "turns", 1); lastTurn = ev.data?.turn; }
@@ -538,6 +561,7 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 	times.sort((a, b) => a - b);
 	const modelTokens = new Map();
 	for (const u of usageByStep.values()) {
+		if (++work % LOG_BATCH_SIZE === 0) yield;
 		const identity = rawIdentity(u.providerId, u.model, u.accountType, u.time);
 		const key = identityKey(identity);
 		const row = modelTokens.get(key) || { identity, weight: 0 };
@@ -545,7 +569,10 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		modelTokens.set(key, row);
 	}
 	let primary = null, modelWeight = -1;
-	for (const row of modelTokens.values()) if (row.weight > modelWeight) { modelWeight = row.weight; primary = row.identity; }
+	for (const row of modelTokens.values()) {
+		if (++work % LOG_BATCH_SIZE === 0) yield;
+		if (row.weight > modelWeight) { modelWeight = row.weight; primary = row.identity; }
+	}
 	if (primary === null) primary = rawIdentity(currentProvider, currentModel, currentAccountType, times[times.length - 1]);
 	return {
 		times, lastTime: times.length ? times[times.length - 1] : null,
@@ -557,6 +584,20 @@ function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
 		malformedRecords, lastSeq, seqGap, unknownSeed, formatVersion: header?.version, futureVersion: header?.version !== undefined && ![0, 1, 2, 3, 4].includes(header.version),
 		header: header || null
 	};
+}
+
+function deriveSessionInfoFromEvents(rawEvents, header = null, quality = {}) {
+	const steps = deriveSessionInfoSteps(rawEvents, header, quality);
+	let step;
+	while (!(step = steps.next()).done) { /* Official in-memory callers stay synchronous. */ }
+	return step.value;
+}
+
+async function deriveSessionInfoAsync(rawEvents, header = null, quality = {}, limits = LEGACY_LOG_LIMITS) {
+	const steps = deriveSessionInfoSteps(rawEvents, header, quality, limits);
+	let step;
+	while (!(step = steps.next()).done) await yieldToHost();
+	return step.value;
 }
 
 // Cache normalized statistics, never raw conversation bodies. A persistence
@@ -794,72 +835,53 @@ function streamFirstTokenTime(stream) {
 	return null;
 }
 
-function readSessionRecords(file, snapshot) {
-	const records = [];
-	let truncated = false;
-	if (file.endsWith(".jsonl")) {
-		const text = snapshot.buf.toString("utf8");
-		const lines = text.split("\n");
-		if (lines.length && lines.at(-1) !== "") {
-			truncated = true;
-			lines.pop();
-		}
-		for (const line of lines) {
-			if (!line) continue;
-			try { records.push(JSON.parse(line)); }
-			catch { records.push(null); }
-		}
-		return { records, truncated };
-	}
-	const scanned = scanZstdFrames(snapshot.buf);
-	truncated = scanned.truncated;
-	for (const frame of scanned.frames) {
-		const text = zstdDecompressSync(snapshot.buf.subarray(frame.start, frame.end)).toString("utf8");
-		const lines = text.split("\n");
-		// Official writers terminate every committed JSONL batch. A missing
-		// newline inside a complete frame is still a malformed committed row.
-		if (lines.at(-1) !== "") truncated = true;
-		for (const line of lines) {
-			if (!line) continue;
-			try { records.push(JSON.parse(line)); }
-			catch { records.push(null); }
-		}
-	}
-	return { records, truncated };
-}
-
 // 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本和逐槽统计。
 // seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
 // 读取使用 stat/read/stat 稳定快照，并只消费完整 zstd frame；活跃尾部会标记 partial。
 const sessionInfoCache = new Map(); // filePath -> { mtimeMs, ctimeMs, size, ino, info }
-const SESSION_CACHE_LIMIT = 300; // LRU 上限，防长期运行内存膨胀
-function sessionInfo(home, sessionId) {
+const SESSION_CACHE_LIMIT = 300;
+const SESSION_CACHE_WEIGHT = 100000;
+let sessionCacheWeight = 0;
+function forgetSessionInfo(file) {
+	const old = sessionInfoCache.get(file);
+	if (old) sessionCacheWeight -= old.weight;
+	sessionInfoCache.delete(file);
+}
+async function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
 	if (!file) return { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true, seqGap: false, futureVersion: false, header: null };
 	const cached = sessionInfoCache.get(file);
 	let snapshot;
 	try {
-		const stat = statSync(file);
-		if (cached?.stable && ["mtimeMs", "ctimeMs", "size", "ino"].every((key) => cached[key] === stat[key])) {
-			sessionInfoCache.delete(file);
-			sessionInfoCache.set(file, cached);
+		const observed = await stat(file);
+		if (cached?.stable && ["mtimeMs", "ctimeMs", "size", "ino"].every((key) => cached[key] === observed[key])) {
+			// Another asynchronous read may have evicted or replaced this entry
+			// while stat was pending. Do not resurrect it outside the weight cap.
+			if (sessionInfoCache.get(file) === cached) {
+				sessionInfoCache.delete(file);
+				sessionInfoCache.set(file, cached);
+			}
 			return cached.info;
 		}
-		snapshot = readStable(file);
+		snapshot = await readStable(file);
 	} catch (error) {
+		if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") throw error;
 		if (cached) return { ...cached.info, stale: true, readError: error.message };
 		throw error;
 	}
 	const { mtimeMs, ctimeMs, size, ino } = snapshot;
-	const decoded = readSessionRecords(file, snapshot);
-	const info = deriveSessionInfoFromEvents(decoded.records, null, { partial: decoded.truncated || !snapshot.stable });
-	sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info });
-	// LRU 淘汰：超限删除最旧条目
-	while (sessionInfoCache.size > SESSION_CACHE_LIMIT) {
-		const oldest = sessionInfoCache.keys().next().value;
-		sessionInfoCache.delete(oldest);
+	const decoded = await readSessionRecords(file, snapshot);
+	const info = await deriveSessionInfoAsync(decoded.records, null, { partial: decoded.truncated || !snapshot.stable });
+	const weight = 1 + info.times.length + info.usages.length * 2 + info.slotStats.length * 4;
+	forgetSessionInfo(file);
+	if (weight <= SESSION_CACHE_WEIGHT) {
+		sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info, weight });
+		sessionCacheWeight += weight;
+	}
+	while (sessionInfoCache.size > SESSION_CACHE_LIMIT || sessionCacheWeight > SESSION_CACHE_WEIGHT) {
+		forgetSessionInfo(sessionInfoCache.keys().next().value);
 	}
 	return info;
 }
 
-export { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };
+export { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };

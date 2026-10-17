@@ -124,3 +124,54 @@ fixture and the existing seven-version Harness CI matrix. Main risks are model
 precedence, concurrent settings updates, multibyte/escaped JSON growth, hidden
 items after pagination and partial log attribution. Regression tests exercise
 these observable behaviors with synthetic data and isolated temporary homes.
+
+## Follow-up review results
+
+All four correctness fixes and three performance improvements are implemented
+in six independently verified delivery slices:
+
+- `4488f48`: literal model variants survive route-prefix normalization; indexed
+  quotes and single-rule matching use the same candidate precedence.
+- `bfe973c`: aggregate flights capture the home, price engine and fingerprint
+  together; save/rollback races cannot return an old price under new metadata.
+- `1e207d6`: separate UTF-8 budgets cover catalog payloads, overrides, signed
+  envelopes and disk wrappers, including escaped and multibyte content.
+- `5b57e5e`: projects/legend mount at most 50 rows, session details 100 and
+  timeline pages 30 days. Every row remains reachable, summaries/export keep
+  the full data, and sorting/recent navigation resets the relevant page.
+- `ad64858`: closed panels and panels with host data no longer render for
+  unrelated browser session/workspace snapshots. Loading/error fallback stays
+  reactive, including the transition to the first host snapshot.
+- Legacy decoding now uses bounded asynchronous file reads and Zstd decoding.
+  Parsing, frame scanning, packed expansion and event replay yield in batches;
+  the official in-memory synchronous API uses the same derivation logic.
+
+Legacy budgets apply per session: 64 MiB file input, 64 MiB per decoded frame,
+128 MiB cumulative decoded content, 8 MiB per committed JSONL record, 250,000
+records/frames, 500,000 expanded events and 1,000,000 interval-slot operations.
+Actual bytes read are bounded even when a file grows after stat. Stable reads
+also verify the open descriptor against the current path, retry replacements,
+and mark continually appended snapshots partial after three attempts. Cached
+normalized statistics have both a 300-entry LRU cap and a 100,000-unit weight
+cap based on retained timestamps, usages and slot rows. Over-budget entries are
+not cached, and asynchronous cache hits cannot resurrect an evicted entry.
+
+A budget failure emits `SESSION_LOG_BUDGET_EXCEEDED` and degraded metadata;
+available projection totals remain partial and other sessions still aggregate.
+Committed malformed records, plain uncommitted tails, complete Zstd batches,
+skippable frames, fork boundaries, retries and sequence checks retain their
+existing behavior. Oversized logs require an official session/projection
+service or a smaller legacy log to recover complete attribution; no arbitrary
+prefix is reported as an exact complete result.
+
+Final local verification: 326 tests pass in both default and UTC timezones;
+signed pricing/version checks against `0dde02e`, all four bundles, artifact
+syntax checks and npm package dry-run pass. The final real Chrome fixture
+passes with 33 screenshots and zero browser errors, including complete access
+to 120 projects/legend filters, 205 main/subagent sessions and 75 history days,
+stable totals across pages, responsive breakpoints and subscription transitions.
+The first five delivery slices have successful full CI runs; the final push
+repeats the build/browser checks and seven-version Harness contract matrix.
+
+Provider prices, signed catalogs, dependencies and package version are
+unchanged. This delivery does not publish npm or replace a running service.
