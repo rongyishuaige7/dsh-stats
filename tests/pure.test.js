@@ -627,6 +627,12 @@ test('timelineDisplayDays puts the newest day first only in all-days mode', () =
 	expect(days.map(day => day.date)).toEqual(['2025-03-12', '2025-03-15', '2025-03-14']);
 });
 
+test('timelineDisplayDays caps all-mode rows but leaves day mode intact', () => {
+	const days = [{ date: '2026-01-01' }, { date: '2026-02-01' }, { date: '2026-03-01' }];
+	expect(timelineDisplayDays(days, false, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
+	expect(timelineDisplayDays(days, true, 2)).toHaveLength(3);
+});
+
 test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {
 	const grouped = groupTimelineBlocks({ slotBlocks: [
 		{ slot: 4, projectId: 'a', name: 'A', colorIndex: 0, ms: 1000 },

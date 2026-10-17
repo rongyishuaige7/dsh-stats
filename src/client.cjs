@@ -340,15 +340,22 @@ function timelineLayout(dayCount, dayMode) {
 	return { maxBlockH: maxBlockH, maxProjects: maxProjects, rowMinH: Math.max(maxBlockH + 14, projectListH) };
 }
 
-function timelineDisplayDays(days, dayMode) {
+function timelineDisplayDays(days, dayMode, limit) {
 	var ordered = Array.isArray(days) ? days.slice() : [];
-	if (!dayMode) ordered.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+	if (!dayMode) {
+		ordered.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+		if (Number.isFinite(limit) && limit > 0) ordered = ordered.slice(0, limit);
+	}
 	return ordered;
 }
 
 function timelineTipRows(blocks) {
 	return blocks.map(function(b) { return [b.name, fmtDuration(b.ms)]; });
 }
+
+// All-mode timeline rows are cheap individually but can grow to years. Render
+// the newest window by default and let the user opt into the full history.
+var MAX_TIMELINE_RENDER_DAYS = 90;
 
 function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
@@ -361,21 +368,35 @@ function TimelineView(props) {
 	var slotMs = slotMinutes * 60000;
 	var tt = props.tt;
 	var dayMode = props.dayMode === true;
+	var [showAllDays, setShowAllDays] = useState(false);
 
 	var days = timeline.days || [];
-	var displayDays = timelineDisplayDays(days, dayMode);
-	var maxDay = days.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
+	var allDisplayDays = timelineDisplayDays(days, dayMode);
+	var renderLimit = dayMode || showAllDays ? Infinity : MAX_TIMELINE_RENDER_DAYS;
+	var displayDays = timelineDisplayDays(days, dayMode, renderLimit);
+	var truncated = !dayMode && allDisplayDays.length > displayDays.length;
+	var maxDay = displayDays.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
 	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
-	var layout = timelineLayout(days.length, dayMode);
+	var layout = timelineLayout(displayDays.length, dayMode);
 	var maxBlockH = layout.maxBlockH;
 	var maxProjects = layout.maxProjects;
 	var rowMinH = layout.rowMinH;
 
 	return e("div", null,
 		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
+		allDisplayDays.length > MAX_TIMELINE_RENDER_DAYS ? e("div", { className: "dss-timeline-limit" },
+			e("span", null, truncated
+				? tt("hint.timeline.limit").replace("%d", String(MAX_TIMELINE_RENDER_DAYS))
+				: tt("hint.timeline.limitAll").replace("%d", String(allDisplayDays.length))),
+			e("button", {
+				type: "button",
+				className: "dss-export",
+				onClick: () => setShowAllDays(!showAllDays)
+			}, truncated ? tt("hint.timeline.showAll") : tt("hint.timeline.showRecent").replace("%d", String(MAX_TIMELINE_RENDER_DAYS)))
+		) : null,
 		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
-		days.length > 1 ? e("div", { className: "dss-heat" },
-			days.map((d) => {
+		displayDays.length > 1 ? e("div", { className: "dss-heat" },
+			displayDays.map((d) => {
 				var lvl = d.dayTotalMs / maxDay;
 				return e("div", {
 					key: d.date,
@@ -387,7 +408,7 @@ function TimelineView(props) {
 				});
 			})
 		) : null,
-		days.length === 0 ? e("div", { className: "dss-empty" }, tt("hint.rangeEmpty")) :
+		displayDays.length === 0 ? e("div", { className: "dss-empty" }, tt("hint.rangeEmpty")) :
 		e("div", null,
 			e("div", { className: "dss-axis" },
 				e("div", null),
