@@ -1,6 +1,5 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-let pricing = require("./pricing.cjs");
 let { PricingPanel } = require("./pricing-panel.cjs");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
 const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
@@ -89,7 +88,9 @@ function SummaryCards(props) {
 
 function projectColorIndexes(projects) {
 	var indexes = new Map();
-	(projects || []).forEach(function(project, index) { indexes.set(project.id, index % 16); });
+	// Match the host timeline: color slots follow project id order so an
+	// activity-order change cannot recolor unrelated projects.
+	(projects || []).slice().sort(function(a, b) { return String(a.id).localeCompare(String(b.id)); }).forEach(function(project, index) { indexes.set(project.id, index % 16); });
 	return indexes;
 }
 
@@ -231,7 +232,7 @@ function ProjectsTable(props) {
 					e("span", { className: "st" }, t("w.cacheHit") + " " + fmtPct(sd.stats.cacheHitPct)),
 					e("span", { className: "st" }, t("w.input") + " " + fmtTokens(sd.stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(sd.stats.outputTokens)),
 					e("span", { className: "st dss-sess-model", title: modelName }, modelName),
-					e("span", { className: "st dss-cost dss-sess-cost", title: sessionCost }, sessionCost)
+					e("span", { className: "st dss-cost dss-sess-cost", title: fmtCostSummary(costDetail, t) }, sessionCost)
 				);
 			};
 			var detailChildren = mainSessions.map(sessRow);
@@ -573,25 +574,6 @@ function exportCSV(projects, t) {
 	download("dsh-stats.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
-function exportAccountJSON(data) {
-	download("dsh-accounts.json", JSON.stringify(data || { generatedAt: Date.now(), accounts: [], warnings: [] }, null, 2), "application/json");
-}
-function exportAccountCSV(data) {
-	var lines = [["providerId", "providerFamily", "mode", "status", "stale", "currency", "remaining", "used", "total", "toppedUp", "granted", "plan", "window", "usedPercent", "remainingPercent", "resetsAt", "fetchedAt", "errorCode"].join(",")];
-	(data?.accounts || []).forEach(function(account) {
-		var windows = account.windows && account.windows.length ? account.windows : [null];
-		windows.forEach(function(window) {
-			lines.push([
-				account.id, account.providerFamily, account.mode, account.status, account.stale,
-				account.balance?.currency, account.balance?.remaining, account.balance?.used, account.balance?.total,
-				account.balance?.toppedUp, account.balance?.granted, account.plan, window?.kind,
-				window?.usedPercent, window?.remainingPercent, window?.resetsAt, account.fetchedAt, account.errorCode
-			].map(csvField).join(","));
-		});
-	});
-	download("dsh-accounts.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
-}
-
 function providerPickerLabel(account) {
 	var family = account && typeof account.providerFamily === "string" ? account.providerFamily.trim() : "";
 	var displayName = account && typeof account.displayName === "string" ? account.displayName.trim() : "";
@@ -674,8 +656,7 @@ function BalanceView(props) {
 	);
 }
 
-function StatsDataStatus({ state, remote, projects, t }) {
-	const cost = pricing.mergeCostSummariesCny((projects || []).map(projectCostSummary));
+function StatsDataStatus({ state, remote, t }) {
 	return e("section", { className: "dss-data-status " + state.kind, "aria-live": "polite" },
 		e("div", { className: "dss-data-status-line" },
 			e("span", null, t(remote ? "source.host" : "source.local")),
@@ -722,10 +703,16 @@ function StatsPanel(props) {
 	var [showPrices, setShowPrices] = useState(false);
 	var balanceRemote = props.balance;
 	var remoteMountError = props.remoteError;
-	var tabPair = usePref("tab", "overview"); var tab = tabPair[0], setTab = tabPair[1];
-	var hiddenPair = usePref("hidden", {}); var hidden = hiddenPair[0], setHidden = hiddenPair[1];
+	var tabPair = usePref("tab", "overview");
+	var tabValue = tabPair[0];
+	var tab = ["overview", "timeline", "trends", "balance"].indexOf(tabValue) >= 0 ? tabValue : "overview";
+	var setTab = tabPair[1];
+	var hiddenPair = usePref("hidden", {});
+	var hiddenValue = hiddenPair[0];
+	var hidden = hiddenValue && typeof hiddenValue === "object" && !Array.isArray(hiddenValue) ? hiddenValue : {};
+	var setHidden = hiddenPair[1];
 	var navPair = usePref("nav", { mode: "day", date: null });
-	var storedNav = navPair[0] || {};
+	var storedNav = navPair[0] && typeof navPair[0] === "object" && !Array.isArray(navPair[0]) ? navPair[0] : {};
 	var setNav = navPair[1];
 	// 旧版本曾保存 7/30/90 模式；这些模式已从界面移除，统一回退到按日。
 	var navMode = storedNav.mode === "all" ? "all" : "day";
@@ -843,7 +830,7 @@ function StatsPanel(props) {
 
 	if (!open || !open.open) return null;
 
-	var toggle = (id) => setHidden((h) => ({ ...h, [id]: !h[id] }));
+	var toggle = (id) => setHidden((h) => ({ ...(h && typeof h === "object" && !Array.isArray(h) ? h : {}), [id]: !(h && h[id]) }));
 	var visibleProjects = statProjects.filter((p) => !hidden[p.id]);
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
@@ -878,14 +865,14 @@ function StatsPanel(props) {
 			e("div", { className: "dss-body" },
 				showPrices ? e(PricingErrorBoundary, { t }, e(PricingPanel, { remote: props.pricing, projects: data.projects, t, onChanged: () => setRefreshTick(x => x + 1) })) : null,
 				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
-					e(StatsDataStatus, { state: sourceState, remote: data.remote, projects: visibleProjects, t }),
+					e(StatsDataStatus, { state: sourceState, remote: data.remote, t }),
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
 						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-				) : tab === "timeline" ? e(TimelineView, { projects: dateProjects, timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
+				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, {
 					globals,
 					dateGlobals,
@@ -1520,7 +1507,7 @@ async function apply(ctx) {
 	}, StatsPanel));
 
 	return () => {
-		disposeRemote();
+		if (typeof disposeRemote === "function") disposeRemote();
 		if (ownedStyle && ownedStyle.isConnected) ownedStyle.remove();
 		var tooltip = typeof document !== "undefined" ? document.getElementById("dss-tooltip") : null;
 		if (tooltip) tooltip.remove();

@@ -245,7 +245,7 @@ class StatsService extends Service {
 | 组件 | 职责 |
 |---|---|
 | `StatsTrigger` | 侧边栏底栏「统计」按钮（图标 + 折叠态自适应） |
-| `StatsPanel` | `shell.overlay` 全屏浮层，顶部 Tab（总览/时间线）+ 范围切换(7/30/90/全部) |
+| `StatsPanel` | `shell.overlay` 全屏浮层，顶部 Tab（总览/时间线/趋势/余额）+ 按日/全部 |
 | `SummaryCards` | 项目数/会话数/总轮步/LLM时长/工具时长/输入/输出/平均缓存命中 |
 | `ProjectsTable` | 每项目一行聚合统计（与官方 `StatsLine` 同口径）；点击展开会话明细 |
 | `LegendChips` | 项目颜色图例，可点击过滤 |

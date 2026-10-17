@@ -25,7 +25,8 @@ function slotDurations(times) {
 	return [...slotMs.entries()].map(([slot, ms]) => ({ slot, ms }));
 }
 
-// 按「provider + 模型 + 账户类型 + 服务档 + 上下文 + 30 分钟槽」聚合。
+// 按「provider + 模型 + 账户类型 + 服务档 + 上下文 + 槽 + 请求时间」聚合。
+// 保留精确请求时间，使同一 30 分钟槽内跨价格生效点的请求分别计价；
 // 上下文 token 数保留到请求粒度，避免 OpenAI/Gemini/MiniMax 的不同阈值被槽聚合破坏。
 function slotUsages(usages, engine = pricing) {
 	const m = new Map();

@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import pricing from "./pricing.cjs";
 import routeData from "./route-data.cjs";
-import { PROJECTION_ROW_VERSIONS, SESSION_PROJECTION_DOMAIN_VERSION, isSupportedProjectionDomainVersion, isSupportedRowVersion, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readStable, scanZstdFrames } from "./host-util.js";
+import { PROJECTION_ROW_VERSIONS, isSupportedProjectionDomainVersion, isSupportedRowVersion, SLOT_MS, accountTypeOf, firstString, identityKey, nonNegativeNumber, objectRecord, projectionRouteRows, rawIdentity, readStable, scanZstdFrames } from "./host-util.js";
 import { emptyRaw } from "./host-usage.js";
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
@@ -56,25 +56,6 @@ function encodeSegment(raw) {
 		out += ch !== "~" && /^[A-Za-z0-9._-]$/.test(ch) ? ch : `~${code.toString(16).toUpperCase().padStart(4, "0")}`;
 	}
 	return out;
-}
-
-function projectKey(cwd) {
-	if (typeof cwd !== "string" || cwd.length === 0) return "_no-cwd";
-	let readable = "", separatorRun = false;
-	for (let i = 0; i < cwd.length; i++) {
-		const code = cwd.charCodeAt(i), ch = String.fromCharCode(code);
-		if (ch === "/" || ch === "\\" || ch === ":") {
-			if (!separatorRun) readable += "-";
-			separatorRun = true;
-		} else if (ch !== "~" && /^[A-Za-z0-9._-]$/.test(ch)) {
-			readable += ch;
-			separatorRun = false;
-		} else {
-			readable += `~${code.toString(16).toUpperCase().padStart(4, "0")}`;
-			separatorRun = false;
-		}
-	}
-	return `--${(readable.replace(/^-+/, "") || "root").slice(0, 251)}--`;
 }
 
 function expandStorageRecord(record) {
@@ -320,7 +301,7 @@ function routeProjectionApply(state, event) {
 	if (!event || typeof event !== "object") return state;
 	if (event.type === "session") {
 		return { ...state, origin: firstString(event.origin, state.origin), parentSession: firstString(event.parentSession, state.parentSession),
-			seedLength: Number.isSafeInteger(event.seedLength) ? event.seedLength : state.seedLength,
+			seedLength: Number.isSafeInteger(event.seedLength) && event.seedLength >= 0 ? event.seedLength : state.seedLength,
 			inheritedEventCount: Math.max(state.inheritedEventCount, inheritedCount(event)) };
 	}
 	if (Number.isSafeInteger(event.seq) && event.seq < state.inheritedEventCount) return state;
@@ -631,13 +612,14 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 		// watermark and stale-log recovery rules. Prefer its cold-read ladder when
 		// available; the explicit restore path below is retained for rc6/partial
 		// hosts that expose the registry but not the cache service.
-		const needsSource = projectionCache?.coldSnapshot?.length >= 2 || projections?.restore?.length >= 4;
-		// rc1+ takes the full observation; rc2 owns its own persistence read.
-		// Both shipped methods retain their declared arity after binding.
-		if (needsSource && !source) return null;
-		if (projectionCache && typeof projectionCache.coldSnapshot === "function") {
+		// `coldSnapshot(id, signal)` (arity 2, rc6) and
+		// `coldSnapshot(header, inheritedCount, events)` (arity 3, newer hosts)
+		// are not interchangeable. Only the arity-3 form needs the observation;
+		// the arity-2 form must receive the session id, never a header object.
+		const coldSnapshotNeedsSource = projectionCache?.coldSnapshot?.length >= 3;
+		if (projectionCache && typeof projectionCache.coldSnapshot === "function" && (!coldSnapshotNeedsSource || source)) {
 			try {
-				const snapshot = needsSource
+				const snapshot = coldSnapshotNeedsSource
 					? await projectionCache.coldSnapshot(source.header, source.inheritedEventCount, source.events)
 					: await projectionCache.coldSnapshot(sessionId);
 				const snapshotSeq = snapshot?.asOfSeq;
@@ -696,13 +678,26 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 // A cold projection snapshot can be sufficient for an archived/missing log.
 // Keep that path explicit so the host never has to synchronously scan files
 // merely to recover token totals from the official cache service.
-function infoFromProjectionValues(values, entry) {
+function infoFromProjectionValues(values, entry, warnings = null, sessionId = null) {
 	const metadata = objectRecord(values?.sessionListMetadata) || objectRecord(entry?.rows?.sessionListMetadata?.val) || {};
 	const identity = objectRecord(entry?.identity) || {};
 	const createdAt = Number.isFinite(identity.createdAt) && identity.createdAt >= 0 ? identity.createdAt : null;
 	const lastPromptAt = Number.isFinite(metadata.lastPromptAt) && metadata.lastPromptAt >= 0 ? metadata.lastPromptAt : null;
 	const routeProjection = objectRecord(values?.statsRoute);
-	const routeRows = projectionRouteRows(routeProjection);
+	// A malformed route projection must never fail the whole aggregate: keep the
+	// session metadata and token totals, drop only the model attribution.
+	let routeRows = [];
+	if (routeProjection) {
+		try {
+			routeRows = projectionRouteRows(routeProjection);
+		} catch (error) {
+			if (warnings) warnings.push({
+				code: "SESSION_CACHE_ROUTE_INVALID",
+				...(sessionId ? { sessionId } : {}),
+				message: error?.message || String(error)
+			});
+		}
+	}
 	const routeTimes = routeRows.map((row) => row.time).filter((value) => Number.isFinite(value) && value >= 0);
 	const times = [createdAt, lastPromptAt, ...routeTimes].filter((value, index, list) => value !== null && list.indexOf(value) === index).sort((a, b) => a - b);
 	const usages = routeRows.map((row) => ({

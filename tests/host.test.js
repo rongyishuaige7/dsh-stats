@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
+import { infoFromProjectionValues } from '../src/host-sessions.js';
 import { TYPERT } from '../src/typert-host.js';
 import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
@@ -1213,5 +1214,65 @@ test('reads per-record session_projcache directory when single file is absent', 
 	expect(result.meta.warnings.some(w => w.code === 'SESSION_CACHE_READ_FAILED')).toBe(false);
 	expect(result.projects[0].sessions[0].stats.uncached).toBe(500);
 	expect(result.projects[0].sessions[0].stats.llmMs).toBe(300);
+});
+
+test('rc6-style coldSnapshot(id, signal) receives the session id, not a header object', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	fixture({ cold: projection(now) });
+	const calls = [];
+	const values = {
+		sessionStats: { turns: 2, steps: 3, llmMs: 20, toolMs: 4, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+		tokenUsage: { totals: { uncachedInputTokens: 9, outputTokens: 2, cacheReadTokens: 6, cacheWriteTokens: 0 } },
+	};
+	const ctx = {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['cold'] }] },
+		sessionQuery: { readSession: async () => { throw new Error('the log should not be read'); } },
+		sessionProjectionCache: {
+			coldSnapshot: async function (id, signal) {
+				calls.push([id, signal]);
+				return { asOfSeq: 1, values };
+			},
+		},
+	};
+	const result = await StatsService.prototype.aggregate.call({ ctx });
+	expect(calls).toHaveLength(1);
+	expect(calls[0][0]).toBe('cold');
+	expect(calls[0][1]).toBeUndefined();
+	expect(result.meta.warnings.some((warning) => /FAILED/.test(warning.code))).toBe(false);
+	expect(result.projects[0].sessions[0].stats).toMatchObject({ turns: 2, steps: 3, uncached: 9, output: 2, cacheRead: 6 });
+});
+
+test('malformed statsRoute is ignored without failing projection values', () => {
+	const warnings = [];
+	const info = infoFromProjectionValues({
+		statsRoute: { routeTree: { bad: {} }, current: { providerId: 'openai', model: null, accountType: 'api', serviceTier: 'standard' } },
+		sessionStats: { turns: 2, steps: 3, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+	}, { identity: { createdAt: 1, cwd: '/tmp/fixture' } }, warnings, 'bad-route');
+	expect(info.usages).toEqual([]);
+	expect(info.stats).toMatchObject({ turns: 2, steps: 3 });
+	expect(warnings).toEqual(expect.arrayContaining([
+		expect.objectContaining({ code: 'SESSION_CACHE_ROUTE_INVALID', sessionId: 'bad-route' }),
+	]));
+});
+
+test('route projection ignores a negative seedLength instead of poisoning the view', () => {
+	const definition = captureRouteProjection();
+	const state = definition.apply(definition.init(), { type: 'session', seq: 0, time: 1, parentSession: 'parent', seedLength: -5 });
+	expect(definition.view(state).seedLength).toBeNull();
+});
+
+test('warning details are capped while degradation is preserved', async () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-warnings-'));
+	createdHomes.push(home);
+	mkdirSync(join(home, 'storages'), { recursive: true });
+	const workspaces = {};
+	for (let index = 0; index < 205; index++) workspaces['w' + index] = { title: 42, path: '/tmp/w' + index, sessionIds: [] };
+	writeFileSync(join(home, 'storages', 'workspace.json'), JSON.stringify({ tables: { workspaces }, global: { archivedSessionIds: [] } }));
+	writeFileSync(join(home, 'storages', 'session_projcache.json'), JSON.stringify({ tables: { sessions: {} } }));
+	process.env.DSH_HOME = home;
+	const result = await StatsService.prototype.aggregate.call({ ctx: {} });
+	expect(result.meta.warnings).toHaveLength(201);
+	expect(result.meta.warnings[200]).toMatchObject({ code: 'WARNINGS_TRUNCATED' });
+	expect(result.meta.degraded).toBe(true);
 });
 

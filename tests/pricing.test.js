@@ -421,3 +421,35 @@ test('ruleMatchesModel supports route prefixes and compound suffixes', () => {
 	expect(pricing.ruleMatchesModel(rule, 'deepseek/deepseek-v4.1-flash')).toBe(true);
 	expect(pricing.ruleMatchesModel(rule, 'cn:deepseek-v4.1-pro')).toBe(false);
 });
+
+test('provider-scoped catalog rules take precedence over family rules', () => {
+	const base = structuredClone(pricing.BUILTIN);
+	const common = {
+		family: 'openai', canonical: 'gpt-test', aliases: ['gpt-test'], currency: 'USD',
+		sourceUrl: 'https://example.com/pricing', retrievedAt: '2026-09-17', confidence: 'exact',
+		reasoningIncludedInOutput: true, rates: { uncached: 1, cacheRead: 0.1, cacheWrite: 2, output: 3 },
+	};
+	const catalog = {
+		...base,
+		version: base.version + 1,
+		publishedAt: new Date().toISOString(),
+		rules: [
+			...base.rules,
+			{ id: 'test/openai-family', ...common },
+			{ id: 'test/openai-provider', providerId: 'openai', ...common },
+		],
+	};
+	const engine = pricing.createPricing(catalog);
+	const quote = engine.priceUsage({ providerId: 'openai', model: 'gpt-test', time: Date.now(), uncached: 1000000, output: 0, cacheRead: 0, cacheWrite: 0 });
+	expect(quote).toMatchObject({ status: 'exact', ruleId: 'test/openai-provider' });
+});
+
+test('custom provider rules are matched case-insensitively', () => {
+	const engine = pricing.createPricing(pricing.BUILTIN, [{
+		id: 'custom/case', providerId: 'Yi-API', family: 'unknown', canonical: 'case-model', aliases: ['case-model'],
+		currency: 'CNY', sourceUrl: null, retrievedAt: '2026-09-17', confidence: 'estimated',
+		reasoningIncludedInOutput: true, rates: { uncached: 1, cacheRead: 0, cacheWrite: null, output: 2 },
+	}]);
+	const quote = engine.priceUsage({ providerId: 'yi-api', model: 'case-model', time: Date.now(), uncached: 1000000, output: 0, cacheRead: 0, cacheWrite: 0 });
+	expect(quote).toMatchObject({ status: 'estimated', ruleId: 'custom/case' });
+});

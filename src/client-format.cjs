@@ -135,10 +135,6 @@ function sessionCost(s) {
 function projectCostSummary(p) {
 	return mergeCostSummaries((p.sessions || []).map(sessionCostSummary));
 }
-function projectCost(p) {
-	var summary = projectCostSummary(p);
-	return (summary.status === "exact" || summary.status === "estimated") && summary.totals.length === 1 ? summary.totals[0].amount : null;
-}
 function sessionExportUsages(session) {
 	if (Array.isArray(session?.slotUsage) && session.slotUsage.length) return session.slotUsage;
 	var stats = session?.stats || {};

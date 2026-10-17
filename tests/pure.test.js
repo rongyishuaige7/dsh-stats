@@ -124,6 +124,8 @@ test('project colors stay stable when date filtering removes earlier projects', 
 
 	expect(firstDate.map((project, index) => projectColorIndex(project, colors, index))).toEqual([0, 2]);
 	expect(secondDate.map((project, index) => projectColorIndex(project, colors, index))).toEqual([1, 2]);
+	const reordered = projectColorIndexes([allProjects[2], allProjects[0], allProjects[1]]);
+	expect(allProjects.map((project) => reordered.get(project.id))).toEqual([0, 1, 2]);
 });
 
 test('CalendarHeatmap only selects past or current dates with token usage', () => {
@@ -834,4 +836,48 @@ test('navigation failures reject without switching owners or pretending success'
 	expect(sessions.open).not.toHaveBeenCalled();
 	await expect(openStatsSession({ retain: vi.fn() }, { id: 'main' })).rejects.toThrow('navigation is unavailable');
 	await expect(openStatsSession({ open: async () => { throw new Error('async failure'); } }, { id: 'main' })).rejects.toThrow('async failure');
+});
+
+test('client fallback merges a stray cwd session into an existing workspace path', () => {
+	const now = Date.parse('2026-09-10T02:00:00Z');
+	const projects = aggregate(
+		[{ id: 'stray', cwd: '/p', updatedAt: now }],
+		[{ workspaceId: 'w1', title: 'W', path: '/p', sessionIds: [] }],
+		(key) => key,
+		[],
+	);
+	expect(projects).toHaveLength(1);
+	expect(projects[0]).toMatchObject({ id: 'w1', path: '/p', sessionCount: 1 });
+	expect(projects[0].sessions.map((session) => session.id)).toEqual(['stray']);
+});
+
+test('client fallback keeps an uncategorized project id stable across locales', () => {
+	const now = Date.parse('2026-09-10T02:00:00Z');
+	const translate = (locale) => (key) => key === 'w.uncategorized' ? locale : key;
+	const zh = aggregate([{ id: 'u', cwd: null, updatedAt: now }], [], translate('（未分类）'), []);
+	const en = aggregate([{ id: 'u', cwd: null, updatedAt: now }], [], translate('(uncategorized)'), []);
+	expect(zh[0].id).toBe('cwd-(uncategorized)');
+	expect(en[0].id).toBe('cwd-(uncategorized)');
+	expect(zh[0].name).toBe('（未分类）');
+	expect(en[0].name).toBe('(uncategorized)');
+});
+
+test('zero-token usage rows do not create active days', () => {
+	const day = Date.parse('2026-09-10T02:00:00Z');
+	const session = {
+		id: 'zero', updatedAt: day + 86400000,
+		slotUsage: [{ slot: Math.floor(day / 1800000), uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }],
+		stats: {},
+	};
+	const byDay = sessionDayTokens([session]);
+	expect(byDay.has('2026-09-10')).toBe(false);
+	expect(byDay.has('2026-09-11')).toBe(true);
+	expect(streakAndActive(byDay)).toMatchObject({ activeDays: 1, currentStreak: 1, longestStreak: 1 });
+});
+
+test('fallback timeline clamps corrupt durations instead of walking unbounded slots', () => {
+	const now = Date.parse('2026-09-10T02:00:00Z');
+	const timeline = buildTimeline([{ id: 'p', name: 'P', sessions: [{ id: 's', updatedAt: now, durMs: Number.MAX_SAFE_INTEGER }] }], 30);
+	expect(timeline.days.length).toBeGreaterThan(0);
+	expect(timeline.days.length).toBeLessThanOrEqual(8);
 });

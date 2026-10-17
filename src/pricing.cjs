@@ -132,16 +132,23 @@ function indexRule(index, rule) {
 	}
 }
 const scopedIndexes = new Map(), customIndexes = new Map(), fallbackIndex = ruleIndex();
+// Provider ids are user/config supplied and compared case-insensitively. Keep
+// one canonical lookup key so `OpenAI` and `openai` cannot select different
+// rule sets for the same route.
+function normalizedProviderKey(value) {
+	return String(value || "").trim().toLowerCase();
+}
 function addScoped(map, key, rule) {
 	let index = map.get(key);
 	if (!index) { index = ruleIndex(); map.set(key, index); }
 	indexRule(index, rule);
 }
 for (const rule of RULES) {
-	addScoped(scopedIndexes, rule.providerId ? "provider:" + rule.providerId : "family:" + rule.family, rule);
-	if (!MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) && !rule.providerId && rule.confidence === "exact") indexRule(fallbackIndex, rule);
+	const family = String(rule.family || "").trim().toLowerCase();
+	addScoped(scopedIndexes, rule.providerId ? "provider:" + normalizedProviderKey(rule.providerId) : "family:" + family, rule);
+	if (!MODEL_FALLBACK_EXCLUDED_FAMILIES.has(family) && !rule.providerId && rule.confidence === "exact") indexRule(fallbackIndex, rule);
 }
-for (const rule of overrides) addScoped(customIndexes, rule.providerId, rule);
+for (const rule of overrides) addScoped(customIndexes, normalizedProviderKey(rule.providerId), rule);
 
 // Precedence applies to the whole candidate set: a literal thinking model
 // wins before any rule can match its shorter, separately priced base model.
@@ -176,10 +183,16 @@ function indexedMatches(indexes, raw, at, accountType) {
 // Resolve provider-scoped rules first. Unknown provider ids may use a unique
 // first-party model row as an estimate, but the provider family stays unknown.
 function rulesForIdentity(family, modelRaw, at, providerId, accountType) {
-	var custom = indexedMatches([customIndexes.get(providerId)], modelRaw, at, accountType);
+	var providerKey = normalizedProviderKey(providerId);
+	var familyKey = String(family || "unknown").trim().toLowerCase();
+	var custom = indexedMatches([customIndexes.get(providerKey)], modelRaw, at, accountType);
 	if (custom.length) return { matches: custom, estimatedFallback: false, custom: true };
-	var direct = indexedMatches([scopedIndexes.get("provider:" + providerId), scopedIndexes.get("family:" + family)], modelRaw, at, accountType);
-	if (direct.length > 0 || family !== "unknown") return { matches: direct, estimatedFallback: false };
+	// A provider-specific rule overrides the family rule for the same model.
+	// Combining both indexes here would make every override ambiguous.
+	var providerMatches = indexedMatches([scopedIndexes.get("provider:" + providerKey)], modelRaw, at, accountType);
+	if (providerMatches.length > 0) return { matches: providerMatches, estimatedFallback: false };
+	var direct = indexedMatches([scopedIndexes.get("family:" + familyKey)], modelRaw, at, accountType);
+	if (direct.length > 0 || familyKey !== "unknown") return { matches: direct, estimatedFallback: false };
 	var fallback = indexedMatches([fallbackIndex], modelRaw, at, accountType);
 	return { matches: fallback, estimatedFallback: fallback.length === 1 };
 }
@@ -496,20 +509,6 @@ function mergeCostSummaries(summaries) {
 	return result;
 }
 
-function pricingCatalog() {
-	return RULES.map(function(rule) {
-		return {
-			ruleId: rule.id,
-			providerFamily: rule.family,
-			modelCanonical: rule.canonical,
-			currency: rule.currency,
-			status: rule.confidence === "estimated" ? "estimated" : "exact",
-			sourceUrl: rule.sourceUrl,
-			retrievedAt: rule.retrievedAt
-		};
-	});
-}
-
 return {
 	catalog,
 	SOURCES: SOURCES,
@@ -531,7 +530,6 @@ return {
 	summarizeCostsCny: summarizeCostsCny,
 	mergeCostSummariesCny: mergeCostSummariesCny,
 	emptyCostSummary: emptyCostSummary,
-	pricingCatalog: pricingCatalog,
 	tokenCounts: tokenCounts
 };
 

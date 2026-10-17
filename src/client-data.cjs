@@ -18,9 +18,6 @@ function sumSessionStats(sessions) {
 	});
 	return display(raw);
 }
-function slotOnDate(slot, dateKey) {
-	return localDayKey(slot * SLOT_MS) === dateKey;
-}
 function slotInWindow(slot, startMs, endMs) {
 	var t = slot * SLOT_MS;
 	return t >= startMs && t < endMs;
@@ -413,34 +410,54 @@ function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 		});
 	});
 
-	// 未归入任何工作区的会话，按 cwd 分组兜底
+	// 未归入任何工作区的会话，按 cwd 分组兜底。
+	// 用固定 sentinel 作为未分类 key：显示名可以随语言变化，但 project id、
+	// 隐藏偏好和颜色不能跟着语言漂移。
+	var UNCATEGORIZED = "(uncategorized)";
 	var strayByCwd = new Map();
 	sessionSummaries.forEach((s) => {
 		if (accounted.has(s.id)) return;
-		var cwd = s.cwd || t("w.uncategorized");
+		var cwd = s.cwd || UNCATEGORIZED;
 		if (!strayByCwd.has(cwd)) strayByCwd.set(cwd, []);
 		strayByCwd.get(cwd).push(s);
 	});
 	strayByCwd.forEach((members, cwd) => {
+		// 与宿主一致：cwd 与已有项目 path 相同时合并，避免出现两个同名项目。
+		var existing = projects.find(function(p) { return p.path === cwd; });
+		var target = existing || {
+			id: "cwd-" + cwd,
+			name: cwd === UNCATEGORIZED ? t("w.uncategorized") : basename(cwd),
+			path: cwd,
+			sessionCount: 0,
+			subagentCount: 0,
+			lastActiveAt: null,
+			stats: display(emptyRaw()),
+			sessions: []
+		};
+		if (!existing) projects.push(target);
 		var agg = emptyRaw();
-		var sessions = [];
-		var lastActiveAt = null;
-		var subagentCount = 0;
+		if (existing && target.stats) addRaw(agg, target.stats);
 		members.forEach((s) => {
 			if (isBlank(s)) return;
 			var raw = rawOf(s);
 			addRaw(agg, raw);
-			sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, ...clientSessionIdentityFields(s), ...(Array.isArray(s.slotUsage) && s.slotUsage.length ? { slotUsage: s.slotUsage } : {}), subagent: s.origin === "subagent", archived: isArchived(s), stats: display(raw), durMs: raw.llmMs + raw.toolMs });
-			if (s.origin === "subagent") subagentCount++;
-			if (s.updatedAt != null && (lastActiveAt == null || s.updatedAt > lastActiveAt)) lastActiveAt = s.updatedAt;
+			target.sessions.push({ id: s.id, title: s.title || s.displayTitle || null, updatedAt: s.updatedAt || null, ...clientSessionIdentityFields(s), ...(Array.isArray(s.slotUsage) && s.slotUsage.length ? { slotUsage: s.slotUsage } : {}), subagent: s.origin === "subagent", archived: isArchived(s), stats: display(raw), durMs: raw.llmMs + raw.toolMs });
+			if (s.updatedAt != null && (target.lastActiveAt == null || s.updatedAt > target.lastActiveAt)) target.lastActiveAt = s.updatedAt;
 		});
-		sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-		projects.push({ id: "cwd-" + cwd, name: cwd === t("w.uncategorized") ? cwd : basename(cwd), path: cwd, sessionCount: sessions.length, subagentCount: subagentCount, lastActiveAt, stats: display(agg), sessions });
+		target.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+		target.sessionCount = target.sessions.length;
+		target.subagentCount = target.sessions.filter(function(session) { return session.subagent; }).length;
+		target.lastActiveAt = target.sessions.reduce(function(max, session) { return Math.max(max || 0, session.updatedAt || 0); }, 0) || null;
+		target.stats = display(agg);
 	});
 
 	projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 	return projects;
 }
+
+// Fallback timeline is session-granularity; cap a corrupt/huge duration so a
+// single bad stats row cannot make the browser walk millions of 30-min slots.
+var MAX_FALLBACK_TIMELINE_MS = 7 * 86400000;
 
 // ------------------------------------------------------------------
 // 时间线（Tier 1：会话粒度，用 updatedAt 与 llm+tool 时长近似）
@@ -451,19 +468,17 @@ function dayKey(ms) {
 function dayStartMs(key) {
 	return new Date(key + "T00:00:00+08:00").getTime();
 }
-function dateKeyOffset(key, delta) {
-	return new Date(Date.parse(key + "T00:00:00Z") + delta * 86400000).toISOString().slice(0, 10);
-}
 function buildTimeline(projects, slotMinutes) {
 	var slotMs = slotMinutes * 60000;
 	var daysMap = new Map();
 	var projectIndex = new Map();
-	projects.forEach((p, i) => projectIndex.set(p.id, i));
+	// Keep fallback timeline colors aligned with the card/legend assignment.
+	(projects || []).slice().sort(function(a, b) { return String(a.id).localeCompare(String(b.id)); }).forEach((p, i) => projectIndex.set(p.id, i));
 
 	projects.forEach((p) => {
 		p.sessions.forEach((s) => {
-			if (!s.updatedAt) return;
-			var duration = Math.max(s.durMs || 0, 0);
+			if (!Number.isFinite(s.updatedAt)) return;
+			var duration = Math.min(Math.max(s.durMs || 0, 0), MAX_FALLBACK_TIMELINE_MS);
 			var start = duration > 0 ? s.updatedAt - duration : s.updatedAt;
 			var end = duration > 0 ? s.updatedAt : s.updatedAt + 60000;
 			var startSlot = Math.floor(start / slotMs);
@@ -544,6 +559,10 @@ function sessionDayTokens(sessions) {
 		var detailed = hasUsageSlots || hasStatSlots || hasActivitySlots;
 		if (hasUsageSlots) {
 			s.slotUsage.forEach(function(su) {
+				// Metadata-only route rows (zero tokens) are not activity; the
+				// session timestamp below still keeps genuinely active days.
+				var tokenTotal = (su.uncached || 0) + (su.output || 0) + (su.cacheRead || 0) + (su.cacheWrite || 0) + (su.reasoning || 0);
+				if (tokenTotal <= 0 || !Number.isFinite(su.slot)) return;
 				var k = localDayKey(su.slot * 1800000);
 				var b = getDay(k);
 				b.uncached += su.uncached || 0;

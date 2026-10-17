@@ -6,6 +6,10 @@ import trust from './pricing-trust.cjs';
 import builtinEnvelope from '../data/pricing/latest.json' with { type: 'json' };
 
 const HOUR = 3600000, MAX_BYTES = 4 * 1024 * 1024;
+// A crash between creating the lock and writing its pid leaves an empty file.
+// Reclaim malformed locks only after a generous idle window so a live writer is
+// never stolen.
+const LOCK_STALE_MS = 10 * 60 * 1000;
 const stores = new WeakMap();
 function read(file) {
   if (statSync(file).size > MAX_BYTES) throw new Error('pricing-file-too-large');
@@ -38,7 +42,7 @@ export class PricingStore {
         this.catalog = catalog; this.envelope = cached.envelope;
         this.lastSuccessAt = Number.isFinite(cached.lastSuccessAt) ? cached.lastSuccessAt : null;
       }
-    } catch (error) { if (error.code !== 'ENOENT') this.error = 'pricing-cache-invalid'; }
+    } catch (error) { if (error.code !== 'ENOENT' || this.settings.pinnedVersion !== null) this.error = 'pricing-cache-invalid'; }
     this.rebuild();
   }
   validateSettings(value) {
@@ -78,11 +82,20 @@ export class PricingStore {
     try { fd = openSync(lock, 'wx', 0o600); }
     catch (error) {
       if (error.code !== 'EEXIST') throw new Error('pricing-settings-busy');
-      // Recover only locks whose owning process is known to have exited.
+      // Recover locks whose owning process is known to have exited, plus
+      // malformed/empty locks left by a crash between open and write.
       let dead = false;
-      try { const owner = read(lock); if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
-        try { process.kill(owner.pid, 0); } catch (err) { dead = err.code === 'ESRCH'; }
-      } } catch {}
+      let ownerKnown = false;
+      try {
+        const owner = read(lock);
+        if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
+          ownerKnown = true;
+          try { process.kill(owner.pid, 0); } catch (err) { dead = err.code === 'ESRCH'; }
+        }
+      } catch {}
+      if (!dead && !ownerKnown) {
+        try { dead = Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS; } catch {}
+      }
       if (!dead) throw new Error('pricing-settings-busy');
       try { unlinkSync(lock); fd = openSync(lock, 'wx', 0o600); } catch { throw new Error('pricing-settings-busy'); }
     }
@@ -182,6 +195,6 @@ export class PricingStore {
 }
 export function pricingStore(owner, home) {
   let store = stores.get(owner);
-  if (!store || store.home !== home) { store = new PricingStore(home); store.home = home; stores.set(owner, store); }
+  if (!store || store.home !== home || store.closed) { store = new PricingStore(home); store.home = home; stores.set(owner, store); }
   return store;
 }

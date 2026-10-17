@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPairSync, sign } from 'node:crypto';
@@ -153,4 +153,18 @@ test('disposing the host cancels updates without recreating its data directory',
   const { existsSync } = await import('node:fs');
   expect(existsSync(store.dir)).toBe(false);
   expect(store.catalog.version).toBe(base.version);
+});
+
+test('a malformed stale lock is reclaimed but a fresh lock stays busy', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pricing-lock-'));
+  homes.push(home);
+  const store = new PricingStore(home, { publicKey });
+  const dir = join(home, 'plugins', 'dsh-stats', 'pricing');
+  mkdirSync(dir, { recursive: true });
+  const lock = join(dir, 'settings.lock');
+  writeFileSync(lock, '');
+  expect(() => store.withLock(() => 1)).toThrow('pricing-settings-busy');
+  const old = new Date(Date.now() - 11 * 60 * 1000);
+  utimesSync(lock, old, old);
+  expect(store.withLock(() => 42)).toBe(42);
 });

@@ -11,7 +11,27 @@ import pricing from "./pricing.cjs";
 import { pricingStore } from "./pricing-store.js";
 import { collectAccounts, providerViews } from "./accounts.js";
 const { summarizeCostsCny, mergeCostSummariesCny } = pricing;
-import { SESSION_PROJECTION_DOMAIN_VERSION, isSupportedProjectionDomainVersion, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, rawIdentity, readJson, readSessionProjcache } from "./host-util.js";
+import { isSupportedProjectionDomainVersion, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, rawIdentity, readJson, readSessionProjcache } from "./host-util.js";
+const MAX_WARNINGS = 200;
+
+// Keep the RPC payload bounded and stable: diagnostics are grouped by
+// code/session/message, and only the first MAX_WARNINGS details are returned.
+// The full list still drives `degraded`, so truncation never hides a real
+// degradation.
+function finalizeWarnings(warnings) {
+	const unique = [];
+	const seen = new Set();
+	for (const warning of warnings) {
+		const key = [warning.code, warning.sessionId || "", warning.message].join("\u0000");
+		if (seen.has(key)) continue;
+		seen.add(key);
+		unique.push(warning);
+	}
+	const truncated = unique.length > MAX_WARNINGS;
+	const output = truncated ? unique.slice(0, MAX_WARNINGS) : unique;
+	if (truncated) output.push({ code: "WARNINGS_TRUNCATED", message: `${unique.length - MAX_WARNINGS} additional warnings were omitted` });
+	return { warnings: output, unique };
+}
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
 import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";
 import { addRaw, emptyRaw, modelUsages, projectionSlotUsage, repriceSnapshot, slotDurations, slotUsages } from "./host-usage.js";
@@ -122,7 +142,15 @@ let StatsService = (() => {
 			if (ctx && typeof ctx.inject === "function") {
 				ctx.inject(["sessionProjections"], (projectionCtx) => {
 					const registry = projectionCtx?.sessionProjections;
-					if (registry && typeof registry.register === "function") registry.register(STATS_ROUTE_PROJECTION);
+					if (registry && typeof registry.register === "function") {
+						try {
+							registry.register(STATS_ROUTE_PROJECTION);
+						} catch (error) {
+							// A duplicate/foreign statsRoute registration must not
+							// disable the remaining statistics RPCs.
+							console.warn("[dsh-stats] statsRoute projection registration failed:", error?.message || error);
+						}
+					}
 				});
 			}
 		}
@@ -161,7 +189,7 @@ let StatsService = (() => {
 			}
 			if (officialWorkspaceAvailable) {
 				try {
-					const records = {};
+					const records = Object.create(null);
 					for (const entity of workspaceRegistry.list()) {
 						if (!entity || typeof entity.id !== "string") continue;
 						records[entity.id] = { title: typeof entity.title === "string" ? entity.title : "", path: typeof entity.path === "string" ? entity.path : "", sessionIds: Array.isArray(entity.sessionIds) ? [...entity.sessionIds] : [] };
@@ -183,7 +211,9 @@ let StatsService = (() => {
 			if (wsRead.ok && rawArchivedIds !== undefined && !Array.isArray(rawArchivedIds)) warnings.push({ code: "ARCHIVED_IDS_SHAPE_INVALID", message: "archivedSessionIds was not an array; the value was ignored" });
 			const archivedSet = new Set((Array.isArray(rawArchivedIds) ? rawArchivedIds : []).filter((id) => typeof id === "string" && id));
 			const rawSessionsTable = sessionsRead.value?.tables?.sessions;
-			const sessionsTable = objectRecord(rawSessionsTable) || {};
+			// Use a null-prototype table: a session id such as `__proto__` must be
+			// an ordinary key, never an assignment to Object.prototype.
+			const sessionsTable = Object.assign(Object.create(null), objectRecord(rawSessionsTable) || {});
 			const projectionDomainVersion = sessionsRead.value?.unit?.version;
 			if (projectionDomainVersion !== undefined && !isSupportedProjectionDomainVersion(projectionDomainVersion)) warnings.push({ code: "SESSION_CACHE_DOMAIN_VERSION_UNSUPPORTED", message: `projection cache domain version ${String(projectionDomainVersion)} is not supported` });
 			if (sessionsRead.ok && !objectRecord(rawSessionsTable)) warnings.push({ code: "SESSION_TABLE_SHAPE_INVALID", message: "session projection table was missing or not an object; the value was ignored" });
@@ -305,7 +335,7 @@ let StatsService = (() => {
 						// Official projection values are already cut at one validated
 						// watermark. Use them directly for cold sessions, including hosts
 						// where the optional route projection is not mounted.
-						info = infoFromProjectionValues(officialValues, entry);
+						info = infoFromProjectionValues(officialValues, entry, warnings, sessionId);
 						if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
 						const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
 						if (officialUsage) usageTotals = {
@@ -343,7 +373,7 @@ let StatsService = (() => {
 					}
 				}
 				if (!info && !officialSource && officialValues) {
-					info = infoFromProjectionValues(officialValues, entry);
+					info = infoFromProjectionValues(officialValues, entry, warnings, sessionId);
 					if (objectRecord(officialValues.sessionStats)) statsRow = officialValues.sessionStats;
 					const officialUsage = normalizeProjectionUsage(officialValues.tokenUsage);
 					if (officialUsage) usageTotals = {
@@ -380,7 +410,7 @@ let StatsService = (() => {
 				if (!officialSource && !officialValues && info?.missing && entry && info.usages.length === 0) {
 					const routeValue = routeProjectionValueFromEntry(entry, sessionId, sourceHeader, warnings, projectionDomainVersion);
 					if (routeValue) {
-						const routeInfo = infoFromProjectionValues({ statsRoute: routeValue }, entry);
+						const routeInfo = infoFromProjectionValues({ statsRoute: routeValue }, entry, warnings, sessionId);
 						info = {
 							...routeInfo,
 							missing: true,
@@ -610,7 +640,9 @@ let StatsService = (() => {
 			if (!overridePricing && cost.unpricedTokens > 0 && this._pricingAuto) void priceStore.refresh({ unknown: true });
 
 			const projectIndex = new Map();
-			projects.forEach((p, i) => projectIndex.set(p.id, i));
+			// Colors are assigned by stable project id order, not by activity order:
+			// a project becoming active must not recolor every other project.
+			[...projects].sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach((p, i) => projectIndex.set(p.id, i));
 
 			// 时间线：先合并同项目并发会话区间，再按槽切分，避免父/子代理重叠计时。
 			const daysMap = new Map();
@@ -643,11 +675,12 @@ let StatsService = (() => {
 			const days = [...daysMap.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 			days.forEach((d) => d.slotBlocks.sort((a, b) => a.slot - b.slot));
 
+			const warningSummary = finalizeWarnings(warnings);
 			return {
 				projects,
 				cost,
 				timeline: { slotMinutes: SLOT_MINUTES, days },
-				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint: priceStore.fingerprint, degraded: warnings.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings }
+				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint: priceStore.fingerprint, degraded: warningSummary.unique.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings: warningSummary.warnings }
 			};
 		}
 
