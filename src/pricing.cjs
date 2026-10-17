@@ -348,8 +348,11 @@ function normalizeServiceTier(value) {
 	return ["standard", "priority", "batch", "flex"].includes(value) ? value : "unknown";
 }
 
-function ratesFor(rule, usage, at) {
-	if (rule.timeOfUse) return rule.timeOfUse[timeOfUsePeriod(rule, at).peak ? "peak" : "offPeak"];
+function ratesFor(rule, usage, at, period) {
+	if (rule.timeOfUse) {
+		var current = period || timeOfUsePeriod(rule, at);
+		return rule.timeOfUse[current.peak ? "peak" : "offPeak"];
+	}
 	var contextTokens = Number.isFinite(usage && usage.contextTokens)
 		? usage.contextTokens
 		: usage && usage.contextOver512k === true
@@ -412,7 +415,10 @@ function priceUsage(usage, identityInput) {
 	if (matches.length > 1) return emptyCost("ambiguous", identity, tokens);
 	if (matches.length === 0) return emptyCost("unsupported", identity, tokens);
 	var rule = matches[0];
-	var rates = ratesFor(rule, usage, at);
+	// Evaluate the peak/off-peak calendar once per quote; it is used for the
+	// rates, the uncertainty flag and the exported pricing metadata.
+	var period = rule.timeOfUse ? timeOfUsePeriod(rule, at) : null;
+	var rates = ratesFor(rule, usage, at, period);
 	var tier = normalizeServiceTier(usage?.serviceTier);
 	if (tier === "unknown" || tier !== "standard" && !rule.tierMultipliers && !rule.serviceTiers) return emptyCost("unsupported", identity, tokens);
 	if (rule.tierMultipliers) {
@@ -428,7 +434,7 @@ function priceUsage(usage, identityInput) {
 	if (unpricedTokens > 0 && fields.every(key => rates[key] === null || tokens[key] === 0)) return emptyCost("unsupported", identity, tokens);
 	if (!Number.isFinite(amount)) return emptyCost("unsupported", identity, tokens);
 	var allZero = rates.uncached === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 && rates.output === 0;
-	var uncertain = !!(rule.timeOfUse && timeOfUsePeriod(rule, at).uncertain) || usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
+	var uncertain = !!(period && period.uncertain) || usage?.pricingIncomplete === true || resolved.estimatedFallback || rule.confidence === "estimated"
 		|| rule.observedFrom && at < Date.parse(rule.observedFrom)
 		|| rule.cacheWriteDurationUnknown && tokens.cacheWrite > 0
 		|| rule.cacheStorageUnknown && tokens.cacheWrite > 0
@@ -449,7 +455,7 @@ function priceUsage(usage, identityInput) {
 		modelCanonical: rule.canonical,
 		pricing: { catalogVersion: catalog.version, ruleRevision: rule.id, pricedAt: at,
 			basis: resolved.custom ? "custom" : resolved.estimatedFallback ? "reference" : "provider",
-			calendarEstimate: !!(rule.timeOfUse && timeOfUsePeriod(rule, at).uncertain),
+			calendarEstimate: !!(period && period.uncertain),
 			historicalEstimate: !!(rule.observedFrom && at < Date.parse(rule.observedFrom)) }
 	};
 }
