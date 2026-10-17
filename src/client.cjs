@@ -100,6 +100,20 @@ function projectColorIndex(project, indexes, fallbackIndex) {
 	return ((value % 16) + 16) % 16;
 }
 
+var SESSION_DETAIL_LIMIT = 100;
+// A selected project can contain hundreds of sessions; mount only the first
+// window and let the user expand the rest explicitly.
+function limitSessionDetail(mainSessions, subSessions, showAll, limit) {
+	var main = Array.isArray(mainSessions) ? mainSessions : [];
+	var sub = Array.isArray(subSessions) ? subSessions : [];
+	var total = main.length + sub.length;
+	if (showAll || !Number.isFinite(limit) || limit <= 0) return { main, sub, hidden: 0, total };
+	var visibleMain = main.slice(0, limit);
+	var remaining = Math.max(0, limit - visibleMain.length);
+	var visibleSub = sub.slice(0, remaining);
+	return { main: visibleMain, sub: visibleSub, hidden: total - visibleMain.length - visibleSub.length, total };
+}
+
 function Legend(props) {
 	var projects = props.projects;
 	var hidden = props.hidden;
@@ -157,6 +171,8 @@ function ProjectsTable(props) {
 	var dayMode = props.dayMode === true; // 按日模式：隐藏"最近活跃"（项目级元数据与单日切片语义冲突）
 	var sortPair = useState({ key: "cost", dir: -1 });
 	var sort = sortPair[0], setSort = sortPair[1];
+	var expansionPair = useState(null);
+	var expandedProject = expansionPair[0], setExpandedProject = expansionPair[1];
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -235,10 +251,27 @@ function ProjectsTable(props) {
 					e("span", { className: "st dss-cost dss-sess-cost", title: fmtCostSummary(costDetail, t) }, sessionCost)
 				);
 			};
-			var detailChildren = mainSessions.map(sessRow);
-			if (subSessions.length) {
-				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + subSessions.length + ")")]);
-				detailChildren = detailChildren.concat(subSessions.map(sessRow));
+			var showAllSessions = expandedProject === selected;
+			var limited = limitSessionDetail(mainSessions, subSessions, showAllSessions, SESSION_DETAIL_LIMIT);
+			var detailChildren = limited.main.map(sessRow);
+			if (limited.sub.length) {
+				detailChildren = detailChildren.concat([e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + limited.sub.length + ")")]);
+				detailChildren = detailChildren.concat(limited.sub.map(sessRow));
+			}
+			if (limited.hidden > 0) {
+				detailChildren = detailChildren.concat([e("button", {
+					type: "button",
+					key: "show-all-sessions",
+					className: "dss-export dss-sess-more",
+					onClick: function(ev) { ev.stopPropagation(); setExpandedProject(selected); }
+				}, t("w.showAllSessions").replace("%d", String(limited.total)))]);
+			} else if (showAllSessions && limited.total > SESSION_DETAIL_LIMIT) {
+				detailChildren = detailChildren.concat([e("button", {
+					type: "button",
+					key: "show-recent-sessions",
+					className: "dss-export dss-sess-more",
+					onClick: function(ev) { ev.stopPropagation(); setExpandedProject(null); }
+				}, t("w.showRecentSessions").replace("%d", String(SESSION_DETAIL_LIMIT)))]);
 			}
 			detail = e("div", { className: "dss-pcard-detail" }, detailChildren);
 		}
@@ -1547,5 +1580,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail
 };

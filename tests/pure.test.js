@@ -8,7 +8,7 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex,
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
 
@@ -643,6 +643,14 @@ test('timelineDisplayDays caps all-mode rows but leaves day mode intact', () => 
 	const days = [{ date: '2026-01-01' }, { date: '2026-02-01' }, { date: '2026-03-01' }];
 	expect(timelineDisplayDays(days, false, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
 	expect(timelineDisplayDays(days, true, 2)).toHaveLength(3);
+});
+
+test('session detail windows main and sub-agent rows', () => {
+	const main = [1, 2, 3];
+	const sub = [4, 5];
+	expect(limitSessionDetail(main, sub, false, 3)).toMatchObject({ main: [1, 2, 3], sub: [], hidden: 2, total: 5 });
+	expect(limitSessionDetail(main, sub, true, 3)).toMatchObject({ main, sub, hidden: 0, total: 5 });
+	expect(limitSessionDetail([1, 2], [3, 4], false, 3)).toMatchObject({ main: [1, 2], sub: [3], hidden: 1, total: 4 });
 });
 
 test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {
