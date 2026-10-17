@@ -45,21 +45,51 @@ function ruleDraft(rule) {
   for (const key of ['priority', 'batch', 'flex']) draft[key] = String(rule.tierMultipliers?.[key] ?? '');
   return draft;
 }
+function fmtRateValue(val, currency) {
+  if (val == null || val === '') return '—';
+  const sym = currency === 'USD' ? '$' : currency === 'CNY' ? '¥' : (currency ? currency + ' ' : '');
+  if (val === 0) return sym + '0';
+  return sym + String(val);
+}
+function formatMatchedCount(t, count) {
+  const tpl = t('price.matchedCount');
+  if (typeof tpl === 'string' && tpl.includes('%d')) return tpl.replace('%d', String(count));
+  return '共 ' + count + ' 个模型';
+}
+function formatQuickRates(t, inVal, outVal) {
+  const tpl = t('price.quickRates');
+  if (typeof tpl === 'string' && tpl.includes('%s')) return tpl.replace('%s', inVal).replace('%s', outVal);
+  return '输入 ' + inVal + ' / 输出 ' + outVal;
+}
+function primaryRates(rule) {
+  const r = rule.rates
+    || rule.contextTiers?.short
+    || rule.timeOfUse?.peak
+    || rule.legacy
+    || (rule.serviceTiers ? Object.values(rule.serviceTiers)[0]?.short : null);
+  if (!r) return null;
+  return { input: r.uncached, output: r.output, currency: rule.currency };
+}
 function ruleDetails(rule, t) {
   const rows = rule.contextTiers ? [[t('price.standard'), rule.contextTiers.short], [t('price.long'), rule.contextTiers.long]]
     : rule.serviceTiers ? Object.entries(rule.serviceTiers).flatMap(([tier, rates]) => [[tier, rates.short], [tier + ' ' + t('price.long'), rates.long]])
     : rule.timeOfUse ? [[t('price.peak'), rule.timeOfUse.peak], [t('price.offPeak'), rule.timeOfUse.offPeak]]
     : rule.legacy ? [[t('price.legacy'), rule.legacy], [t('price.peak'), rule.peak], [t('price.offPeak'), rule.offPeak]] : [['', rule.rates]];
   return e(React.Fragment, null,
-    rows.map(([label, rates]) => e('div', { key: label }, label ? e('strong', null, label) : null,
-      e('dl', { className: 'dss-price-rates' }, fields.map(k => e('div', { key: k }, e('dt', null, t('price.' + k)), e('dd', null, rates?.[k] == null ? t('pricing.pending') : String(rates[k]))))))),
-    rule.note ? e('p', null, rule.note) : null,
-    rule.timeOfUse ? e('p', null, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer' }, t('price.source'))) : null,
-    rule.contextThreshold ? e('p', null, t('price.threshold') + ': ' + rule.contextThreshold) : null,
-    rule.tierMultipliers ? e('p', null, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
-    rule.effectiveFrom ? e('p', null, t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom) + ' ' + t('price.beijing')) : null,
-    rule.effectiveTo ? e('p', null, t('price.to') + ': ' + fmtBeijing(rule.effectiveTo) + ' ' + t('price.beijing')) : null,
-    rule.observedFrom ? e('p', null, t('price.observed') + ': ' + fmtBeijing(rule.observedFrom) + ' ' + t('price.beijing')) : null);
+    rows.map(([label, rates]) => e('div', { key: label, className: 'dss-price-tier-block' },
+      label ? e('div', { className: 'dss-price-tier-name' }, label) : null,
+      e('div', { className: 'dss-price-rate-grid' }, fields.map(k => e('div', { key: k, className: 'dss-price-rate-cell' },
+        e('div', { className: 'dss-price-rate-k' }, t('price.' + k)),
+        e('div', { className: 'dss-price-rate-v' }, rates?.[k] == null ? t('pricing.pending') : fmtRateValue(rates[k], rule.currency))
+      )))
+    )),
+    rule.note ? e('p', { className: 'dss-price-note' }, rule.note) : null,
+    rule.timeOfUse ? e('p', { className: 'dss-price-note' }, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗')) : null,
+    rule.contextThreshold ? e('p', { className: 'dss-price-note' }, t('price.threshold') + ': ' + (rule.contextThreshold >= 1000 ? (rule.contextThreshold / 1000) + 'k' : rule.contextThreshold)) : null,
+    rule.tierMultipliers ? e('p', { className: 'dss-price-note' }, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
+    rule.effectiveFrom ? e('p', { className: 'dss-price-note' }, t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom) + ' ' + t('price.beijing')) : null,
+    rule.effectiveTo ? e('p', { className: 'dss-price-note' }, t('price.to') + ': ' + fmtBeijing(rule.effectiveTo) + ' ' + t('price.beijing')) : null,
+    rule.observedFrom ? e('p', { className: 'dss-price-note' }, t('price.observed') + ': ' + fmtBeijing(rule.observedFrom) + ' ' + t('price.beijing')) : null);
 }
 function missingModels(projects) {
   const rows = new Map();
@@ -111,8 +141,56 @@ function PricingPanel({ remote, projects, onChanged, t }) {
       value: draft[key], onChange: ev => edit(key, ev.target.value), 'aria-label': label }));
   }
   const catalog = status ? JSON.parse(status.catalogJson) : null;
-  const used = new Set((projects || []).flatMap(p => p.sessions || []).flatMap(s => (s.slotUsage || []).map(u => (u.modelRaw || u.model || '').toLowerCase())));
-  const filtered = (catalog?.rules || []).filter(rule => search ? (rule.canonical + ' ' + (rule.providerId || rule.family)).toLowerCase().includes(search.toLowerCase()) : rule.aliases.some(a => used.has(a)));
+  const used = new Set();
+  for (const p of projects || []) {
+    for (const s of p.sessions || []) {
+      if (s?.modelRaw) used.add(String(s.modelRaw).toLowerCase());
+      if (s?.model) used.add(String(s.model).toLowerCase());
+      if (s?.modelCanonical) used.add(String(s.modelCanonical).toLowerCase());
+      if (Array.isArray(s?.modelUsage)) {
+        for (const mu of s.modelUsage) {
+          if (mu?.modelRaw) used.add(String(mu.modelRaw).toLowerCase());
+          if (mu?.model) used.add(String(mu.model).toLowerCase());
+          if (mu?.modelCanonical) used.add(String(mu.modelCanonical).toLowerCase());
+        }
+      }
+      if (Array.isArray(s?.slotUsage)) {
+        for (const u of s.slotUsage) {
+          if (u?.modelRaw) used.add(String(u.modelRaw).toLowerCase());
+          if (u?.model) used.add(String(u.model).toLowerCase());
+          if (u?.modelCanonical) used.add(String(u.modelCanonical).toLowerCase());
+        }
+      }
+    }
+  }
+  const allRules = catalog?.rules || [];
+  const hasSearch = Boolean(search && search.trim());
+  let filtered = [];
+  let usedMatchingCount = 0;
+  if (hasSearch) {
+    const q = search.trim().toLowerCase();
+    filtered = allRules.filter(rule => {
+      const hay = (rule.canonical + ' ' + (rule.providerId || rule.family || '')).toLowerCase();
+      if (hay.includes(q)) return true;
+      return Array.isArray(rule.aliases) && rule.aliases.some(a => String(a).toLowerCase().includes(q));
+    });
+  } else {
+    const usedRules = [];
+    const otherRules = [];
+    for (const rule of allRules) {
+      const isUsed = Array.isArray(rule.aliases) && rule.aliases.some(a => used.has(String(a).toLowerCase()));
+      if (isUsed) usedRules.push(rule);
+      else otherRules.push(rule);
+    }
+    usedMatchingCount = usedRules.length;
+    otherRules.sort((a, b) => {
+      const aDeep = (a.family === 'deepseek' || a.providerId === 'deepseek') ? 0 : 1;
+      const bDeep = (b.family === 'deepseek' || b.providerId === 'deepseek') ? 0 : 1;
+      if (aDeep !== bDeep) return aDeep - bDeep;
+      return a.canonical.localeCompare(b.canonical);
+    });
+    filtered = usedRules.length ? [...usedRules, ...otherRules] : otherRules;
+  }
   const amount = summary => summary?.totals?.map(row => row.currency + ' ' + row.amount.toFixed(4)).join(' + ') || t('pricing.pending');
   const button = (label, onClick, disabled = false) => e('button', { type: 'button', className: 'dss-export', disabled: busy || disabled, onClick }, label);
   return e('section', { className: 'dss-pricing', 'aria-label': t('price.title') },
@@ -148,14 +226,49 @@ function PricingPanel({ remote, projects, onChanged, t }) {
         button(t('price.save'), () => call({ action: 'save', fingerprint: preview.fingerprint, revision: status.revision, autoUpdate, overridesJson: JSON.stringify(overrides) }), !preview),
         button(t('price.cancel'), () => accept(status))) : null,
       preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after)) : null,
-      e('details', null, e('summary', null, t('price.catalog')),
-        e('input', { type: 'search', value: search, onChange: ev => setSearch(ev.target.value), placeholder: t('price.search'), 'aria-label': t('price.search') }),
-        e('p', { className: 'dss-price-muted' }, t('price.usedFirst')),
-        filtered.map(rule => e('details', { key: rule.id, className: 'dss-price-rule' }, e('summary', null, (rule.providerId || rule.family) + ' / ' + rule.canonical),
-          e('p', null, rule.currency + ' / 1M tokens · ' + rule.retrievedAt),
-          rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer' }, t('price.source')) : null,
-          ruleDetails(rule, t))),
-        e('details', null, e('summary', null, t('price.history')), e('p', null, t('price.rollbackHint')),
+      e('details', { className: 'dss-price-catalog-section' },
+        e('summary', { className: 'dss-price-section-summary' }, t('price.catalog')),
+        e('div', { className: 'dss-price-catalog-toolbar' },
+          e('input', { type: 'search', className: 'dss-price-search-input', value: search, onChange: ev => setSearch(ev.target.value), placeholder: t('price.search'), 'aria-label': t('price.search') }),
+          e('div', { className: 'dss-price-catalog-info' },
+            e('span', { className: 'dss-price-muted' }, hasSearch ? t('price.searchFilter') : (usedMatchingCount > 0 ? t('price.usedFirst') : t('price.builtinModels'))),
+            e('span', { className: 'dss-price-badge' }, formatMatchedCount(t, filtered.length))
+          )
+        ),
+        e('div', { className: 'dss-price-catalog-list' },
+          filtered.length === 0 ? e('div', { className: 'dss-price-empty' }, t('price.noMatch')) :
+          filtered.map(rule => {
+            const isUsed = Array.isArray(rule.aliases) && rule.aliases.some(a => used.has(String(a).toLowerCase()));
+            const provider = rule.providerId || rule.family || '';
+            const primary = primaryRates(rule);
+            const ratePreview = primary && (primary.input != null || primary.output != null)
+              ? formatQuickRates(t, fmtRateValue(primary.input, primary.currency), fmtRateValue(primary.output, primary.currency))
+              : null;
+            return e('details', { key: rule.id, className: 'dss-price-rule dss-price-rule-card' },
+              e('summary', { className: 'dss-price-rule-summary' },
+                e('div', { className: 'dss-price-rule-lead' },
+                  provider ? e('span', { className: 'dss-price-provider-tag' }, provider) : null,
+                  e('span', { className: 'dss-price-canonical-name', title: rule.canonical }, rule.canonical),
+                  isUsed ? e('span', { className: 'dss-price-used-tag' }, t('price.inUse')) : null
+                ),
+                e('div', { className: 'dss-price-rule-trail' },
+                  ratePreview ? e('span', { className: 'dss-price-summary-rate' }, ratePreview) : null,
+                  e('span', { className: 'dss-price-chevron', 'aria-hidden': 'true' })
+                )
+              ),
+              e('div', { className: 'dss-price-rule-body' },
+                ruleDetails(rule, t),
+                e('div', { className: 'dss-price-rule-meta' },
+                  e('span', null, (rule.currency || 'CNY') + ' / 1M tokens · ' + (rule.retrievedAt || '')),
+                  rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, (t('price.source') || '官网定价') + ' ↗') : null
+                )
+              )
+            );
+          })
+        ),
+        e('details', { className: 'dss-price-history-section' },
+          e('summary', null, t('price.history')),
+          e('p', { className: 'dss-price-muted' }, t('price.rollbackHint')),
           status.history.filter(v => v !== status.version).map(version => e('div', { key: version, className: 'dss-price-row' }, String(version), button(t('price.rollback'), () => call({ action: 'rollback', version, revision: status.revision }), dirty)))))
     ));
 }

@@ -13,7 +13,16 @@ const pairs = {
   conditions: ['更多条件', 'More conditions'], from: ['生效时间（本地时区）', 'Effective from (local time)'], to: ['结束时间（不含）', 'Effective until (exclusive)'],
   threshold: ['长上下文阈值（输入 token）', 'Long context threshold (input tokens)'], long: ['长上下文', 'Long context'], multiplier: ['倍率', 'multiplier'], accountType: ['账户类型', 'Account type'],
   add: ['加入草稿', 'Add to draft'], remove: ['移除', 'Remove'], preview: ['预览变化', 'Preview changes'], save: ['保存', 'Save'], cancel: ['撤销草稿', 'Discard draft'], affected: ['影响会话', 'Affected sessions'],
-  catalog: ['查看价格与来源', 'Prices and sources'], search: ['搜索模型或供应商', 'Search models or providers'], usedFirst: ['默认只显示用过的模型，搜索可查看全部', 'Shows used models by default. Search to see all.'],
-  source: ['价格来源', 'Pricing source'], history: ['历史版本', 'History'], rollbackHint: ['恢复旧版本会暂停自动更新，重新勾选自动更新后保存即可恢复', 'Restoring a version pauses updates. Enable automatic updates and save to resume.'], rollback: ['恢复此版本', 'Restore version']
+  catalog: ['查看价格与来源', 'Prices and sources'], search: ['搜索模型或供应商', 'Search models or providers'],
+  usedFirst: ['已使用模型优先置顶，搜索可快速查找', 'Used models listed first. Search to find more.'],
+  builtinModels: ['官方内置与支持的模型定价', 'Built-in official model pricing'],
+  searchFilter: ['搜索结果，清空可查看默认', 'Search results. Clear to show default.'],
+  inUse: ['已使用', 'In use'],
+  matchedCount: ['共 %d 个模型', '%d models'],
+  noMatch: ['未找到匹配的模型', 'No matching models found'],
+  quickRates: ['输入 %s / 输出 %s', 'In %s / Out %s'],
+  renderError: ['价格设置渲染异常', 'Price settings render error'],
+  retry: ['重试', 'Retry'],
+  source: ['官网定价', 'Official pricing'], history: ['历史版本', 'History'], rollbackHint: ['恢复旧版本会暂停自动更新，重新勾选自动更新后保存即可恢复', 'Restoring a version pauses updates. Enable automatic updates and save to resume.'], rollback: ['恢复此版本', 'Restore version']
 };
 module.exports = { zh: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[0]])), en: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[1]])) };

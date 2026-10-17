@@ -54,7 +54,8 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "dsh": ">=0.1.0-rc.6 <0.3.0"
   },
   "dsh": {
     "bundle": {

@@ -14,7 +14,7 @@ window.__ModuleLoader__ = { async load({ factory }) {
   const query = new URLSearchParams(location.search);
   if (query.get('theme') === 'dark') {
     document.body.dataset.dsDarkTheme = '';
-    for (const [name, color] of Object.entries({ '--dsw-specific-menu': '#1d222c', '--dsw-alias-label-primary': '#e7eaf0',
+    for (const [name, color] of Object.entries({ '--dsw-specific-menu': '#1d222c', '--dsw-alias-bg-layer-1': '#161a21', '--dsw-alias-bg-layer-2': '#1d222c', '--dsw-alias-label-primary': '#e7eaf0',
       '--dsw-alias-label-secondary': '#a6adbb', '--dsw-alias-label-tertiary': '#8b95a5', '--dsw-alias-border': '#3f4653', '--dsw-alias-border-inverted': '#3f4653' })) document.body.style.setProperty(name, color);
   }
   const fixture = window.__fixture = { statsMode: query.get('stats') || 'estimated', accountMode: 'ok', calls: [], data };

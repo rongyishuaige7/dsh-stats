@@ -22,3 +22,7 @@ test('current peers are supported without requiring the retired client runtime',
 	expect(packageJson.peerDependenciesMeta['@deepseek-ai/dsh-client-runtime'].optional).toBe(true);
 	expect(packageJson.dsh.client.inject).toEqual(expect.arrayContaining(['@deepseek-ai/dsh-api-session-controller', '@deepseek-ai/dsh-api-remotes']));
 });
+
+test('engines.dsh defines runtime range covering all supported releases', () => {
+	expect(packageJson.engines?.dsh).toBe('>=0.1.0-rc.6 <0.3.0');
+});

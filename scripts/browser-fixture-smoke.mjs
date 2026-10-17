@@ -24,7 +24,7 @@ const runtime = await build({ entryPoints: [join(root, 'scripts/fixtures/browser
   // Only the two official icons are used; their barrel also imports KaTeX CSS.
   loader: { '.css': 'empty' } });
 const client = readFileSync(join(root, 'lib/client.js'));
-const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Stats Fixture</title><style>*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;letter-spacing:0;background:#f4f5f6;--dsw-specific-menu:#fff;--dsw-alias-label-primary:#20242b;--dsw-alias-label-secondary:#565e6b;--dsw-alias-label-tertiary:#707986;--dsw-alias-border:#dce0e5;--dsw-alias-border-inverted:#dce0e5}</style></head><body><div id="app"></div><script src="/runtime.js"></script><script src="/client.js"></script></body></html>';
+const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Stats Fixture</title><style>*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;letter-spacing:0;background:#f4f5f6;--dsw-specific-menu:#fff;--dsw-alias-bg-layer-1:#fff;--dsw-alias-bg-layer-2:#fff;--dsw-alias-label-primary:#20242b;--dsw-alias-label-secondary:#565e6b;--dsw-alias-label-tertiary:#707986;--dsw-alias-border:#dce0e5;--dsw-alias-border-inverted:#dce0e5}</style></head><body><div id="app"></div><script src="/runtime.js"></script><script src="/client.js"></script></body></html>';
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname;
   if (path === '/pricing' && request.method === 'POST') {
@@ -214,6 +214,16 @@ try {
   const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
   await priceButton('price.title');
   await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
+  const catalogSummary = await evaluate(`(() => {
+    const summary = [...document.querySelectorAll('summary')].find(s => s.textContent.includes(window.__fixture.t('price.catalog')));
+    if (!summary) return 'missing summary';
+    summary.click();
+    return 'clicked summary';
+  })()`);
+  if (catalogSummary !== 'clicked summary') throw new Error('Failed to expand price catalog');
+  await delay(100);
+  const rulesCount = await evaluate(`document.querySelectorAll('.dss-price-rule').length`);
+  if (!rulesCount || rulesCount === 0) throw new Error('Expected price rules in catalog, got ' + rulesCount);
   await priceButton('price.configure');
   for (const [field, value] of [['uncached','1'],['output','2'],['cacheRead','0']]) {
     await evaluate(`(() => { const input = document.querySelector('[aria-label="' + window.__fixture.t('price.${field}') + '"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
