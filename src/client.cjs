@@ -694,8 +694,11 @@ class PricingErrorBoundary extends react.Component {
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
 	var isOpen = !!(open && open.open);
-	var sessionsSnap = props.useSessions((s) => s);
-	var workspacesSnap = props.useWorkspaces((w) => w);
+	// Do not wake this component on every session/workspace update while the
+	// panel is closed; the fallback aggregation only needs these snapshots when
+	// the overlay is actually visible.
+	var sessionsSnap = props.useSessions((s) => isOpen ? s : null);
+	var workspacesSnap = props.useWorkspaces((w) => isOpen ? w : null);
 	var onClose = props.onClose;
 	var onOpenSession = props.onOpenSession;
 	var t = props.t;
