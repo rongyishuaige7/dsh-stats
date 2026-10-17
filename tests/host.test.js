@@ -4,6 +4,9 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import pricing from '../src/pricing.cjs';
+import { pricingStore } from '../src/pricing-store.js';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { infoFromProjectionValues } from '../src/host-sessions.js';
 import { readJson, readSessionProjcache, scanZstdFrames } from '../src/host-util.js';
@@ -1334,3 +1337,57 @@ test('concurrent aggregate calls share one host read', async () => {
 	expect(second).toBe(first);
 });
 
+test.each(['save', 'rollback'])('an in-flight aggregate retains its price snapshot across %s', async (action) => {
+	const now = Date.parse('2026-10-17T12:00:00Z');
+	const home = fixture({ s1: projection(now) });
+	const header = { id: 's1', cwd: '/tmp/fixture', createdAt: now, version: 3 };
+	let release, started;
+	const gate = new Promise(resolve => { release = resolve; });
+	const entered = new Promise(resolve => { started = resolve; });
+	let lists = 0;
+	const service = { ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['s1'] }] },
+		sessionQuery: {
+			listSessions: async () => { lists++; started(); await gate; return [{ header }]; },
+			readSession: async () => ({ header, events: [{ type: 'assistant/message', seq: 0, time: now, data: {
+				turn: 0, step: 0, usage: { inputTokens: 1000000 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } }
+			} }] }),
+		}
+	} };
+	const store = pricingStore(service, home);
+	const rule = { id: 'custom/price', providerId: 'deepseek', family: 'deepseek', canonical: 'deepseek-v4-flash', aliases: ['deepseek-v4-flash'],
+		currency: 'CNY', sourceUrl: null, retrievedAt: '2026-10-17', confidence: 'estimated', reasoningIncludedInOutput: true,
+		rates: { uncached: 100, cacheRead: 0, cacheWrite: 0, output: 0 } };
+	let rollbackVersion;
+	if (action === 'rollback') {
+		const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+		store.publicKey = publicKey;
+		const catalog = input => ({ ...pricing.BUILTIN, version: pricing.BUILTIN.version + input, rules: [
+			{ ...rule, sourceUrl: 'https://example.com/prices', rates: { ...rule.rates, uncached: input } }
+		] });
+		const envelope = value => { const payload = JSON.stringify(value); return { payload, signature: sign(null, Buffer.from(payload), privateKey).toString('base64') }; };
+		rollbackVersion = catalog(1).version;
+		mkdirSync(store.dir, { recursive: true });
+		writeFileSync(join(store.dir, 'catalog-' + rollbackVersion + '.json'), JSON.stringify(envelope(catalog(1))));
+		store.fetch = async () => new Response(JSON.stringify(envelope(catalog(2))));
+		expect((await store.refresh({ force: true })).error).toBeNull();
+	}
+	const before = store.status();
+	const first = StatsService.prototype.aggregate.call(service);
+	await entered;
+	const duplicate = StatsService.prototype.aggregate.call(service);
+	if (action === 'save') store.save({ revision: before.revision, autoUpdate: false, overrides: [rule] });
+	else store.rollback(rollbackVersion, before.revision);
+	const after = store.status();
+	const changed = StatsService.prototype.aggregate.call(service);
+	release();
+	const [oldResult, sameResult, newResult] = await Promise.all([first, duplicate, changed]);
+	expect(sameResult).toBe(oldResult);
+	expect(newResult).not.toBe(oldResult);
+	expect(lists).toBe(2);
+	expect(oldResult.meta).toMatchObject({ pricingFingerprint: before.fingerprint, pricingVersion: before.version });
+	expect(newResult.meta).toMatchObject({ pricingFingerprint: after.fingerprint, pricingVersion: after.version });
+	expect(newResult.cost.totals[0].amount).toBe(action === 'save' ? 100 : 1);
+	expect(oldResult.cost.totals[0].amount).not.toBe(newResult.cost.totals[0].amount);
+	expect((await StatsService.prototype.aggregate.call(service)).cost).toEqual(newResult.cost);
+});

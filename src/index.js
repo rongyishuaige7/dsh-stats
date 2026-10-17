@@ -159,14 +159,14 @@ let StatsService = (() => {
 		}
 
 		async aggregate(overridePricing) {
-			if (!overridePricing) {
-				const existing = aggregateInflight.get(this);
-				if (existing) return existing;
-			}
-			const run = async () => {
-			const home = dshHome();
-			const priceStore = pricingStore(this, home);
-			const priceEngine = overridePricing || priceStore.snapshot();
+				const home = dshHome();
+				const priceStore = pricingStore(this, home);
+				const priceEngine = overridePricing || priceStore.snapshot();
+				const pricingFingerprint = priceStore.fingerprint;
+				const flightKey = home + "\u0000" + pricingFingerprint;
+				let flights = aggregateInflight.get(this);
+				if (!overridePricing && flights?.has(flightKey)) return flights.get(flightKey);
+				const run = async () => {
 			const warnings = [];
 			const hostCtx = this.ctx || {};
 			const workspaceRegistry = contextService(hostCtx, "workspaceRegistry");
@@ -692,13 +692,17 @@ let StatsService = (() => {
 				projects,
 				cost,
 				timeline: { slotMinutes: SLOT_MINUTES, days },
-				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint: priceStore.fingerprint, degraded: warningSummary.unique.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings: warningSummary.warnings }
+					meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint, degraded: warningSummary.unique.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings: warningSummary.warnings }
 			};
 			};
-			if (overridePricing) return run();
-			const promise = run();
-			aggregateInflight.set(this, promise);
-			try { return await promise; } finally { if (aggregateInflight.get(this) === promise) aggregateInflight.delete(this); }
+				if (overridePricing) return run();
+				const promise = run();
+				if (!flights) { flights = new Map(); aggregateInflight.set(this, flights); }
+				flights.set(flightKey, promise);
+				try { return await promise; } finally {
+					flights.delete(flightKey);
+					if (!flights.size) aggregateInflight.delete(this);
+				}
 		}
 
 		async pricing(request = { action: "status" }) {
