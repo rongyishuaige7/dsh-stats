@@ -284,10 +284,26 @@ test('anthropic dated model aliases with reasoning suffixes match and price accu
 });
 
 test('literal thinking models win over their differently priced base, including added effort suffixes', () => {
-	for (const model of ['moonshotai/kimi-k2-thinking', 'moonshotai/kimi-k2-thinking-high']) {
+	for (const prefix of ['', 'us:', 'cn:', 'us:hk:']) for (const suffix of ['', '-high']) {
+		const model = prefix + 'moonshotai/kimi-k2-thinking' + suffix;
 		const result = priceUsage({ providerId: 'openrouter', model, time: Date.parse('2026-10-17T12:00:00Z'), uncached: 1000000, output: 1000000 });
 		expect(result).toMatchObject({ status: 'estimated', modelCanonical: 'moonshotai/kimi-k2-thinking', unpricedTokens: 0 });
 		expect(result.amount).toBeCloseTo(3.1);
+	}
+});
+
+test('route normalization preserves custom literal variants before effort fallback', () => {
+	const rules = ['demo', 'demo-high', 'demo-max', 'demo-thinking'].map((model, i) => ({
+		id: model, providerId: 'proxy', family: 'unknown', canonical: model, aliases: [model], currency: 'CNY',
+		rates: { uncached: i + 1, cacheRead: 0, cacheWrite: 0, output: 0 }, sourceUrl: null,
+		retrievedAt: '2026-10-17', confidence: 'estimated', reasoningIncludedInOutput: true,
+	}));
+	const engine = pricing.createPricing(pricing.BUILTIN, rules);
+	for (const rule of rules) for (const suffix of ['', '-low-high']) {
+		const model = 'us:' + rule.canonical + suffix;
+		const quote = engine.priceUsage({ providerId: 'proxy', model, time: Date.parse('2026-10-17T12:00:00Z'), uncached: 1000000 });
+		expect(quote, model).toMatchObject({ ruleId: rule.id, amount: rule.rates.uncached });
+		expect(engine.ruleMatchesModel(rule, model), model).toBe(true);
 	}
 });
 
@@ -307,10 +323,10 @@ test('every active catalog alias has an unambiguous identity before and after an
 	const at = Date.parse('2026-10-17T12:00:00Z');
 	for (const rule of pricing.RULES) {
 		if (rule.effectiveFrom && at < Date.parse(rule.effectiveFrom) || rule.effectiveTo && at >= Date.parse(rule.effectiveTo)) continue;
-		for (const alias of rule.aliases) for (const model of [alias, alias + '-thinking-high']) {
+		for (const alias of rule.aliases) for (const model of [alias, alias + '-thinking-high', 'us:' + alias, 'us:' + alias + '-thinking-high']) {
 			const identity = normalizeIdentity(rule.providerId || rule.family, model, rule.accountType || 'api', at);
 			expect(identity.ambiguous, model).toBe(false);
-			if (model === alias) expect(identity.modelCanonical, model).toBe(rule.canonical);
+			if (model === alias || model === 'us:' + alias) expect(identity.modelCanonical, model).toBe(rule.canonical);
 			else expect(identity.modelCanonical, model).not.toBe(model);
 		}
 	}

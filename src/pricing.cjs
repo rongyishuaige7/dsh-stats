@@ -93,35 +93,34 @@ function matchModelAlias(rule, model) {
 }
 
 function ruleMatchesModel(rule, raw) {
-	var model = String(raw || "").trim().toLowerCase();
-	if (matchModelAlias(rule, model)) return true;
-
-	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -none, -thinking, -thought, -max)
-	// Supports compound suffixes (e.g. -thinking-high) by stripping iteratively.
-	var stripped = model;
-	var prev;
-	do {
-		prev = stripped;
-		stripped = stripped.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
-		if (stripped !== prev && matchModelAlias(rule, stripped)) return true;
-	} while (stripped !== prev);
-
-	// Route / region prefix stripping (e.g. cn:model, hk:model, us:model)
-	var colonIdx = stripped.indexOf(':');
-	if (colonIdx > 0 && colonIdx < 16 && !stripped.slice(0, colonIdx).includes('/')) {
-		var withoutColon = stripped.slice(colonIdx + 1);
-		if (matchModelAlias(rule, withoutColon)) return true;
-		var subStripped = withoutColon;
-		do {
-			prev = subStripped;
-			subStripped = subStripped.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
-			if (subStripped !== prev && matchModelAlias(rule, subStripped)) return true;
-		} while (subStripped !== prev);
-	}
-
+	for (const model of modelCandidates(raw)) if (matchModelAlias(rule, model)) return true;
 	return false;
 }
 
+// Preserve complete names through route normalization before removing effort
+// suffixes. A real thinking/max/high variant must beat its shorter base model.
+function* modelCandidates(raw) {
+	let model = String(raw || "").trim().toLowerCase();
+	const forms = [];
+	for (;;) {
+		forms.push(model);
+		yield model;
+		const colon = model.indexOf(':');
+		if (colon <= 0 || colon >= 16 || model.slice(0, colon).includes('/')) break;
+		model = model.slice(colon + 1);
+	}
+	for (;;) {
+		let changed = false;
+		for (let i = 0; i < forms.length; i++) {
+			const stripped = forms[i].replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
+			if (stripped === forms[i]) continue;
+			forms[i] = stripped;
+			changed = true;
+			yield stripped;
+		}
+		if (!changed) return;
+	}
+}
 
 function ruleIndex() { return { aliases: new Map(), dated: new Map() }; }
 function indexRule(index, rule) {
@@ -162,9 +161,8 @@ for (const rule of overrides) addScoped(customIndexes, normalizedProviderKey(rul
 // Precedence applies to the whole candidate set: a literal thinking model
 // wins before any rule can match its shorter, separately priced base model.
 function indexedMatches(indexes, raw, at, accountType) {
-	let model = String(raw || "").trim().toLowerCase();
 	const when = Number.isFinite(at) ? at : Date.now();
-	for (;;) {
+	for (const model of modelCandidates(raw)) {
 		const matches = new Set();
 		const dated = /^(.*)-20[0-9]{6}$/.exec(model);
 		for (const index of indexes) {
@@ -175,18 +173,8 @@ function indexedMatches(indexes, raw, at, accountType) {
 			}
 		}
 		if (matches.size) return [...matches];
-		const stripped = model.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
-		if (stripped !== model) {
-			model = stripped;
-			continue;
-		}
-		const colonIdx = model.indexOf(':');
-		if (colonIdx > 0 && colonIdx < 16 && !model.slice(0, colonIdx).includes('/')) {
-			model = model.slice(colonIdx + 1);
-			continue;
-		}
-		return [];
 	}
+	return [];
 }
 
 // Resolve provider-scoped rules first. Unknown provider ids may use a unique

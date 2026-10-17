@@ -95,3 +95,32 @@ coherent installations rather than relabeling that local fixture as supported.
 
 No provider rates, signed catalog data, package dependencies or version changed;
 this repair does not publish an npm release or replace a running installation.
+
+## Follow-up review: scope and staged delivery
+
+Address the review of `75f6a84..0dde02e` without changing provider prices,
+dependencies, release versions or running installations. Keep the RPC field
+shape and existing persistence formats compatible.
+
+1. Preserve literal model variants through route-prefix normalization. Share
+   candidate ordering between indexed quotes and single-rule matching.
+2. Isolate concurrent aggregations by home and pricing fingerprint. Capture
+   price engine and exported metadata together so a save/rollback cannot label
+   an old result with a new fingerprint.
+3. Define separate UTF-8 budgets for catalog/overrides, signed envelopes and
+   cache wrappers. Verify download, persistence, restart and RPC boundaries.
+4. Keep projects, session details, timeline and legend pages bounded. Preserve
+   access to every item, reset explicit recent-day navigation, and verify large
+   datasets and page transitions in the browser.
+5. Subscribe to browser sessions/workspaces only while fallback data is needed,
+   including transitions from initial loading and remote failure.
+6. Bound compressed input, cumulative decoded bytes and record counts in the
+   legacy reader; process large logs in batches that yield to the host. Budget
+   failures must be visible as degraded statistics, never a successful zero.
+
+Each slice is built, verified and pushed independently. The final gate includes
+default/UTC tests, pricing verification, artifact/package checks, the Chrome
+fixture and the existing seven-version Harness CI matrix. Main risks are model
+precedence, concurrent settings updates, multibyte/escaped JSON growth, hidden
+items after pagination and partial log attribution. Regression tests exercise
+these observable behaviors with synthetic data and isolated temporary homes.
