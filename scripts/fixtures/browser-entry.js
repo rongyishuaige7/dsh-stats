@@ -28,6 +28,7 @@ window.__ModuleLoader__ = { async load({ factory }) {
     },
     aggregate: async () => {
       fixture.calls.push(['aggregate']);
+      if (query.has('hold') && !fixture.released) await new Promise(resolve => { fixture.releaseStats = () => { fixture.released = true; resolve(); }; });
       if (fixture.statsMode === 'error') return { ok: false, error: { code: 'gateway/internal', message: 'Fixture statistics refresh failed' } };
       return { ok: true, value: clone(data[fixture.statsMode]) };
     },
@@ -69,15 +70,29 @@ window.__ModuleLoader__ = { async load({ factory }) {
   const snapshot = () => ({ get byId() { fixture.sessionReads++; return byId; } });
   let summaries = snapshot();
   const subscribeSessions = listener => { sessionListeners.add(listener); return () => sessionListeners.delete(listener); };
-  fixture.bumpSessions = () => { summaries = snapshot(); sessionListeners.forEach(listener => listener()); };
-  const workspaces = { items: data.estimated.projects.map(project => ({ workspaceId: project.id, path: project.path, sessionIds: project.sessions.map(session => session.id) })) };
+  fixture.bumpSessions = (inputDelta = 0) => {
+    if (inputDelta) {
+      const id = Object.keys(byId)[0], session = byId[id], usage = session.projectionValues.tokenUsage;
+      byId[id] = { ...session, projectionValues: { ...session.projectionValues, tokenUsage: { ...usage, uncachedInputTokens: usage.uncachedInputTokens + inputDelta } } };
+    }
+    summaries = snapshot(); sessionListeners.forEach(listener => listener());
+  };
+  let workspaces = { items: data.estimated.projects.map(project => ({ workspaceId: project.id, path: project.path, sessionIds: project.sessions.map(session => session.id) })) };
+  const workspaceListeners = new Set();
+  const subscribeWorkspaces = listener => { workspaceListeners.add(listener); return () => workspaceListeners.delete(listener); };
+  fixture.bumpWorkspaces = () => {
+    workspaces = { items: workspaces.items.map((item, i) => i ? item : { ...item, title: 'Fixture workspace updated' }) };
+    workspaceListeners.forEach(listener => listener());
+  };
+  fixture.panelRenders = 0;
   function App() {
     return React.createElement(React.Fragment, null,
       React.createElement('aside', { style: { width: 240, padding: 12 } },
         React.createElement(trigger.component, { ...trigger.definition.inject(), wide: true, t: fixture.t })),
       React.createElement(panel.component, { ...props, t: fixture.t,
-        useStatsOpen: selector => selector(useSyncExternalStore(store.subscribe, store.getSnapshot)),
-        useSessions: selector => selector(useSyncExternalStore(subscribeSessions, () => summaries)), useWorkspaces: selector => selector(workspaces) })
+        useStatsOpen: selector => { fixture.panelRenders++; return useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot())); },
+        useSessions: selector => useSyncExternalStore(subscribeSessions, () => selector(summaries)),
+        useWorkspaces: selector => useSyncExternalStore(subscribeWorkspaces, () => selector(workspaces)) })
     );
   }
   createRoot(document.getElementById('app')).render(React.createElement(App));

@@ -154,12 +154,17 @@ try {
   await command('Runtime.enable'); await command('Page.enable'); await command('Network.enable');
   // Runs first, while the stored tab preference is still the default overview.
   await navigate('/?lang=zh');
-  await evaluate('window.__fixture.bumpSessions()'); await delay(200);
+  await until('document.querySelector(".dss-trigger")'); await delay(100);
+  const closedRenders = await evaluate('window.__fixture.panelRenders');
+  await evaluate('window.__fixture.bumpSessions(); window.__fixture.bumpWorkspaces()'); await delay(200);
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'closed panel must not aggregate session updates');
+  assert.equal(await evaluate('window.__fixture.panelRenders'), closedRenders, 'closed panel must not render on session/workspace updates');
   await click('.dss-trigger');
   await until('document.querySelector(".dss-data-status.exact")');
-  await evaluate('window.__fixture.sessionReads = 0; window.__fixture.bumpSessions()'); await delay(200);
+  const hostRenders = await evaluate('window.__fixture.panelRenders');
+  await evaluate('window.__fixture.sessionReads = 0; window.__fixture.bumpSessions(); window.__fixture.bumpWorkspaces()'); await delay(200);
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'host data must not be recomputed from session updates');
+  assert.equal(await evaluate('window.__fixture.panelRenders'), hostRenders, 'host data must not render on session/workspace updates');
   const accountCalls = () => evaluate('window.__fixture.calls.filter(row => row[0] === "account").map(row => row[1])');
   assert.deepEqual(await accountCalls(), [], 'balance must not be queried outside its tab');
   await tab(4); await until('document.querySelector(".dss-balance-name")');
@@ -169,6 +174,24 @@ try {
   assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
   await tab(1);
   report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
+  for (const mode of ['stats=error', 'hold=1']) {
+    await navigate('/?' + mode + '&lang=zh'); await click('.dss-trigger');
+    await until('document.querySelector(".dss-cards")');
+    if (mode === 'stats=error') await until('document.querySelector(".dss-data-status.fallback")');
+    const before = await evaluate('document.querySelector(".dss-cards").innerText');
+    await evaluate('window.__fixture.bumpSessions(1000000); window.__fixture.bumpWorkspaces()');
+    await until('document.querySelector(".dss-cards").innerText !== ' + JSON.stringify(before));
+    await until('[...document.querySelectorAll(".dss-proj .nm")].some(node => node.textContent === "Fixture workspace updated")');
+    if (mode === 'hold=1') {
+      await until('typeof window.__fixture.releaseStats === "function"');
+      await evaluate('window.__fixture.releaseStats()');
+      await until('document.querySelector(".dss-data-status.exact")');
+      const renders = await evaluate('window.__fixture.panelRenders');
+      await evaluate('window.__fixture.bumpSessions(); window.__fixture.bumpWorkspaces()'); await delay(200);
+      assert.equal(await evaluate('window.__fixture.panelRenders'), renders, 'host arrival disables fallback subscriptions');
+    }
+  }
+  report.checks.push('session/workspace updates cause zero panel renders while closed or using host data; initial loading and failed-host fallback remain reactive');
   const views = {};
   for (const query of ['lang=zh', 'stats=error&lang=zh']) for (const timezoneId of ['Asia/Shanghai', 'America/Los_Angeles']) {
     await command('Emulation.setTimezoneOverride', { timezoneId });

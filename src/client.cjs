@@ -765,11 +765,12 @@ class PricingErrorBoundary extends react.Component {
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
 	var isOpen = !!(open && open.open);
-	// Do not wake this component on every session/workspace update while the
-	// panel is closed; the fallback aggregation only needs these snapshots when
-	// the overlay is actually visible.
-	var sessionsSnap = props.useSessions((s) => isOpen ? s : null);
-	var workspacesSnap = props.useWorkspaces((w) => isOpen ? w : null);
+	var [remoteData, setRemoteData] = useState(null);
+	// Browser snapshots are only inputs to the local fallback. Once host data
+	// arrives, streaming session events must not wake the entire statistics UI.
+	var needsFallback = isOpen && !remoteData;
+	var sessionsSnap = props.useSessions((s) => needsFallback ? s : null);
+	var workspacesSnap = props.useWorkspaces((w) => needsFallback ? w : null);
 	var onClose = props.onClose;
 	var onOpenSession = props.onOpenSession;
 	var t = props.t;
@@ -792,7 +793,6 @@ function StatsPanel(props) {
 	var navMode = storedNav.mode === "all" ? "all" : "day";
 	var nav = { mode: navMode, date: storedNav.date || null };
 	var [selected, setSelected] = useState(null);
-	var [remoteData, setRemoteData] = useState(null);
 	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
 	var [refreshTick, setRefreshTick] = useState(0);
 	var [balanceData, setBalanceData] = useState(null);
