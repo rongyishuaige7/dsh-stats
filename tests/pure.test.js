@@ -8,7 +8,7 @@ const {
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail,
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail, limitProjectCards,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
 
@@ -658,6 +658,12 @@ test('session detail windows main and sub-agent rows', () => {
 	expect(limitSessionDetail(main, sub, false, 3)).toMatchObject({ main: [1, 2, 3], sub: [], hidden: 2, total: 5 });
 	expect(limitSessionDetail(main, sub, true, 3)).toMatchObject({ main, sub, hidden: 0, total: 5 });
 	expect(limitSessionDetail([1, 2], [3, 4], false, 3)).toMatchObject({ main: [1, 2], sub: [3], hidden: 1, total: 4 });
+});
+
+test('project cards are windowed with an explicit show-all path', () => {
+	const projects = [1, 2, 3];
+	expect(limitProjectCards(projects, false, 2)).toMatchObject({ projects: [1, 2], hidden: 1, total: 3 });
+	expect(limitProjectCards(projects, true, 2)).toMatchObject({ projects, hidden: 0, total: 3 });
 });
 
 test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {

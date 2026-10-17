@@ -114,6 +114,15 @@ function limitSessionDetail(mainSessions, subSessions, showAll, limit) {
 	return { main: visibleMain, sub: visibleSub, hidden: total - visibleMain.length - visibleSub.length, total };
 }
 
+var PROJECT_CARD_LIMIT = 50;
+function limitProjectCards(projects, showAll, limit) {
+	var rows = Array.isArray(projects) ? projects : [];
+	var total = rows.length;
+	if (showAll || !Number.isFinite(limit) || limit <= 0) return { projects: rows, hidden: 0, total };
+	var visible = rows.slice(0, limit);
+	return { projects: visible, hidden: total - visible.length, total };
+}
+
 function Legend(props) {
 	var projects = props.projects;
 	var hidden = props.hidden;
@@ -173,6 +182,8 @@ function ProjectsTable(props) {
 	var sort = sortPair[0], setSort = sortPair[1];
 	var expansionPair = useState(null);
 	var expandedProject = expansionPair[0], setExpandedProject = expansionPair[1];
+	var projectExpansionPair = useState(false);
+	var showAllProjects = projectExpansionPair[0], setShowAllProjects = projectExpansionPair[1];
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -182,6 +193,7 @@ function ProjectsTable(props) {
 		var va = sortValue(a, effSortKey), vb = sortValue(b, effSortKey);
 		return (va > vb ? 1 : (va < vb ? -1 : 0)) * sort.dir;
 	});
+	var limitedProjects = limitProjectCards(sorted, showAllProjects, PROJECT_CARD_LIMIT);
 
 	var SORT_FIELDS = [
 		{ key: "cost", label: t("th.cost") },
@@ -211,7 +223,7 @@ function ProjectsTable(props) {
 		}, sort.dir > 0 ? t("sort.asc") + " ↑" : t("sort.desc") + " ↓")
 	);
 
-	var cards = sorted.map(function(p) {
+	var cards = limitedProjects.projects.map(function(p) {
 		var i = projectColorIndex(p, props.colorIndexes, fallbackColorIndexes.get(p.id));
 		var s = p.stats;
 		var isSel = selected === p.id;
@@ -319,7 +331,16 @@ function ProjectsTable(props) {
 		toolbar,
 		e("div", { className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
 			e("div", { className: "dss-pcards" }, cards)
-		)
+		),
+		limitedProjects.hidden > 0 ? e("button", {
+			type: "button",
+			className: "dss-export dss-projects-more",
+			onClick: function() { setShowAllProjects(true); }
+		}, t("w.showAllProjects").replace("%d", String(limitedProjects.total))) : showAllProjects && limitedProjects.total > PROJECT_CARD_LIMIT ? e("button", {
+			type: "button",
+			className: "dss-export dss-projects-more",
+			onClick: function() { setShowAllProjects(false); }
+		}, t("w.showRecentProjects").replace("%d", String(PROJECT_CARD_LIMIT))) : null
 	);
 }
 
@@ -1602,5 +1623,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, limitSessionDetail, limitProjectCards
 };
