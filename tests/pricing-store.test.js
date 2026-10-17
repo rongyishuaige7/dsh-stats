@@ -114,6 +114,24 @@ test('another process settings are reloaded and stale writes are rejected', () =
   expect(second.snapshot().priceUsage(usage()).amount).toBeCloseTo(0.0012);
 });
 
+test('rollback and restart use only rules present in the signed selected catalog', async () => {
+  const older = { ...base, version: base.version + 1, rules: base.rules.filter(r => r.canonical !== 'gemini-3.8-flash') };
+  let selected = older;
+  const store = fixture(async () => new Response(JSON.stringify(envelope(selected))));
+  const row = usage({ providerId: 'google', model: 'gemini-3.8-flash', time: Date.parse('2026-10-17T12:00:00Z') });
+  await store.refresh();
+  expect(store.snapshot().priceUsage(row).status).toBe('unsupported');
+  selected = { ...base, version: base.version + 2 };
+  await store.refresh({ force: true });
+  expect(store.snapshot().priceUsage(row).amount).not.toBeNull();
+  const result = store.rollback(older.version, 0);
+  expect(store.snapshot().RULES).toEqual(JSON.parse(result.catalogJson).rules);
+  expect(store.snapshot().priceUsage(row).status).toBe('unsupported');
+  const reopened = new PricingStore(homes.at(-1), { publicKey });
+  expect(reopened.snapshot().priceUsage(row).status).toBe('unsupported');
+  expect(reopened.snapshot().RULES).toHaveLength(older.rules.length);
+});
+
 test('preview fingerprints detect intervening price updates and custom revisions are archived', async () => {
   const store = fixture(async () => new Response(JSON.stringify(envelope({ ...base, version: base.version + 1 }))));
   const fingerprint = store.fingerprint;

@@ -11,42 +11,10 @@
 const BUILTIN = require('../data/pricing/catalog.json');
 const { validateCatalog, validateOverrides } = require('./pricing-validation.cjs');
 
-const SUPPLEMENTAL_RULES = [
-	{
-		id: "google/gemini-3.8-flash@2026-08-18",
-		family: "google",
-		canonical: "gemini-3.8-flash",
-		aliases: [
-			"gemini-3.8-flash",
-			"google/gemini-3.8-flash"
-		],
-		currency: "USD",
-		sourceUrl: "https://ai.google.dev/gemini-api/docs/pricing",
-		retrievedAt: "2026-08-18",
-		rates: {
-			cacheRead: 0.075,
-			uncached: 0.75,
-			cacheWrite: 0.75,
-			output: 3.75
-		},
-		reasoningIncludedInOutput: true,
-		confidence: "exact",
-		effectiveTo: "2026-12-31T23:59:59.999Z",
-		cacheStorageUnknown: true
-	}
-];
-
 function createPricing(input = BUILTIN, customRules = []) {
 const catalog = validateCatalog(input);
 const overrides = validateOverrides(customRules);
-var catalogRules = catalog.rules || [];
-var RULES = [...catalogRules];
-for (var supp of SUPPLEMENTAL_RULES) {
-	if (!RULES.some(r => r.canonical === supp.canonical && (r.providerId || r.family) === (supp.providerId || supp.family))) {
-		RULES.push(supp);
-	}
-}
-var effectiveCatalog = { ...catalog, rules: RULES };
+const RULES = catalog.rules;
 var MILLION = 1e6;
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var DEEPSEEK_CHANGE_AT = Date.parse("2026-08-17T00:00:00+08:00");
@@ -126,36 +94,56 @@ function ruleMatchesModel(rule, raw) {
 }
 
 
-function matchingRules(family, modelRaw, at, providerId, accountType) {
-	var when = Number.isFinite(at) ? at : Date.now();
-	return RULES.filter(function(rule) {
-		if ((rule.providerId ? rule.providerId !== providerId : rule.family !== family) || !ruleMatchesModel(rule, modelRaw)) return false;
-		if (rule.accountType && rule.accountType !== accountType) return false;
-		if (rule.effectiveFrom && when < Date.parse(rule.effectiveFrom)) return false;
-		if (rule.effectiveTo && when >= Date.parse(rule.effectiveTo)) return false;
-		return true;
-	});
+function ruleIndex() { return { aliases: new Map(), dated: new Map() }; }
+function indexRule(index, rule) {
+	const entry = { rule, from: rule.effectiveFrom ? Date.parse(rule.effectiveFrom) : -Infinity,
+		to: rule.effectiveTo ? Date.parse(rule.effectiveTo) : Infinity };
+	const add = (map, key) => { const rows = map.get(key) || []; rows.push(entry); map.set(key, rows); };
+	for (const alias of rule.aliases) add(index.aliases, alias);
+	if (rule.family === "anthropic") add(index.dated, rule.canonical.toLowerCase());
 }
+const scopedIndexes = new Map(), customIndexes = new Map(), fallbackIndex = ruleIndex();
+function addScoped(map, key, rule) {
+	let index = map.get(key);
+	if (!index) { index = ruleIndex(); map.set(key, index); }
+	indexRule(index, rule);
+}
+for (const rule of RULES) {
+	addScoped(scopedIndexes, rule.providerId ? "provider:" + rule.providerId : "family:" + rule.family, rule);
+	if (!MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) && !rule.providerId && rule.confidence === "exact") indexRule(fallbackIndex, rule);
+}
+for (const rule of overrides) addScoped(customIndexes, rule.providerId, rule);
 
-function modelFallbackRules(modelRaw, at) {
-	var when = Number.isFinite(at) ? at : Date.now();
-	return RULES.filter(function(rule) {
-		if (MODEL_FALLBACK_EXCLUDED_FAMILIES.has(rule.family) || rule.providerId || rule.confidence !== "exact" || !ruleMatchesModel(rule, modelRaw)) return false;
-		if (rule.effectiveFrom && when < Date.parse(rule.effectiveFrom)) return false;
-		if (rule.effectiveTo && when >= Date.parse(rule.effectiveTo)) return false;
-		return true;
-	});
+// Precedence applies to the whole candidate set: a literal thinking model
+// wins before any rule can match its shorter, separately priced base model.
+function indexedMatches(indexes, raw, at, accountType) {
+	let model = String(raw || "").trim().toLowerCase();
+	const when = Number.isFinite(at) ? at : Date.now();
+	for (;;) {
+		const matches = new Set();
+		const dated = /^(.*)-20[0-9]{6}$/.exec(model);
+		for (const index of indexes) {
+			if (!index) continue;
+			const entries = [...(index.aliases.get(model) || []), ...(dated ? index.dated.get(dated[1]) || [] : [])];
+			for (const { rule, from, to } of entries) {
+				if (when >= from && when < to && (!rule.accountType || rule.accountType === accountType)) matches.add(rule);
+			}
+		}
+		if (matches.size) return [...matches];
+		const stripped = model.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
+		if (stripped === model) return [];
+		model = stripped;
+	}
 }
 
 // Resolve provider-scoped rules first. Unknown provider ids may use a unique
 // first-party model row as an estimate, but the provider family stays unknown.
 function rulesForIdentity(family, modelRaw, at, providerId, accountType) {
-	var custom = overrides.filter(rule => rule.providerId === providerId && (!rule.accountType || rule.accountType === accountType)
-		&& ruleMatchesModel(rule, modelRaw) && (!rule.effectiveFrom || at >= Date.parse(rule.effectiveFrom)) && (!rule.effectiveTo || at < Date.parse(rule.effectiveTo)));
+	var custom = indexedMatches([customIndexes.get(providerId)], modelRaw, at, accountType);
 	if (custom.length) return { matches: custom, estimatedFallback: false, custom: true };
-	var direct = matchingRules(family, modelRaw, at, providerId, accountType);
+	var direct = indexedMatches([scopedIndexes.get("provider:" + providerId), scopedIndexes.get("family:" + family)], modelRaw, at, accountType);
 	if (direct.length > 0 || family !== "unknown") return { matches: direct, estimatedFallback: false };
-	var fallback = modelFallbackRules(modelRaw, at);
+	var fallback = indexedMatches([fallbackIndex], modelRaw, at, accountType);
 	return { matches: fallback, estimatedFallback: fallback.length === 1 };
 }
 
@@ -165,19 +153,23 @@ function normalizeAccountType(value) {
 	return ["api", "subscription", "token-plan", "relay", "local", "free", "unknown"].indexOf(type) >= 0 ? type : "unknown";
 }
 
-function normalizeIdentity(providerId, modelRaw, accountType, at) {
+function resolveIdentity(providerId, modelRaw, accountType, at) {
 	var provider = typeof providerId === "string" && providerId.trim() ? providerId.trim() : "unknown";
 	var raw = typeof modelRaw === "string" && modelRaw.trim() ? modelRaw.trim() : "(unknown)";
 	var family = providerFamilyOf(provider);
-	var matches = rulesForIdentity(family, raw, at, provider, normalizeAccountType(accountType)).matches;
-	return {
+	var resolved = rulesForIdentity(family, raw, at, provider, normalizeAccountType(accountType));
+	var matches = resolved.matches;
+	return { resolved, identity: {
 		providerId: provider,
 		providerFamily: family,
 		modelRaw: raw,
 		modelCanonical: matches.length === 1 ? matches[0].canonical : raw,
 		accountType: normalizeAccountType(accountType),
 		ambiguous: matches.length > 1
-	};
+	} };
+}
+function normalizeIdentity(providerId, modelRaw, accountType, at) {
+	return resolveIdentity(providerId, modelRaw, accountType, at).identity;
 }
 
 function tokenCounts(usage) {
@@ -337,14 +329,13 @@ function emptyCost(status, identity, tokens, extra) {
 
 function priceUsage(usage, identityInput) {
 	var at = Number.isFinite(usage?.time) ? usage.time : Number.isFinite(usage && usage.slot) ? usage.slot * 30 * 60 * 1000 : Date.now();
-	var identity = normalizeIdentity(
+	var { identity, resolved } = resolveIdentity(
 		identityInput && identityInput.providerId || usage && usage.providerId,
 		identityInput && identityInput.modelRaw || usage && (usage.modelRaw || usage.model),
 		identityInput && identityInput.accountType || usage && usage.accountType,
 		at
 	);
 	var tokens = tokenCounts(usage);
-	var resolved = rulesForIdentity(identity.providerFamily, identity.modelRaw, at, identity.providerId, identity.accountType);
 	if (identity.accountType === "free") {
 		var freeMatches = resolved.matches;
 		return { ...emptyCost("free", identity, tokens), amount: 0, currency: freeMatches.length === 1 ? freeMatches[0].currency : null, unpricedTokens: 0 };
@@ -483,7 +474,7 @@ function pricingCatalog() {
 }
 
 return {
-	catalog: effectiveCatalog,
+	catalog,
 	SOURCES: SOURCES,
 	RULES: RULES,
 	DISPLAY_CURRENCY: DISPLAY_CURRENCY,
@@ -504,9 +495,8 @@ return {
 	mergeCostSummariesCny: mergeCostSummariesCny,
 	emptyCostSummary: emptyCostSummary,
 	pricingCatalog: pricingCatalog,
-	tokenCounts: tokenCounts,
-	SUPPLEMENTAL_RULES: SUPPLEMENTAL_RULES
+	tokenCounts: tokenCounts
 };
 
 }
-module.exports = Object.assign(createPricing(), { createPricing, BUILTIN, validateCatalog, validateOverrides, SUPPLEMENTAL_RULES });
+module.exports = Object.assign(createPricing(), { createPricing, BUILTIN, validateCatalog, validateOverrides });

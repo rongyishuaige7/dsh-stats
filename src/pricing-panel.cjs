@@ -175,11 +175,6 @@ function PricingPanel({ remote, projects, onChanged, t }) {
     }
   }
   const allRules = [...(catalog?.rules || [])];
-  for (const supp of pricing.SUPPLEMENTAL_RULES || []) {
-    if (!allRules.some(r => r.canonical === supp.canonical && (r.providerId || r.family) === (supp.providerId || supp.family))) {
-      allRules.push(supp);
-    }
-  }
   const hasSearch = Boolean(search && search.trim());
   let filtered = [];
   let usedMatchingCount = 0;

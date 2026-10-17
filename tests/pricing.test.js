@@ -248,6 +248,7 @@ test('unknown proxy provider with gemini-3.8-flash and reasoning suffixes is pri
 		const res = priceUsage({
 			providerId: 'cpa',
 			model: 'gemini-3.8-flash' + suffix,
+			time: Date.parse('2026-10-17T12:00:00Z'),
 			uncached: 1000000,
 			cacheRead: 1000000,
 			output: 1000000,
@@ -267,6 +268,7 @@ test('anthropic dated model aliases with reasoning suffixes match and price accu
 		const res = priceUsage({
 			providerId: 'cpa',
 			model: 'claude-sonnet-5-20260301' + suffix,
+			time: Date.parse('2026-10-17T12:00:00Z'),
 			uncached: 1000000,
 			output: 1000000,
 		});
@@ -281,4 +283,43 @@ test('anthropic dated model aliases with reasoning suffixes match and price accu
 	}
 });
 
+test('literal thinking models win over their differently priced base, including added effort suffixes', () => {
+	for (const model of ['moonshotai/kimi-k2-thinking', 'moonshotai/kimi-k2-thinking-high']) {
+		const result = priceUsage({ providerId: 'openrouter', model, time: Date.parse('2026-10-17T12:00:00Z'), uncached: 1000000, output: 1000000 });
+		expect(result).toMatchObject({ status: 'estimated', modelCanonical: 'moonshotai/kimi-k2-thinking', unpricedTokens: 0 });
+		expect(result.amount).toBeCloseTo(3.1);
+	}
+});
 
+test('custom literal variants retain precedence and date/account isolation', () => {
+	const rule = (model, input, extra = {}) => ({ id: model + input, providerId: 'proxy', family: 'unknown', canonical: model, aliases: [model], currency: 'CNY',
+		rates: { uncached: input, cacheRead: 0, cacheWrite: input, output: input * 2 }, sourceUrl: null, retrievedAt: '2026-10-17', confidence: 'estimated', reasoningIncludedInOutput: true, ...extra });
+	const cut = Date.parse('2026-10-17T12:00:00Z');
+	const engine = pricing.createPricing(pricing.BUILTIN, [rule('demo', 1), rule('demo-high', 10, { accountType: 'api', effectiveTo: new Date(cut).toISOString() }),
+		rule('demo-high', 20, { accountType: 'api', effectiveFrom: new Date(cut).toISOString() })]);
+	const quote = (time, accountType = 'api') => engine.priceUsage({ providerId: 'proxy', model: 'demo-high', time, accountType, uncached: 1000000, output: 1000000 });
+	expect(quote(cut - 1).amount).toBe(30);
+	expect(quote(cut).amount).toBe(60);
+	expect(quote(cut, 'relay').amount).toBe(3);
+});
+
+test('every active catalog alias has an unambiguous identity before and after an effort suffix', () => {
+	const at = Date.parse('2026-10-17T12:00:00Z');
+	for (const rule of pricing.RULES) {
+		if (rule.effectiveFrom && at < Date.parse(rule.effectiveFrom) || rule.effectiveTo && at >= Date.parse(rule.effectiveTo)) continue;
+		for (const alias of rule.aliases) for (const model of [alias, alias + '-thinking-high']) {
+			const identity = normalizeIdentity(rule.providerId || rule.family, model, rule.accountType || 'api', at);
+			expect(identity.ambiguous, model).toBe(false);
+			if (model === alias) expect(identity.modelCanonical, model).toBe(rule.canonical);
+			else expect(identity.modelCanonical, model).not.toBe(model);
+		}
+	}
+});
+
+test('Gemini rule expiry is explicit and independent of the test runner clock', () => {
+	const rule = pricing.RULES.find(r => r.canonical === 'gemini-3.8-flash');
+	const end = Date.parse(rule.effectiveTo);
+	const row = { providerId: 'google', model: rule.canonical, uncached: 1000000, output: 1000000 };
+	expect(priceUsage({ ...row, time: end - 1 }).amount).not.toBeNull();
+	expect(priceUsage({ ...row, time: end })).toMatchObject({ status: 'unsupported', amount: null });
+});
