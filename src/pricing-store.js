@@ -53,6 +53,10 @@ export class PricingStore {
   rebuild() {
     this.engine = pricing.createPricing(this.catalog, this.settings.overrides);
     this.fingerprint = createHash('sha256').update(JSON.stringify([this.catalog, this.settings.overrides])).digest('hex');
+    // status() is called on every price-panel open/refresh; serialize the
+    // catalog and overrides once per rebuild instead of on every read.
+    this.catalogJson = JSON.stringify(this.catalog);
+    this.overridesJson = JSON.stringify(this.settings.overrides);
   }
   syncDisk() {
     const stamp = name => { try { const st = statSync(join(this.dir, name)); return st.mtimeMs + ':' + st.size + ':' + st.ino; } catch { return ''; } };
@@ -111,7 +115,7 @@ export class PricingStore {
     return { version: this.catalog.version, publishedAt: this.catalog.publishedAt, fingerprint: this.fingerprint,
       lastCheckAt: this.lastCheckAt, lastSuccessAt: this.lastSuccessAt, error: this.error,
       revision: this.settings.revision, autoUpdate: this.settings.autoUpdate, pinnedVersion: this.settings.pinnedVersion,
-      catalogJson: JSON.stringify(this.catalog), overridesJson: JSON.stringify(this.settings.overrides), history };
+      catalogJson: this.catalogJson, overridesJson: this.overridesJson, history };
   }
   async refresh({ force = false, unknown = false } = {}) {
     if (this.closed) return this.status();

@@ -311,8 +311,11 @@ let StatsService = (() => {
 				const reuseRead = revision !== null && cachedRead?.revision === revision && cachedRead.metadataKey === metadataKey &&
 					readServices.every((service, index) => service === cachedRead.services[index]);
 				if (reuseRead) {
-					({ info, officialSource, officialValues } = structuredClone(cachedRead.value));
-					warnings.push(...cachedRead.warnings.map(row => ({ ...row })));
+					// `value` is a deep snapshot taken when it was cached and is never
+					// mutated by the aggregation path; reuse it instead of cloning it
+					// again on every refresh.
+					({ info, officialSource, officialValues } = cachedRead.value);
+					warnings.push(...cachedRead.warnings);
 				} else {
 					forgetOfficialRead(readCache, sessionId);
 					const warningStart = warnings.length;
@@ -524,8 +527,9 @@ let StatsService = (() => {
 					reasoning: totalReasoning
 				};
 				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
-				let perSlotUsage = slotUsages(info.usages, priceEngine);
-				if (usedProjectionUsage && updatedAt !== null) perSlotUsage = [projectionSlotUsage(info, projectionUsage, updatedAt, priceEngine)];
+				const perSlotUsage = usedProjectionUsage && updatedAt !== null
+					? [projectionSlotUsage(info, projectionUsage, updatedAt, priceEngine)]
+					: slotUsages(info.usages, priceEngine);
 				const modelUsage = modelUsages(perSlotUsage);
 				const primaryIdentity = rawIdentity(info.providerId, info.model, info.accountType, updatedAt);
 				const sessionCost = summarizeCostsCny(perSlotUsage.map((row) => row.cost));

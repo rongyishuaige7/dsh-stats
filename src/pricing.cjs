@@ -22,6 +22,15 @@ var OPENAI_LONG_CONTEXT = 272000;
 var GEMINI_LONG_CONTEXT = 200000;
 var RETRIEVED_AT = "2026-08-18";
 var OPENAI_RETRIEVED_AT = "2026-08-26";
+// The catalog is immutable for the lifetime of this engine; memoize the FX
+// snapshot selected for each usage day instead of filtering the array per row.
+var fxByDay = new Map();
+function fxForDay(day) {
+	if (fxByDay.has(day)) return fxByDay.get(day);
+	var fx = catalog.fx.filter(row => row.date <= day).at(-1) || catalog.fx[0];
+	fxByDay.set(day, fx);
+	return fx;
+}
 // The dashboard reports one currency. Keep the FX snapshot explicit and
 // replaceable so a future host-side rate provider can pass a newer value
 // without changing the pricing rules themselves.
@@ -256,7 +265,7 @@ function convertCostToCny(cost, options) {
 	if (cost.amount == null || currency !== "USD") return { ...cost };
 	var fxAt = cost.pricing?.pricedAt;
 	var day = Number.isFinite(fxAt) ? new Date(fxAt).toISOString().slice(0, 10) : "9999-12-31";
-	var fx = catalog.fx.filter(row => row.date <= day).at(-1) || catalog.fx[0];
+	var fx = fxForDay(day);
 	var rate = positiveRate(options?.usdCnyRate) || fx.usdCny;
 	if (!rate) return { ...cost };
 	// A USD list-price row converted with a fixed FX snapshot is useful for

@@ -1,5 +1,11 @@
 // Presentation data is cached separately from search text and editor state.
 const pricing = require('./pricing.cjs');
+const engineCache = new WeakMap();
+function engineFor(catalog) {
+  let engine = engineCache.get(catalog);
+  if (!engine) { engine = pricing.createPricing(catalog); engineCache.set(catalog, engine); }
+  return engine;
+}
 const groupKey = rule => JSON.stringify([rule.providerId || 'family:' + rule.family, rule.canonical]);
 const rateFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 8, useGrouping: false });
 function fmtRateValue(value, currency) {
@@ -15,7 +21,7 @@ function rulePhase(rule, at) {
 function usedModelKeys(projects, catalog) {
   if (!catalog) return new Set();
   const byId = new Map(catalog.rules.map(rule => [rule.id, rule]));
-  const engine = pricing.createPricing(catalog), used = new Set(), seen = new Set();
+  const engine = engineFor(catalog), used = new Set(), seen = new Set();
   for (const project of projects || []) for (const session of project.sessions || []) {
     const rows = session.slotUsage?.length ? session.slotUsage : session.modelUsage?.length ? session.modelUsage : [session];
     for (const row of rows) {
