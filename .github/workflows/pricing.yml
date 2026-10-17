@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: price-catalog
@@ -22,8 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: main
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -41,17 +40,27 @@ jobs:
           fi
       - name: Validate engine and data
         run: |
-          npm test -- --run tests/pricing.test.js tests/pricing-store.test.js tests/pricing-collector.test.js
+          npm run verify:pricing -- --base-ref HEAD
+          npm test -- --run tests/pricing.test.js tests/pricing-store.test.js tests/pricing-collector.test.js tests/pricing-delivery.test.js
           npm run build
       - name: Publish price data
+        id: publish
         run: |
           if ! git diff --quiet -- data/pricing; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add data/pricing lib
             git commit -m 'chore(pricing): update verified price catalog'
-            git push origin HEAD:main
+            git push origin "HEAD:$GITHUB_REF_NAME"
+            echo 'updated=true' >> "$GITHUB_OUTPUT"
           fi
+      # GITHUB_TOKEN pushes do not trigger push workflows. Explicitly run the
+      # full gate on the newly signed branch before it can be reviewed/merged.
+      - name: Verify published commit in CI
+        if: steps.publish.outputs.updated == 'true'
+        run: gh workflow run ci.yml --ref "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -71,3 +71,27 @@ header controls at 641/700/768/1024/1100/1101px, pagination, search resets,
 history filters and custom price preview/save/edit/offline refresh. Both browser
 timezones retain identical usage views. Test-owned server and browser exited;
 no local service was replaced or retained.
+
+## Slice 3 results
+
+Added a shared delivery validator and tests for pinned signatures, divergent
+payloads, malformed data, unchanged/reordered JSON, changed rules/metadata/FX,
+version regressions and missing Git baselines. Signing checks the previous
+signed snapshot before writing. Normal CI compares against the PR base/push
+before revision; price automation compares against its checkout. Publishing
+and prepublishOnly also verify the signed payload. Bot price commits explicitly
+dispatch full CI because GITHUB_TOKEN pushes do not trigger push workflows.
+Reviewed prices can be signed on their review branch before merging.
+
+277 tests pass in default and UTC timezones. All four bundles, artifact syntax,
+npm package dry-run and prepublishOnly pass. The final Chrome fixture again
+passes (30 screenshots, zero browser errors); its server/browser exited. The
+validator rejects historical commit addab1a's unsigned catalog change and
+accepts its signed successor 849481b and the current snapshot. All three changed
+workflow files parse successfully. Slice 2's remote CI passed all eight Harness
+versions; the final push repeats the complete remote gate. Local node_modules
+contain an older unlisted Harness release, so contracts use CI's isolated,
+coherent installations rather than relabeling that local fixture as supported.
+
+No provider rates, signed catalog data, package dependencies or version changed;
+this repair does not publish an npm release or replace a running installation.

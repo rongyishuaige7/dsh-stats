@@ -39,7 +39,10 @@
 - `.github/workflows/pricing.yml` 每 6 小时执行，或在 Actions 的 Update prices 手动运行。私钥通过仓库 Secret `PRICING_SIGNING_KEY` 注入，客户端只含固定公钥。
 - `node scripts/collect-pricing.mjs` 只生成 `artifacts/pricing/report.json`，不写有效目录。结构化数据范围是 OpenRouter 简单文本模型；官方 OpenAI 网页变化只生成候选，避免漏读上下文、缓存或服务档条件。失败时不会签发任何新目录。
 - 复核候选的准确模型 ID、来源、币种、缓存、长上下文、服务档与有效期后，编辑 `data/pricing/catalog.json` 并递增 version。已生效规则保留旧区间，新规则从核验到的时间开始；无历史证据时以 observedFrom 标记早期估算。汇率也是带日期、来源的审核快照，不用实时汇率改写历史结果。
-- 推送已复核的目录后，通过 workflow_dispatch 勾选 `sign_reviewed_catalog`，验证并签名发布。工作流同时测试、构建，签名目录通过 raw GitHub 分发。候选报告在 Actions artifact，失败会以失败运行呈现；不会悄悄覆盖旧目录。
+- 在审核分支提交已复核、已递增 version 的目录，再从 Actions 的 Update prices 选择该分支并勾选 `sign_reviewed_catalog`。工作流会在所选分支签名、测试、构建并提交；等 CI 全绿后合并到 main，通过 raw GitHub 分发。未签名的审核分支会被一致性检查拒绝，签名补齐后才能合并。定时采集仍在默认分支执行。候选报告在 Actions artifact，失败会以失败运行呈现。
+- `npm run verify:pricing` 校验目录结构、公钥签名及 catalog.json 与签名 payload 的内容一致性；`npm run verify:pricing -- --base-ref HEAD^` 同时校验相对基线的版本。规则、汇率或元数据变化都必须增大 version；版本倒退、同版本改内容、缺失基线历史、错误签名均拒绝。JSON 空白和对象键顺序不影响此项内容比较。
+- CI 使用 PR base 或 push before 作为版本基线；采集工作流在写入后与 HEAD 比较；手动签名在写入前与上一份有效签名比较。npm 发布流程与 prepublishOnly 也校验签名和内容，避免打包未签名目录。私钥只用于现有维护工作流，本地验证不需要私钥。
+- 机器人提交不会自动触发 push CI，因此价格工作流提交后会显式派发 CI（需要工作流的 `actions: write` 权限），包含浏览器及八版本 Harness 契约；也可在 CI 的 Run workflow 中对审核分支重跑。
 - 客户端拒绝错误签名、超限响应、未知 schema、冲突别名、负数费率、未来版本与回退版本。恢复旧版本仅能选择验证过的本地历史快照，后台下载不能覆盖 pin。设置 revision、目录 fingerprint 与跨进程锁防止预览后被其他窗口覆盖；旧设置按修订保留。
 - 公钥轮换需要发布插件版本；私钥丢失时先停止签发并安全轮换。日常价格变更不需要 npm 发布。
 

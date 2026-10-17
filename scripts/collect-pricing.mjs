@@ -1,6 +1,7 @@
 // Runs in the maintainer workflow, never on a user's session corpus.
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { createPrivateKey, sign, verify, createHash } from 'node:crypto';
+import { validatePricingData } from './verify-pricing.mjs';
 import { pathToFileURL } from 'node:url';
 import pricing from '../src/pricing.cjs';
 import trust from '../src/pricing-trust.cjs';
@@ -131,6 +132,7 @@ async function main() {
     const payload = JSON.stringify(catalog, null, 2) + '\n';
     const signature = sign(null, Buffer.from(payload), createPrivateKey(secret)).toString('base64');
     if (!verify(null, Buffer.from(payload), trust.publicKey, Buffer.from(signature, 'base64'))) throw new Error('Signing key does not match pinned public key');
+    validatePricingData({ catalog, envelope: { payload, signature }, previous: pricing.BUILTIN });
     writeFileSync('data/pricing/catalog.json', payload);
     writeFileSync('data/pricing/latest.json', JSON.stringify({ payload, signature }) + '\n');
   }

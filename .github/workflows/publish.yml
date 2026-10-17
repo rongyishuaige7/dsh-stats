@@ -26,6 +26,7 @@ jobs:
         run: |
           release_version=$(node --print "require('./package.json').version")
           test "v${release_version}" = "$GITHUB_REF_NAME"
+          npm run verify:pricing
           npm run build
           npm test
           TZ=UTC npm test

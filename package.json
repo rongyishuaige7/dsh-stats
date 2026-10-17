@@ -23,9 +23,10 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "prepublishOnly": "node scripts/build.mjs",
+    "prepublishOnly": "npm run verify:pricing && node scripts/build.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:pricing": "node scripts/verify-pricing.mjs",
     "smoke:rc2": "node scripts/rc2-browser-smoke.mjs",
     "smoke:web": "node scripts/rc2-browser-smoke.mjs",
     "smoke:harness": "node scripts/harness-contract-smoke.mjs",
