@@ -111,12 +111,25 @@ function readJson(file) {
 	}
 }
 
+let projcacheCache = { home: null, at: 0, stamp: "", value: null };
+const PROJCACHE_CACHE_MS = 2000;
 function readSessionProjcache(home) {
 	const singleFile = join(home, "storages", "session_projcache.json");
-	const singleRead = readJson(singleFile);
-	if (singleRead.ok) return singleRead;
-
 	const sessionsDir = join(home, "storages", "session_projcache", "sessions");
+	const stampOf = (file) => {
+		try { const stat = statSync(file); return `${stat.mtimeMs}:${stat.size}:${stat.ino}`; }
+		catch { return "-"; }
+	};
+	const stamp = `f:${stampOf(singleFile)}|d:${stampOf(sessionsDir)}`;
+	const now = Date.now();
+	if (projcacheCache.home === home && projcacheCache.stamp === stamp && now - projcacheCache.at < PROJCACHE_CACHE_MS) return projcacheCache.value;
+	const finish = (value) => {
+		projcacheCache = { home, at: now, stamp, value };
+		return value;
+	};
+	const singleRead = readJson(singleFile);
+	if (singleRead.ok) return finish(singleRead);
+
 	try {
 		const entries = readdirSync(sessionsDir, { withFileTypes: true });
 		const sessionsTable = Object.create(null);
@@ -136,16 +149,16 @@ function readSessionProjcache(home) {
 			}
 		}
 		const detectedVersion = versions.size === 0 ? 7 : Math.max(...versions);
-		return {
+		return finish({
 			ok: true,
 			value: {
 				unit: { version: detectedVersion },
 				tables: { sessions: sessionsTable }
 			},
 			error: null
-		};
+		});
 	} catch {
-		return singleRead;
+		return finish(singleRead);
 	}
 }
 

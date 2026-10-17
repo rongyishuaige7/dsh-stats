@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
 import { infoFromProjectionValues } from '../src/host-sessions.js';
-import { readJson, scanZstdFrames } from '../src/host-util.js';
+import { readJson, readSessionProjcache, scanZstdFrames } from '../src/host-util.js';
 import { TYPERT } from '../src/typert-host.js';
 import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
@@ -1295,5 +1295,18 @@ test('readJson accepts a UTF-8 BOM and scanZstdFrames skips skippable frames', (
 	expect(scanned.frames).toHaveLength(1);
 	expect(scanned.frames[0].start).toBe(12);
 	expect(zstdDecompressSync(Buffer.concat([skip, frame]).subarray(scanned.frames[0].start, scanned.frames[0].end)).toString()).toBe(payload.toString());
+});
+
+test('readSessionProjcache reuses an unchanged snapshot briefly', () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-projcache-'));
+	createdHomes.push(home);
+	mkdirSync(join(home, 'storages'), { recursive: true });
+	writeFileSync(join(home, 'storages', 'session_projcache.json'), JSON.stringify({
+		tables: { sessions: { s1: { identity: { id: 's1' }, rows: {} } } },
+	}));
+	const first = readSessionProjcache(home);
+	const second = readSessionProjcache(home);
+	expect(second).toBe(first);
+	expect(second.value.tables.sessions.s1).toMatchObject({ identity: { id: 's1' } });
 });
 
