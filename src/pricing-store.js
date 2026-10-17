@@ -31,6 +31,8 @@ export class PricingStore {
     this.fetch = fetchImpl; this.now = now; this.publicKey = publicKey; this.url = url;
     this.catalog = pricing.BUILTIN; this.envelope = publicKey === trust.publicKey ? builtinEnvelope : null; this.error = null; this.lastSuccessAt = null; this.lastCheckAt = null;
     this.inflight = null; 
+    this.history = [];
+    this.historyStamp = null;
     this.settings = { revision: 0, autoUpdate: true, pinnedVersion: null, overrides: [] };
     try { this.settings = this.validateSettings(read(join(this.dir, 'settings.json'))); }
     catch (error) { if (error.code !== 'ENOENT') { this.error = 'pricing-settings-invalid'; this.settingsInvalid = true; } }
@@ -110,8 +112,20 @@ export class PricingStore {
   snapshot() { this.syncDisk(); return this.engine; }
   status() {
     this.syncDisk();
-    let history = [];
-    try { history = readdirSync(this.dir).filter(name => /^catalog-\d+\.json$/.test(name)).map(name => Number(name.slice(8, -5))).sort((a, b) => b - a); } catch {}
+    let history = this.history || [];
+    try {
+      const dirStat = statSync(this.dir);
+      const stamp = dirStat.mtimeMs + ':' + dirStat.ino;
+      if (stamp !== this.historyStamp) {
+        history = readdirSync(this.dir).filter(name => /^catalog-\d+\.json$/.test(name)).map(name => Number(name.slice(8, -5))).sort((a, b) => b - a);
+        this.history = history;
+        this.historyStamp = stamp;
+      }
+    } catch {
+      this.history = [];
+      this.historyStamp = null;
+      history = [];
+    }
     return { version: this.catalog.version, publishedAt: this.catalog.publishedAt, fingerprint: this.fingerprint,
       lastCheckAt: this.lastCheckAt, lastSuccessAt: this.lastSuccessAt, error: this.error,
       revision: this.settings.revision, autoUpdate: this.settings.autoUpdate, pinnedVersion: this.settings.pinnedVersion,

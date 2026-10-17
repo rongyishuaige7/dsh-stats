@@ -168,3 +168,16 @@ test('a malformed stale lock is reclaimed but a fresh lock stays busy', () => {
   utimesSync(lock, old, old);
   expect(store.withLock(() => 42)).toBe(42);
 });
+
+test('status reuses the catalog history until the directory changes', () => {
+  const home = mkdtempSync(join(tmpdir(), 'pricing-history-'));
+  homes.push(home);
+  const store = new PricingStore(home, { publicKey });
+  mkdirSync(store.dir, { recursive: true });
+  writeFileSync(join(store.dir, 'catalog-2.json'), '{}');
+  expect(store.status().history).toEqual([2]);
+  writeFileSync(join(store.dir, 'catalog-3.json'), '{}');
+  const future = new Date(Date.now() + 2000);
+  utimesSync(store.dir, future, future);
+  expect(store.status().history).toEqual([3, 2]);
+});
