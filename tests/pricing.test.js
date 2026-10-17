@@ -323,3 +323,101 @@ test('Gemini rule expiry is explicit and independent of the test runner clock', 
 	expect(priceUsage({ ...row, time: end - 1 }).amount).not.toBeNull();
 	expect(priceUsage({ ...row, time: end })).toMatchObject({ status: 'unsupported', amount: null });
 });
+
+test('route/region prefixes and reasoning suffixes on deepseek-v4.1 models price via estimated fallback', () => {
+	const prefixes = ['', 'cn:', 'hk:', 'us:', 'intl:'];
+	const suffixes = ['', '-high', '-medium', '-low', '-max', '-thinking', '-thought', '-thinking-high'];
+	for (const prefix of prefixes) {
+		for (const suffix of suffixes) {
+			const res = priceUsage({
+				providerId: 'workbuddy',
+				model: prefix + 'deepseek-v4.1-flash' + suffix,
+				time: Date.parse('2026-10-17T12:00:00Z'),
+				uncached: 1000000,
+				output: 1000000,
+			});
+			expect(res).toMatchObject({
+				status: 'estimated',
+				currency: 'CNY',
+				modelCanonical: 'deepseek-v4-flash',
+				ruleId: 'deepseek/deepseek-v4-flash@2026-09-25',
+				unpricedTokens: 0,
+			});
+		}
+	}
+});
+
+test('official deepseek provider resolves deepseek-v4.1 and slash aliases with exact status', () => {
+	for (const model of ['deepseek-v4.1-flash', 'deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-flash']) {
+		const res = priceUsage({
+			providerId: 'deepseek',
+			model,
+			time: Date.parse('2026-10-17T12:00:00Z'),
+			uncached: 1000000,
+			output: 1000000,
+		});
+		expect(res).toMatchObject({
+			status: 'exact',
+			currency: 'CNY',
+			modelCanonical: 'deepseek-v4-flash',
+			ruleId: 'deepseek/deepseek-v4-flash@2026-09-25',
+			unpricedTokens: 0,
+		});
+	}
+
+	for (const model of ['deepseek-v4.1-pro', 'deepseek/deepseek-v4.1-pro', 'deepseek/deepseek-v4-pro']) {
+		const res = priceUsage({
+			providerId: 'deepseek',
+			model,
+			time: Date.parse('2026-10-17T12:00:00Z'),
+			uncached: 1000000,
+			output: 1000000,
+		});
+		expect(res).toMatchObject({
+			status: 'exact',
+			currency: 'CNY',
+			modelCanonical: 'deepseek-v4-pro',
+			ruleId: 'deepseek/deepseek-v4-pro@2026-09-25',
+			unpricedTokens: 0,
+		});
+	}
+});
+
+test('deepseek-v4.1-flash respects historical interval split across 2026-09-25 cutover', () => {
+	const past = priceUsage({
+		providerId: 'workbuddy',
+		model: 'cn:deepseek-v4.1-flash',
+		time: Date.parse('2026-09-01T12:00:00Z'),
+		uncached: 1000000,
+		output: 1000000,
+	});
+	expect(past).toMatchObject({
+		status: 'estimated',
+		ruleId: 'deepseek/deepseek-v4-flash@2026-08-18',
+		modelCanonical: 'deepseek-v4-flash',
+		unpricedTokens: 0,
+	});
+
+	const present = priceUsage({
+		providerId: 'workbuddy',
+		model: 'cn:deepseek-v4.1-flash',
+		time: Date.parse('2026-10-17T12:00:00Z'),
+		uncached: 1000000,
+		output: 1000000,
+	});
+	expect(present).toMatchObject({
+		status: 'estimated',
+		ruleId: 'deepseek/deepseek-v4-flash@2026-09-25',
+		modelCanonical: 'deepseek-v4-flash',
+		unpricedTokens: 0,
+	});
+});
+
+test('ruleMatchesModel supports route prefixes and compound suffixes', () => {
+	const rule = pricing.RULES.find(r => r.id === 'deepseek/deepseek-v4-flash@2026-09-25');
+	expect(pricing.ruleMatchesModel(rule, 'cn:deepseek-v4.1-flash')).toBe(true);
+	expect(pricing.ruleMatchesModel(rule, 'hk:deepseek-v4.1-flash-high')).toBe(true);
+	expect(pricing.ruleMatchesModel(rule, 'us:deepseek-v4-flash-thinking-high')).toBe(true);
+	expect(pricing.ruleMatchesModel(rule, 'deepseek/deepseek-v4.1-flash')).toBe(true);
+	expect(pricing.ruleMatchesModel(rule, 'cn:deepseek-v4.1-pro')).toBe(false);
+});

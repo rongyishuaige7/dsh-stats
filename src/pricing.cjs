@@ -73,6 +73,13 @@ function matchModelAlias(rule, model) {
 	// Anthropic dated model ids are stable aliases of the named family.
 	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
 		&& /^20[0-9]{6}$/.test(model.slice(rule.canonical.length + 1))) return true;
+	if (rule.family === "deepseek") {
+		if (rule.canonical === "deepseek-v4-flash" &&
+			(model === "deepseek-v4.1-flash" || model === "deepseek/deepseek-v4.1-flash" || model === "deepseek/deepseek-v4-flash")) return true;
+		if (rule.canonical === "deepseek-v4-pro" &&
+			(model === "deepseek-v4.1-pro" || model === "deepseek/deepseek-v4.1-pro" || model === "deepseek/deepseek-v4-pro")) return true;
+		if (rule.canonical === "deepseek-flash" && model === "deepseek/deepseek-flash") return true;
+	}
 	return false;
 }
 
@@ -80,15 +87,28 @@ function ruleMatchesModel(rule, raw) {
 	var model = String(raw || "").trim().toLowerCase();
 	if (matchModelAlias(rule, model)) return true;
 
-	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -none, -thinking, -thought)
+	// Reasoning and thinking effort suffix stripping (e.g. -high, -medium, -low, -none, -thinking, -thought, -max)
 	// Supports compound suffixes (e.g. -thinking-high) by stripping iteratively.
 	var stripped = model;
 	var prev;
 	do {
 		prev = stripped;
-		stripped = stripped.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
+		stripped = stripped.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
 		if (stripped !== prev && matchModelAlias(rule, stripped)) return true;
 	} while (stripped !== prev);
+
+	// Route / region prefix stripping (e.g. cn:model, hk:model, us:model)
+	var colonIdx = stripped.indexOf(':');
+	if (colonIdx > 0 && colonIdx < 16 && !stripped.slice(0, colonIdx).includes('/')) {
+		var withoutColon = stripped.slice(colonIdx + 1);
+		if (matchModelAlias(rule, withoutColon)) return true;
+		var subStripped = withoutColon;
+		do {
+			prev = subStripped;
+			subStripped = subStripped.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
+			if (subStripped !== prev && matchModelAlias(rule, subStripped)) return true;
+		} while (subStripped !== prev);
+	}
 
 	return false;
 }
@@ -101,6 +121,15 @@ function indexRule(index, rule) {
 	const add = (map, key) => { const rows = map.get(key) || []; rows.push(entry); map.set(key, rows); };
 	for (const alias of rule.aliases) add(index.aliases, alias);
 	if (rule.family === "anthropic") add(index.dated, rule.canonical.toLowerCase());
+	if (rule.family === "deepseek") {
+		if (rule.canonical === "deepseek-v4-flash") {
+			for (const a of ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-flash"]) add(index.aliases, a);
+		} else if (rule.canonical === "deepseek-v4-pro") {
+			for (const a of ["deepseek-v4.1-pro", "deepseek/deepseek-v4.1-pro", "deepseek/deepseek-v4-pro"]) add(index.aliases, a);
+		} else if (rule.canonical === "deepseek-flash") {
+			add(index.aliases, "deepseek/deepseek-flash");
+		}
+	}
 }
 const scopedIndexes = new Map(), customIndexes = new Map(), fallbackIndex = ruleIndex();
 function addScoped(map, key, rule) {
@@ -130,9 +159,17 @@ function indexedMatches(indexes, raw, at, accountType) {
 			}
 		}
 		if (matches.size) return [...matches];
-		const stripped = model.replace(/-(?:high|medium|low|none|thinking|thought)$/i, "");
-		if (stripped === model) return [];
-		model = stripped;
+		const stripped = model.replace(/-(?:high|medium|low|none|thinking|thought|max)$/i, "");
+		if (stripped !== model) {
+			model = stripped;
+			continue;
+		}
+		const colonIdx = model.indexOf(':');
+		if (colonIdx > 0 && colonIdx < 16 && !model.slice(0, colonIdx).includes('/')) {
+			model = model.slice(colonIdx + 1);
+			continue;
+		}
+		return [];
 	}
 }
 
