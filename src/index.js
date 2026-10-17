@@ -13,6 +13,9 @@ import { collectAccounts, providerViews } from "./accounts.js";
 const { summarizeCostsCny, mergeCostSummariesCny } = pricing;
 import { isSupportedProjectionDomainVersion, SLOT_MINUTES, SLOT_MS, STATS_SCHEMA_VERSION, activityIntervals, basename, credentialsService, dshHome, firstString, identityFields, localDayKey, minutesOfDay, nonNegativeNumber, objectRecord, rawIdentity, readJson, readSessionProjcache } from "./host-util.js";
 const MAX_WARNINGS = 200;
+// Coalesce concurrent full aggregations for the same service instance. This is
+// single-flight only (no TTL): the next call after completion always re-reads.
+const aggregateInflight = new WeakMap();
 
 // Keep the RPC payload bounded and stable: diagnostics are grouped by
 // code/session/message, and only the first MAX_WARNINGS details are returned.
@@ -156,6 +159,11 @@ let StatsService = (() => {
 		}
 
 		async aggregate(overridePricing) {
+			if (!overridePricing) {
+				const existing = aggregateInflight.get(this);
+				if (existing) return existing;
+			}
+			const run = async () => {
 			const home = dshHome();
 			const priceStore = pricingStore(this, home);
 			const priceEngine = overridePricing || priceStore.snapshot();
@@ -686,6 +694,11 @@ let StatsService = (() => {
 				timeline: { slotMinutes: SLOT_MINUTES, days },
 				meta: { schemaVersion: STATS_SCHEMA_VERSION, source: "host", generatedAt: Date.now(), pricingVersion: priceEngine.catalog.version, pricingFingerprint: priceStore.fingerprint, degraded: warningSummary.unique.some((warning) => !/^OFFICIAL_.*_USED$/.test(warning.code)), warnings: warningSummary.warnings }
 			};
+			};
+			if (overridePricing) return run();
+			const promise = run();
+			aggregateInflight.set(this, promise);
+			try { return await promise; } finally { if (aggregateInflight.get(this) === promise) aggregateInflight.delete(this); }
 		}
 
 		async pricing(request = { action: "status" }) {

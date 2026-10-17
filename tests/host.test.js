@@ -1310,3 +1310,27 @@ test('readSessionProjcache reuses an unchanged snapshot briefly', () => {
 	expect(second.value.tables.sessions.s1).toMatchObject({ identity: { id: 's1' } });
 });
 
+test('concurrent aggregate calls share one host read', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	fixture({ s1: projection(now) });
+	let lists = 0;
+	const service = {
+		ctx: {
+			workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['s1'] }] },
+			sessionQuery: {
+				listSessions: async () => {
+					lists++;
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					return [{ header: { id: 's1', cwd: '/tmp/fixture', createdAt: now } }];
+				},
+			},
+		},
+	};
+	const [first, second] = await Promise.all([
+		StatsService.prototype.aggregate.call(service),
+		StatsService.prototype.aggregate.call(service),
+	]);
+	expect(lists).toBe(1);
+	expect(second).toBe(first);
+});
+
