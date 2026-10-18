@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101807,
-  "publishedAt": "2026-10-18T18:44:12.816Z",
+  "version": 2026101808,
+  "publishedAt": "2026-10-18T21:08:21.550Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -16147,7 +16147,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-15T11:25:44.707Z"
+      "effectiveFrom": "2026-10-15T11:25:44.707Z",
+      "effectiveTo": "2026-10-18T21:08:21.550Z"
     },
     {
       "id": "openrouter/nvidia/nemotron-3.5-super-vl@2026-10-15T16:58:34.989Z",
@@ -18369,7 +18370,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-18T18:44:12.816Z"
+      "effectiveFrom": "2026-10-18T18:44:12.816Z",
+      "effectiveTo": "2026-10-18T21:08:21.550Z"
     },
     {
       "id": "openrouter/moonshotai/kimi-k3@2026-10-18T18:44:12.816Z",
@@ -18390,7 +18392,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-18T18:44:12.816Z"
+      "effectiveFrom": "2026-10-18T18:44:12.816Z",
+      "effectiveTo": "2026-10-18T21:08:21.550Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-18T18:44:12.816Z",
@@ -18411,7 +18414,92 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-18T18:44:12.816Z"
+      "effectiveFrom": "2026-10-18T18:44:12.816Z",
+      "effectiveTo": "2026-10-18T21:08:21.550Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-flash-0731@2026-10-18T21:08:21.550Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-flash-0731",
+      "aliases": [
+        "deepseek/deepseek-v4-flash-0731"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T21:08:21.550Z",
+      "rates": {
+        "uncached": 0.0199,
+        "output": 0.44999999999999996,
+        "cacheRead": 0.0199,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T21:08:21.550Z"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k3@2026-10-18T21:08:21.550Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k3",
+      "aliases": [
+        "moonshotai/kimi-k3"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T21:08:21.550Z",
+      "rates": {
+        "uncached": 0.24900000000000003,
+        "output": 11.936,
+        "cacheRead": 0.21,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T21:08:21.550Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-18T21:08:21.550Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T21:08:21.550Z",
+      "rates": {
+        "uncached": 0.24900000000000003,
+        "output": 11.936,
+        "cacheRead": 0.21,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T21:08:21.550Z"
+    },
+    {
+      "id": "openrouter/meta-llama/llama-3.2-3b-instruct@2026-10-18T21:08:21.550Z",
+      "family": "openrouter",
+      "canonical": "meta-llama/llama-3.2-3b-instruct",
+      "aliases": [
+        "meta-llama/llama-3.2-3b-instruct"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T21:08:21.550Z",
+      "rates": {
+        "uncached": 0.0509,
+        "output": 0.335,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T21:08:21.550Z"
     }
   ],
   "fx": [
