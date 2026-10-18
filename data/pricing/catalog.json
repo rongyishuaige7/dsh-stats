@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101801,
-  "publishedAt": "2026-10-18T04:30:00Z",
+  "version": 2026101802,
+  "publishedAt": "2026-10-18T04:00:00Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
