@@ -40,7 +40,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--d
 	".dss-sortbar-dir{background:none;border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11.5px}" +
 	".dss-sortbar-dir:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#e7eaf0)}" +
 	".dss-pcards-viewport,.dss-timeline-viewport,.dss-model-list-viewport{min-height:0}" +
-	".dss-overview.bounded{display:flex;flex-direction:column;min-height:0;max-height:var(--dss-overview-max-height);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}" +
+	".dss-overview.bounded{display:flex;flex-direction:column;height:var(--dss-overview-max-height);max-height:var(--dss-overview-max-height);min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}" +
 	".dss-overview.bounded>.dss-cards,.dss-overview.bounded>.dss-legend-wrap,.dss-overview.bounded>.dss-empty{flex:none}" +
 	".dss-overview.bounded .dss-pcards-wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}" +
 	".dss-overview.bounded .dss-pcards-viewport{flex:1 1 auto;min-height:120px;max-height:none;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px}" +
@@ -130,7 +130,7 @@ const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--d
 	".dss-tt{background:var(--dsw-alias-tooltip-bg,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);border-radius:9px;padding:8px 11px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12.5px;position:fixed;z-index:2000;pointer-events:none;display:none;max-width:320px}" +
 	".dss-tt.show{display:block}" +
 	// 日期导航器
-	".dss-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
+	".dss-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:28px;margin-bottom:14px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#a6adbb)}" +
 	".dss-nav > .dss-tabs{gap:2px}" +
 	".dss-nav > .dss-tabs button{padding:5px 9px}" +
 	".dss-nav-btn{background:var(--dsw-alias-bg-layer-2,#1d222c);border:1px solid var(--dsw-alias-border,#2a303c);color:var(--dsw-alias-label-secondary,#a6adbb);border-radius:7px;min-width:28px;min-height:28px;padding:3px 7px;cursor:pointer;font-size:12.5px;line-height:1.2}" +

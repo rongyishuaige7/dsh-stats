@@ -920,9 +920,9 @@ function StatsPanel(props) {
 		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
 		return data.timeline;
 	}, [data.timeline, effectiveDate]);
-	// In all mode the whole overview content (summary + legend + list) shares
-	// the timeline viewport height; the list takes whatever height remains.
-	var overviewMaxHeight = effectiveDate ? null : timelineOverviewContentHeight((data.timeline || {}).days);
+	// Both date modes share one overview content height, so switching between
+	// a single day and all history does not move the panel's bottom edge.
+	var overviewMaxHeight = timelineOverviewContentHeight((data.timeline || {}).days);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
