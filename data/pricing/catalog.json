@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101804,
-  "publishedAt": "2026-10-18T09:44:47.323Z",
+  "version": 2026101805,
+  "publishedAt": "2026-10-18T12:07:47.645Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -17589,7 +17589,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-17T10:40:44.063Z"
+      "effectiveFrom": "2026-10-17T10:40:44.063Z",
+      "effectiveTo": "2026-10-18T12:07:47.645Z"
     },
     {
       "id": "openrouter/~z-ai/glm-latest@2026-10-17T15:31:56.991Z",
@@ -17610,7 +17611,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-17T15:31:56.991Z"
+      "effectiveFrom": "2026-10-17T15:31:56.991Z",
+      "effectiveTo": "2026-10-18T12:07:47.645Z"
     },
     {
       "id": "openrouter/~deepseek/deepseek-v4-flash-latest@2026-10-17T15:31:56.991Z",
@@ -18258,6 +18260,48 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-18T09:44:47.323Z"
+    },
+    {
+      "id": "openrouter/~z-ai/glm-latest@2026-10-18T12:07:47.645Z",
+      "family": "openrouter",
+      "canonical": "~z-ai/glm-latest",
+      "aliases": [
+        "~z-ai/glm-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T12:07:47.645Z",
+      "rates": {
+        "uncached": 0.075,
+        "output": 2.2,
+        "cacheRead": 0.07,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T12:07:47.645Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-18T12:07:47.645Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T12:07:47.645Z",
+      "rates": {
+        "uncached": 0.25,
+        "output": 8,
+        "cacheRead": 0.18,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T12:07:47.645Z"
     }
   ],
   "fx": [
