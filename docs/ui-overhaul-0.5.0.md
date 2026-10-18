@@ -1,12 +1,30 @@
 # 0.5.0 界面改版实施文档
 
-- 状态：方向已确认，待实施
+- 状态：方向已确认，交接前已按代码逐条核对，可以开始实施
 - 日期：2026-10-18
 - 基线：`a833247`（`package.json` 已是 0.5.0，尚未打 tag，npm 仍是 0.4.3）
 - 设计参考：[`docs/prototypes/overview-0.5.0.html`](prototypes/overview-0.5.0.html)。这是自包含的静态原型，打开后可以切换宽度、数据状态和改动标注。原型数据是虚构样例。
 - 范围：0.5.0 包含切片 1a、1b、2、3 和收尾发布；切片 4（时间线）、切片 5（趋势与余额）放到 0.5.x。
 
 本文写明每个切片改哪些文件、加哪些组件、怎样测试、怎样验收。实现时如果和原型冲突，以本文为准；本文没写到的视觉细节，以原型为准。
+
+## 0. 实施约定
+
+1. 按 §8 的顺序一片一片做：每片一个聚焦提交，推送后 CI 全绿才开始下一片。不要把几片合在一起提交。
+2. `lib/*` 只能由 `npm run build` 生成，和对应源码放在同一个提交里。不要手改 `lib/`、`data/pricing/`、宿主和 RPC 代码，也不要改原型文件。
+3. 原型用字符串拼 HTML，只是演示。插件里一律用 `createElement`；项目名、路径、会话标题、模型名这类用户数据不能进入 `innerHTML`（现有 `showTip` 已用 `esc()` 转义，保持不变）。
+4. 以下情况先停下来，找维护者确认后再继续：
+   - 需要偏离 §4 的 D1–D10；
+   - 需要新增依赖，或改动宿主或 RPC；
+   - 本文与代码对不上；
+   - 打 tag 或发布 npm。
+5. 每片完成后汇报以下内容：
+   - 提交哈希和 CI 运行链接；
+   - 测试数量；
+   - 浏览器 smoke 的 `report.checks` 在改造前后的对比；
+   - 检查过哪些截图，发现了什么问题；
+   - 本片没有做或推迟的事项。
+6. 提交信息沿用仓库现有格式，例如 `feat(ui): ...`、`test(smoke): ...`、`docs: ...`。
 
 ## 1. 现状问题
 
@@ -22,7 +40,7 @@
 | P6 | 数据状态条在 `exact` 时也占一整行；免责声明 `hint.cost` 长期占着日期导航行 | `StatsDataStatus` :758，`DateNavigator` :587 |
 | P7 | 字号多达 19 种（9.5–34px），最小 9.5px | `client-styles.cjs` 和 `client.cjs` 中的内联 CSS |
 | P8 | 没有 Esc 关闭，没有 `role=dialog`、`aria-modal` 和焦点管理；顶部 tabs 不是 tablist；`CostValue` 用 `span[role=button]` 模拟按钮 | 全仓库 |
-| P9 | CSS 分散在三处：`client-styles.cjs`，以及 `apply()` 里的 `_phaseDCSS`（:1417）和 `pricingCSS`（:1465）。41 条浅色覆盖都在内联 CSS 中 | `src/client.cjs:1417-1558` |
+| P9 | CSS 分散在三处：`client-styles.cjs`，以及 `apply()` 里的 `_phaseDCSS`（:1417）和 `pricingCSS`（:1465）。41 处 `body:not([data-ds-dark-theme])` 浅色覆盖都在内联 CSS 中 | `src/client.cjs:1417-1558` |
 | P10 | CI 浏览器没装 CJK 字体，中文截图不能用于视觉验收 | `.github/workflows/ci.yml` |
 
 ## 2. 目标与非目标
@@ -62,35 +80,69 @@
 
 | 格 | 主值 | 副行 |
 | --- | --- | --- |
-| 预估费用 | `fmtCostSummary(mergeCostSummaries(visible.map(projectCostSummary)))` | 按日模式："较 MM-DD ↑12%"，比较对象是上一个活跃日（见 D9）；全部模式："N 个活跃日 · 日均 ¥X"。有未计价 Token 时追加"另有 X Token 待计价"chip，点击打开价格抽屉 |
+| 预估费用 | `fmtCostSummary(mergeCostSummaries(visible.map(projectCostSummary)))` | 按日模式："较 MM-DD ↑12%"，比较对象是上一个活跃日（见 D9）；全部模式："N 个活跃日 · 日均 ¥X"，日均金额沿用总额的状态标记（总额为 `partial` 时同样带 `*`）。合并后的 summary 中 `unpricedTokens > 0` 时，追加"另有 X Token 待计价"chip，点击打开价格抽屉 |
 | Token | 输入 + 输出 | 三段比例条：缓存命中 / 未命中输入（含 cacheWrite）/ 输出；图例："输入 X · 命中 Y% · 输出 Z" |
 | 会话 | 主对话数 | "另有 N 个子对话"（N 为 0 时不显示） |
 | LLM 时长 | `Σ llmMs` | "工具 X" |
 
-费用格标题旁有一个 ⓘ 按钮，悬停或聚焦时显示说明："按公开模型价格估算，USD 按固定汇率换算为人民币，仅供参考，不等同于 Provider 账单"。汇率和日期从价格目录读取，不写死。`hint.cost` 不再出现在日期导航行。
+费用格标题旁有一个 ⓘ 按钮，悬停或聚焦时显示说明。说明复用现有文案 `w.estimatedHint`（"按公开模型价格与固定汇率换算，仅供估算，不等同 Provider 账单"），**不显示具体汇率数字**，原因有两个：
+
+- 费用按各日期适用的汇率换算（`pricing.cjs` 的 `fxForDay`），一个视图里可能用到多个汇率；
+- 客户端内置的价格目录可能落后于宿主的签名目录。
+
+`hint.cost` 不再出现在日期导航行。
 
 **D2 次级指标条。** KPI 下方是一行纯文本，空值项直接省略：项目数 · 轮/步 · 首 token 均值（`Σ ttftMs / Σ ttftSteps`）· 输出速度（`Σ decodeTokens / Σ decodeMs`）。按日模式追加"活跃时段 HH:MM–HH:MM"，全部模式追加"活跃日 N"。这些都是精确的加和比值，不做近似加权。
 
 **D3 项目表格。** 7 列：项目（色点、名称、路径）/ 会话（`主 +子`）/ Token（总量，副行"入 · 出"）/ 缓存命中 / LLM 时长 / 预估费用（金额加占比条）/ 最近活跃（按日模式改为"活跃时段"）。
 
-- 点击表头排序，当前列 `aria-sort` 为 `ascending` 或 `descending`。默认按费用降序；排序状态和现在一样不持久化。
+- 点击表头排序，当前列 `aria-sort` 为 `ascending` 或 `descending`，其它列不设该属性。
+  - 点击另一列时，切换到该列的默认方向：数值列降序，"项目"列按名称升序。
+  - 再次点击当前列时，切换升降序。
+  - 默认按费用降序；排序状态和现在一样不持久化。
+  - "会话"列按 `p.sessionCount`（含子对话的会话总数）排序，与现有 `sortValue` 一致。
 - 点击行或行首箭头展开详情：轮/步、工具、首 token、tok/s、完整路径，下面是会话子列表。会话子列表沿用现有渲染，每页 100 条，主对话和子对话分组，点击标题打开对话。
+- 行内的可点击元素都要 `ev.stopPropagation()`，避免同时触发整行展开。包括会话标题（现有代码已经这样做，`client.cjs:260`）和"待计价"chip。
 - 面板容器宽度小于 640px 时，每行变成两行卡片，表头隐藏，出现"排序"下拉框和升降序按钮。
 - 当前 11 项卡片指标在新表格中都能找到，对照见 §9.1。
 
-**D4 项目筛选。** 总览里不再显示图例，改为工具行右侧的"筛选项目"按钮。有隐藏项目时按钮上显示"已隐藏 N"。弹层内是搜索框和复选框列表（色点、名称、当前视图费用），每页 50 项，复用 `data-pages="legend"`；还有"全部显示"按钮，以及一行说明"隐藏的项目不计入指标和表格"。隐藏状态仍存在 `dsh-stats.hidden`。总览和时间线共用这个按钮；趋势视图维持现状，不受隐藏影响。
+**D4 项目筛选。** 总览里不再显示图例，改为工具行右侧的"筛选项目"按钮。
+
+- **列表**：列出当前视图的 `statProjects`，顺序与现有图例相同。每一项是 `label.dss-filter-item[data-project-id]`，包含复选框、色点、名称和当前视图费用。
+- **分页与搜索**：每页 50 项，复用 `PageControls` 和 `data-pages="legend"`。搜索框按名称和路径过滤，输入变化时回到第一页。
+- **"已隐藏 N"徽标**：N 是当前列表中被隐藏的项目数，不在当前视图里的隐藏记录不计入。
+- **"全部显示"**：清空 `dsh-stats.hidden` 中的所有记录，包括不在当前视图里的。
+- **底部说明**："隐藏的项目不计入指标和表格"。
+- **存储**：隐藏状态仍存在 `dsh-stats.hidden`，格式不变。
+- **适用范围**：总览和时间线共用这个按钮。趋势视图维持现状，不受隐藏影响。
 
 **D5 价格设置抽屉。** 价格设置从正文顶部移到面板右侧的抽屉里：宽 `min(460px, 100%)`，带遮罩，内容区自己滚动。头部齿轮按钮负责开关。任何"待计价"chip 都能打开抽屉，并直接定位到对应模型的新建规则表单（见 §7.3 `focusModel`）。
 
 **D6 数据状态。** 头部状态点显示 `已同步 · HH:MM`、`正在刷新…`、`数据不完整 · HH:MM`、`本地摘要` 等。只有 `partial`、`stale`、`fallback`，或 `exact` 但带非空 `state.error` 时，才在头部下方显示横幅，诊断信息放在可折叠的 `<details>` 里。余额标签页隐藏状态点，`BalanceView` 自己显示状态。
 
-**D7 头部。** 布局为：标题 | tablist | 状态点 | [刷新图标] [导出 ▾] [齿轮图标] | 关闭图标。导出菜单有两项："CSV 表格 · 当前视图 N 个项目"和"JSON 数据 · 含会话与计价明细"。余额页不显示导出。原型里的导出 toast 去掉，浏览器自带下载提示。
+**D7 头部。** 布局为：标题 | tablist | 状态点 | [刷新图标] [导出 ▾] [齿轮图标] | 关闭图标。
+
+导出菜单有两项："CSV 表格 · N 个项目（含已隐藏）"和"JSON 数据 · 含会话与计价明细"。导出内容保持不变，即所选日期的全部 `dateProjects`，包含已隐藏的项目，以及按日模式下只有工具活动的项目。所以 N 取 `dateProjects.length`，文案不能写成"当前视图"。
+
+余额页不显示导出。原型里的导出 toast 去掉，浏览器自带下载提示。
 
 **D8 `*` 的含义不变。** 原型用 `*` 表示"含估算"，实现不采用这个含义。`fmtCostSummary` 现在只给 `partial`（含未计价 Token）的金额加 `*`，所有位置继续保持这一含义。`estimated` 和 `exact` 的区别由 ⓘ 说明和 `title` 承担，金额上不加标记。理由有两个：用户已经熟悉现有标记；`browser-fixture-smoke.mjs:255` 也依赖它。
 
-**D9 日环比口径。** 比较对象是"上一个活跃日"，即 `dates` 中当前日期的前一项，不一定是昨天，所以文案里必须写明具体日期。满足任一条件时不显示环比：没有上一个活跃日；任一侧状态是 `partial` 或 `unsupported`；上一日金额为 0。百分比四舍五入取整，箭头表示方向。
+**D9 日环比口径。** 比较对象是"上一个活跃日"，即 `dates` 中当前日期的前一项，不一定是昨天，所以文案里必须写明具体日期。
 
-**D10 单一滚动。** `.dss-overlay` 不再滚动。`.dss-panel` 是固定高度的 flex 纵向容器，只有 `.dss-body` 滚动，表头 `position: sticky; top: 0`。面板高度和内容无关，所以各标签页、按日和全部模式的底边天然对齐。这一点取代 `0c32a5c` 的高度估算。
+两侧都先用 `cnyAmount(summary)` 取金额（见 §7.4）。只有两侧金额都不为 `null`、且上一日金额大于 0 时才显示环比；其余情况不显示，包括：
+
+- 没有上一个活跃日；
+- 任一侧状态是 `partial`、`unsupported` 或 `subscription`；
+- 上一日金额为 0。
+
+百分比四舍五入取整，箭头表示方向；取整后为 0 时显示"持平"，不带箭头。
+
+**D10 单一滚动。** `.dss-overlay` 不再滚动。`.dss-panel` 是固定高度的 flex 纵向容器，只有 `.dss-body` 滚动。
+
+- `.dss-body` 加 `overscroll-behavior: contain`，滚到头时不会带动宿主页面。
+- 表头 `th` 用 `position: sticky; top: 0`，并设置不透明背景 `var(--dss-panel)`。表格用 `border-collapse: separate; border-spacing: 0`，否则吸顶后边框会丢失。
+- 面板高度和内容无关，所以各标签页、按日和全部模式的底边天然对齐。这一点取代 `0c32a5c` 的高度估算。
 
 ## 5. 面板结构
 
@@ -111,7 +163,7 @@
 尺寸：
 
 - 桌面：`.dss-overlay` 的 padding 保持 `6vh 3vw 4vh`。`.dss-panel` 为 `width: min(1180px, 100%)`、`height: min(1000px, calc(100vh - 10vh))`，后面再写一条用 `100dvh` 的同名声明作为渐进增强。
-- 视口宽度不超过 600px：面板全屏，`height: 100vh; height: 100dvh`，无圆角。
+- 视口宽度不超过 640px（沿用现有断点 `@media (max-width:640px){.dss-overlay{padding:0}}`）：面板全屏，`height: 100vh; height: 100dvh`，无圆角。smoke 中 `mobile: width < 600` 只用来模拟设备类型，和这个断点无关。
 
 菜单和抽屉都用 `position: absolute`，相对自己的包裹元素或面板定位，不用 fixed，所以不受容器查询的包含块影响。现有全局 tooltip（`showTip`）挂在 `body` 上，不受影响。
 
@@ -119,7 +171,12 @@
 
 ### 6.1 Token
 
-Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写在 `body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger)` 下，只重定义 token。组件样式只用 token，不再出现针对单个组件的浅色覆盖。
+Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上：
+
+- `.dss-trigger` 位于侧栏 slot，不在面板内部；
+- 全局 tooltip `#dss-tooltip.dss-tt` 由 `showTipRaw` 直接挂在 `body` 上（`client.cjs:1201`），同样不在面板内部，漏掉它就取不到 token。
+
+浅色值写在 `body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt)` 下，只重定义 token。组件样式只用 token，不再出现针对单个组件的浅色覆盖。不要把 token 定义在 `:root` 上，以免污染宿主。
 
 | Token | 默认值（深色回退） | 浅色覆盖 |
 | --- | --- | --- |
@@ -158,7 +215,7 @@ Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写�
 | 17 / 18 / 21 / 22 | `xl` 20 |
 | 24 / 30 / 34 | `2xl` 28 |
 
-`em` 相对字号（如上标 `.55em`）和 `inherit` 不受限制。`CostValue` 里的内联 `fontSize: "12px"` 随组件一起在切片 3 删除。
+样式 lint 允许 `em` 相对字号和 `inherit`，但计算后的实际字号仍要不小于 11px（§9.3 第 3 条会在浏览器里检查）。例如把 `.55em` 用在 13px 文字上会算出约 7px，不允许，需要写成 `max(var(--dss-fs-xs), .55em)`。现有的 `*` 由 `fmtCostSummary` 直接拼在金额字符串里，不用上标，也不需要单独的字号。`CostValue` 里的内联 `fontSize: "12px"` 随组件一起在切片 3 删除。
 
 ### 6.3 其它
 
@@ -176,12 +233,12 @@ Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写�
 | --- | --- | --- |
 | `src/client-styles.cjs` | 唯一的 CSS 来源，并入 `_phaseDCSS` 和 `pricingCSS`；加入 token、字号和新组件样式 | 1a 起 |
 | `src/client-icons.cjs`（新） | 内联 SVG 图标组件 | 2 |
-| `src/client-dialog.cjs`（新） | `LayerContext`、`useLayer`、`useDialogFocus`、`trapTab`、`MenuButton`、`Popover`、`InfoTip` | 1b / 2 |
+| `src/client-dialog.cjs`（新） | `LayerContext`、`useLayer`、`useDialogFocus`、`trapTab`、`escapeAction`、`MenuButton`、`Popover`、`InfoTip` | 1b / 2 |
 | `src/client-header.cjs`（新） | `StatusIndicator`、`StatusBanner`、`ExportMenu`、`PricingDrawer` | 2 |
 | `src/client-overview-model.cjs`（新） | 总览纯函数，不依赖 React，见 §7.4 | 3 |
 | `src/client-overview.cjs`（新） | `OverviewTools`、`ProjectFilterMenu`、`OverviewKpis`、`OverviewStrip`、`ProjectTable`、`ProjectSessions` | 3 |
 | `src/client.cjs` | `StatsPanel` 改为组装上述组件；删除 `SummaryCards`、`CostValue`、`Legend`、`ProjectsTable`、`DateNavigator`、高度估算函数和内联 CSS | 1a–3 |
-| `src/pricing-panel.cjs` | 新增可选属性 `focusModel` | 2 |
+| `src/pricing-panel.cjs` | 新增可选属性 `focusModel` 和导出 `draftForFocus`；`accept()` 改为处理待定位模型 | 2 |
 | `src/client-locale.cjs` | 新文案键（§7.5） | 2–3 |
 
 新文件由 `scripts/build.mjs` 从入口打包进现有 4 个 bundle，不增加 bundle 数量，也不改变 `package.json` 的 `files`。
@@ -189,9 +246,18 @@ Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写�
 ### 7.2 可访问性组件（`client-dialog.cjs`）
 
 - **`LayerContext` / `useLayer(open, close)`**：菜单、弹层、抽屉打开时，把 `close` 压入面板持有的栈，关闭或卸载时出栈。
-- **面板的 Esc 处理**：`onKeyDown` 绑在 `.dss-panel` 上，不注册 `document` 级监听。按 Esc 时，栈非空就弹出最上层并调用它，栈为空就调用 `onClose()`；两种情况都执行 `preventDefault()` 和 `stopPropagation()`，避免宿主同时响应。
-- **`useDialogFocus(panelRef, open)`**：打开时记下 `document.activeElement`，再把焦点移到面板内第一个可聚焦元素（通常是当前 tab）。关闭时，如果记下的元素还在文档里就还焦点给它，否则聚焦 `.dss-trigger`。
-- **`trapTab(ev, root)`**：Tab 和 Shift+Tab 在 `root` 内循环。可聚焦元素按 `button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])` 查询，排除 `disabled`、`hidden` 及不可见元素。抽屉打开时，`root` 换成抽屉。
+- **面板的 Esc 处理**：
+  - `onKeyDown` 绑在 `.dss-panel` 上，不注册 `document` 级监听。
+  - 按 Esc 时，栈非空就弹出最上层并调用它；栈为空就调用 `onClose("dismiss")`。两种情况都执行 `preventDefault()` 和 `stopPropagation()`，避免宿主同时响应。
+  - **输入法组字时不处理 Esc**：`ev.nativeEvent.isComposing === true` 或 `ev.keyCode === 229` 时直接返回。中文输入法用 Esc 取消候选词，如果不排除，在搜索框或价格表单里打字时会误关弹层或面板。
+  - 判断逻辑抽成纯函数 `escapeAction(ev, stackSize)`，返回 `"ignore"`、`"pop"` 或 `"close"`。它放在 `client-dialog.cjs` 并导出给测试（切片 1b 就要用，不要等到切片 3 的 `client-overview-model.cjs`），单独写单测，因为 CDP 很难模拟输入法。
+- **`useDialogFocus(panelRef, open)`**：
+  - 打开时记下 `document.activeElement`，再把焦点移到面板内第一个可聚焦元素（通常是当前 tab）。
+  - **只有用户主动关闭时才还焦点**，即 Esc、关闭按钮、点击遮罩，这三种都以 `onClose("dismiss")` 调用。还焦点时，如果记下的元素还在文档里就还给它，否则聚焦 `.dss-trigger`。
+  - 点击会话会通过 `openStatsSession` 打开对话，再调用 `openStore.close()`（`client.cjs:1572-1575`）。这条路径不还焦点，否则会把焦点从宿主刚打开的对话里抢走。
+  - **焦点丢失兜底**：按钮在获得焦点时变成 `disabled`（刷新中的刷新按钮、最后一页的"下一页"）会让焦点掉到 `body`，之后 Esc 和 Tab 循环都会失效。在 `.dss-panel` 上监听 `focusout`：`relatedTarget` 为空时，在下一个微任务检查一次，如果面板仍打开且 `document.activeElement === document.body`，就把焦点移回面板本身（`tabIndex=-1`）。翻页按钮继续使用 `disabled`，因为 smoke 依赖 `button.disabled`。
+- **`trapTab(ev, root)`**：Tab 和 Shift+Tab 在 `root` 内循环。可聚焦元素按 `button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])` 查询，排除 `disabled`、`hidden` 及不可见元素（`getClientRects().length === 0`）。抽屉打开时，`root` 换成抽屉。
+- **外部点击**：弹层和菜单的外部点击检测，监听面板根节点的 `onPointerDownCapture`，不在 `document` 上注册。面板外部只有遮罩，点击遮罩本来就会关闭整个面板。
 - **tablist**：`.dss-tabs[role=tablist][aria-label]`。每个按钮带 `role=tab`、`id=dss-tab-<name>`、`aria-selected`、`aria-controls=dss-tabpanel`，用 roving `tabIndex`。←/→/Home/End 只移动焦点，Enter/Space 才切换（手动激活）。原因：自动激活时，方向键扫过余额页就会触发 `account` RPC，破坏 smoke 中"余额只在其标签页查询"的断言。`.dss-body` 带 `id=dss-tabpanel`、`role=tabpanel`、`aria-labelledby`。
 - **`MenuButton`**：`button[aria-haspopup=menu][aria-expanded]`，弹出 `div[role=menu]`，菜单项是 `button[role=menuitem]`。↑/↓/Home/End 移动焦点；Esc 关闭并把焦点还给按钮；点击外部或 Tab 离开时关闭。
 - **`Popover`**：给筛选弹层用，内含复选框和搜索框，所以用 `role=dialog` 加 `aria-label`，不用 `role=menu`。Esc 和外部点击的行为与 `MenuButton` 相同。
@@ -199,15 +265,42 @@ Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写�
 
 ### 7.3 头部组件（`client-header.cjs`）与 `PricingPanel` 改动
 
-- **`StatusIndicator({ state, remote, t })`**：根元素保留 `className="dss-data-status " + state.kind`，这样 `browser-fixture-smoke.mjs` 和 `rc2-browser-smoke.mjs` 现有的等待条件继续有效。文字：`exact` 显示 `t("status.synced") + " · " + fmtClock(state.at)`；`loading`/`refreshing` 显示正在刷新；`partial` 显示数据不完整加时间；`stale` 显示数据已过期加时间；`fallback` 显示 `t("source.local")`。
-- **`StatusBanner({ state, remote, t, onRetry })`**：`section.dss-status-banner.<kind>[role=status]`，按 D6 的条件渲染。`state.error` 放在 `details.dss-data-diagnostics` 中，类名不变，因为 rc2 smoke 会读取 `.dss-data-diagnostics div`。`fallback` 和 `stale` 带"重试"按钮，调用 `refreshCurrent`。
-- **`ExportMenu({ projects, t })`**：用 `MenuButton` 包装现有的 `exportCSV(dateProjects, t)` 和 `exportJSON(dateProjects)`，导出内容不变。
-- **`PricingDrawer({ open, focusModel, onClose, ... })`**：`aside.dss-drawer[role=dialog][aria-labelledby]`，内部用 `PricingErrorBoundary` 包住 `PricingPanel`，内容根节点仍是 `.dss-pricing`。点击遮罩或关闭按钮关闭；抽屉通过 `useLayer` 入栈。抽屉设 `container: dss-drawer / inline-size`；原 `pricingCSS` 中按视口宽度写的媒体查询改成 `@container dss-drawer`，否则桌面上 460px 宽的抽屉会套用宽屏布局。
+- **`StatusIndicator({ state, remote, t })`**：根元素保留 `className="dss-data-status " + state.kind`，这样 `browser-fixture-smoke.mjs` 和 `rc2-browser-smoke.mjs` 现有的等待条件继续有效。文字优先复用现有的 `source.*` 键：
+
+  | `state.kind` | 显示 |
+  | --- | --- |
+  | `exact` | `t("source.exact") + " · " + fmtClock(state.at)` |
+  | `loading` | `t("source.loading")` |
+  | `refreshing` | `t("source.refreshing")` |
+  | `partial` | `t("source.partial") + " · " + 时间` |
+  | `stale` | 新键 `status.stale` + " · " + 时间。现有的 `source.stale`（"刷新失败，显示上次快照"）放在头部太长，留给横幅用 |
+  | `fallback` | `t("source.local")`。smoke 断言状态文本包含它，必须用这个键 |
+
+  `state.at` 为空时不拼时间。容器宽度小于 420px 时，文字用 CSS 隐藏，`textContent` 仍保留，smoke 断言依赖它。
+- **`StatusBanner({ state, remote, t, onRetry })`**：
+  - 结构是 `section.dss-status-banner.<kind>[role=status]`，按 D6 的条件渲染。
+  - 正文用 `source.<kind>`。`state.error` 放进 `details.dss-data-diagnostics`，`summary` 文字用 `source.details`。类名不变，因为 rc2 smoke 会读取 `.dss-data-diagnostics div`。
+  - "重试"按钮只在 `remote` 存在且状态为 `stale` 或 `fallback` 时显示，点击调用 `refreshCurrent`。没有宿主 remote 时的 fallback 无法通过重试恢复，所以不显示按钮。
+- **`ExportMenu({ projects, t })`**：用 `MenuButton` 包装现有的 `exportCSV(dateProjects, t)` 和 `exportJSON(dateProjects)`，导出内容不变。数量文案见 D7。
+- **`PricingDrawer({ open, focusModel, opener, onClose, ... })`**：
+  - 结构是 `aside.dss-drawer[role=dialog][aria-labelledby]`，内部用 `PricingErrorBoundary` 包住 `PricingPanel`，内容根节点仍是 `.dss-pricing`。抽屉头部显示 `t("price.title")` 和关闭按钮。
+  - 去掉 `.dss-pricing` 原有的卡片外观：`.dss-drawer .dss-pricing { border: 0; border-radius: 0; margin: 0; padding: 0; background: transparent }`。
+  - 隐藏 `.dss-pricing` 自己的 `h3` 标题，避免和抽屉标题重复。`PricingErrorBoundary` 的报错视图保持可见。
+  - 点击遮罩或关闭按钮关闭，抽屉通过 `useLayer` 入栈。
+  - **关闭后焦点还给打开它的元素**（`opener`，即齿轮按钮或某个 chip）。如果 `opener` 已经不在文档里（例如保存价格后 chip 消失），就还给齿轮按钮。
+  - 抽屉设 `container: dss-drawer / inline-size`。原 `pricingCSS` 里的两条视口媒体查询（`max-width:1000px` 和 `max-width:640px`）改成 `@container dss-drawer`，否则桌面上 460px 宽的抽屉会套用宽屏布局。`_phaseDCSS` 里余额相关的 640px 媒体查询保持不变。
 - **`PricingPanel` 的新属性 `focusModel?: { provider, model, nonce }`**：
-  - 初始状态从属性派生：`useState(() => focusModel ? blankDraft(focusModel.provider, focusModel.model) : null)`，同时 `advanced` 初始为 `true`。这样 `renderToStaticMarkup` 测试也能看到预填结果。
-  - `useEffect([focusModel?.nonce])` 处理抽屉已打开时的再次定位：设置 draft 和 `advanced`，表单 `scrollIntoView({ block: "nearest" })`，然后聚焦第一个输入框。
+  - **注意加载会清空表单**：`accept(result)`（`pricing-panel.cjs:128-134`）在每次加载和保存成功后都会执行 `setDraft(blankDraft())`。所以不能只在挂载时从属性初始化 draft，等 `pricing` RPC 返回后就被清掉了。
+  - 做法：
+    1. 用 `pendingFocusRef` 记下待定位的模型。
+    2. `useEffect([focusModel?.nonce])`：如果 `status` 已加载，立即执行定位；否则写入 `pendingFocusRef`。
+    3. `accept()` 里改成：`pendingFocusRef` 有值时执行定位并清空 ref；没有值时照旧 `setDraft(blankDraft())`。这样保存成功后表单照常清空。
+  - "定位"和现有"配置"按钮（`pricing-panel.cjs:185`）做的事情一样：`setDraft(blankDraft(provider, model)); setEditingId(null); setAdvanced(true)`。另外再把表单 `scrollIntoView({ block: "nearest" })`，并聚焦第一个输入框。
   - `nonce` 每次点击 chip 都递增，同一模型连续点击也能重新定位。
-  - `missingModels(projects)` 已按 tokens 降序排列。chip 取 `missingModels(scopeProjects)[0]`，为空时（例如本地回退数据没有 `u.cost`）只打开抽屉，不做定位。
+  - 测试分两层：
+    - 纯函数 `draftForFocus(focusModel)` 放在 `pricing-panel.cjs` 并导出，写单测。`renderToStaticMarkup` 不执行 effect，测不到定位效果。
+    - 浏览器 smoke 断言：抽屉加载完成后，表单的模型字段等于 fixture 的未计价模型 `fixture-unpriced`。
+  - `missingModels(projects)` 已按 tokens 降序排列。chip 取 `missingModels(scopeProjects)[0]`；结果为空时（例如本地回退数据没有 `u.cost`），只打开抽屉，不做定位。
 
 ### 7.4 总览纯函数（`client-overview-model.cjs`）
 
@@ -217,25 +310,90 @@ Token 定义在两个根元素 `.dss-overlay, .dss-trigger` 上。浅色值写�
 | --- | --- |
 | `overviewTotals(projects)` | 返回 `{ projects, main, subagent, turns, steps, llmMs, toolMs, input, output, cacheRead, ttftMs, ttftSteps, decodeMs, decodeTokens, cost }`。`cost` 为 `mergeCostSummaries(projects.map(projectCostSummary))`，派生值有 `cacheHitPct`、`ttftAvgMs`、`tps`（分母为 0 时为 `null`） |
 | `previousActiveDate(dates, date)` | 返回 `dates` 中 `date` 的前一项，没有时返回 `null` |
-| `costDelta(current, previous)` | 输入两个 summary，返回 `{ ratio, direction }` 或 `null`，规则见 D9 |
+| `cnyAmount(summary)` | `free` 返回 0；`exact` 或 `estimated` 且 `totals` 恰好是一项 CNY 时返回该金额；其余情况返回 `null` |
+| `costDelta(current, previous)` | 输入两个 summary，返回 `{ ratio, direction: "up" \| "down" \| "flat" }` 或 `null`，规则见 D9 |
 | `costShares(projects)` | 返回 `Map(projectId → share)`。分母是可见项目 CNY 金额之和；无金额的项目映射为 `null` |
 | `projectDaySpans(timelineDay)` | 返回 `Map(projectId → { startSlot, endSlot })`，来自 `slotBlocks`，`endSlot` 不含在区间内 |
 | `activeDayCount(timeline, hidden)` | 统计含可见项目 `slotBlocks` 的日期数，和日期导航的"活跃日"定义一致 |
-| `sortProjects(projects, key, dir, ctx)` | `key` 取 `name`/`sessions`/`tokens`/`hit`/`llm`/`cost`/`last`。`cost` 复用 `compareProjectCost`；按日模式下 `last` 用 `ctx.spans` 的 `endSlot`。相等时按名称排序，保证结果稳定 |
+| `sortProjects(projects, key, dir, ctx)` | `key` 的取值和排序依据见下文。相等时按名称排序，保证结果稳定 |
+| `defaultSortDir(key)` | `name` 返回升序，其余返回降序 |
 | `pendingFocus(projects)` | 返回 `missingModels(projects)[0]` 或 `null` |
 
-`StatsPanel` 中新增的 `useMemo`（上一活跃日的 `applyDate`、上一日 summary、spans）必须放在 `if (!open \|\| !open.open) return null` 之前，保证 hooks 数量不变。依赖项是 `[data.projects, prevDate, hiddenKey]`，每个视图只计算一次。
+`sortProjects` 的 `key` 与排序依据：
+
+| `key` | 排序依据 |
+| --- | --- |
+| `name` | `localeCompare(p.name)` |
+| `sessions` | `p.sessionCount` |
+| `tokens` | `inputTokens + outputTokens` |
+| `hit` | `cacheHitPct`，空值按 -1 |
+| `llm` | `llmMs` |
+| `cost` | 复用 `compareProjectCost` |
+| `last` | 全部模式用 `lastActiveAt`；按日模式用 `ctx.spans` 的 `endSlot` |
+
+**时区**：所有日期和时段都按北京时间（+08:00）计算，复用现有函数：
+
+- `localDayKey`、`dayStartMs`（`client-data.cjs`）
+- `slotToClock`（`client.cjs:335`）
+
+"今天"用 `localDayKey(Date.now())` 判断。`endSlot` 为 48 时由 `slotToClock` 显示为 `24:00`。不要用 `getHours()`、`toLocaleDateString()` 这类依赖本机时区的方法，单测在 `TZ=UTC` 下也要通过。
+
+**hooks 顺序**：`StatsPanel` 中新增的 `useMemo`（上一活跃日的 `applyDate`、上一日 summary、spans）必须放在 `if (!open || !open.open) return null` 之前，保证 hooks 数量不变。
+
+- 依赖项是 `[data.projects, prevDate, hiddenKey]`，每个视图只计算一次。
+- `hiddenKey` 目前在 `ProjectsTable` 内部计算（`client.cjs:184`），要按同样的写法挪到 `StatsPanel`，放在提前返回之前。
+- 现有的 `visibleProjects`（`client.cjs:939`）在提前返回之后计算，新的 memo 不能依赖它，需要自己基于 `statProjects` 和 `hidden` 过滤。
 
 ### 7.5 文案键
 
-zh/en 两份同时加。沿用现有的前缀/后缀拼接方式（参见 `w.dayPrefix`），不引入插值。
+先复用现有的键，只有现有文案确实不合适时才新增，zh 和 en 两份同时加。
 
-- 头部：`status.synced`、`status.refreshing`、`status.partial`、`status.stale`、`status.local`、`action.refresh`、`action.export`、`action.pricing`、`export.csv`、`export.csvHint`、`export.json`、`export.jsonHint`、`banner.retry`、`banner.details`
-- 工具行：`nav.today`、`nav.rangeFrom`、`filter.title`、`filter.hidden`、`filter.showAll`、`filter.search`、`filter.note`
-- KPI 与指标条：`kpi.cost`、`kpi.costInfo`、`kpi.vs`、`kpi.activeDays`、`kpi.perDay`、`kpi.pending`、`kpi.tokens`、`kpi.input`、`kpi.hit`、`kpi.output`、`kpi.sessions`、`kpi.subagents`、`kpi.llm`、`kpi.tool`、`strip.projects`、`strip.turnsSteps`、`strip.ttft`、`strip.tps`、`strip.span`、`strip.activeDays`
-- 表格：`table.project`、`table.sessions`、`table.tokens`、`table.hit`、`table.llm`、`table.cost`、`table.last`、`table.span`、`table.expand`、`table.collapse`、`table.sort`、`table.asc`、`table.desc`、`table.share`
+**占位符**：现有文案已经用 `%d` 做顺序替换（`w.page`："第 %d/%d 页"，`client.cjs:117` 用两次 `.replace("%d", …)`）。新文案可以照这个写法用 `%d` 填数字；需要填字符串（日期、金额）时用 `%s`，同样按顺序 `.replace`。不引入其它插值库。
 
-`card.*`、`hint.cost`、`nav.day`/`nav.all` 保留到切片 3 结束。确认没有引用后再删除，并在提交说明里列出删掉的键。
+可以直接复用的现有键：
+
+| 用途 | 复用的键 |
+| --- | --- |
+| 标题、标签页、关闭、刷新、价格设置 | `title`、`tab.*`、`close`、`refresh`、`price.title` |
+| 状态点与横幅 | `source.exact`、`source.partial`、`source.stale`、`source.fallback`、`source.loading`、`source.refreshing`、`source.local`、`source.details`、`source.host`、`source.updated` |
+| 工具行 | `nav.day`、`nav.all`、`nav.previous`、`nav.next`、`w.weekdays`、`w.dayPrefix` |
+| KPI 与指标条 | `card.cost`、`card.sessions`、`card.llm`、`card.tool`、`card.projects`、`card.turnsSteps`、`th.ttft`、`th.tps`、`w.input`、`w.output`、`w.cacheHit`、`w.estimatedHint`、`pricing.pending` |
+| 表格与会话 | `th.project`、`th.sessions`、`th.cacheHit`、`th.cost`、`th.lastActive`、`th.turns`、`th.steps`、`th.tool`、`w.path`、`w.subagentGroup`、`w.page`、`w.previousPage`、`w.nextPage` |
+| 重试 | `price.retry`（`pricing-locale.cjs:28`） |
+
+需要新增的键（示例为 zh）：
+
+| 键 | zh | 用途 |
+| --- | --- | --- |
+| `status.stale` | 快照已过期 | 头部状态点的短文案 |
+| `action.export` | 导出 | 导出按钮 |
+| `export.csv` / `export.csvHint` | CSV 表格 / %d 个项目（含已隐藏） | 导出菜单 |
+| `export.json` / `export.jsonHint` | JSON 数据 / 含会话与计价明细 | 导出菜单 |
+| `nav.today` | 今天 | 日期标记 |
+| `nav.rangeFrom` | 全部历史 · %s 起 | 全部模式的范围说明 |
+| `filter.title` | 筛选项目 | 按钮与弹层标题 |
+| `filter.hidden` | 已隐藏 %d | 按钮徽标 |
+| `filter.showAll` | 全部显示 | |
+| `filter.search` | 搜索项目或路径 | 搜索框占位 |
+| `filter.note` | 隐藏的项目不计入指标和表格 | 弹层底部说明 |
+| `filter.allHidden` | 所有项目都已隐藏 | 表格空状态 |
+| `kpi.costInfo` | 费用说明 | ⓘ 按钮的 `aria-label` |
+| `kpi.vs` | 较 %s | 环比 |
+| `kpi.flat` | 持平 | 环比 |
+| `kpi.activeDays` | %d 个活跃日 | |
+| `kpi.perDay` | 日均 %s | |
+| `kpi.pending` | 另有 %s Token 待计价 | chip |
+| `kpi.tokens` | Token | |
+| `kpi.hit` | 命中 | Token 图例 |
+| `kpi.subagents` | 另有 %d 个子对话 | |
+| `strip.span` | 活跃时段 | 指标条与表格列（按日） |
+| `strip.activeDays` | 活跃日 | |
+| `table.expand` / `table.collapse` | 展开 / 收起 | 行首按钮 `aria-label`，后接项目名 |
+| `table.sort` / `table.asc` / `table.desc` | 排序 / 升序 / 降序 | 窄屏排序控件 |
+| `table.share` | 占当前视图费用 %s | 占比条 `title` |
+| `table.hiddenCount` | 已隐藏 %d | 表格标题旁 |
+
+切片 3 结束时，删除不再被引用的键（预计是 `hint.cost` 和部分 `card.*`），并在提交说明中列出删除的键。`nav.day` 和 `nav.all` 新的分段按钮还要用，不能删。
 
 ## 8. 切片计划
 
@@ -254,10 +412,10 @@ zh/en 两份同时加。沿用现有的前缀/后缀拼接方式（参见 `w.day
 ### 切片 1a：样式基础
 
 1. **合并 CSS，纯移动**。把 `_phaseDCSS` 和 `pricingCSS` 原样移到 `client-styles.cjs`，导出的 `css` 等于原来的 `css + _phaseDCSS + pricingCSS`；`apply()` 只注入 `css`。逐字节校验步骤：
-   - 在 scratchpad 写一次性脚本（不入库），从 `git show a833247:src/client.cjs` 中截取两个变量的初始化表达式（都是纯字符串拼接），用 `new Function("return " + expr)()` 求值。
+   - 在仓库外的临时目录写一次性脚本（不入库），从 `git show a833247:src/client.cjs` 中截取两个变量的初始化表达式，用 `new Function("return " + expr)()` 求值。已核对：`client.cjs:1417-1553` 中，两个初始化表达式都只由字符串字面量用 `+` 拼成，以分号结尾，不引用任何变量。
    - 拼接后和新的 `require("./src/client-styles.cjs").css` 比较，必须完全相等。
    - 这一步通过后再继续，比较结果写进提交说明。
-2. **加入 token 和字号**。按 §6.1 和 §6.2 改写选择器，删掉 41 条组件级浅色覆盖，改成 token 级浅色覆盖。
+2. **加入 token 和字号**。按 §6.1 和 §6.2 改写选择器，删掉 41 处组件级浅色覆盖，改成 token 级浅色覆盖。
 3. 加 `prefers-reduced-motion` 和统一的 `:focus-visible`。
 4. **CI 字体**：`ci.yml` 在浏览器 smoke 之前执行 `sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk`。
 5. **新测试 `tests/styles.test.js`**：
@@ -275,15 +433,21 @@ zh/en 两份同时加。沿用现有的前缀/后缀拼接方式（参见 `w.day
 
 ### 切片 1b：对话框可访问性
 
-1. 给 `.dss-panel` 加 `role=dialog`、`aria-modal=true`、`aria-labelledby=dss-title`、`tabIndex=-1`，并接入 `useDialogFocus` 和 `trapTab`。
-2. 加 Esc 处理（此时栈为空，Esc 直接关闭面板）。
-3. tabs 改为 tablist（§7.2），`.dss-tabs` 类名和按钮顺序不变，smoke 的 `tab(i)` 不用改。
-4. 触发器补 `aria-haspopup=dialog` 和 `aria-expanded`。
-5. smoke 增加 `press(key)` 辅助函数（CDP `Input.dispatchKeyEvent`），并新增以下断言：
-   - 打开面板后焦点在当前 tab 上。
+1. 给 `.dss-panel` 加 `role=dialog`、`aria-modal=true`、`aria-labelledby=dss-title`、`tabIndex=-1`，并接入 `useDialogFocus`、`trapTab` 和 `focusout` 兜底（§7.2）。
+2. 加 Esc 处理（此时栈为空，Esc 直接关闭面板），包括输入法组字时的排除。
+3. 区分关闭原因：
+   - Esc、关闭按钮、点击遮罩调用 `onClose("dismiss")`，关闭后还焦点；
+   - 打开会话的路径（`client.cjs:1575` 的 `openStore.close()`）不还焦点。
+4. tabs 改为 tablist（§7.2）。`.dss-tabs` 类名和按钮顺序不变，smoke 的 `tab(i)` 不用改。`DateNavigator` 里也有一个 `.dss-tabs`（按日/全部），它不加 tablist 角色。
+5. 触发器已经有 `aria-haspopup="dialog"`（`client.cjs:51`），只需要补 `aria-expanded`。`StatsTrigger` 要订阅面板的打开状态（与 `StatsPanel` 的 `useStatsOpen` 用同一个 store）。
+6. 新增纯函数 `escapeAction` 的单测，覆盖普通 Esc、`isComposing`、`keyCode 229`、栈为空和栈非空几种情况。
+7. smoke 增加 `press(key)` 辅助函数（CDP `Input.dispatchKeyEvent`），并新增以下断言：
+   - 打开面板后，焦点在当前 tab 上。
    - 从最后一个可聚焦元素按 Tab 回到第一个，Shift+Tab 反向。
    - ←/→ 只移动焦点，Enter 才切换标签页，并且没有额外的 `account` 调用。
+   - 聚焦刷新按钮后触发刷新，在按钮处于 `disabled` 期间，`document.activeElement` 仍在 `.dss-panel` 内，此时按 Esc 仍能关闭面板。
    - 按 Esc 关闭面板后，焦点回到 `.dss-trigger`。
+   - 点击会话标题打开会话后，`document.activeElement` 不是 `.dss-trigger`。
 
 验收：上面的断言通过，原有断言不变。在 DSH 0.2.1-rc.2 Web 上手动确认：生成回复期间在面板内按 Esc，只关闭面板，不会中断宿主正在进行的生成（风险 R1）。
 
@@ -299,6 +463,7 @@ zh/en 两份同时加。沿用现有的前缀/后缀拼接方式（参见 `w.day
 smoke 改动：
 
 - `refresh()` 改为点击 `[data-action=refresh]`。
+- 价格设置的打开方式：`browser-fixture-smoke.mjs:273-274` 的 `priceButton('price.title')` 是按按钮的 `textContent` 匹配的，改成只有图标的齿轮按钮后就匹配不到了，要改为 `click('[data-action=pricing]')`。抽屉内的 `priceButton('price.next')` 等用法不变。
 - 价格面板相关检查改为先打开抽屉。catalog 的"320px 下检查全部规则"和"七个宽度下展开卡片"继续执行。桌面宽度下，抽屉内应使用窄布局。
 - 新增断言：Esc 先关闭导出菜单，焦点回到导出按钮；再按 Esc 关闭抽屉，焦点回到齿轮；第三次 Esc 关闭面板。
 - 641/700/768/1024/1100/1101px 英文头部的"不重叠、不裁切"检查保持不变。
@@ -323,7 +488,8 @@ smoke 改动：
    - 结构：`table.dss-ptable`，表头是 `th[data-sort-key] > button`；行是 `tr.dss-prow[data-project-id]`，内有 `button[data-action=expand][aria-expanded]`；详情行是 `tr.dss-pdetail > td[colSpan]`，内含 `ProjectSessions`。
    - 每页 50 个项目，复用 `pageRows` 和 `PageControls`，保留 `data-pages="projects"`。
    - 会话子列表保留 `.dss-sess[data-session-id]`、`.dss-group`、`.dss-sess-title` 和 `data-pages="sessions"`。
-   - 行内"待计价"chip 的 `focusModel` 为 `pendingFocus([project])`。
+   - 行内"待计价"chip 的 `focusModel` 为 `pendingFocus([project])`，点击时调用 `stopPropagation()`。
+   - 排序交互按 D3：点击新列用 `defaultSortDir`，点击当前列切换方向。
    - 窄屏时显示 `select#dss-sort` 和 `[data-action=sort-dir]`。
    - 页码重置规则与现在相同：日期、隐藏集合或排序变化时回到第一页，同一视图的数据刷新时不重置。
 5. 改为单一滚动（D10）：
@@ -407,7 +573,7 @@ smoke 改动：
 | 现有 | 新 |
 | --- | --- |
 | `.dss-head-actions .dss-export:nth-child(2)`（刷新） | `[data-action=refresh]` |
-| 按文本点击"价格设置" / "Price settings" | `[data-action=pricing]` |
+| fixture smoke 的 `priceButton('price.title')`（:273-274）、rc2 smoke 按文本点击"价格设置" / "Price settings" | `[data-action=pricing]` |
 | CSV / JSON 按钮 | `[data-action=export]` → `[data-action=export-csv \| export-json]` |
 | `.dss-tabs button:nth-child(i)` | 不变 |
 | `.dss-nav .dss-tabs button:nth-child(1 \| 2)` | `[data-action=mode-day]` / `[data-action=mode-all]` |
@@ -419,7 +585,7 @@ smoke 改动：
 | `[data-project-id=…] .dss-pcard-head` | `[data-project-id=…] [data-action=expand]` |
 | `.dss-sortbar-dir` | 宽屏：`th[data-sort-key=cost] button`；窄屏：`[data-action=sort-dir]` |
 | `[data-pages=projects \| sessions]` | 不变 |
-| `[data-pages=legend]` + `.dss-chip` | 先点击 `[data-action=filter]`，再用弹层内的 `[data-pages=legend]` + `.dss-filter-item` |
+| `[data-pages=legend]` + `.dss-chip`（读 `node.textContent`） | 先点击 `[data-action=filter]`，再用弹层内的 `[data-pages=legend]` + `.dss-filter-item`，改为读 `node.dataset.projectId`（新的筛选项里还包含费用文字） |
 | `.dss-pcards-wrap` 的 `scrollIntoView` | `.dss-ptable` |
 | `.dss-overview.bounded` 与 `.dss-pcards-viewport` 的高度断言 | 保留"总览按日、总览全部、时间线三者面板高度相等"，删除列表视口高度断言 |
 | 窄屏 `.dss-overlay.scrollTop` 截底部 | `.dss-body.scrollTop` |
@@ -432,8 +598,14 @@ smoke 改动：
 2. **表头吸顶**：把 `.dss-body.scrollTop` 设为 400 后，`thead th` 的顶部与 `.dss-body` 可视区顶部相差不超过 1px。
 3. **字号**：`.dss-overlay` 内所有含直接文本节点的元素，计算后的 `font-size` 都不小于 11px。
 4. **环比**：fixture 按日模式（第 2 个及以后的活跃日）显示"较 MM-DD"，日期等于上一个活跃日；第一个活跃日不显示。全部模式显示的活跃日数等于 fixture 的去重日期数。
-5. **筛选**：隐藏一个项目后，KPI、指标条和表格同步变化，按钮显示"已隐藏 1"。重新打开面板后状态保留。点击"全部显示"后恢复。
+5. **筛选**：
+   - 隐藏一个项目后，KPI、指标条和表格同步变化，按钮显示"已隐藏 1"。
+   - 重新打开面板后，隐藏状态仍在。
+   - 点击"全部显示"后恢复。
+   - 在搜索框输入后回到第一页。
 6. **键盘**：表头按钮可用 Enter 排序，`aria-sort` 随之变化；展开按钮的 `aria-expanded` 正确切换。
+7. **待计价定位**：点击 `[data-action=pricing-pending]` 后，等抽屉加载完成，断言表单的模型字段等于 `fixture-unpriced`。保存后表单清空，焦点回到齿轮按钮或原来的 chip。
+8. **行内点击**：点击会话标题或行内 chip 时，所在行的 `aria-expanded` 不变。
 
 切片 3 提交前，在 PR 说明或提交说明中贴出改造前后的 `report.checks` 列表，检查组数量不得减少。
 
@@ -447,9 +619,14 @@ node --check lib/*.js
 npm pack --dry-run
 ```
 
-- 浏览器 smoke（`npm run smoke:browser`）和 Harness 矩阵以 CI 为准。本地沙箱禁止启动 Chrome，所以需要用 `gh run download <run-id> -n browser-results` 下载截图，逐张检查深色、浅色和窄屏截图。
+- **浏览器 smoke**：本地能启动 Chrome 时，先在本地跑 `npm run smoke:browser`（用 `CHROME_BIN` 指定浏览器）。本地跑不了时以 CI 为准。无论哪种情况，都要用 `gh run download <run-id> -n browser-results` 下载截图，逐张检查深色、浅色和窄屏截图。
+- **Harness 矩阵**：以 CI 为准。本地 `node_modules` 里的 Harness 是 `0.1.0-rc.6`，不在 CI 矩阵中，不能代替 CI。
 - `verify:pricing` 由 CI 执行。UI 切片不修改 `data/pricing/`。
-- 本地 `tests/pricing-delivery.test.js:52` 可能因 git 子进程慢而超过 5s 超时（已知问题，CI 正常），以 CI 结果为准。
+- 有的沙箱里 git 子进程较慢，`tests/pricing-delivery.test.js:52` 可能超过 5s 超时。这是已知的环境问题，CI 正常，此时以 CI 结果为准，不要在 UI 切片里顺手修改这个测试。
+- **价格机器人会推送 main**：`pricing.yml` 每 30 分钟运行一次，价格有变化时直接向 main 提交 `data/pricing/*`、`lib/client.js` 和 `lib/index.js`（例如 `984122a`）。所以：
+  1. 推送前先执行 `git pull --rebase origin main`。
+  2. `lib/` 出现冲突时不要手工合并：先保留任一侧，执行 `npm run build`，再 `git add lib`，然后 `git rebase --continue`。
+  3. 解决冲突后重新跑 §10 的命令，再推送。
 - 每个切片一个聚焦提交，推送后 CI 全绿才开始下一个切片。提交说明写明删除的组件、键、选择器和新增的检查。
 
 ## 11. 风险与对策
@@ -463,11 +640,14 @@ npm pack --dry-run
 | R5 | 一个项目有多个未计价模型 | chip 定位到 tokens 最多的模型；抽屉中"缺失价格的模型"列表仍列出全部 |
 | R6 | 上一个活跃日可能是多天前，环比被误读为"较昨天" | 文案写明日期；按 D9 规则不显示环比 |
 | R7 | 取代 `0c32a5c` 后，底边对齐失效 | 用固定面板高度保证对齐，三处面板高度相等的 smoke 断言保留 |
-| R8 | 抽屉变窄后价格面板布局受挤 | 媒体查询改为 `@container dss-drawer`；catalog 的 smoke 在抽屉宽度下检查重叠和裁切；视口不超过 600px 时抽屉全宽 |
+| R8 | 抽屉变窄后价格面板布局受挤 | 媒体查询改为 `@container dss-drawer`；catalog 的 smoke 在抽屉宽度下检查重叠和裁切；视口不超过 640px 时抽屉全宽 |
 | R9 | 筛选弹层在 `.dss-body` 内被滚动容器裁切 | 弹层 `max-height: min(360px, 可用高度)`，内部滚动；只在矮视口下出现 |
 | R10 | 字号映射让趋势和余额页的大数字变小（34px → 28px） | 切片 1a 对比截图；如果主观上不能接受，可在切片 5 重做时再调整，不额外加字号档 |
 | R11 | 表格在窄屏改为 `display:block` 后丢失表格语义 | 窄屏的汇总单元格自带文字标签，并提供排序下拉框；宽屏保持原生 table 语义 |
 | R12 | 隐藏项目让总数看起来变小 | 筛选按钮显示"已隐藏 N"，表格标题旁显示"N 个 · 已隐藏 M"，弹层底部附说明 |
+| R13 | 焦点所在的按钮变成 `disabled` 后焦点掉到 `body`，Esc 和 Tab 循环失效 | `focusout` 兜底（§7.2），由切片 1b 的 smoke 断言覆盖 |
+| R14 | 中文输入法组字时按 Esc 误关弹层或面板 | `escapeAction` 排除 `isComposing` 和 `keyCode 229`，用单测覆盖 |
+| R15 | 价格机器人推送 `lib/`，与 UI 切片在 rebase 时冲突 | 按 §10 重新构建后解决，不手工合并 |
 
 ## 12. 待定事项与默认值
 
