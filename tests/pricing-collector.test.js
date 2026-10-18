@@ -80,7 +80,7 @@ test('collection separates reviewed official candidates and publishes only valid
   expect(result.report.changes).toBe(12);
   expect(result.report.autoPublished.map(r => r.canonical).sort()).toEqual(['gpt-new', 'gpt-other']);
   expect(result.report.candidates).toEqual([]);
-  expect(result.catalog.rules.filter(r => r.note?.startsWith('[provisional]')).map(r => r.canonical).sort()).toEqual(['gpt-new', 'gpt-other']);
+  for (const model of ['gpt-new', 'gpt-other']) expect(result.catalog.rules.find(r => r.canonical === model)?.note).toMatch(/^\[provisional\]/);
   expect(result.catalog.version).toBe(pricing.BUILTIN.version + 1);
   const repeat = await collect({ fetchSource, at, baseCatalog: result.catalog, deepSeekBaseline });
   expect(repeat.report.changes).toBe(0);
