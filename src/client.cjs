@@ -5,12 +5,16 @@ let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccount
 const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
+const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
 var useMemo = react.useMemo;
 var useEffect = react.useEffect;
+var useRef = react.useRef;
+var useCallback = react.useCallback;
 var Fragment = react.Fragment;
+var TAB_NAMES = ["overview", "timeline", "trends", "balance"];
 // Harness 0.1.7 primitives dropped the size-suffixed icons; Regular takes the same size prop.
 var IconDataOutline16 = primitives.IconDataOutline16 || primitives.IconDataOutlineRegular;
 var IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
@@ -42,13 +46,16 @@ function StatsTrigger(props) {
 	var wide = props.wide;
 	var t = props.t;
 	var onOpen = props.onOpen;
+	var useStatsOpen = props.useStatsOpen || function() { return null; };
+	var open = useStatsOpen((o) => o);
 	return e("button", {
 		type: "button",
 		className: "dss-trigger " + (wide ? "wide" : "rail"),
 		onClick: () => onOpen(),
 		title: t("trigger"),
 		"aria-label": t("trigger"),
-		"aria-haspopup": "dialog"
+		"aria-haspopup": "dialog",
+		"aria-expanded": !!(open && open.open)
 	},
 		e(IconDataOutline16, { size: 16 }),
 		wide ? e("span", { className: "dss-trigger-label" }, t("trigger")) : null
@@ -795,6 +802,10 @@ class PricingErrorBoundary extends react.Component {
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
 	var isOpen = !!(open && open.open);
+	var panelRef = useRef(null);
+	var layerStackRef = useRef(null);
+	if (!layerStackRef.current) layerStackRef.current = createLayerStack();
+	var layerStack = layerStackRef.current;
 	var [remoteData, setRemoteData] = useState(null);
 	// Browser snapshots are only inputs to the local fallback. Once host data
 	// arrives, streaming session events must not wake the entire statistics UI.
@@ -810,8 +821,9 @@ function StatsPanel(props) {
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview");
 	var tabValue = tabPair[0];
-	var tab = ["overview", "timeline", "trends", "balance"].indexOf(tabValue) >= 0 ? tabValue : "overview";
+	var tab = TAB_NAMES.indexOf(tabValue) >= 0 ? tabValue : "overview";
 	var setTab = tabPair[1];
+	var [focusedTab, setFocusedTab] = useState(tab);
 	var hiddenPair = usePref("hidden", {});
 	var hiddenValue = hiddenPair[0];
 	var hidden = hiddenValue && typeof hiddenValue === "object" && !Array.isArray(hiddenValue) ? hiddenValue : {};
@@ -828,6 +840,9 @@ function StatsPanel(props) {
 	var [balanceData, setBalanceData] = useState(null);
 	var [balanceState, setBalanceState] = useState({ kind: balanceRemote ? "loading" : "unavailable", error: null });
 	var [balanceRefreshRequest, setBalanceRefreshRequest] = useState({ tick: 0, force: false });
+	var markDismiss = useDialogFocus(panelRef, isOpen);
+	var dismiss = useCallback(function() { markDismiss(); onClose("dismiss"); }, [markDismiss, onClose]);
+	useEffect(function() { if (isOpen) setFocusedTab(tab); }, [isOpen, tab]);
 
 	useEffect(() => {
 		if (!open || !open.open) return;
@@ -947,49 +962,122 @@ function StatsPanel(props) {
 		else setRefreshTick((x) => x + 1);
 	};
 
-	return e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); } },
-		e("div", { className: "dss-panel" },
-			e("div", { className: "dss-head" },
-				e("h2", null, t("title")),
-				e("div", { className: "dss-tabs" },
-					e("button", { className: tab === "overview" ? "on" : "", onClick: () => setTab("overview") }, t("tab.overview")),
-					e("button", { className: tab === "timeline" ? "on" : "", onClick: () => setTab("timeline") }, t("tab.timeline")),
-					e("button", { className: tab === "trends" ? "on" : "", onClick: () => setTab("trends") }, t("tab.trends")),
-					e("button", { className: tab === "balance" ? "on" : "", onClick: () => setTab("balance") }, t("tab.balance"))
-				),
-				e("div", { className: "dss-head-actions" },
-					e("button", { className: "dss-export", onClick: () => setShowPrices(!showPrices), "aria-expanded": showPrices }, t("price.title")),
-					e("button", { className: "dss-export", onClick: refreshCurrent, disabled: isRefreshing }, t("refresh")),
-					tab !== "balance" ? e(Fragment, null,
-						e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
-						e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON")
-					) : null,
-					e("button", { className: "dss-close", onClick: onClose, title: t("close") },
-						e(IconCloseOutline16, { size: 16 })
+	var onPanelKeyDown = function(ev) {
+		if (ev.key === "Tab") {
+			trapTab(ev, panelRef.current);
+			return;
+		}
+		var action = escapeAction(ev, layerStack.size);
+		if (action === "ignore") return;
+		ev.preventDefault();
+		ev.stopPropagation();
+		if (action === "pop") layerStack.pop();
+		else dismiss();
+	};
+	var onTabListKeyDown = function(ev) {
+		var index = TAB_NAMES.indexOf(focusedTab);
+		if (index < 0) index = TAB_NAMES.indexOf(tab);
+		var next;
+		if (ev.key === "ArrowRight") next = (index + 1) % TAB_NAMES.length;
+		else if (ev.key === "ArrowLeft") next = (index - 1 + TAB_NAMES.length) % TAB_NAMES.length;
+		else if (ev.key === "Home") next = 0;
+		else if (ev.key === "End") next = TAB_NAMES.length - 1;
+		else return;
+		ev.preventDefault();
+		ev.stopPropagation();
+		var name = TAB_NAMES[next];
+		setFocusedTab(name);
+		var node = document.getElementById("dss-tab-" + name);
+		if (node) node.focus();
+	};
+	var activateTab = function(name) {
+		setTab(name);
+		setFocusedTab(name);
+	};
+
+	return e(LayerContext.Provider, { value: layerStack },
+		e("div", { className: "dss-overlay", onClick: (ev) => { if (ev.target === ev.currentTarget) dismiss(); } },
+			e("div", {
+				className: "dss-panel",
+				ref: panelRef,
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-labelledby": "dss-title",
+				tabIndex: -1,
+				onKeyDown: onPanelKeyDown
+			},
+				e("div", { className: "dss-head" },
+					e("h2", { id: "dss-title" }, t("title")),
+					e("div", {
+						className: "dss-tabs",
+						role: "tablist",
+						"aria-label": t("title"),
+						onKeyDown: onTabListKeyDown
+					},
+						TAB_NAMES.map(function(name) {
+							var selected = tab === name;
+							return e("button", {
+								key: name,
+								type: "button",
+								role: "tab",
+								id: "dss-tab-" + name,
+								"aria-selected": selected,
+								"aria-controls": "dss-tabpanel",
+								tabIndex: focusedTab === name ? 0 : -1,
+								className: selected ? "on" : "",
+								onClick: function(ev) {
+									activateTab(name);
+									if (ev && ev.currentTarget && typeof ev.currentTarget.focus === "function") ev.currentTarget.focus();
+								},
+								onKeyDown: function(ev) {
+									if (ev.key !== "Enter" && ev.key !== " ") return;
+									ev.preventDefault();
+									ev.stopPropagation();
+									activateTab(name);
+									if (ev.currentTarget && typeof ev.currentTarget.focus === "function") ev.currentTarget.focus();
+								}
+							}, t("tab." + name));
+						})
+					),
+					e("div", { className: "dss-head-actions" },
+						e("button", { className: "dss-export", onClick: () => setShowPrices(!showPrices), "aria-expanded": showPrices }, t("price.title")),
+						e("button", { className: "dss-export", onClick: refreshCurrent, disabled: isRefreshing }, t("refresh")),
+						tab !== "balance" ? e(Fragment, null,
+							e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
+							e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON")
+						) : null,
+						e("button", { className: "dss-close", onClick: dismiss, title: t("close"), "aria-label": t("close") },
+							e(IconCloseOutline16, { size: 16 })
+						)
 					)
-				)
-			),
-			e("div", { className: "dss-body" },
-				showPrices ? e(PricingErrorBoundary, { t }, e(PricingPanel, { remote: props.pricing, projects: data.projects, t, onChanged: () => setRefreshTick(x => x + 1) })) : null,
-				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
-					e(StatsDataStatus, { state: sourceState, remote: data.remote, t }),
-					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
-				tab === "overview" ? e("div", {
-					className: "dss-overview" + (overviewMaxHeight ? " bounded" : ""),
-					style: overviewMaxHeight ? { "--dss-overview-max-height": overviewMaxHeight + "px" } : null
+				),
+				e("div", {
+					className: "dss-body",
+					id: "dss-tabpanel",
+					role: "tabpanel",
+					"aria-labelledby": "dss-tab-" + tab
 				},
-					e(SummaryCards, { projects: visibleProjects, t }),
-					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
-					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
-				: e(TrendsView, {
-					globals,
-					dateGlobals,
-					selectedDate: effectiveDate,
-					onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
-					t
-				})
+					showPrices ? e(PricingErrorBoundary, { t }, e(PricingPanel, { remote: props.pricing, projects: data.projects, t, onChanged: () => setRefreshTick(x => x + 1) })) : null,
+					tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
+						e(StatsDataStatus, { state: sourceState, remote: data.remote, t }),
+						e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
+					tab === "overview" ? e("div", {
+						className: "dss-overview" + (overviewMaxHeight ? " bounded" : ""),
+						style: overviewMaxHeight ? { "--dss-overview-max-height": overviewMaxHeight + "px" } : null
+					},
+						e(SummaryCards, { projects: visibleProjects, t }),
+						e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
+						visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
+							 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+					) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
+					: e(TrendsView, {
+						globals,
+						dateGlobals,
+						selectedDate: effectiveDate,
+						onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
+						t
+					})
+					)
 				)
 			)
 		)
@@ -1471,7 +1559,7 @@ async function apply(ctx) {
 		id: "stats",
 		locale: NS,
 		order: 20,
-		inject: () => ({ onOpen: () => openStore.open() })
+		inject: () => ({ onOpen: () => openStore.open(), hooks: { statsOpen: openStore } })
 	}, StatsTrigger));
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",
@@ -1497,5 +1585,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows
+	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows, escapeAction
 };

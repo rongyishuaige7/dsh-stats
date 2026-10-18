@@ -94,8 +94,29 @@ async function click(selector) {
   assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.click(); return true; })()`), selector);
   await delay(100);
 }
-async function refresh() { await click('.dss-head-actions .dss-export:nth-child(2)'); }
+const REFRESH_SELECTOR = '.dss-head-actions .dss-export:nth-child(2)';
+async function refresh() { await click(REFRESH_SELECTOR); }
 async function tab(index) { await click('.dss-tabs button:nth-child(' + index + ')'); }
+async function focus(selector) {
+  await until(`document.querySelector(${JSON.stringify(selector)})`, selector);
+  assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.focus(); return document.activeElement === node; })()`), 'focus ' + selector);
+  await delay(50);
+}
+const KEY_CODES = { Tab: 9, Escape: 27, Enter: 13, ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, ' ': 32 };
+async function press(key, modifiers = 0) {
+  const vk = KEY_CODES[key];
+  assert(vk, 'unsupported key ' + key);
+  const code = key === ' ' ? 'Space' : key;
+  await command('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers });
+  await command('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers });
+  await delay(80);
+}
+const PANEL_FOCUSABLES = `(() => {
+  const panel = document.querySelector('.dss-panel');
+  if (!panel) return [];
+  return [...panel.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
+    .filter(node => !node.disabled && !node.hidden && node.getClientRects().length && node.tabIndex >= 0);
+})()`;
 // Page.navigate can return before the old document is replaced; clear its ready
 // flag first so the wait cannot pass on the page being navigated away from.
 async function navigate(path) {
@@ -161,6 +182,8 @@ try {
   assert.equal(await evaluate('window.__fixture.panelRenders'), closedRenders, 'closed panel must not render on session/workspace updates');
   await click('.dss-trigger');
   await until('document.querySelector(".dss-data-status.exact")');
+  assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'panel opens with focus on the current tab');
+  assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'true', 'trigger exposes the open state');
   const hostRenders = await evaluate('window.__fixture.panelRenders');
   await evaluate('window.__fixture.sessionReads = 0; window.__fixture.bumpSessions(); window.__fixture.bumpWorkspaces()'); await delay(200);
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'host data must not be recomputed from session updates');
@@ -174,6 +197,63 @@ try {
   assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
   await tab(1);
   report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
+  // 1b: dialog semantics, focus trap, manual tab activation and Escape.
+  await press('Escape');
+  await until('!document.querySelector(".dss-panel")');
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'Escape restores focus to the trigger');
+  assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'false', 'trigger exposes the closed state');
+  await focus('.dss-trigger');
+  await click('.dss-trigger');
+  await until('document.querySelector(".dss-data-status.exact")');
+  assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'reopened panel focuses the current tab');
+  assert.equal(await evaluate('document.querySelector(".dss-panel").getAttribute("role")'), 'dialog', 'panel uses dialog semantics');
+  assert.equal(await evaluate('document.querySelector(".dss-panel").getAttribute("aria-modal")'), 'true', 'panel is modal');
+  assert.equal(await evaluate('document.querySelector(".dss-tabs").getAttribute("role")'), 'tablist', 'tabs use tablist semantics');
+  assert.equal(await evaluate('document.querySelector("#dss-tabpanel").getAttribute("role")'), 'tabpanel');
+  assert.equal(await evaluate('document.querySelector("#dss-tabpanel").getAttribute("aria-labelledby")'), 'dss-tab-overview');
+  const callsBeforeArrows = await accountCalls();
+  await press('ArrowRight');
+  assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-timeline', 'ArrowRight moves focus only');
+  assert.equal(await evaluate('document.querySelector("#dss-tab-overview").getAttribute("aria-selected")'), 'true', 'ArrowRight does not activate');
+  assert.equal(await evaluate('document.querySelector("#dss-tab-timeline").getAttribute("aria-selected")'), 'false');
+  await press('Enter');
+  await until('document.querySelector(".dss-timeline-viewport")');
+  assert.equal(await evaluate('document.querySelector("#dss-tab-timeline").getAttribute("aria-selected")'), 'true', 'Enter activates the focused tab');
+  assert.equal(await evaluate('document.querySelector("#dss-tabpanel").getAttribute("aria-labelledby")'), 'dss-tab-timeline', 'tabpanel follows the active tab');
+  assert.deepEqual(await accountCalls(), callsBeforeArrows, 'tab keyboard navigation must not query the balance account');
+  await press('ArrowLeft');
+  assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview');
+  await press('Enter');
+  await until('document.querySelector(".dss-overview")');
+  await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; if (!nodes.length) return false; nodes[nodes.length - 1].focus(); return true; })()`);
+  await press('Tab');
+  assert(await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[0]; })()`), 'Tab wraps from the last focusable to the first');
+  await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; if (!nodes.length) return false; nodes[0].focus(); return true; })()`);
+  await press('Tab', 8);
+  assert(await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[nodes.length - 1]; })()`), 'Shift+Tab wraps from the first focusable to the last');
+  await navigate('/?hold=1&lang=zh');
+  await focus('.dss-trigger');
+  await click('.dss-trigger');
+  await until('typeof window.__fixture.releaseStats === "function"');
+  await evaluate('window.__fixture.releaseStats()');
+  await until('document.querySelector(".dss-data-status.exact")');
+  await evaluate('window.__fixture.released = false');
+  await focus(REFRESH_SELECTOR);
+  await click(REFRESH_SELECTOR);
+  await until(`document.querySelector(${JSON.stringify(REFRESH_SELECTOR)}).disabled`);
+  await delay(100);
+  const activeAfterDisabled = await evaluate(`(() => {
+    const active = document.activeElement;
+    return { tag: active?.tagName, id: active?.id, className: active?.className,
+      inside: !!(active && active.closest && active.closest('.dss-panel')),
+      body: active === document.body, html: active === document.documentElement };
+  })()`);
+  assert(activeAfterDisabled.inside, 'disabled refresh keeps focus inside the panel: ' + JSON.stringify(activeAfterDisabled));
+  await press('Escape');
+  await until('!document.querySelector(".dss-panel")');
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'Escape after disabled refresh restores focus to the trigger');
+  await evaluate('window.__fixture.releaseStats()').catch(() => {});
+  report.checks.push('dialog semantics: focus starts on the current tab, Tab/Shift+Tab loop, arrows move focus only, Enter activates, IME-safe Escape restores focus');
   for (const mode of ['stats=error', 'hold=1']) {
     await navigate('/?' + mode + '&lang=zh'); await click('.dss-trigger');
     await until('document.querySelector(".dss-cards")');
@@ -347,6 +427,7 @@ try {
   await layout('dark-stale-balance'); await capture('narrow-dark-stale-balance');
   report.checks.push('dark-theme stale account state');
   await navigate('/?stats=large&lang=zh');
+  await focus('.dss-trigger');
   await click('.dss-trigger'); await tab(1);
   await until('document.querySelector(".dss-data-status.exact")');
   await click('.dss-nav .dss-tabs button:nth-child(2)');
@@ -387,6 +468,8 @@ try {
   assert(await evaluate('document.querySelector(".dss-group").textContent.includes("95")'));
   await click('.dss-sess-title');
   assert(sessionIds.includes(await evaluate('window.__fixture.openedSession')), 'paged sessions retain navigation');
+  assert(await evaluate('document.activeElement !== document.querySelector(".dss-trigger")'), 'opening a session must not restore focus to the trigger');
+  assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'false', 'trigger closes its expanded state');
   await click('.dss-trigger'); await tab(2);
   await until('document.querySelector(".dss-timeline-limit")');
   const recentDay = await evaluate('document.querySelector(".dss-day").id');

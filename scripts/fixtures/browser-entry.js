@@ -88,7 +88,8 @@ window.__ModuleLoader__ = { async load({ factory }) {
   function App() {
     return React.createElement(React.Fragment, null,
       React.createElement('aside', { style: { width: 240, padding: 12 } },
-        React.createElement(trigger.component, { ...trigger.definition.inject(), wide: true, t: fixture.t })),
+        React.createElement(trigger.component, { ...trigger.definition.inject(), wide: true, t: fixture.t,
+          useStatsOpen: selector => useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot())) })),
       React.createElement(panel.component, { ...props, t: fixture.t,
         useStatsOpen: selector => { fixture.panelRenders++; return useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot())); },
         useSessions: selector => useSyncExternalStore(subscribeSessions, () => selector(summaries)),
