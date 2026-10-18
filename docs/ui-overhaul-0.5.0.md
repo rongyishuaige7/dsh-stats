@@ -92,7 +92,7 @@
 
 `hint.cost` 不再出现在日期导航行。
 
-**D2 次级指标条。** KPI 下方是一行纯文本，空值项直接省略：项目数 · 轮/步 · 首 token 均值（`Σ ttftMs / Σ ttftSteps`）· 输出速度（`Σ decodeTokens / Σ decodeMs`）。按日模式追加"活跃时段 HH:MM–HH:MM"，全部模式追加"活跃日 N"。这些都是精确的加和比值，不做近似加权。
+**D2 次级指标条。** KPI 下方是一行纯文本，空值项直接省略：轮/步 · 首 token 均值（`Σ ttftMs / Σ ttftSteps`）· 输出速度（`Σ decodeTokens / Σ decodeMs`）。项目数不再重复，只保留在下方项目表标题。按日模式追加"活跃时段 HH:MM–HH:MM"，全部模式追加"活跃日 N"。中文标签与数值紧排，英文保留一个空格。这些都是精确的加和比值，不做近似加权。
 
 **D3 项目表格。** 7 列：项目（色点、名称、路径）/ 会话（`主 +子`）/ Token（总量，副行"入 · 出"）/ 缓存命中 / LLM 时长 / 预估费用（金额加占比条）/ 最近活跃（按日模式改为"活跃时段"）。
 
@@ -359,7 +359,7 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
 | 标题、标签页、关闭、刷新、价格设置 | `title`、`tab.*`、`close`、`refresh`、`price.title` |
 | 状态点与横幅 | `source.exact`、`source.partial`、`source.stale`、`source.fallback`、`source.loading`、`source.refreshing`、`source.local`、`source.details`、`source.host`、`source.updated` |
 | 工具行 | `nav.day`、`nav.all`、`nav.previous`、`nav.next`、`w.weekdays`、`w.dayPrefix` |
-| KPI 与指标条 | `card.cost`、`card.sessions`、`card.llm`、`card.tool`、`card.projects`、`card.turnsSteps`、`th.ttft`、`th.tps`、`w.input`、`w.output`、`w.cacheHit`、`w.estimatedHint`、`pricing.pending` |
+| KPI 与指标条 | `card.cost`、`card.sessions`、`card.llm`、`card.tool`、`card.turnsSteps`、`strip.ttft`、`strip.speed`、`strip.sep`、`strip.span`、`strip.activeDays`、`w.input`、`w.output`、`w.cacheHit`、`w.estimatedHint`、`pricing.pending` |
 | 表格与会话 | `th.project`、`th.sessions`、`th.cacheHit`、`th.cost`、`th.lastActive`、`th.turns`、`th.steps`、`th.tool`、`w.path`、`w.subagentGroup`、`w.page`、`w.previousPage`、`w.nextPage` |
 | 重试 | `price.retry`（`pricing-locale.cjs:28`） |
 
@@ -562,7 +562,7 @@ smoke 改动：
 
 | 现有位置 | 新位置 |
 | --- | --- |
-| 卡片：项目 | 指标条"项目" |
+| 卡片：项目 | 项目表标题的项目数（指标条不重复） |
 | 卡片：会话 | KPI"会话"及副行 |
 | 卡片：轮/步 | 指标条"轮/步" |
 | 卡片：LLM 时长 | KPI"LLM 时长" |

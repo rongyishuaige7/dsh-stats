@@ -36,20 +36,20 @@ Pre-1.0 feature release, 2026-10-18.
 | Harness | Verification |
 | --- | --- |
 | `0.1.3-alpha.2` through `0.2.0-rc.2` | previously verified; see `docs/compatibility.md` |
-| `0.2.1-rc.2` | isolated real-module contract: 6/6 checks pass on Node `22.22.0`; full Web not rerun |
+| `0.2.1-rc.2` | isolated real-module contract: 6/6 checks pass on Node `22.22.0`; full Web verified with plugin 0.5.0 (R1/R16 and UI checks) |
 
 `0.2.1-rc.2` is supported by peer ranges. The desktop app currently bundles
 this Harness release; clean installation should no longer report peer mismatches.
 
 ## Verification
 
-- Full test suite: **357 tests** pass in the default timezone and `TZ=UTC`.
+- Full test suite: **360 tests** pass in the default timezone and `TZ=UTC`.
 - Browser fixture: **18 check groups / 37 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
-- Signed catalog `2026101805`: 836 rules, verified against the pinned public key.
+- Signed catalog `2026101806`: 837 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
 - Pricing auto-publish workflow run: success (16 provisional models signed).
@@ -75,8 +75,9 @@ independently; do not reinstall merely to receive new prices.
 - Existing model price changes intentionally require review.
 - Meta open-weight models do not have a single first-party token price; they
   follow the actual host/OpenRouter route.
-- Full Web boot and a dedicated 0.2.1 browser run were not repeated; the
-  browser fixture is version-independent.
+- Real Web verification covered exact-status data, R1 generation Esc and R16
+  approval Esc. Unpriced-price flows and partial/stale banners remain
+  fixture-only; no provider was added to exercise them.
 - The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
   narrow layout and non-truncation are asserted separately at 320/390/640 px.
 

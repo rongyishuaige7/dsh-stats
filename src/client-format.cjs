@@ -34,7 +34,7 @@ function fmtClock(ms) {
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 function pad(n) { return String(n).padStart(2, "0"); }
-function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : tps.toFixed(1)); }
+function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : Number(tps.toFixed(1))); }
 function fmtPct(p) { return p == null || !Number.isFinite(p) ? "—" : `${p}%`; }
 function fmtSharePct(pct) {
 	if (pct == null || !Number.isFinite(pct) || pct <= 0) return "0%";

@@ -254,7 +254,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pending-chip.sm{font-size:var(--dss-fs-xs);padding:0 6px}
 .dss-pending-chip:hover{border-style:solid}
 .dss-strip{display:flex;flex-wrap:wrap;gap:4px 22px;font-size:var(--dss-fs-sm);color:var(--dss-text-3);padding:0 4px;margin-bottom:10px;font-variant-numeric:tabular-nums}
-.dss-strip b{color:var(--dss-text);font-weight:600;margin-left:4px}
+.dss-strip b{color:var(--dss-text);font-weight:600}
 .dss-projects{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .dss-proj-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dss-proj-head h3{margin:0;font-size:var(--dss-fs-lg);font-weight:650;display:inline-flex;align-items:center}

@@ -510,6 +510,7 @@ test('weeklyFromDays starts week on Sunday', () => {
 // ---------------------------------------------------------------------------
 test('fmtTps leaves the unit to the project metric label', () => {
 	expect(fmtTps(78.45)).toBe('78.5');
+	expect(fmtTps(44)).toBe('44');
 	expect(fmtTps(123.4)).toBe('123');
 	expect(fmtTps(null)).toBe('—');
 });

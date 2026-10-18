@@ -692,6 +692,12 @@ try {
   const tokenAria = await evaluate('document.querySelector(".dss-tokbar").getAttribute("aria-label")');
   assert(tokenAria.startsWith('缓存命中输入 ') && tokenAria.includes('，未命中输入 ') && tokenAria.includes('，输出 '), 'token bar aria-label names cache/uncached/output: ' + tokenAria);
   assert(await evaluate('!document.querySelector(".dss-strip").hasAttribute("aria-label")'), 'strip must not carry an aria-label');
+  const strip = await evaluate('document.querySelector(".dss-strip").textContent');
+  assert(!strip.startsWith('项目') && !strip.includes('项目 '), 'strip must not repeat the project count: ' + strip);
+  assert(/轮 \/ 步\d/.test(strip), 'strip keeps turns/steps flush with the label: ' + strip);
+  if (strip.includes('首 token')) assert(/首 token 均值\d/.test(strip), 'strip names the first-token average: ' + strip);
+  if (strip.includes('输出速度')) assert(/输出速度\d/.test(strip) && strip.includes(' tok/s'), 'strip names output speed with its unit: ' + strip);
+  assert(/活跃时段\d{2}:\d{2}/.test(strip) || /活跃日\d/.test(strip), 'strip keeps the active span or active days flush with its label: ' + strip);
   await evaluate('document.querySelector(".dss-body").scrollTop = 400');
   await delay(80);
   const sticky = await evaluate(`(() => {

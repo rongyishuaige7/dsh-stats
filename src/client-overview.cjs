@@ -125,10 +125,9 @@ function OverviewKpis(props) {
 function OverviewStrip(props) {
 	var totals = props.totals, t = props.t;
 	var parts = [];
-	parts.push(e("span", { key: "projects" }, t("card.projects") + " ", e("b", null, fmtN(totals.projects))));
-	parts.push(e("span", { key: "turns" }, t("card.turnsSteps") + " ", e("b", null, fmtN(totals.turns) + " / " + fmtN(totals.steps))));
-	if (totals.ttftAvgMs != null) parts.push(e("span", { key: "ttft" }, t("th.ttft") + " ", e("b", null, fmtDuration(totals.ttftAvgMs))));
-	if (totals.tps != null) parts.push(e("span", { key: "tps" }, t("th.tps") + " ", e("b", null, fmtTps(totals.tps))));
+	parts.push(e("span", { key: "turns" }, t("card.turnsSteps") + t("strip.sep"), e("b", null, fmtN(totals.turns) + " / " + fmtN(totals.steps))));
+	if (totals.ttftAvgMs != null) parts.push(e("span", { key: "ttft" }, t("strip.ttft") + t("strip.sep"), e("b", null, fmtDuration(totals.ttftAvgMs))));
+	if (totals.tps != null) parts.push(e("span", { key: "tps" }, t("strip.speed") + t("strip.sep"), e("b", null, fmtTps(totals.tps) + " tok/s")));
 	if (props.dayMode) {
 		var start = Infinity, end = -Infinity;
 		var visible = new Set((props.projects || []).map(function(project) { return project.id; }));
@@ -136,9 +135,9 @@ function OverviewStrip(props) {
 			if (!visible.has(id) || !span) return;
 			start = Math.min(start, span.startSlot); end = Math.max(end, span.endSlot);
 		});
-		if (Number.isFinite(start) && Number.isFinite(end)) parts.push(e("span", { key: "span" }, t("strip.span") + " ", e("b", null, clock(start) + "–" + clock(end))));
+		if (Number.isFinite(start) && Number.isFinite(end)) parts.push(e("span", { key: "span" }, t("strip.span") + t("strip.sep"), e("b", null, clock(start) + "–" + clock(end))));
 	} else {
-		parts.push(e("span", { key: "active-days" }, t("strip.activeDays") + " ", e("b", null, fmtN(props.activeDays))));
+		parts.push(e("span", { key: "active-days" }, t("strip.activeDays") + t("strip.sep"), e("b", null, fmtN(props.activeDays))));
 	}
 	return e("div", { className: "dss-strip" }, parts);
 }
