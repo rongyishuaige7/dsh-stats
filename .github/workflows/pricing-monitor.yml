@@ -1,0 +1,32 @@
+name: Monitor prices
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: price-monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Collect official and marketplace changes
+        run: node scripts/collect-pricing.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: price-review-report
+          path: artifacts/pricing/report.json
+          if-no-files-found: ignore

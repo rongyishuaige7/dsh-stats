@@ -7,12 +7,20 @@ import pricing from '../src/pricing.cjs';
 import trust from '../src/pricing-trust.cjs';
 
 const OPENAI = 'https://developers.openai.com/api/docs/pricing.md';
+const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing.md';
+const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+const GOOGLE_SOURCE = 'https://ai.google.dev/gemini-api/docs/pricing';
 const OPENROUTER = 'https://openrouter.ai/api/v1/models';
+// Meta Llama models are priced by their hosting providers; the OpenRouter
+// adapter covers those routes. There is no first-party Meta token price page.
 // Canonical form: the slashless URL now 302-redirects and get() rejects redirects.
 const DEEPSEEK = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/';
 const DEEPSEEK_BASELINE = JSON.parse(readFileSync(new URL('../data/pricing/deepseek-observation.json', import.meta.url), 'utf8'));
 const RATE_FIELDS = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const sameRates = (a, b) => Boolean(a && b) && RATE_FIELDS.every(k => a[k] === b[k]);
+const activeRule = (catalog, family, model, at) => catalog.rules.find(r => r.family === family && r.canonical === model
+  && (!r.effectiveFrom || Date.parse(r.effectiveFrom) <= Date.parse(at))
+  && (!r.effectiveTo || Date.parse(r.effectiveTo) > Date.parse(at)));
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])]));
@@ -27,6 +35,91 @@ export function deepSeekObservation(html) {
   if (!models.length || !text.includes('缓存') || !text.includes('高峰')) throw new Error('DeepSeek pricing page incomplete');
   return { sha256: createHash('sha256').update(text).digest('hex'), models };
 }
+function stripHtml(value) {
+  return String(value)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function priceFromCell(value) {
+  const match = /\$\s*(\d+(?:\.\d+)?)/.exec(stripHtml(value));
+  return match ? Number(match[1]) : null;
+}
+function isTextModel(model) {
+  return !/(?:image|tts|live|transcribe|robotics|embedding|veo|imagen|lyria|nano-banana|native-audio)/i.test(model);
+}
+function modelSlug(value) {
+  return stripHtml(value)
+    .replace(/\([^)]*\)/g, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+// Anthropic's pricing.md keeps the model table in a stable markdown table.
+// This adapter only produces review candidates; it never appends catalog rules.
+export function parseAnthropic(markdown) {
+  const section = String(markdown).split('## Model pricing')[1]?.split(/\n## /)[0];
+  if (!section) throw new Error('Anthropic pricing table changed');
+  const rows = [];
+  for (const raw of section.split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1).map(stripHtml);
+    if (cells.length !== 6 || !/^\$/.test(cells[1])) continue;
+    const display = stripHtml(cells[0]).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const model = modelSlug(display);
+    if (!model || rows.some(row => row.model === model)) continue;
+    const rates = {
+      uncached: priceFromCell(cells[1]),
+      cacheWrite: priceFromCell(cells[2]),
+      cacheRead: priceFromCell(cells[4]),
+      output: priceFromCell(cells[5])
+    };
+    if (rates.uncached == null || rates.output == null) continue;
+    rows.push({ model, display, rates, cacheWrite1h: priceFromCell(cells[3]) });
+  }
+  if (!rows.length) throw new Error('Anthropic pricing table incomplete');
+  return rows;
+}
+// Google has no markdown pricing endpoint; parse the stable devsite pricing
+// tables. Only the Standard table is used for monitoring. The paid-tier cell
+// can contain the current price followed by a scheduled future price; the
+// first dollar amount is the currently effective one.
+export function parseGoogle(html) {
+  const source = String(html);
+  const headings = [...source.matchAll(/<h2\b([^>]*)>([\s\S]*?)<\/h2>/gi)]
+    .map(match => ({ attrs: match[1], display: stripHtml(match[2]), index: match.index, end: match.index + match[0].length }))
+    .filter(item => /\bid="gemini-[a-z0-9.-]+"/i.test(item.attrs));
+  if (!headings.length) throw new Error('Google pricing page changed');
+  const rows = [];
+  for (let i = 0; i < headings.length; i++) {
+    const id = /\bid="(gemini-[a-z0-9.-]+)"/i.exec(headings[i].attrs)?.[1]?.toLowerCase();
+    if (!id) continue;
+    const section = source.slice(headings[i].end, headings[i + 1]?.index ?? source.length);
+    const table = /<table\b[^>]*class="pricing-table"[^>]*>([\s\S]*?)<\/table>/i.exec(section);
+    if (!table) continue;
+    const values = {};
+    for (const tr of table[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...tr[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(match => stripHtml(match[1]));
+      if (cells.length < 3) continue;
+      const label = cells[0].toLowerCase();
+      if (label.startsWith('input price')) values.uncached = priceFromCell(cells[2]);
+      else if (label.startsWith('output price')) values.output = priceFromCell(cells[2]);
+      else if (label.startsWith('context caching price')) values.cacheRead = priceFromCell(cells[2]);
+    }
+    if (values.uncached == null || values.output == null) continue;
+    rows.push({ model: id, display: headings[i].display, rates: { uncached: values.uncached, cacheWrite: values.uncached, cacheRead: values.cacheRead ?? null, output: values.output } });
+  }
+  if (!rows.length) throw new Error('Google pricing table incomplete');
+  return rows;
+}
+
 export function parseOpenAI(markdown) {
   const section = markdown.split('### Standard pricing data')[1]?.split('### Batch pricing data')[0];
   if (!section) throw new Error('OpenAI pricing table changed');
@@ -69,8 +162,9 @@ export function appendObservedRule(catalog, incoming, at) {
   pricing.validateCatalog({ ...catalog, rules });
   catalog.rules = rules; return true;
 }
-async function get(url, json = false) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: 'error' });
+async function get(url, json = false, { allowSameOriginRedirect = false } = {}) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: allowSameOriginRedirect ? 'follow' : 'error' });
+  if (allowSameOriginRedirect && new URL(response.url).origin !== new URL(url).origin) throw new Error('source-redirect');
   if (!response.ok) throw new Error('source-http-' + response.status);
   const reader = response.body.getReader(); const chunks = []; let size = 0;
   try { for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 12 * 1024 * 1024) throw new Error('source-too-large'); chunks.push(Buffer.from(value)); } }
@@ -96,6 +190,29 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
       candidates.push({ source: OPENAI, model: row.model, reason: 'Review model identity, service tiers, context threshold and effective date', rates: row });
     }
   } catch (error) { failures.push({ source: OPENAI, error: error.message }); }
+  try {
+    const rows = parseAnthropic(await fetchSource(ANTHROPIC));
+    for (const row of rows) {
+      const existing = activeRule(catalog, 'anthropic', row.model, at);
+      const rule = { id: 'anthropic/' + row.model + '@' + at.slice(0, 10), family: 'anthropic', canonical: row.model,
+        aliases: [row.model, 'anthropic/' + row.model], currency: 'USD', sourceUrl: ANTHROPIC, retrievedAt: at.slice(0, 10),
+        observedFrom: at, rates: row.rates, confidence: 'exact', reasoningIncludedInOutput: true };
+      if (!existing) candidates.push({ source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) });
+      else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) });
+    }
+  } catch (error) { failures.push({ source: ANTHROPIC, error: error.message }); }
+  try {
+    const rows = parseGoogle(await fetchSource(GOOGLE, false, { allowSameOriginRedirect: true }));
+    for (const row of rows) {
+      if (!isTextModel(row.model)) continue;
+      const existing = activeRule(catalog, 'google', row.model, at);
+      const rule = { id: 'google/' + row.model + '@' + at.slice(0, 10), family: 'google', canonical: row.model,
+        aliases: [row.model, 'google/' + row.model], currency: 'USD', sourceUrl: GOOGLE_SOURCE, retrievedAt: at.slice(0, 10),
+        observedFrom: at, rates: row.rates, confidence: 'exact', reasoningIncludedInOutput: true };
+      if (!existing) candidates.push({ source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule });
+      else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule });
+    }
+  } catch (error) { failures.push({ source: GOOGLE, error: error.message }); }
   try {
     const observation = deepSeekObservation(await fetchSource(DEEPSEEK));
     if (observation.sha256 !== deepSeekBaseline.sha256) candidates.push({ source: DEEPSEEK, reason: 'Review changed official DeepSeek rates, aliases, calendar and effective date', observation });

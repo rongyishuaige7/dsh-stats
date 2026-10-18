@@ -1,10 +1,20 @@
-import { parseOpenAI, openRouterRule, appendObservedRule, collect, deepSeekObservation } from '../scripts/collect-pricing.mjs';
+import { parseOpenAI, parseAnthropic, parseGoogle, openRouterRule, appendObservedRule, collect, deepSeekObservation } from '../scripts/collect-pricing.mjs';
 import pricing from '../src/pricing.cjs';
 import { draftRule, blankDraft, ruleDraft, missingModels, fmtBeijing } from '../src/pricing-panel.cjs';
 const at = '2026-09-18T00:00:00.000Z';
 const deepSeekHtml = '<article><table><tr><td>deepseek-flash 缓存 高峰 2</td></tr></table></article>';
 const deepSeekBaseline = deepSeekObservation(deepSeekHtml);
 const model = (id = 'vendor/new-model') => ({ id, architecture: { output_modalities: ['text'] }, pricing: { prompt: '0.000001', completion: '0.000002', input_cache_read: '0', request: '0' } });
+const anthropicMd = `## Model pricing
+| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Claude Opus 5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
+## Prompt caching`;
+const googleHtml = `<h2 id="gemini-3.8-flash">Gemini 3.8 Flash</h2>
+<table class="pricing-table"><tr><td>Input price</td><td>Free</td><td>$0.75</td></tr><tr><td>Output price (including thinking tokens)</td><td>Free</td><td>$3.75</td></tr><tr><td>Context caching price</td><td>Free</td><td>$0.075</td></tr></table>
+<h2 id="gemini-next">Gemini Next</h2>`;
+const source = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) }
+  : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? anthropicMd : url.includes('google') ? googleHtml : markdown;
 const markdown = `### Standard pricing data
 | gpt-6-astra | $10 | $1 | $12.5 | $50 | $20 | $2 | $25 | $75 |
 | gpt-new | $1 | - | - | $2 | - | - | - | - |
@@ -28,7 +38,7 @@ test('official parser maps long-context annotations and honours the unknown cach
   const rows = parseOpenAI(annotated);
   expect(rows.map(r => r.model)).toEqual(['gpt-6-astra', 'gpt-5.4', 'gpt-5.4-mini']);
   expect(rows[1]).toMatchObject({ threshold: 272000, long: { output: 22.5, cacheWrite: null } });
-  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('deepseek') ? deepSeekHtml : annotated;
+  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? anthropicMd : url.includes('google') ? googleHtml : annotated;
   // Reviewed rules estimate unpublished cache writes at the input price: not a change.
   const reviewed = await collect({ fetchSource, at, deepSeekBaseline });
   expect(reviewed.report.candidates.filter(c => c.source.includes('openai'))).toEqual([]);
@@ -64,7 +74,7 @@ test('observed changes preserve historical prices and ignore property order', ()
 });
 
 test('collection separates reviewed official candidates and publishes only validated structured rows', async () => {
-  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('deepseek') ? deepSeekHtml : markdown;
+  const fetchSource = source;
   const result = await collect({ fetchSource, at, deepSeekBaseline });
   expect(result.report.failures).toEqual([]);
   expect(result.report.changes).toBe(10);
@@ -73,8 +83,28 @@ test('collection separates reviewed official candidates and publishes only valid
   const repeat = await collect({ fetchSource, at, baseCatalog: result.catalog, deepSeekBaseline });
   expect(repeat.report.changes).toBe(0);
   const failed = await collect({ fetchSource: async () => { throw new Error('offline'); }, at });
-  expect(failed.report.failures).toHaveLength(3);
+  expect(failed.report.failures).toHaveLength(5);
   expect(failed.catalog).toEqual(pricing.BUILTIN);
+});
+
+test('official Anthropic and Google adapters produce review candidates without publishing', async () => {
+  const anthropicNew = anthropicMd.replace('| Claude Opus 5 |', '| Claude New 6 |').replace('$5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok', '$3 / MTok | $3.75 / MTok | $6 / MTok | $0.30 / MTok | $15 / MTok');
+  const googleNew = googleHtml.replace('gemini-3.8-flash', 'gemini-new').replace('Gemini 3.8 Flash', 'Gemini Next').replace('$0.75', '$1').replace('$3.75', '$5').replace('$0.075', '$0.10');
+  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) }
+    : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? anthropicNew : url.includes('google') ? googleNew : markdown;
+  const result = await collect({ fetchSource, at, deepSeekBaseline });
+  expect(result.report.failures).toEqual([]);
+  expect(parseAnthropic(anthropicNew)).toEqual([{ model: 'claude-new-6', display: 'Claude New 6', rates: { uncached: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 }, cacheWrite1h: 6 }]);
+  expect(parseGoogle(googleNew)).toEqual([
+    { model: 'gemini-new', display: 'Gemini Next', rates: { uncached: 1, cacheWrite: 1, cacheRead: 0.1, output: 5 } }
+  ]);
+  const anthropicCandidate = result.report.candidates.find(c => c.source.includes('claude.com') && c.model === 'claude-new-6');
+  const googleCandidate = result.report.candidates.find(c => c.source.includes('google') && c.model === 'gemini-new');
+  expect(anthropicCandidate).toMatchObject({ reason: 'Missing official model coverage', cacheWrite1h: 6, rule: { canonical: 'claude-new-6', rates: { uncached: 3, output: 15 } } });
+  expect(googleCandidate).toMatchObject({ reason: 'Missing official model coverage', rule: { canonical: 'gemini-new', rates: { uncached: 1, output: 5 } } });
+  expect(result.catalog.rules.some(r => r.canonical === 'claude-new-6' || r.canonical === 'gemini-new')).toBe(false);
+  expect(() => parseAnthropic('changed')).toThrow();
+  expect(() => parseGoogle('<html></html>')).toThrow();
 });
 
 test('custom price times are Beijing time regardless of the host timezone', () => {
@@ -104,7 +134,7 @@ test('custom price editor round-trips context tiers and keeps blanks distinct fr
 
 
 test('DeepSeek monitoring reports changed rates and uncovered models without publishing them', async () => {
-  const fetchSource = async url => url.includes('deepseek') ? deepSeekHtml.replace('deepseek-flash', 'deepseek-new').replace('高峰 2', '高峰 3') : url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : markdown;
+  const fetchSource = async url => url.includes('deepseek') ? deepSeekHtml.replace('deepseek-flash', 'deepseek-new').replace('高峰 2', '高峰 3') : url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('claude.com') ? anthropicMd : url.includes('google') ? googleHtml : markdown;
   const result = await collect({ fetchSource, at, deepSeekBaseline });
   expect(result.report.failures).toEqual([]);
   const candidates = result.report.candidates.filter(c => c.source.includes('deepseek'));
