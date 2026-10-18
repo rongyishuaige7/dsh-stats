@@ -407,7 +407,17 @@ try {
   assert.equal(rowExpandedAfter, rowExpandedBefore, 'row chip must not expand its row');
   await press('Escape'); await until('!document.querySelector(".dss-drawer")');
   await layout('partial'); await capture('narrow-partial');
-  await evaluate('window.__fixture.statsMode = "unsupported"'); await refresh();
+  const modelSelector = `[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model'))`;
+  await click('.dss-kpi [data-action=pricing-pending]');
+  await until('document.querySelector(".dss-drawer")');
+  await until(`(() => { const input = ${modelSelector}; return !!input && input.value === 'fixture-unpriced'; })()`);
+  assert(await evaluate(`(() => { const input = ${modelSelector}; return !!input; })()`), 'pending chip prefills the model field');
+  await evaluate(`(() => { const chip = document.querySelector('.dss-kpi [data-action=pricing-pending]'); const parent = chip.parentNode, next = chip.nextSibling; parent.removeChild(chip); window.__removedPendingChip = { chip, parent, next }; })()`);
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+  assert(await evaluate('document.activeElement.matches("[data-action=pricing]")'), 'a disappeared chip falls back to the gear button');
+  await evaluate('(() => { const removed = window.__removedPendingChip; if (removed && removed.parent) removed.parent.insertBefore(removed.chip, removed.next); delete window.__removedPendingChip; })()');
+  assert(await evaluate('window.__fixture.statsMode = "unsupported"') === 'unsupported');
+  await refresh();
   await until('document.querySelector(".dss-kpis")?.textContent.includes(window.__fixture.t("pricing.pending"))');
   await layout('unsupported'); await capture('narrow-unsupported');
   await evaluate('window.__fixture.statsMode = "error"'); await refresh();
@@ -424,7 +434,7 @@ try {
   assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'fallback banner exposes diagnostics');
   assert(await evaluate('document.querySelector(".dss-data-status").textContent.includes(window.__fixture.t("source.local"))'));
   await layout('fallback'); await capture('narrow-fallback');
-  report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data, local fallback, pending-chip focusModel and row actions');
+  report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data, local fallback, pending-chip focusModel/fallback and row actions');
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000'); // Catalog phases as of 2026-10-17; usage fixtures remain in September.
   await click('.dss-trigger'); await tab(1);
