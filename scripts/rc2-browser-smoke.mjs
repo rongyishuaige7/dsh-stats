@@ -274,7 +274,7 @@ try {
 		await delay(300);
 	}
 	result.panelText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 1_500) || "";
-	result.summaryCards = await page.evaluate("[...document.querySelectorAll('.dss-cards .dss-card')].map(node => ({ label: node.querySelector('.k')?.textContent, value: node.querySelector('.v')?.textContent }))");
+	result.summaryCards = await page.evaluate("[...document.querySelectorAll('.dss-kpi')].map(node => ({ label: node.querySelector('.dss-kpi-k')?.textContent, value: node.querySelector('.dss-kpi-v')?.textContent }))");
 	await capture("overview");
 	for (const texts of [["开发时间线", "Timeline"], ["用量趋势", "Usage Trends"], ["项目总览", "Overview"]]) {
 		if (!await page.clickText(texts, ".dss-panel button")) throw new Error("stats tab not found: " + texts[1]);

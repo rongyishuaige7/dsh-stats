@@ -1,13 +1,14 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
-const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
+const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
 const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels } = require("./client-overview-model.cjs");
+const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -20,14 +21,6 @@ var TAB_NAMES = ["overview", "timeline", "trends", "balance"];
 // Harness 0.1.7 primitives dropped the size-suffixed icons; Regular takes the same size prop.
 var IconDataOutline16 = primitives.IconDataOutline16 || primitives.IconDataOutlineRegular;
 var IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
-function CostValue({ summary, t }) {
-	var [expanded, setExpanded] = useState(false);
-	var hint = summary?.status === "partial" ? t("pricing.partial") : summary?.status === "unsupported" ? t("pricing.pending") : t("hint.cost");
-	return e("span", null, e("span", { role: "button", tabIndex: 0, title: hint, "aria-label": fmtCostSummary(summary, t) + ": " + hint, "aria-expanded": expanded,
-		onClick: function(ev) { ev.stopPropagation(); setExpanded(!expanded); },
-		onKeyDown: function(ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); setExpanded(!expanded); } }
-	}, fmtCostSummary(summary, t)), expanded ? e("small", { style: { display: "block", fontSize: "12px", fontWeight: "normal" } }, hint) : null);
-}
 function usePref(key, def) {
 	var pair = useState(() => loadPref(key, def));
 	var val = pair[0], setVal = pair[1];
@@ -64,37 +57,6 @@ function StatsTrigger(props) {
 	);
 }
 
-function SummaryCards(props) {
-	var projects = props.projects;
-	var t = props.t;
-	var tot = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0 };
-	var totC = { main: 0, subagent: 0 };
-	projects.forEach(function(p) {
-		addCounts(totC, sessionCounts(p.sessions));
-		tot.turns += p.stats.turns; tot.steps += p.stats.steps;
-		tot.llmMs += p.stats.llmMs; tot.toolMs += p.stats.toolMs;
-		tot.input += p.stats.inputTokens; tot.output += p.stats.outputTokens; tot.cacheRead += p.stats.cacheRead;
-	});
-	var cost = mergeCostSummaries(projects.map(projectCostSummary));
-	var cards = [
-		[t("card.projects"), fmtN(projects.length)],
-		[t("card.sessions"), fmtSessionCounts(totC)],
-		[t("card.turnsSteps"), `${fmtN(tot.turns)} / ${fmtN(tot.steps)}`],
-		[t("card.llm"), fmtDuration(tot.llmMs)],
-		[t("card.tool"), fmtDuration(tot.toolMs)],
-		[t("card.input"), fmtTokens(tot.input)],
-		[t("card.output"), fmtTokens(tot.output)],
-		[t("card.cacheHit"), tot.input > 0 ? fmtPct(Math.round(tot.cacheRead / tot.input * 100)) : "—"],
-		[t("card.cost"), e(CostValue, { summary: cost, t })]
-	];
-	return e("div", { className: "dss-cards" },
-		cards.map((c, i) => e("div", { className: "dss-card", key: i },
-			e("div", { className: "k" }, c[0]),
-			e("div", { className: "v", ...c[0] === t("card.cost") ? { className: "v dss-cost" } : {} }, c[1])
-		))
-	);
-}
-
 function projectColorIndexes(projects) {
 	var indexes = new Map();
 	// Match the host timeline: color slots follow project id order so an
@@ -107,220 +69,6 @@ function projectColorIndex(project, indexes, fallbackIndex) {
 	var index = indexes && indexes.get(project.id);
 	var value = Number.isInteger(index) ? index : Number.isInteger(fallbackIndex) ? fallbackIndex : 0;
 	return ((value % 16) + 16) % 16;
-}
-
-var SESSION_DETAIL_LIMIT = 100;
-var PROJECT_CARD_LIMIT = 50;
-function pageRows(rows, page, size) {
-	rows = Array.isArray(rows) ? rows : [];
-	size = Number.isSafeInteger(size) && size > 0 ? size : PROJECT_CARD_LIMIT;
-	var pageCount = Math.max(1, Math.ceil(rows.length / size));
-	var currentPage = Math.min(Math.max(0, Math.floor(page) || 0), pageCount - 1);
-	return { rows: rows.slice(currentPage * size, (currentPage + 1) * size), currentPage, pageCount, total: rows.length };
-}
-
-function PageControls({ window, onPage, t, name }) {
-	if (window.pageCount <= 1) return null;
-	return e("div", { className: "dss-pages", "data-pages": name },
-		e("button", { type: "button", className: "dss-export", disabled: window.currentPage === 0, onClick: () => onPage(window.currentPage - 1) }, t("w.previousPage")),
-		e("span", { "aria-live": "polite" }, t("w.page").replace("%d", String(window.currentPage + 1)).replace("%d", String(window.pageCount))),
-		e("button", { type: "button", className: "dss-export", disabled: window.currentPage === window.pageCount - 1, onClick: () => onPage(window.currentPage + 1) }, t("w.nextPage"))
-	);
-}
-
-function Legend(props) {
-	var projects = props.projects;
-	var hidden = props.hidden;
-	var onToggle = props.onToggle;
-	var [page, setPage] = useState(0);
-	useEffect(function() { setPage(0); }, [props.filterKey]);
-	var window = pageRows(projects, page, PROJECT_CARD_LIMIT);
-	return e("div", { className: "dss-legend-wrap" }, e("div", { className: "dss-legend" },
-		window.rows.map(function(p, i) {
-			return e("span", {
-				key: p.id, className: "dss-chip" + (hidden[p.id] ? " off" : ""),
-				"data-color": String(projectColorIndex(p, props.colorIndexes, window.currentPage * PROJECT_CARD_LIMIT + i)), onClick: () => onToggle(p.id)
-			},
-				e("span", { className: "sw" }), p.name
-			);
-		})), e(PageControls, { window, onPage: setPage, t: props.t, name: "legend" }));
-}
-
-function sortValue(p, key) {
-	switch (key) {
-		case "input": return p.stats.inputTokens;
-		case "output": return p.stats.outputTokens;
-		case "turns": return p.stats.turns;
-		case "steps": return p.stats.steps;
-		case "tool": return p.stats.toolMs;
-		case "sessions": return p.sessionCount;
-		case "hit": return p.stats.cacheHitPct == null ? -1 : p.stats.cacheHitPct;
-		case "lastActive": return p.lastActiveAt || 0;
-		default: return 0;
-	}
-}
-
-function ProjectsTable(props) {
-	var projects = props.projects;
-	var hidden = props.hidden;
-	var selected = props.selected;
-	var onSelect = props.onSelect;
-	var onOpenSession = props.onOpenSession;
-	var t = props.t;
-	var dayMode = props.dayMode === true; // 按日模式：隐藏"最近活跃"（项目级元数据与单日切片语义冲突）
-	var sortPair = useState({ key: "cost", dir: -1 });
-	var sort = sortPair[0], setSort = sortPair[1];
-	var [sessionPage, setSessionPage] = useState({ id: null, page: 0 });
-	var [projectPage, setProjectPage] = useState(0);
-	var viewport = react.useRef(null);
-	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
-	// A new date or visibility filter is a new list. Keep the current page only
-	// for data refreshes of the same view, not for a changed query.
-	useEffect(function() {
-		setProjectPage(function(page) { return page ? 0 : page; });
-		setSessionPage(function(state) { return state.id === null && state.page === 0 ? state : { id: null, page: 0 }; });
-		if (viewport.current) viewport.current.scrollTop = 0;
-	}, [props.filterKey, hiddenKey]);
-
-	var fallbackColorIndexes = projectColorIndexes(projects);
-	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
-	var sorted = projects.filter((p) => !hidden[p.id]);
-	sorted.sort((a, b) => {
-		if (effSortKey === "cost") return compareProjectCost(a, b) * sort.dir;
-		var va = sortValue(a, effSortKey), vb = sortValue(b, effSortKey);
-		return (va > vb ? 1 : (va < vb ? -1 : 0)) * sort.dir;
-	});
-	var projectWindow = pageRows(sorted, projectPage, PROJECT_CARD_LIMIT);
-	var changeProjectPage = function(page) { setProjectPage(page); if (viewport.current) viewport.current.scrollTop = 0; };
-
-	var SORT_FIELDS = [
-		{ key: "cost", label: t("th.cost") },
-		{ key: "sessions", label: t("card.sessions") },
-		{ key: "input", label: t("w.input") },
-		{ key: "output", label: t("w.output") },
-		{ key: "turns", label: t("w.turns") },
-		{ key: "steps", label: t("w.steps") },
-		{ key: "tool", label: t("w.tool") },
-		{ key: "hit", label: t("w.cacheHit") }
-	];
-	if (!dayMode) SORT_FIELDS.push({ key: "lastActive", label: t("th.lastActive") });
-
-	var toolbar = e("div", { className: "dss-sortbar" },
-		e("span", { className: "dss-sortbar-label" }, t("sort.label")),
-		e("select", {
-			className: "dss-sortbar-select",
-			value: effSortKey,
-				onChange: function(ev) { setSort({ key: ev.target.value, dir: sort.dir }); changeProjectPage(0); }
-		},
-			SORT_FIELDS.map(function(f) { return e("option", { key: f.key, value: f.key }, f.label); })
-		),
-		e("button", {
-			className: "dss-sortbar-dir",
-				onClick: function() { setSort(function(s) { return { key: s.key, dir: -s.dir }; }); changeProjectPage(0); },
-			title: t("sort.toggle")
-		}, sort.dir > 0 ? t("sort.asc") + " ↑" : t("sort.desc") + " ↓")
-	);
-
-	var cards = projectWindow.rows.map(function(p) {
-		var i = projectColorIndex(p, props.colorIndexes, fallbackColorIndexes.get(p.id));
-		var s = p.stats;
-		var isSel = selected === p.id;
-
-		var pm = function(v, l, cls) {
-			return e("div", { className: "dss-pm" + (cls ? " " + cls : "") },
-				e("div", { className: "dss-pm-l" }, l),
-				e("div", { className: "dss-pm-v" }, v)
-			);
-		};
-
-		var detail = null;
-		if (isSel) {
-			var mainSessions = p.sessions.filter(function(sd) { return !sd.subagent; });
-			var subSessions = p.sessions.filter(function(sd) { return sd.subagent; });
-				var sessRow = function(sd) {
-					var modelName = modelNameOnly(sd);
-					var sessionTitle = sd.title || t("w.untitled");
-					var costDetail = sessionCostSummary(sd);
-					var sessionCost = e(CostValue, { summary: costDetail, t });
-					var titleContent = [sessionTitle, sd.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null, sd.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null, sd.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : sd.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null,];
-					return e("div", { className: "dss-sess", key: sd.id, "data-session-id": sd.id },
-					onOpenSession ? e("button", {
-						type: "button",
-						className: "ti dss-sess-title",
-						title: t("openSession") + ": " + sessionTitle,
-						"aria-label": t("openSession") + ": " + sessionTitle,
-						onClick: function(ev) { ev.stopPropagation(); onOpenSession(sd); }
-					}, titleContent) : e("span", { className: "ti", title: sessionTitle }, titleContent),
-					e("span", { className: "me" }, fmtClock(sd.updatedAt)),
-					e("span", { className: "st" }, fmtN(sd.stats.turns) + " " + t("w.turns") + " · " + fmtN(sd.stats.steps) + " " + t("w.steps")),
-					e("span", { className: "st" }, "LLM " + fmtDuration(sd.stats.llmMs)),
-					e("span", { className: "st" }, t("w.tool") + " " + fmtDuration(sd.stats.toolMs)),
-					e("span", { className: "st" }, t("w.cacheHit") + " " + fmtPct(sd.stats.cacheHitPct)),
-					e("span", { className: "st" }, t("w.input") + " " + fmtTokens(sd.stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(sd.stats.outputTokens)),
-					e("span", { className: "st dss-sess-model", title: modelName }, modelName),
-					e("span", { className: "st dss-cost dss-sess-cost", title: fmtCostSummary(costDetail, t) }, sessionCost)
-				);
-			};
-			var sessionWindow = pageRows(mainSessions.concat(subSessions), sessionPage.id === p.id ? sessionPage.page : 0, SESSION_DETAIL_LIMIT);
-			var detailChildren = [];
-			var subgroup = false;
-			sessionWindow.rows.forEach(function(sd) {
-				if (sd.subagent && !subgroup) {
-					subgroup = true;
-					detailChildren.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + subSessions.length + ")"));
-				}
-				detailChildren.push(sessRow(sd));
-			});
-			detail = e("div", { className: "dss-pcard-detail" },
-				e(PageControls, { window: sessionWindow, onPage: page => setSessionPage({ id: p.id, page }), t, name: "sessions" }), detailChildren);
-		}
-
-		var toggleProject = function() { setSessionPage({ id: p.id, page: 0 }); onSelect(p.id); };
-		return e("div", { key: p.id, className: "dss-pcard" + (isSel ? " sel" : ""), "data-color": String(i % 16), "data-project-id": p.id },
-			e("div", {
-				className: "dss-pcard-head",
-				role: "button",
-				tabIndex: 0,
-				"aria-expanded": isSel,
-				onClick: toggleProject,
-				onKeyDown: function(ev) {
-					if (ev.key !== "Enter" && ev.key !== " ") return;
-					ev.preventDefault();
-					toggleProject();
-				}
-			},
-				e("div", { className: "dss-proj" },
-					e("span", { className: "dot" }),
-					e("span", { className: "dss-proj-txt" },
-						e("div", { className: "nm" }, p.name),
-						e("div", { className: "ph" }, p.path)
-					)
-				),
-				e("div", { className: "dss-pcard-metrics" },
-					pm(fmtSessionCounts(sessionCounts(p.sessions)), t("th.sessions")),
-					pm(fmtN(s.turns), t("th.turns")),
-					pm(fmtN(s.steps), t("th.steps")),
-					pm(fmtDuration(s.toolMs), t("th.tool")),
-					pm(fmtDuration(s.ttftAvgMs), t("th.ttft")),
-					pm(fmtTps(s.tps), t("th.tps")),
-					pm(fmtPct(s.cacheHitPct), t("th.cacheHit")),
-					pm(fmtTokens(s.inputTokens), t("th.input")),
-					pm(fmtTokens(s.outputTokens), t("th.output")),
-					pm(e(CostValue, { summary: projectCostSummary(p), t }), t("th.cost"), "cost"),
-					dayMode ? null : pm(fmtClock(p.lastActiveAt), t("th.lastActive"))
-				)
-			),
-			detail
-		);
-	});
-
-	return e("div", { className: "dss-pcards-wrap" },
-		toolbar,
-		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
-			e("div", { className: "dss-pcards" }, cards)
-		),
-		e(PageControls, { window: projectWindow, onPage: changeProjectPage, t, name: "projects" })
-	);
 }
 
 // 槽索引（0-47，每槽 30 分钟）→ HH:MM
@@ -396,24 +144,6 @@ function timelineTipRows(blocks) {
 // All-mode timeline rows are cheap individually but can grow to years. Render
 // one 30-day page at a time, including when browsing the full history.
 var TIMELINE_PAGE_DAYS = 30;
-
-// The project overview shares the all-history timeline's viewport height so both
-// "all" views end at the same visual line instead of using two unrelated caps.
-function timelineAllViewportHeight(days) {
-	var ordered = timelineDisplayDays(days, false);
-	var pageDays = Math.min(ordered.length, TIMELINE_PAGE_DAYS);
-	return pageDays > MAX_VISIBLE_TIMELINE_DAYS ? timelineLayout(pageDays, false).rowMinH * MAX_VISIBLE_TIMELINE_DAYS : null;
-}
-
-// Both tabs start their content block on the same line. Matching the timeline
-// viewport plus its hint/limit/heat controls makes the two panels end together.
-// The 0.5.0 type scale raises the controls block by 4px (the old 90px
-// estimate was measured against the pre-0.5.0 11.5px/10.5px labels).
-var TIMELINE_CONTROLS_HEIGHT = 94;
-
-function timelineOverviewContentHeight(days) {
-	return (timelineAllViewportHeight(days) || 480) + TIMELINE_CONTROLS_HEIGHT;
-}
 
 function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
@@ -577,34 +307,6 @@ function TimelineView(props) {
 	);
 }
 
-// 日期导航器：按日模式（◀ 日期 ▶ + 今天）与全部模式（汇总）
-function DateNavigator(props) {
-	var nav = props.nav, setNav = props.setNav, dates = props.dates, effectiveDate = props.effectiveDate, t = props.t;
-	var mode = nav.mode || "day";
-	var idx = effectiveDate ? dates.indexOf(effectiveDate) : -1;
-
-	var setMode = function(m) { setNav({ mode: m, date: effectiveDate }); };
-	var move = function(delta) {
-		if (idx < 0) return;
-		var ni = idx + delta;
-		if (ni < 0 || ni >= dates.length) return;
-		setNav({ mode: "day", date: dates[ni] });
-	};
-
-	return e("div", { className: "dss-nav" },
-		e("div", { className: "dss-tabs", style: { marginBottom: 0 } },
-			e("button", { className: mode === "day" ? "on" : "", onClick: () => setMode("day") }, t("nav.day")),
-			e("button", { className: mode === "all" ? "on" : "", onClick: () => setMode("all") }, t("nav.all"))
-		),
-		mode === "day" ? e(Fragment, null,
-			e("button", { className: "dss-nav-btn", onClick: () => move(-1), disabled: idx <= 0, title: t("nav.previous") }, "‹"),
-			e("span", { className: "dss-nav-date" }, effectiveDate ? effectiveDate + " " + t("w.dayPrefix") + t("w.weekdays").split(",")[new Date(effectiveDate + "T00:00:00Z").getUTCDay()] : "—"),
-			e("button", { className: "dss-nav-btn", onClick: () => move(1), disabled: idx < 0 || idx >= dates.length - 1, title: t("nav.next") }, "›")
-		) : null,
-		e("span", { className: "dss-nav-note" }, t("hint.cost"))
-	);
-}
-
 function download(filename, content, mime) {
 	var blob = new Blob([content], { type: mime || "application/octet-stream" });
 	var url = URL.createObjectURL(blob);
@@ -749,13 +451,6 @@ function BalanceView(props) {
 	);
 }
 
-function StatsDataStatus(props) {
-	return e(Fragment, null,
-		e(StatusIndicator, props),
-		e(StatusBanner, props)
-	);
-}
-
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
 	var isOpen = !!(open && open.open);
@@ -776,6 +471,7 @@ function StatsPanel(props) {
 	var gearRef = useRef(null);
 	var drawerRef = useRef(null);
 	var drawerOpenerRef = useRef(null);
+	var pendingNonceRef = useRef(0);
 	var [drawer, setDrawer] = useState({ open: false, focusModel: null });
 	var balanceRemote = props.balance;
 	var remoteMountError = props.remoteError;
@@ -794,7 +490,6 @@ function StatsPanel(props) {
 	// 旧版本曾保存 7/30/90 模式；这些模式已从界面移除，统一回退到按日。
 	var navMode = storedNav.mode === "all" ? "all" : "day";
 	var nav = { mode: navMode, date: storedNav.date || null };
-	var [selected, setSelected] = useState(null);
 	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
 	var [refreshTick, setRefreshTick] = useState(0);
 	var [balanceData, setBalanceData] = useState(null);
@@ -806,6 +501,11 @@ function StatsPanel(props) {
 	var openDrawer = function(focusModel, opener) {
 		drawerOpenerRef.current = opener || gearRef.current;
 		setDrawer({ open: true, focusModel: focusModel || null });
+	};
+	var openPricing = function(focus, opener) {
+		if (!focus) { openDrawer(null, opener || gearRef.current); return; }
+		pendingNonceRef.current += 1;
+		openDrawer({ provider: focus.provider, model: focus.model, nonce: pendingNonceRef.current }, opener || gearRef.current);
 	};
 	useEffect(function() { if (isOpen) setFocusedTab(tab); }, [isOpen, tab]);
 	useEffect(function() {
@@ -909,10 +609,6 @@ function StatsPanel(props) {
 		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
 		return data.timeline;
 	}, [data.timeline, effectiveDate]);
-	// Both date modes share one overview content height, so switching between
-	// a single day and all history does not move the panel's bottom edge.
-	var overviewMaxHeight = timelineOverviewContentHeight((data.timeline || {}).days);
-
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
@@ -922,10 +618,29 @@ function StatsPanel(props) {
 	// 按日聚合：hero 总览 / 模型分布随选中日期变化（全部模式复用 globals，避免重复计算）
 	var dateGlobals = useMemo(() => (effectiveDate ? buildGlobals(statProjects) : globals), [effectiveDate, statProjects, globals]);
 
+	// 这些 memo 必须放在早退之前，保证面板关闭时 hooks 数量不变。
+	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
+	var visibleProjects = statProjects.filter(function(project) { return !hidden[project.id]; });
+	var prevDate = previousActiveDate(dates, effectiveDate);
+	var previousSummary = useMemo(function() {
+		if (!prevDate) return null;
+		var previousProjects = applyDate(data.projects, prevDate).filter(function(project) { return hasTokenUsage(project) && !hidden[project.id]; });
+		return overviewTotals(previousProjects).cost;
+	}, [data.projects, prevDate, hiddenKey]);
+	var spans = useMemo(function() {
+		if (!effectiveDate) return null;
+		var day = (data.timeline.days || []).find(function(item) { return item.date === effectiveDate; });
+		return day ? projectDaySpans(day) : new Map();
+	}, [data.timeline, effectiveDate]);
+	var activeDays = useMemo(function() { return activeDayCount(data.timeline, hidden); }, [data.timeline, hiddenKey]);
+
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...(h && typeof h === "object" && !Array.isArray(h) ? h : {}), [id]: !(h && h[id]) }));
-	var visibleProjects = statProjects.filter((p) => !hidden[p.id]);
+	var showAll = function() { setHidden({}); };
+	var totals = overviewTotals(visibleProjects);
+	var shares = costShares(visibleProjects);
+	var pending = pendingFocus(visibleProjects);
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
@@ -1059,23 +774,47 @@ function StatsPanel(props) {
 					"aria-labelledby": "dss-tab-" + tab
 				},
 					tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
-						e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
-					tab === "overview" ? e("div", {
-						className: "dss-overview" + (overviewMaxHeight ? " bounded" : ""),
-						style: overviewMaxHeight ? { "--dss-overview-max-height": overviewMaxHeight + "px" } : null
-					},
-						e(SummaryCards, { projects: visibleProjects, t }),
-						e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
-						visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-							 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-					) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
-					: e(TrendsView, {
-						globals,
-						dateGlobals,
-						selectedDate: effectiveDate,
-						onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
-						t
-					})
+						e(OverviewTools, {
+							nav, setNav, dates, effectiveDate, t,
+							showMode: tab !== "trends",
+							showFilter: tab !== "trends",
+							projects: statProjects, hidden, onToggle: toggle, onShowAll: showAll,
+							colorIndexes, filterKey: effectiveDate
+						}),
+						tab === "overview" ? e(Fragment, null,
+							visibleProjects.length ? e(OverviewKpis, {
+								totals,
+								previous: previousSummary,
+								prevDate,
+								activeDays,
+								dayMode: effectiveDate != null,
+								pending,
+								onPending: openPricing,
+								t
+							}) : null,
+							visibleProjects.length ? e(OverviewStrip, { totals, activeDays, spans, projects: visibleProjects, dayMode: effectiveDate != null, t }) : null,
+							e(ProjectTable, {
+								projects: visibleProjects,
+								totalCount: statProjects.length,
+								hiddenKey,
+								shares,
+								colorIndexes,
+								dayMode: effectiveDate != null,
+								spans,
+								filterKey: effectiveDate,
+								onOpenSession,
+								onOpenPricing: openPricing,
+								onShowAll: showAll,
+								t
+							})
+						) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
+						: e(TrendsView, {
+							globals,
+							dateGlobals,
+							selectedDate: effectiveDate,
+							onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
+							t
+						})
 					)
 				),
 				e(PricingDrawer, {
@@ -1136,7 +875,7 @@ function TrendsView(props) {
 		e("div", { className: "dss-hero-side" },
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.totalCost")),
-				e("div", { className: "dss-hero-v dss-cost" }, e(CostValue, { summary: dg.totalCost, t: props.t }))
+				e("div", { className: "dss-hero-v dss-cost", title: props.t("w.estimatedHint") }, fmtCostSummary(dg.totalCost, props.t))
 			),
 			e("div", { className: "dss-hero-cell" },
 					e("div", { className: "dss-hero-k" }, props.t("trends.mostUsed")),
@@ -1590,7 +1329,7 @@ async function apply(ctx) {
 module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
-	StatsDataStatus, StatusIndicator, StatusBanner, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
+	StatusIndicator, StatusBanner, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, missingModels,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,

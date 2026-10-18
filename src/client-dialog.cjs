@@ -248,4 +248,65 @@ function MenuItem(props) {
 	}, props.children);
 }
 
-module.exports = { FOCUSABLE, focusableElements, trapTab, escapeAction, createLayerStack, LayerContext, useLayer, useDialogFocus, MenuButton, MenuItem };
+function Popover(props) {
+	var label = props.label;
+	var trigger = props.trigger;
+	var action = props.action;
+	var buttonClassName = props.buttonClassName || "dss-tool-btn";
+	var panelClassName = props.panelClassName || "";
+	var openState = react.useState(false);
+	var open = openState[0], setOpen = openState[1];
+	var rootRef = react.useRef(null);
+	var buttonRef = react.useRef(null);
+	var panelRef = react.useRef(null);
+	var closePopover = react.useCallback(function(restoreFocus) {
+		setOpen(false);
+		if (restoreFocus && buttonRef.current) buttonRef.current.focus();
+	}, []);
+	useLayer(open, function() { closePopover(true); });
+	react.useEffect(function() {
+		if (!open) return undefined;
+		var panel = panelRef.current;
+		var autofocus = panel && panel.querySelector('[data-popover-autofocus]');
+		var first = autofocus || (panel ? focusableElements(panel)[0] : null);
+		(panel || buttonRef.current)?.focus();
+		if (first) first.focus();
+		var root = rootRef.current;
+		var owner = root && root.closest(".dss-panel");
+		var onPointerDown = function(event) {
+			if (root && !root.contains(event.target)) closePopover(false);
+		};
+		if (owner) owner.addEventListener("pointerdown", onPointerDown, true);
+		return function() {
+			if (owner) owner.removeEventListener("pointerdown", onPointerDown, true);
+		};
+	}, [open, closePopover]);
+	return e("div", { className: "dss-popover-wrap " + (props.className || ""), ref: rootRef },
+		e("button", {
+			ref: buttonRef,
+			type: "button",
+			className: buttonClassName,
+			"aria-haspopup": "dialog",
+			"aria-expanded": open,
+			"aria-label": label,
+			title: label,
+			"data-action": action,
+			onClick: function() { setOpen(!open); }
+		}, trigger),
+		open ? e("div", {
+			ref: panelRef,
+			className: "dss-popover " + panelClassName,
+			role: "dialog",
+			"aria-label": label,
+			tabIndex: -1,
+			onKeyDown: function(event) {
+				if (event.key !== "Escape") return;
+				event.preventDefault();
+				event.stopPropagation();
+				closePopover(true);
+			}
+		}, props.children) : null
+	);
+}
+
+module.exports = { FOCUSABLE, focusableElements, trapTab, escapeAction, createLayerStack, LayerContext, useLayer, useDialogFocus, MenuButton, MenuItem, Popover };

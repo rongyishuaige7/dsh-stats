@@ -3,7 +3,7 @@ import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { StatsDataStatus, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate, STATS_REMOTE_CONTRIBUTION } = require('../src/client.cjs').__test;
+const { StatusIndicator, StatusBanner, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate, STATS_REMOTE_CONTRIBUTION } = require('../src/client.cjs').__test;
 
 test('every strict codec serves both Harness 0.1.5 schema and 0.1.7 create() contracts', () => {
 	const faces = [TYPERT.invocations, TYPERT_REMOTE.descriptors, STATS_REMOTE_CONTRIBUTION.descriptors];
@@ -76,12 +76,15 @@ test('shared RPC contracts reject invalid status, URLs, and unknown fields in ev
 
 test('status band preserves data diagnostics without adding permanent price badges', () => {
 	const projects = [{ sessions: [{ stats: {}, cost: { status: 'partial', totals: [{ currency: 'CNY', amount: 1, exactAmount: 0, estimatedAmount: 1 }], unpricedTokens: 400, unknownRows: 1 } }] }];
-	const html = renderToStaticMarkup(React.createElement(StatsDataStatus, { state: { kind: 'stale', at: 1000, error: 'Connection lost' }, remote: true, projects, t: key => key }));
-	for (const text of ['source.host', 'status.stale', 'source.stale', 'source.details', 'Connection lost']) expect(html).toContain(text);
-	expect(html).not.toContain('pricing.partial');
-	expect(html).not.toContain('pricing.unpriced');
-	expect(html).toContain('aria-live="polite"');
-	expect(html).toContain('role="status"');
+	const state = { kind: 'stale', at: 1000, error: 'Connection lost' };
+	const indicator = renderToStaticMarkup(React.createElement(StatusIndicator, { state, remote: true, t: key => key }));
+	for (const text of ['source.host', 'status.stale', 'aria-live="polite"']) expect(indicator).toContain(text);
+	expect(indicator).not.toContain('pricing.partial');
+	expect(indicator).not.toContain('pricing.unpriced');
+	const banner = renderToStaticMarkup(React.createElement(StatusBanner, { state, remote: true, t: key => key }));
+	for (const text of ['source.stale', 'source.details', 'Connection lost', 'role="status"']) expect(banner).toContain(text);
+	expect(banner).not.toContain('pricing.partial');
+	expect(banner).not.toContain('pricing.unpriced');
 });
 
 test('account RPC refresh failure labels retained successful balances as stale', () => {

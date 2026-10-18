@@ -156,7 +156,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-balance-head','.dss-balance-account','.dss-hero','.dss-card'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-strip','.dss-ptable','.dss-balance-head','.dss-balance-account','.dss-hero'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -267,7 +267,7 @@ try {
   await press('ArrowLeft');
   assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview');
   await press('Enter');
-  await until('document.querySelector(".dss-overview")');
+  await until('document.querySelector(".dss-kpis")');
   await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; if (!nodes.length) return false; nodes[nodes.length - 1].focus(); return true; })()`);
   await press('Tab');
   assert(await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[0]; })()`), 'Tab wraps from the last focusable to the first');
@@ -299,12 +299,12 @@ try {
   report.checks.push('dialog semantics: focus starts on the current tab, Tab/Shift+Tab loop, arrows move focus only, Enter activates, export-menu and panel Escape order, IME-safe Escape restores focus');
   for (const mode of ['stats=error', 'hold=1']) {
     await navigate('/?' + mode + '&lang=zh'); await click('.dss-trigger');
-    await until('document.querySelector(".dss-cards")');
+    await until('document.querySelector(".dss-kpis")');
     if (mode === 'stats=error') await until('document.querySelector(".dss-data-status.fallback")');
-    const before = await evaluate('document.querySelector(".dss-cards").innerText');
+    const before = await evaluate('document.querySelector(".dss-kpis").innerText');
     await evaluate('window.__fixture.bumpSessions(1000000); window.__fixture.bumpWorkspaces()');
-    await until('document.querySelector(".dss-cards").innerText !== ' + JSON.stringify(before));
-    await until('[...document.querySelectorAll(".dss-proj .nm")].some(node => node.textContent === "Fixture workspace updated")');
+    await until('document.querySelector(".dss-kpis").innerText !== ' + JSON.stringify(before));
+    await until('[...document.querySelectorAll("[data-project-id] .dss-pname")].some(node => node.textContent === "Fixture workspace updated")');
     if (mode === 'hold=1') {
       await until('typeof window.__fixture.releaseStats === "function"');
       await evaluate('window.__fixture.releaseStats()');
@@ -344,9 +344,9 @@ try {
     for (const [index, view] of [[1,'overview'],[2,'timeline'],[3,'trends'],[4,'balance']]) {
       await tab(index); await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && ['overview', 'trends'].includes(view)) {
-        await evaluate('document.querySelector(".dss-overlay").scrollTop = 10000');
+        await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
         await capture(name + '-' + view + '-bottom');
-        await evaluate('document.querySelector(".dss-overlay").scrollTop = 0');
+        await evaluate('document.querySelector(".dss-body").scrollTop = 0');
       }
     }
     await evaluate(`(() => { const select=document.querySelector('.dss-provider-picker select'); select.value='minimax-coding'; select.dispatchEvent(new Event('change',{bubbles:true})); })()`);
@@ -391,11 +391,24 @@ try {
   await until('document.querySelector(".dss-status-banner.partial")');
   assert(await evaluate('!document.querySelector("[data-action=retry]")'), 'partial banner has no retry');
   assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'partial banner exposes diagnostics');
-  await until('document.querySelector(".dss-cards")?.textContent.includes("*")');
-  await evaluate(`document.querySelector('.dss-cards [role=button][aria-label*="unpriced"]').click()`);
-  await until('document.querySelector(".dss-cards [aria-expanded=true]")'); await layout('partial'); await capture('narrow-partial');
+  await until('document.querySelector(".dss-kpis")?.textContent.includes("*")');
+  await click('[data-action=pricing-pending]');
+  await until('document.querySelector(".dss-drawer")');
+  await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
+  assert.equal(await evaluate('document.querySelector("[data-action=pricing-pending]").getAttribute("data-action")'), 'pricing-pending');
+  await press('Escape');
+  await until('!document.querySelector(".dss-drawer")');
+  assert(await evaluate('document.activeElement.getAttribute("data-action") === "pricing-pending"'), 'pending focus returns to the chip');
+  assert(await evaluate('!!document.querySelector(".dss-prow [data-action=pricing-pending]")'), 'a row exposes its own pending chip');
+  const rowExpandedBefore = await evaluate('document.querySelector(".dss-prow [data-action=pricing-pending]").closest("tr").getAttribute("aria-expanded")');
+  await click('.dss-prow [data-action=pricing-pending]');
+  await until('document.querySelector(".dss-drawer")');
+  const rowExpandedAfter = await evaluate('document.querySelector(".dss-prow [data-action=pricing-pending]").closest("tr").getAttribute("aria-expanded")');
+  assert.equal(rowExpandedAfter, rowExpandedBefore, 'row chip must not expand its row');
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+  await layout('partial'); await capture('narrow-partial');
   await evaluate('window.__fixture.statsMode = "unsupported"'); await refresh();
-  await until('document.querySelector(".dss-cards")?.textContent.includes(window.__fixture.t("pricing.pending"))');
+  await until('document.querySelector(".dss-kpis")?.textContent.includes(window.__fixture.t("pricing.pending"))');
   await layout('unsupported'); await capture('narrow-unsupported');
   await evaluate('window.__fixture.statsMode = "error"'); await refresh();
   await until('document.querySelector(".dss-data-status.stale")');
@@ -411,7 +424,7 @@ try {
   assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'fallback banner exposes diagnostics');
   assert(await evaluate('document.querySelector(".dss-data-status").textContent.includes(window.__fixture.t("source.local"))'));
   await layout('fallback'); await capture('narrow-fallback');
-  report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data and local fallback');
+  report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data, local fallback, pending-chip focusModel and row actions');
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000'); // Catalog phases as of 2026-10-17; usage fixtures remain in September.
   await click('.dss-trigger'); await tab(1);
@@ -483,11 +496,11 @@ try {
     assert.equal(Math.round(drawerBox.width), Math.round(Math.min(460, drawerBox.panelWidth)), 'drawer width at ' + width + 'px');
     assert(Math.abs(drawerBox.right - drawerBox.panelRight) <= 1, 'drawer is flush with the panel right edge at ' + width + 'px');
     if (width === 320 || width === 641) {
-      await evaluate('document.querySelector(".dss-pricing").scrollIntoView(); document.querySelector(".dss-overlay").scrollTop = 0');
+      await evaluate('document.querySelector(".dss-pricing").scrollIntoView(); document.querySelector(".dss-body").scrollTop = 0');
       await capture('prices-' + width);
     }
     if (width === 1440) {
-      await evaluate('document.querySelector(".dss-overlay").scrollTop = 0; document.querySelector(".dss-drawer-body").scrollTop = 0');
+      await evaluate('document.querySelector(".dss-body").scrollTop = 0; document.querySelector(".dss-drawer-body").scrollTop = 0');
       await capture('desktop-pricing-drawer');
     }
   }
@@ -536,13 +549,37 @@ try {
   await until('document.querySelector(".dss-balance-status.stale")');
   await layout('dark-stale-balance'); await capture('narrow-dark-stale-balance');
   report.checks.push('dark-theme stale account state');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?theme=dark&lang=zh'); await click('.dss-trigger'); await tab(1);
+  await until('document.querySelector(".dss-kpis")');
+  await layout('dark-overview'); await capture('dark-overview');
+  await navigate('/?stats=estimated&lang=zh');
+  await click('.dss-trigger'); await tab(1);
+  await until('document.querySelector(".dss-kpis")');
+  const fixtureDates = await evaluate('window.__fixture.data.estimated.timeline.days.map(day => day.date).sort()');
+  assert(fixtureDates.length >= 2, 'fixture needs at least two active days');
+  const previousFixtureDate = fixtureDates[fixtureDates.length - 2];
+  const deltaText = await evaluate('document.querySelector(".dss-kpi-delta")?.textContent || ""');
+  assert(deltaText.includes(previousFixtureDate.slice(5)), 'day view compares against the previous active day: ' + deltaText);
+  while (!(await evaluate('document.querySelector("[data-action=date-prev]").disabled'))) {
+    const currentLabel = await evaluate('document.querySelector(".dss-date-label").textContent');
+    await click('[data-action=date-prev]');
+    await until('document.querySelector(".dss-date-label").textContent !== ' + JSON.stringify(currentLabel));
+  }
+  assert(await evaluate('!document.querySelector(".dss-kpi-delta")'), 'first active day has no delta');
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-kpis")');
+  const activeText = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-s")?.textContent || ""');
+  const activeDaysLabel = await evaluate('window.__fixture.t("kpi.activeDays").replace("%d", ' + JSON.stringify(String(fixtureDates.length)) + ')');
+  assert(activeText.includes(activeDaysLabel), 'all mode counts active days: ' + activeText);
+  report.checks.push('day-over-day compares the previous active day, first day omits delta, all mode counts active days');
   await navigate('/?stats=large&lang=zh');
   await focus('.dss-trigger');
   await click('.dss-trigger'); await tab(1);
   await until('document.querySelector(".dss-data-status.exact")');
-  await click('.dss-nav .dss-tabs button:nth-child(2)');
-  await until('document.querySelectorAll(".dss-pcard").length === 50');
-  const summaryBeforePaging = await evaluate('document.querySelector(".dss-cards").innerText');
+  await click('[data-action=mode-all]');
+  await until('document.querySelectorAll(".dss-prow").length === 50');
+  const summaryBeforePaging = await evaluate('document.querySelector(".dss-kpis").innerText');
   async function collectPages(scope, rowSelector, readRow) {
     const found = [];
     for (;;) {
@@ -555,24 +592,124 @@ try {
     assert.equal(new Set(found).size, found.length, scope + ' duplicated rows');
     return found;
   }
-  const projectIds = await collectPages('projects', '.dss-pcard', 'node.dataset.projectId');
+  async function openFilter() {
+    await click('[data-action=filter]');
+    await until('document.querySelector(".dss-filter-item")');
+  }
+  async function closeFilter() {
+    await press('Escape');
+    await until('!document.querySelector(".dss-filter-item")');
+  }
+  async function openProject(id) {
+    for (;;) {
+      if (await evaluate(`!!document.querySelector('[data-project-id="${id}"]')`)) {
+        await click(`[data-project-id="${id}"] [data-action=expand]`);
+        return;
+      }
+      const next = await evaluate('document.querySelector("[data-pages=projects] button:last-child")');
+      if (!next || await evaluate('document.querySelector("[data-pages=projects] button:last-child").disabled')) throw new Error('project not found: ' + id);
+      const before = await evaluate('document.querySelector("[data-pages=projects] span")?.textContent || ""');
+      await click('[data-pages=projects] button:last-child');
+      await until('document.querySelector("[data-pages=projects] span")?.textContent !== ' + JSON.stringify(before));
+    }
+  }
+
+  const scrollables = await evaluate(`(() => {
+    const panel = document.querySelector('.dss-panel');
+    return [...panel.querySelectorAll('*')].filter(node => {
+      const style = getComputedStyle(node);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    }).map(node => String(node.className || node.tagName));
+  })()`);
+  assert.deepEqual(scrollables, ['dss-body'], 'only the body may scroll: ' + JSON.stringify(scrollables));
+  const smallFonts = await evaluate(`(() => {
+    const bad = [];
+    for (const node of document.querySelectorAll('.dss-overlay *')) {
+      if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
+      const size = parseFloat(getComputedStyle(node).fontSize);
+      if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
+    }
+    return bad.slice(0, 10);
+  })()`);
+  assert.deepEqual(smallFonts, [], 'all direct text must be >= 11px: ' + JSON.stringify(smallFonts));
+  await evaluate('document.querySelector(".dss-body").scrollTop = 400');
+  await delay(80);
+  const sticky = await evaluate(`(() => {
+    const body = document.querySelector('.dss-body').getBoundingClientRect();
+    const th = document.querySelector('.dss-ptable thead th').getBoundingClientRect();
+    return { bodyTop: body.top, thTop: th.top, scrollTop: document.querySelector('.dss-body').scrollTop };
+  })()`);
+  assert(Math.abs(sticky.thTop - sticky.bodyTop) <= 1, 'thead sticks to the body top: ' + JSON.stringify(sticky));
+  await capture('overview-sticky');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 0');
+  report.checks.push('single scroll container, >=11px text floor and sticky project header');
+
+  const projectIds = await collectPages('projects', '.dss-prow', 'node.dataset.projectId');
   assert.equal(projectIds.length, 120, 'all projects reachable');
-  // Sorting must return to page one; legend paging must not alter project data.
-  await click('.dss-sortbar-dir'); await click('.dss-sortbar-dir');
+  await click('th[data-sort-key=cost] button'); await click('th[data-sort-key=cost] button');
   assert(await evaluate('document.querySelector("[data-pages=projects] button").disabled'));
   await click('[data-pages=projects] button:last-child');
   assert(!(await evaluate('document.querySelector("[data-pages=projects] button").disabled')));
-  const legendNames = await collectPages('legend', '.dss-chip', 'node.textContent');
-  assert.equal(legendNames.length, 120, 'all legend filters reachable');
-  // A date filter is a new query: both the project and legend pages restart.
-  await click('.dss-nav .dss-tabs button:nth-child(1)');
+  await openFilter();
+  const legendIds = await collectPages('legend', '.dss-filter-item', 'node.dataset.projectId');
+  assert.equal(legendIds.length, 120, 'all filter items reachable');
+  await closeFilter();
+  await click('[data-action=mode-day]');
   await until('document.querySelector("[data-pages=projects] button").disabled');
+  await openFilter();
   await until('document.querySelector("[data-pages=legend] button").disabled');
-  await click('.dss-nav .dss-tabs button:nth-child(2)');
+  await closeFilter();
+  await click('[data-action=mode-all]');
   await until('document.querySelector("[data-pages=projects] button").disabled');
+  await openFilter();
   await until('document.querySelector("[data-pages=legend] button").disabled');
-  assert.equal(await evaluate('document.querySelector(".dss-cards").innerText'), summaryBeforePaging, 'paging must not change totals');
-  await click('[data-project-id="large-0"] .dss-pcard-head');
+  await closeFilter();
+  assert.equal(await evaluate('document.querySelector(".dss-kpis").innerText'), summaryBeforePaging, 'paging must not change totals');
+
+  const firstProjectId = await evaluate('document.querySelector(".dss-prow")?.dataset.projectId');
+  const kpiBeforeHide = await evaluate('document.querySelector(".dss-kpis").innerText');
+  const stripBeforeHide = await evaluate('document.querySelector(".dss-strip").innerText');
+  await openFilter();
+  await click(`.dss-filter-item[data-project-id="${firstProjectId}"] input`);
+  await closeFilter();
+  assert(await evaluate('document.querySelector(".dss-filter-badge")?.textContent.includes("1")'), 'hidden badge shows one');
+  assert(await evaluate(`!document.querySelector('[data-project-id="${firstProjectId}"]')`), 'hidden project leaves the table');
+  assert.notEqual(await evaluate('document.querySelector(".dss-kpis").innerText'), kpiBeforeHide, 'hidden project changes KPIs');
+  assert.notEqual(await evaluate('document.querySelector(".dss-strip").innerText'), stripBeforeHide, 'hidden project changes the strip');
+  await click('[data-action=close]');
+  await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger');
+  await until('document.querySelector(".dss-panel")');
+  assert(await evaluate('document.querySelector(".dss-filter-badge")?.textContent.includes("1")'), 'hidden state survives reopening');
+  assert(await evaluate(`!document.querySelector('[data-project-id="${firstProjectId}"]')`), 'hidden project stays hidden');
+  await openFilter();
+  await click('[data-action=filter-show-all]');
+  await closeFilter();
+  assert(await evaluate('!document.querySelector(".dss-filter-badge")'), 'show-all clears the badge');
+  assert(await evaluate(`!!document.querySelector('[data-project-id="${firstProjectId}"]')`), 'show-all restores the project');
+  await openFilter();
+  await click('[data-pages=legend] button:last-child');
+  await evaluate(`(() => { const input = document.querySelector('.dss-filter-search'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'large-1'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await delay(120);
+  assert(await evaluate("(() => { const button = document.querySelector('[data-pages=legend] button'); return !button || button.disabled; })()"), 'filter search returns to page one');
+  await evaluate(`(() => { const input = document.querySelector('.dss-filter-search'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await closeFilter();
+  report.checks.push('filter hide/show, persistence, show-all, KPI/strip sync and search page reset');
+
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-kpis")');
+  await focus('th[data-sort-key=name] button');
+  await press('Enter');
+  assert.equal(await evaluate('document.querySelector("th[data-sort-key=name]").getAttribute("aria-sort")'), 'ascending');
+  await openProject('large-0');
+  assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
+  await focus('[data-project-id=large-0] [data-action=expand]');
+  await press('Enter');
+  assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'false');
+  await press('Enter');
+  assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
+  report.checks.push('table keyboard sort and expand keep aria-sort/aria-expanded in sync');
+
   const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
   assert.equal(sessionIds.length, 205, 'main and subagent sessions all reachable');
   assert(await evaluate('document.querySelector(".dss-group").textContent.includes("95")'));
@@ -594,11 +731,10 @@ try {
   assert.equal(new Set(datesSeen).size, 75, 'history pages do not overlap');
   await click('.dss-timeline-limit button:last-child');
   assert.equal(await evaluate('document.querySelector(".dss-day").id'), recentDay, 'recent button returns to newest page');
-  // Switching between all history and one day starts the new view at page one.
   await click('.dss-timeline-limit button:nth-of-type(2)');
-  await click('.dss-nav .dss-tabs button:nth-child(1)');
+  await click('[data-action=mode-day]');
   await until('!document.querySelector(".dss-timeline-limit")');
-  await click('.dss-nav .dss-tabs button:nth-child(2)');
+  await click('[data-action=mode-all]');
   await until('document.querySelector(".dss-timeline-limit")');
   await until('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled');
   assert(await evaluate('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled'));
@@ -606,31 +742,27 @@ try {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await navigate('/?stats=large&lang=' + lang); await click('.dss-trigger');
     await tab(1); await layout('large-pages-' + width);
-    await click('[data-project-id="large-0"] .dss-pcard-head');
+    await openProject('large-0');
     await layout('large-sessions-' + width);
-    await evaluate('document.querySelector(".dss-pcards-wrap").scrollIntoView({ block: "start" })');
+    await evaluate('document.querySelector(".dss-ptable").scrollIntoView({ block: "start" })');
     await capture('large-pages-' + width);
     if (width === 1440) {
-      await click('.dss-nav .dss-tabs button:nth-child(2)');
-      await until('document.querySelector(".dss-overview.bounded")');
+      await click('[data-action=mode-all]');
+      await until('document.querySelector(".dss-kpis")');
       const overviewPanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
-      const projectListHeight = Math.round(await evaluate('document.querySelector(".dss-pcards-viewport").getBoundingClientRect().height'));
-      await click('.dss-nav .dss-tabs button:nth-child(1)');
-      await until('document.querySelector(".dss-overview.bounded")');
+      await click('[data-action=mode-day]');
+      await until('document.querySelector(".dss-kpis")');
       const dayPanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
-      const dayListHeight = Math.round(await evaluate('document.querySelector(".dss-pcards-viewport").getBoundingClientRect().height'));
       assert.equal(dayPanelHeight, overviewPanelHeight, 'day and all overview panels end on the same line');
-      assert(dayListHeight > 0, 'day project list remains visible');
-      await click('.dss-nav .dss-tabs button:nth-child(2)');
-      await until('document.querySelector(".dss-overview.bounded")');
+      await click('[data-action=mode-all]');
+      await until('document.querySelector(".dss-kpis")');
       await tab(2); await until('document.querySelector(".dss-timeline-viewport")');
       const timelinePanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
       assert.equal(overviewPanelHeight, timelinePanelHeight, 'overview and timeline panels end on the same line');
-      assert(projectListHeight > 0, 'project list remains visible inside the aligned panel');
       await tab(1);
     }
   }
-  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
