@@ -105,8 +105,7 @@ function OverviewKpis(props) {
 			e("div", { className: "dss-tok-legend" },
 				e("span", null, e("i", { className: "dot cache" }), t("kpi.hit") + " " + (hitPct == null ? "—" : hitPct + "%")),
 				e("span", null, e("i", { className: "dot unc" }), t("kpi.uncached")),
-				e("span", null, e("i", { className: "dot out" }), t("w.output") + " " + fmtTokens(output)),
-				e("span", null, t("w.input") + " " + fmtTokens(input))
+				e("span", null, e("i", { className: "dot out" }), t("w.output") + " " + fmtTokens(output))
 			)
 		),
 		e("div", { className: "dss-kpi" },

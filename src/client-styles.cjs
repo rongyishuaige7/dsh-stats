@@ -228,7 +228,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-tools>.dss-popover-wrap{margin-left:auto}
 .dss-filter-badge{font-size:var(--dss-fs-xs);color:var(--dss-warn);background:var(--dss-warn-soft);border-radius:999px;padding:1px 6px}
 .dss-kpis{display:grid;grid-template-columns:1.45fr repeat(3,minmax(0,1fr));border:1px solid var(--dss-line);border-radius:14px;margin-bottom:10px;font-variant-numeric:tabular-nums}
-.dss-kpi{padding:14px 18px 15px;display:flex;flex-direction:column;gap:6px;min-width:0;position:relative}
+.dss-kpi{padding:10px 16px 11px;display:flex;flex-direction:column;gap:4px;min-width:0;position:relative}
 .dss-kpi+.dss-kpi{border-left:1px solid var(--dss-line-soft)}
 .dss-kpi.cost{background:var(--dss-layer);border-radius:13px 0 0 13px}
 .dss-kpi-k{font-size:var(--dss-fs-sm);color:var(--dss-text-2);display:flex;align-items:center;gap:4px}
@@ -368,7 +368,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 @container dss-panel (max-width:420px){
   .dss-tools{gap:6px}
   .dss-date-label{font-size:var(--dss-fs-sm)}
-  .dss-kpi{padding:11px 12px}
+  .dss-kpi{padding:10px 12px}
   .dss-kpi.cost .dss-kpi-v{font-size:var(--dss-fs-xl)}
 }
 

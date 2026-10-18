@@ -684,11 +684,11 @@ try {
   })()`);
   assert.deepEqual(smallFonts, [], 'all direct text must be >= 11px: ' + JSON.stringify(smallFonts));
   const legend = await evaluate(`[...document.querySelectorAll('.dss-tok-legend span')].map(node => ({ text: node.textContent, dots: node.querySelectorAll('.dot').length }))`);
-  assert.equal(legend.length, 4, 'token legend keeps four items');
+  assert.equal(legend.length, 3, 'token legend keeps three items');
   assert(legend[0].text.startsWith('命中') && legend[0].dots === 1, 'cache legend dot belongs to hit: ' + JSON.stringify(legend));
   assert(legend[1].text === '未命中' && legend[1].dots === 1, 'uncached legend has a dot and no amount: ' + JSON.stringify(legend));
   assert(legend[2].text.startsWith('输出') && legend[2].dots === 1, 'output legend has a dot: ' + JSON.stringify(legend));
-  assert(legend[3].text.startsWith('输入') && legend[3].dots === 0, 'input legend has no dot: ' + JSON.stringify(legend));
+  assert(!legend.some(item => item.text.startsWith('输入')), 'input total is not repeated in the token legend: ' + JSON.stringify(legend));
   const tokenAria = await evaluate('document.querySelector(".dss-tokbar").getAttribute("aria-label")');
   assert(tokenAria.startsWith('缓存命中输入 ') && tokenAria.includes('，未命中输入 ') && tokenAria.includes('，输出 '), 'token bar aria-label names cache/uncached/output: ' + tokenAria);
   assert(await evaluate('!document.querySelector(".dss-strip").hasAttribute("aria-label")'), 'strip must not carry an aria-label');

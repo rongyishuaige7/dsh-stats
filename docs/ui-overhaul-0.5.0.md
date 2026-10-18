@@ -81,7 +81,7 @@
 | 格 | 主值 | 副行 |
 | --- | --- | --- |
 | 预估费用 | `fmtCostSummary(mergeCostSummaries(visible.map(projectCostSummary)))` | 按日模式："较 MM-DD ↑12%"，比较对象是上一个活跃日（见 D9）；全部模式："N 个活跃日 · 日均 ¥X"，日均金额沿用总额的状态标记（总额为 `partial` 时同样带 `*`）。合并后的 summary 中 `unpricedTokens > 0` 时，追加"另有 X Token 待计价"chip，点击打开价格抽屉 |
-| Token | 输入 + 输出 | 三段比例条：缓存命中 / 未命中输入（含 cacheWrite）/ 输出；图例："输入 X · 命中 Y% · 输出 Z" |
+| Token | 输入 + 输出 | 三段比例条：缓存命中 / 未命中输入（含 cacheWrite）/ 输出；图例："命中 Y% · 未命中 · 输出 Z"（不再单列输入总量） |
 | 会话 | 主对话数 | "另有 N 个子对话"（N 为 0 时不显示） |
 | LLM 时长 | `Σ llmMs` | "工具 X" |
 
@@ -567,7 +567,7 @@ smoke 改动：
 | 卡片：轮/步 | 指标条"轮/步" |
 | 卡片：LLM 时长 | KPI"LLM 时长" |
 | 卡片：工具时长 | KPI"LLM 时长"副行 |
-| 卡片：输入 tok / 输出 tok | KPI"Token"图例 |
+| 卡片：输入 tok / 输出 tok | KPI"Token"图例（输出；输入总量不再单列） |
 | 卡片：平均缓存命中 | KPI"Token"图例 |
 | 卡片：预估费用 | KPI"预估费用" |
 | 项目卡：会话 | 表格"会话"列 |
