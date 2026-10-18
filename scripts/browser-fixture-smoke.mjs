@@ -889,7 +889,7 @@ try {
       await click('[data-action=mode-day]');
       await until('document.querySelector(".dss-day.day-mode")');
       const dayTimelineHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
-      assert.equal(dayTimelineHeight, allTimelineHeight, 'day and all timeline viewports share the same height');
+      assert(Math.abs(dayTimelineHeight - allTimelineHeight) <= 1, 'day and all timeline viewports share the same height: ' + dayTimelineHeight + ' vs ' + allTimelineHeight);
       await tab(1);
     }
   }

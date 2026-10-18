@@ -274,7 +274,7 @@ function TimelineView(props) {
 						);
 					});
 					return e("div", { className: "dss-day day-mode", id: "dss-day-" + d.date, key: d.date, style: { minHeight: dayRowMinH + "px" } },
-						e("div", { className: "dss-day-lanes", style: { maxHeight: layout.laneViewportH + "px" } }, lanes),
+						e("div", { className: "dss-day-lanes", style: { maxHeight: dayMode ? Math.max(72, dayViewportH - 16) + "px" : layout.laneViewportH + "px" } }, lanes),
 						rightCol
 					);
 				}
