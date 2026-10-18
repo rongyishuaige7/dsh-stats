@@ -365,8 +365,17 @@ try {
   // Sorting must return to page one; legend paging must not alter project data.
   await click('.dss-sortbar-dir'); await click('.dss-sortbar-dir');
   assert(await evaluate('document.querySelector("[data-pages=projects] button").disabled'));
+  await click('[data-pages=projects] button:last-child');
+  assert(!(await evaluate('document.querySelector("[data-pages=projects] button").disabled')));
   const legendNames = await collectPages('legend', '.dss-chip', 'node.textContent');
   assert.equal(legendNames.length, 120, 'all legend filters reachable');
+  // A date filter is a new query: both the project and legend pages restart.
+  await click('.dss-nav .dss-tabs button:nth-child(1)');
+  await until('document.querySelector("[data-pages=projects] button").disabled');
+  await until('document.querySelector("[data-pages=legend] button").disabled');
+  await click('.dss-nav .dss-tabs button:nth-child(2)');
+  await until('document.querySelector("[data-pages=projects] button").disabled');
+  await until('document.querySelector("[data-pages=legend] button").disabled');
   assert.equal(await evaluate('document.querySelector(".dss-cards").innerText'), summaryBeforePaging, 'paging must not change totals');
   await click('[data-project-id="large-0"] .dss-pcard-head');
   const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
@@ -388,6 +397,14 @@ try {
   assert.equal(new Set(datesSeen).size, 75, 'history pages do not overlap');
   await click('.dss-timeline-limit button:last-child');
   assert.equal(await evaluate('document.querySelector(".dss-day").id'), recentDay, 'recent button returns to newest page');
+  // Switching between all history and one day starts the new view at page one.
+  await click('.dss-timeline-limit button:nth-of-type(2)');
+  await click('.dss-nav .dss-tabs button:nth-child(1)');
+  await until('!document.querySelector(".dss-timeline-limit")');
+  await click('.dss-nav .dss-tabs button:nth-child(2)');
+  await until('document.querySelector(".dss-timeline-limit")');
+  await until('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled');
+  assert(await evaluate('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled'));
   for (const [width, lang] of [[320,'zh'], [641,'en'], [1440,'en']]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await navigate('/?stats=large&lang=' + lang); await click('.dss-trigger');
@@ -397,7 +414,7 @@ try {
     await evaluate('document.querySelector(".dss-pcards-wrap").scrollIntoView({ block: "start" })');
     await capture('large-pages-' + width);
   }
-  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, sort reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, sort/date reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

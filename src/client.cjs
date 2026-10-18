@@ -124,6 +124,7 @@ function Legend(props) {
 	var hidden = props.hidden;
 	var onToggle = props.onToggle;
 	var [page, setPage] = useState(0);
+	useEffect(function() { setPage(0); }, [props.filterKey]);
 	var window = pageRows(projects, page, PROJECT_CARD_LIMIT);
 	return e("div", null, e("div", { className: "dss-legend" },
 		window.rows.map(function(p, i) {
@@ -180,6 +181,14 @@ function ProjectsTable(props) {
 	var [sessionPage, setSessionPage] = useState({ id: null, page: 0 });
 	var [projectPage, setProjectPage] = useState(0);
 	var viewport = react.useRef(null);
+	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
+	// A new date or visibility filter is a new list. Keep the current page only
+	// for data refreshes of the same view, not for a changed query.
+	useEffect(function() {
+		setProjectPage(function(page) { return page ? 0 : page; });
+		setSessionPage(function(state) { return state.id === null && state.page === 0 ? state : { id: null, page: 0 }; });
+		if (viewport.current) viewport.current.scrollTop = 0;
+	}, [props.filterKey, hiddenKey]);
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -408,6 +417,9 @@ function TimelineView(props) {
 	var tt = props.tt;
 	var dayMode = props.dayMode === true;
 	var [page, setPage] = useState(0);
+	// Switching between all-history and a single day is a new view; go back to
+	// the newest page instead of restoring a page index from the other view.
+	useEffect(function() { setPage(function(page) { return page ? 0 : page; }); }, [props.filterKey]);
 
 	var days = timeline.days || [];
 	var allDisplayDays = timelineDisplayDays(days, dayMode);
@@ -442,7 +454,7 @@ function TimelineView(props) {
 				className: "dss-export",
 				disabled: currentPage === 0,
 				onClick: () => setPage(0)
-				}, tt("hint.timeline.showRecent").replace("%d", String(TIMELINE_PAGE_DAYS)))
+				}, tt("hint.timeline.showRecent"))
 		) : null,
 		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
 		displayDays.length > 1 ? e("div", { className: "dss-heat" },
@@ -943,10 +955,10 @@ function StatsPanel(props) {
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 				tab === "overview" ? e(Fragment, null,
 					e(SummaryCards, { projects: visibleProjects, t }),
-					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t }),
+					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
-				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, dayMode: effectiveDate != null, tt: t })
+						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, {
 					globals,
 					dateGlobals,

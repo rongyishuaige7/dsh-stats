@@ -138,7 +138,7 @@ in six independently verified delivery slices:
   envelopes and disk wrappers, including escaped and multibyte content.
 - `5b57e5e`: projects/legend mount at most 50 rows, session details 100 and
   timeline pages 30 days. Every row remains reachable, summaries/export keep
-  the full data, and sorting/recent navigation resets the relevant page.
+  the full data, and sorting, date-filter or recent navigation resets the relevant page.
 - `ad64858`: closed panels and panels with host data no longer render for
   unrelated browser session/workspace snapshots. Loading/error fallback stays
   reactive, including the transition to the first host snapshot.
@@ -193,12 +193,16 @@ The legacy cache now uses a 32 MiB estimated retained-byte cap (300-entry LRU)
 instead of 100,000 abstract weight units, so a stable scan over a normal
 working set does not evict the oldest session before it is revisited. A
 regression test covers 130 sessions x 800 events; the old cap would have
-re-read every file on each aggregate.
+re-read every file on each aggregate. Projects, legend and timeline page
+states now also reset when the selected date or visibility filter changes,
+without resetting on same-view data refreshes; the timeline button label
+reflects its action ("newest", not a 30-day filter).
 
 Verification: 329 tests pass in default and UTC timezones; the four bundles are
 rebuilt and compared byte-for-byte with a fresh build; signed pricing checks,
-artifact syntax checks and npm package dry-run remain unchanged. The browser
-fixture is unchanged and continues to run in CI.
+artifact syntax checks and npm package dry-run remain unchanged. The real
+Chrome fixture passed with 33 screenshots and zero browser errors, including
+the new date-filter page-reset checks and all 809 catalog rules.
 
 Provider prices, signed catalogs, dependencies and package version are
 unchanged. This delivery does not publish npm or replace a running service.
