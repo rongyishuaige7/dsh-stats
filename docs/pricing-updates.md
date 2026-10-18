@@ -14,7 +14,7 @@
 - 按请求时间计价后汇总；保留目录版本、规则和汇率依据。历史有效期无证据的现价回估必须标记 estimated。
 - 官方公开资料：2026-09-17 核验 https://developers.openai.com/api/docs/pricing.md 与 https://developers.openai.com/api/docs/models/gpt-6-astra.md 。Astra Standard 短上下文 input/cache-read/cache-write/output 为 10/1/12.5/50 USD 每百万 token；输入 >272000 时为 20/2/25/75。Batch、Flex 为 0.5 倍，Fast/priority 为 2 倍。yi-api 实际费率未核实。
 - 定时采集每 6 小时运行；可信结构化来源通过校验后更新，网页解析生成待审核候选，不自动猜测有效日期或复杂计费条件。
-- 第一阶段官方监控：OpenAI、Anthropic、Google 的适配器每 30 分钟生成候选报告，只读、不写入目录、不签名；解析失败会显式告警。Meta 的 Llama 多为开放权重，价格由托管商决定，不冒充 Meta 官方价；OpenRouter 仅作为第三方参考。目录签名验证、容量和超时限制、版本检查及原子落盘；失败保留上一份有效版本并在设置显示错误。
+- 官方自动接入：每 30 分钟的签名发布任务解析 OpenAI、Anthropic、Google 官方页面。新模型的无歧义标准价先写入 `[provisional]` 标记的 estimated 规则并自动签名，界面标记“自动接入，待复核”；复核时移除该标记、改为 exact 后再走 `sign_reviewed_catalog`。已有模型调价、退役/受限模型、缺失字段、歧义别名只生成候选，不自动改写。Meta 的 Llama 多为开放权重，价格由托管商决定，不冒充 Meta 官方价；OpenRouter 仅作为第三方参考。目录签名验证、容量和超时限制、版本检查及原子落盘；失败保留上一份有效版本并在设置显示错误。
 - 宿主启动和运行中每小时检查；未知模型触发有冷却时间的检查；可手动刷新、关闭自动更新、回滚。插件自动更新只下载价格数据，不执行远端代码。
 - 自定义规则原子保存，乐观并发检查，保存前预览影响范围；自动更新不覆盖自定义规则。价格变化重算派生费用，不改 token。
 

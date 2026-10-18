@@ -77,8 +77,10 @@ test('collection separates reviewed official candidates and publishes only valid
   const fetchSource = source;
   const result = await collect({ fetchSource, at, deepSeekBaseline });
   expect(result.report.failures).toEqual([]);
-  expect(result.report.changes).toBe(10);
-  expect(result.report.candidates.map(c => c.model)).toEqual(['gpt-new', 'gpt-other']);
+  expect(result.report.changes).toBe(12);
+  expect(result.report.autoPublished.map(r => r.canonical).sort()).toEqual(['gpt-new', 'gpt-other']);
+  expect(result.report.candidates).toEqual([]);
+  expect(result.catalog.rules.filter(r => r.note?.startsWith('[provisional]')).map(r => r.canonical).sort()).toEqual(['gpt-new', 'gpt-other']);
   expect(result.catalog.version).toBe(pricing.BUILTIN.version + 1);
   const repeat = await collect({ fetchSource, at, baseCatalog: result.catalog, deepSeekBaseline });
   expect(repeat.report.changes).toBe(0);
@@ -87,7 +89,7 @@ test('collection separates reviewed official candidates and publishes only valid
   expect(failed.catalog).toEqual(pricing.BUILTIN);
 });
 
-test('official Anthropic and Google adapters produce review candidates without publishing', async () => {
+test('official Anthropic and Google adapters auto-publish new models as provisional', async () => {
   const anthropicNew = anthropicMd.replace('| Claude Opus 5 |', '| Claude New 6 |').replace('$5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok', '$3 / MTok | $3.75 / MTok | $6 / MTok | $0.30 / MTok | $15 / MTok');
   const googleNew = googleHtml.replace('gemini-3.8-flash', 'gemini-new').replace('Gemini 3.8 Flash', 'Gemini Next').replace('$0.75', '$1').replace('$3.75', '$5').replace('$0.075', '$0.10');
   const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) }
@@ -98,11 +100,13 @@ test('official Anthropic and Google adapters produce review candidates without p
   expect(parseGoogle(googleNew)).toEqual([
     { model: 'gemini-new', display: 'Gemini Next', rates: { uncached: 1, cacheWrite: 1, cacheRead: 0.1, output: 5 } }
   ]);
-  const anthropicCandidate = result.report.candidates.find(c => c.source.includes('claude.com') && c.model === 'claude-new-6');
-  const googleCandidate = result.report.candidates.find(c => c.source.includes('google') && c.model === 'gemini-new');
-  expect(anthropicCandidate).toMatchObject({ reason: 'Missing official model coverage', cacheWrite1h: 6, rule: { canonical: 'claude-new-6', rates: { uncached: 3, output: 15 } } });
-  expect(googleCandidate).toMatchObject({ reason: 'Missing official model coverage', rule: { canonical: 'gemini-new', rates: { uncached: 1, output: 5 } } });
-  expect(result.catalog.rules.some(r => r.canonical === 'claude-new-6' || r.canonical === 'gemini-new')).toBe(false);
+  const anthropicRule = result.report.autoPublished.find(r => r.canonical === 'claude-new-6');
+  const googleRule = result.report.autoPublished.find(r => r.canonical === 'gemini-new');
+  expect(anthropicRule).toMatchObject({ confidence: 'estimated', note: expect.stringMatching(/^\[provisional\]/), rates: { uncached: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 } });
+  expect(googleRule).toMatchObject({ confidence: 'estimated', note: expect.stringMatching(/^\[provisional\]/), rates: { uncached: 1, cacheWrite: 1, cacheRead: 0.1, output: 5 } });
+  expect(result.catalog.rules.some(r => r.canonical === 'claude-new-6' || r.canonical === 'gemini-new')).toBe(true);
+  const engine = pricing.createPricing(result.catalog);
+  expect(engine.priceUsage({ providerId: 'anthropic', model: 'claude-new-6', time: Date.parse(at), uncached: 1000000, output: 1000000 })).toMatchObject({ status: 'estimated' });
   expect(() => parseAnthropic('changed')).toThrow();
   expect(() => parseGoogle('<html></html>')).toThrow();
 });

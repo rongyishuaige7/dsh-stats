@@ -51,6 +51,26 @@ function priceFromCell(value) {
   const match = /\$\s*(\d+(?:\.\d+)?)/.exec(stripHtml(value));
   return match ? Number(match[1]) : null;
 }
+function provisionalRule({ family, model, sourceUrl, at, rates, contextTiers, contextThreshold, note }) {
+  const base = {
+    id: family + '/' + model + '@' + at.slice(0, 10), family, canonical: model,
+    aliases: [model, family + '/' + model], currency: 'USD', sourceUrl,
+    retrievedAt: at.slice(0, 10), observedFrom: at, confidence: 'estimated',
+    reasoningIncludedInOutput: true,
+    note: (note || 'Official model auto-added; pending review.').replace(/^/, '[provisional] ')
+  };
+  return contextTiers ? { ...base, contextTiers, contextThreshold } : { ...base, rates };
+}
+function knownModel(catalog, family, model) {
+  return catalog.rules.some(r => r.family === family && (r.canonical === model || r.aliases.includes(model)));
+}
+function appendProvisional(catalog, rule) {
+  if (knownModel(catalog, rule.family, rule.canonical)) return false;
+  try { pricing.validateCatalog({ ...catalog, rules: [...catalog.rules, rule] }); }
+  catch { return false; }
+  catalog.rules.push(rule);
+  return true;
+}
 function isTextModel(model) {
   return !/(?:image|tts|live|transcribe|robotics|embedding|veo|imagen|lyria|nano-banana|native-audio)/i.test(model);
 }
@@ -73,6 +93,7 @@ export function parseAnthropic(markdown) {
     const cells = line.split('|').slice(1, -1).map(stripHtml);
     if (cells.length !== 6 || !/^\$/.test(cells[1])) continue;
     const display = stripHtml(cells[0]).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const restricted = /retired|limited availability/i.test(cells[0]);
     const model = modelSlug(display);
     if (!model || rows.some(row => row.model === model)) continue;
     const rates = {
@@ -82,7 +103,7 @@ export function parseAnthropic(markdown) {
       output: priceFromCell(cells[5])
     };
     if (rates.uncached == null || rates.output == null) continue;
-    rows.push({ model, display, rates, cacheWrite1h: priceFromCell(cells[3]) });
+    rows.push({ model, display, rates, cacheWrite1h: priceFromCell(cells[3]), ...(restricted ? { restricted: true } : {}) });
   }
   if (!rows.length) throw new Error('Anthropic pricing table incomplete');
   return rows;
@@ -173,7 +194,7 @@ async function get(url, json = false, { allowSameOriginRedirect = false } = {}) 
 }
 export async function collect({ fetchSource = get, at = new Date().toISOString(), baseCatalog = pricing.BUILTIN, deepSeekBaseline = DEEPSEEK_BASELINE } = {}) {
   const catalog = structuredClone(baseCatalog);
-  const candidates = [], failures = []; let changes = 0;
+  const candidates = [], autoPublished = [], failures = []; let changes = 0;
   try {
     const rows = parseOpenAI(await fetchSource(OPENAI));
     for (const row of rows) {
@@ -187,7 +208,19 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
         if (!same) candidates.push({ source: OPENAI, model: row.model, reason: 'Review changed official rates and effective date', rates: row });
         continue;
       }
-      candidates.push({ source: OPENAI, model: row.model, reason: 'Review model identity, service tiers, context threshold and effective date', rates: row });
+      if (knownModel(catalog, 'openai', row.model)) {
+        candidates.push({ source: OPENAI, model: row.model, reason: 'Review historical model identity', rates: row });
+        continue;
+      }
+      if (row.long && !row.threshold) {
+        candidates.push({ source: OPENAI, model: row.model, reason: 'Review long-context threshold before auto-publishing', rates: row });
+        continue;
+      }
+      const rule = provisionalRule({ family: 'openai', model: row.model, sourceUrl: OPENAI, at,
+        ...(row.long ? { contextTiers: { short: row.short, long: row.long }, contextThreshold: row.threshold } : { rates: row.short }),
+        note: row.long ? 'Auto-added from the Standard table; Fast, Batch, Flex and Ultrafast tiers are pending review.' : 'Auto-added from the Standard table; service tiers are pending review.' });
+      if (appendProvisional(catalog, rule)) { autoPublished.push(rule); changes++; }
+      else candidates.push({ source: OPENAI, model: row.model, reason: 'Review model identity or conflicting aliases', rates: row });
     }
   } catch (error) { failures.push({ source: OPENAI, error: error.message }); }
   try {
@@ -197,8 +230,15 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
       const rule = { id: 'anthropic/' + row.model + '@' + at.slice(0, 10), family: 'anthropic', canonical: row.model,
         aliases: [row.model, 'anthropic/' + row.model], currency: 'USD', sourceUrl: ANTHROPIC, retrievedAt: at.slice(0, 10),
         observedFrom: at, rates: row.rates, confidence: 'exact', reasoningIncludedInOutput: true };
-      if (!existing) candidates.push({ source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) });
-      else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) });
+      if (!existing) {
+        const candidate = { source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) };
+        if (row.restricted) { candidates.push(candidate); continue; }
+        if (knownModel(catalog, 'anthropic', row.model)) { candidates.push(candidate); continue; }
+        const provisional = provisionalRule({ family: 'anthropic', model: row.model, sourceUrl: ANTHROPIC, at, rates: row.rates,
+          note: 'Auto-added from the official model table; cache duration and service tiers are pending review.' });
+        if (appendProvisional(catalog, provisional)) { autoPublished.push(provisional); changes++; }
+        else candidates.push(candidate);
+      } else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: ANTHROPIC, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule, ...(row.cacheWrite1h == null ? {} : { cacheWrite1h: row.cacheWrite1h }) });
     }
   } catch (error) { failures.push({ source: ANTHROPIC, error: error.message }); }
   try {
@@ -209,8 +249,14 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
       const rule = { id: 'google/' + row.model + '@' + at.slice(0, 10), family: 'google', canonical: row.model,
         aliases: [row.model, 'google/' + row.model], currency: 'USD', sourceUrl: GOOGLE_SOURCE, retrievedAt: at.slice(0, 10),
         observedFrom: at, rates: row.rates, confidence: 'exact', reasoningIncludedInOutput: true };
-      if (!existing) candidates.push({ source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule });
-      else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule });
+      if (!existing) {
+        const candidate = { source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Missing official model coverage', rule };
+        if (knownModel(catalog, 'google', row.model)) { candidates.push(candidate); continue; }
+        const provisional = provisionalRule({ family: 'google', model: row.model, sourceUrl: GOOGLE_SOURCE, at, rates: row.rates,
+          note: 'Auto-added from the Standard table; Batch, Flex and Priority tiers are pending review.' });
+        if (appendProvisional(catalog, provisional)) { autoPublished.push(provisional); changes++; }
+        else candidates.push(candidate);
+      } else if (!sameRates(existing.rates || existing.contextTiers?.short, row.rates)) candidates.push({ source: GOOGLE_SOURCE, model: row.model, displayName: row.display, reason: 'Review changed official rates', rule });
     }
   } catch (error) { failures.push({ source: GOOGLE, error: error.message }); }
   try {
@@ -236,7 +282,7 @@ export async function collect({ fetchSource = get, at = new Date().toISOString()
   } catch (error) { failures.push({ source: OPENROUTER, error: error.message }); }
   if (changes) { catalog.version++; catalog.publishedAt = at; }
   pricing.validateCatalog(catalog);
-  return { catalog, report: { checkedAt: at, changes, candidates, failures } };
+  return { catalog, report: { checkedAt: at, changes, autoPublished, candidates, failures } };
 }
 async function main() {
   const publish = process.argv.includes('--publish');

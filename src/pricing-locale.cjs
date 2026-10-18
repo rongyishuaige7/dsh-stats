@@ -6,7 +6,7 @@ const pairs = {
   unavailable: ['价格设置暂不可用，请确认插件版本', 'Price settings unavailable. Check the plugin version.'], loading: ['加载中…', 'Loading…'],
   auto: ['自动更新价格', 'Update prices automatically'], refresh: ['立即更新', 'Update now'], updated: ['上次同步', 'Last synced'], builtin: ['内置价格', 'Bundled prices'],
   refreshFailed: ['价格更新失败，继续使用上次有效版本', 'Price update failed. Previous valid prices are retained.'],
-  missing: ['待计价模型', 'Models awaiting prices'], configure: ['设置价格', 'Set price'], custom: ['自定义价格', 'Custom prices'],
+  missing: ['待计价模型', 'Models awaiting prices'], provisional: ['自动接入，待复核', 'Auto-added, pending review'], configure: ['设置价格', 'Set price'], custom: ['自定义价格', 'Custom prices'],
   units: ['单价单位：每百万 token。留空表示未知，0 表示免费。未填生效时间时，历史用量按此价格估算。', 'Prices per million tokens. Empty means unknown; 0 means free. Without a start date, historical usage is estimated at this price.'],
   invalid: ['请检查单价、模型、供应商及生效时间，规则时间不能重叠', 'Check rates, model, provider and dates. Rule periods must not overlap.'],
   provider: ['供应商 ID', 'Provider ID'], model: ['模型 ID', 'Model ID'], currency: ['币种', 'Currency'], uncached: ['非缓存输入', 'Uncached input'], cacheRead: ['缓存读取', 'Cache read'], cacheWrite: ['缓存写入', 'Cache write'], output: ['输出', 'Output'],

@@ -1519,6 +1519,7 @@ async function apply(ctx) {
 		".dss-price-canonical-name{font-size:12.5px;font-weight:600;color:var(--dsw-alias-label-primary,#e7eaf0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}" +
 		"body:not([data-ds-dark-theme]) .dss-price-canonical-name{color:#111827}" +
 		".dss-price-used-tag{font-size:10px;font-weight:500;color:#60a5fa;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.24);padding:1px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0}" +
+		".dss-price-provisional{font-size:10px;font-weight:500;color:#d97706;background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.25);padding:1px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0}" +
 		"body:not([data-ds-dark-theme]) .dss-price-used-tag{color:#2563eb;background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.2)}" +
 		".dss-price-rule-trail{display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0}" +
 		".dss-price-summary-rate{font-size:11.5px;color:var(--dsw-alias-label-secondary,#a6adbb);font-variant-numeric:tabular-nums;white-space:nowrap}" +
