@@ -226,13 +226,9 @@ function ProjectFilterMenu(props) {
 
 
 function sessionStamp(value, dayMode) {
-	if (!value) return { short: "—", full: "—" };
-	var date = new Date(value);
-	if (Number.isNaN(date.getTime())) return { short: "—", full: "—" };
-	var mm = pad(date.getMonth() + 1), dd = pad(date.getDate());
-	var hh = pad(date.getHours()), mi = pad(date.getMinutes());
-	var clock = hh + ":" + mi;
-	return { short: dayMode ? clock : mm + "-" + dd + " " + clock, full: date.getFullYear() + "-" + mm + "-" + dd + " " + clock };
+	var full = fmtClock(value);
+	if (full === "—") return { short: "—", full: "—" };
+	return { short: dayMode ? full.slice(11) : full.slice(5), full: full };
 }
 
 function sessionMeta(session, stamp, model, t) {

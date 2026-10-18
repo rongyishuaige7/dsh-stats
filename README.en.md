@@ -291,7 +291,7 @@ npm pack --dry-run
 ```text
 src/index.js                # host StatsService and aggregate/account RPC
 src/host-sessions.js        # session log discovery, zstd decoding, projection state, session info
-src/host-usage.js           # slot durations and priced usage slices
+src/host-usage.js           # slot durations and priced usage segments
 src/host-balance.js         # legacy DeepSeek balance RPC
 src/host-util.js            # host constants and date, identity and file helpers
 src/client.cjs              # client entry, React views, and apply()

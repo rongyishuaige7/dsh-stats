@@ -305,6 +305,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-ptable .dss-sess>.st{min-width:0;white-space:nowrap;overflow:visible;text-overflow:clip;font-variant-numeric:tabular-nums}
 .dss-ptable .dss-sess>.dss-sess-model{white-space:normal;overflow-wrap:anywhere}
 .dss-ptable .dss-sess>.dss-sess-cost{grid-column:auto;width:auto;text-align:right!important;transform:none!important;color:var(--dss-cost);font-weight:600}
+.dss-ptable .dss-sess-h>.dss-sess-cost{color:var(--dss-text-3);font-weight:500}
 .dss-ptable .dss-sess>.dss-sess-meta{display:none;grid-column:1/-1;text-align:left;color:var(--dss-text-3);font-size:var(--dss-fs-xs);white-space:normal;overflow-wrap:anywhere}
 .dss-ptable .dss-sess.sub>.dss-sess-title{padding-left:16px}
 .dss-ptable .dss-sess.sub>.dss-sess-meta{padding-left:16px}

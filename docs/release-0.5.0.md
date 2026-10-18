@@ -23,7 +23,7 @@ Pre-1.0 feature release, 2026-10-18.
   legend, active-span strip, a seven-column project table with a sticky header,
   a filter menu with hidden-state persistence, and expandable project/session
   details. The panel has a fixed height and a single body scroll for the overview; the
-  timeline keeps its internal viewport until slice 4. The header, status banner
+  timeline keeps its internal viewport until a later 0.5.x release. The header, status banner
   and pricing drawer stay in place. The pricing settings moved to
   a right-side drawer with focus-model locating, and Esc closes the top layer
   (filter, menu, drawer) before the panel.

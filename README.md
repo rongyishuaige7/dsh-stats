@@ -286,7 +286,7 @@ npm pack --dry-run
 ```text
 src/index.js              # 宿主 StatsService 与 aggregate/account RPC
 src/host-sessions.js      # 会话日志发现、zstd 解码、投影状态与会话信息
-src/host-usage.js         # 时间槽时长与计价后的用量切片
+src/host-usage.js         # 时间槽时长与计价后的用量分段
 src/host-balance.js       # 旧版 DeepSeek 余额 RPC
 src/host-util.js          # 宿主常量与日期、身份、文件辅助函数
 src/client.cjs            # 客户端入口、React 视图与 apply()

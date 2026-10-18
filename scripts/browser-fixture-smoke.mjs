@@ -324,6 +324,9 @@ try {
     const texts = [];
     for (const index of [1, 2, 3]) { await tab(index); texts.push(await evaluate('document.querySelector(".dss-body").innerText')); }
     await tab(1);
+    await click('.dss-prow [data-action=expand]');
+    await until('document.querySelector(".dss-pdetail .dss-sess")');
+    texts.push(await evaluate('document.querySelector(".dss-pdetail").innerText'));
     (views[query] ||= []).push(texts);
   }
   await command('Emulation.setTimezoneOverride', { timezoneId: '' });
@@ -775,6 +778,23 @@ try {
   assert.equal(wideSession.hidden, 'true');
   assert(wideSession.header.includes('会话') && wideSession.header.includes('更新') && wideSession.header.includes('轮 · 步') && wideSession.header.includes('LLM / 工具') && wideSession.header.includes('Token 入 / 出'), 'wide session header labels: ' + wideSession.header);
   assert(/^\d{2}-\d{2} \d{2}:\d{2}$/.test(wideSession.time), 'all-mode time shows MM-DD HH:MM: ' + wideSession.time);
+  const expectedSessionTime = await evaluate(`(() => {
+    const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
+    const id = row?.dataset.sessionId;
+    const sessions = (window.__fixture.data.large.projects || []).flatMap(project => project.sessions || []);
+    const session = sessions.find(item => item.id === id);
+    if (!session || !session.updatedAt) return null;
+    const date = new Date(session.updatedAt + 8 * 3600 * 1000);
+    const pad = value => String(value).padStart(2, '0');
+    return pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate()) + ' ' + pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes());
+  })()`);
+  assert(expectedSessionTime && wideSession.time === expectedSessionTime, 'all-mode session time uses UTC+8: ' + wideSession.time + ' expected ' + expectedSessionTime);
+  const headerColors = await evaluate(`(() => {
+    const header = document.querySelector('.dss-sess-h');
+    const cost = header?.querySelector('.dss-sess-cost');
+    return { header: header ? getComputedStyle(header).color : null, cost: cost ? getComputedStyle(cost).color : null };
+  })()`);
+  assert(headerColors.header && headerColors.cost === headerColors.header, 'session cost header uses the normal header color: ' + JSON.stringify(headerColors));
   assert(wideSession.llm.includes(' / '), 'session row shows LLM and tool: ' + wideSession.llm);
   assert(await evaluate('!!document.querySelector(".dss-pdetail-meta")'), 'expanded row exposes project detail metrics');
   const detailMeta = await evaluate('document.querySelector(".dss-pdetail-meta").textContent');
