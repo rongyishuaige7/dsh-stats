@@ -177,21 +177,93 @@ function indexedMatches(indexes, raw, at, accountType) {
 	return [];
 }
 
+// A route may add a region/deployment suffix to a known model name. Prefer the
+// longest known alias at a token boundary, but never guess across known
+// price-bearing variants; such fallbacks are always estimates.
+var PRICE_VARIANT_SUFFIX = /(?:^|[-_:/.@])(?:mini|nano|pro|vision|image|audio|batch|free|coder|instruct|preview|thinking|highspeed|turbo|flash|distill|reasoner|search|online|max|high|medium|low)(?=$|[-_:/.@])/i;
+
+function modelTokenSeparator(char) {
+	return char === "-" || char === ":" || char === "/" || char === "." || char === "_" || char === "@";
+}
+
+// Return the longest known alias that is a token-boundary prefix of `model`.
+// The suffix is intentionally not stripped generically: `-mini`, `-pro`,
+// `-vision`, `:batch` etc. can identify a differently priced model. Only the
+// unmatched suffix is checked against the denylist.
+function longestAliasMatch(index, model, when, accountType) {
+	if (!index) return null;
+	for (var i = model.length - 1; i > 0; i--) {
+		if (!modelTokenSeparator(model[i])) continue;
+		var prefix = model.slice(0, i);
+		var entries = index.aliases.get(prefix);
+		if (!entries) continue;
+		var suffix = model.slice(i);
+		if (PRICE_VARIANT_SUFFIX.test(suffix)) return { denied: true, alias: prefix };
+		var matches = [];
+		var seen = new Set();
+		for (var entry of entries) {
+			if (when >= entry.from && when < entry.to && (!entry.rule.accountType || entry.rule.accountType === accountType) && !seen.has(entry.rule)) {
+				seen.add(entry.rule);
+				matches.push(entry.rule);
+			}
+		}
+		// Stop at the longest known alias even when its rules are not active
+		// for this date/account; falling back to a shorter name would turn an
+		// unknown variant into a different model's price.
+		return { alias: prefix, suffix: suffix, matches: matches };
+	}
+	return null;
+}
+
+function indexedLongestMatches(index, raw, at, accountType) {
+	var when = Number.isFinite(at) ? at : Date.now();
+	var best = null;
+	for (const model of modelCandidates(raw)) {
+		var found = longestAliasMatch(index, model, when, accountType);
+		if (!found) continue;
+		if (found.denied) return { matches: [], denied: true };
+		if (!best || found.alias.length > best.alias.length) best = found;
+	}
+	return best || { matches: [] };
+}
+
 // Resolve provider-scoped rules first. Unknown provider ids may use a unique
 // first-party model row as an estimate, but the provider family stays unknown.
+// If an exact name misses, a longest-known-name prefix may be used as an
+// estimate; exact rows always keep precedence over this fuzzy fallback.
 function rulesForIdentity(family, modelRaw, at, providerId, accountType) {
 	var providerKey = normalizedProviderKey(providerId);
 	var familyKey = String(family || "unknown").trim().toLowerCase();
-	var custom = indexedMatches([customIndexes.get(providerKey)], modelRaw, at, accountType);
+	var customIndex = customIndexes.get(providerKey);
+	var providerIndex = scopedIndexes.get("provider:" + providerKey);
+	var familyIndex = scopedIndexes.get("family:" + familyKey);
+	var custom = indexedMatches([customIndex], modelRaw, at, accountType);
 	if (custom.length) return { matches: custom, estimatedFallback: false, custom: true };
 	// A provider-specific rule overrides the family rule for the same model.
 	// Combining both indexes here would make every override ambiguous.
-	var providerMatches = indexedMatches([scopedIndexes.get("provider:" + providerKey)], modelRaw, at, accountType);
+	var providerMatches = indexedMatches([providerIndex], modelRaw, at, accountType);
 	if (providerMatches.length > 0) return { matches: providerMatches, estimatedFallback: false };
-	var direct = indexedMatches([scopedIndexes.get("family:" + familyKey)], modelRaw, at, accountType);
-	if (direct.length > 0 || familyKey !== "unknown") return { matches: direct, estimatedFallback: false };
-	var fallback = indexedMatches([fallbackIndex], modelRaw, at, accountType);
-	return { matches: fallback, estimatedFallback: fallback.length === 1 };
+	var direct = indexedMatches([familyIndex], modelRaw, at, accountType);
+	if (direct.length > 0) return { matches: direct, estimatedFallback: false };
+	var fallback = familyKey === "unknown" ? indexedMatches([fallbackIndex], modelRaw, at, accountType) : [];
+	if (fallback.length > 0) return { matches: fallback, estimatedFallback: fallback.length === 1 };
+	// Longest-known-name fallback. It is deliberately estimated, never exact.
+	var customAlias = indexedLongestMatches(customIndex, modelRaw, at, accountType);
+	if (customAlias.denied) return { matches: [], estimatedFallback: false };
+	if (customAlias.matches.length > 0) return { matches: customAlias.matches, estimatedFallback: true, aliasFallback: true, custom: true };
+	var providerAlias = indexedLongestMatches(providerIndex, modelRaw, at, accountType);
+	if (providerAlias.denied) return { matches: [], estimatedFallback: false };
+	if (providerAlias.matches.length > 0) return { matches: providerAlias.matches, estimatedFallback: true, aliasFallback: true };
+	if (familyKey !== "unknown") {
+		var familyAlias = indexedLongestMatches(familyIndex, modelRaw, at, accountType);
+		if (familyAlias.denied) return { matches: [], estimatedFallback: false };
+		if (familyAlias.matches.length > 0) return { matches: familyAlias.matches, estimatedFallback: true, aliasFallback: true };
+		return { matches: [], estimatedFallback: false };
+	}
+	var fallbackAlias = indexedLongestMatches(fallbackIndex, modelRaw, at, accountType);
+	if (fallbackAlias.denied) return { matches: [], estimatedFallback: false };
+	if (fallbackAlias.matches.length > 0) return { matches: fallbackAlias.matches, estimatedFallback: true, aliasFallback: true };
+	return { matches: [], estimatedFallback: false };
 }
 
 function normalizeAccountType(value) {

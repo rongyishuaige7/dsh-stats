@@ -142,7 +142,7 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 | [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2、5.1、5、5 Turbo、4.7、4.7 FlashX/Flash | USD；按官方模型规则计价。 |
 | [OpenRouter](https://openrouter.ai/api/v1/models) | 主流 OpenAI、Anthropic、Google、Kimi、GLM 路由快照 | USD；目录价格是带日期的快照，因此状态为 estimated。 |
 
-计价优先按 **Provider-scoped** 规则处理：明确识别为官方 Provider 的请求命中官方价并标记为 `exact`；DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价。对于未知或 API-compatible Provider，如果模型名唯一匹配一条官方模型规则，会保留原始 Provider 并标记为 `estimated`，再按上述汇率换算为人民币；这是按公开价推算，不代表中转服务的实际账单。`estimated` 状态继续写入 CSV/JSON 供审计，但界面不再显示约等于符号。显式 `relay`、`local` 未配置自定义费率时，以及订阅/Token Plan、未知模型或多条规则冲突时不会猜价，这些会话不进入主费用汇总，并在会话详情与 `meta.warnings` 中标注原因。
+计价优先按 **Provider-scoped** 规则处理：明确识别为官方 Provider 的请求命中官方价并标记为 `exact`；DSH 透传渠道 `nbdeepseek` 与 `deepseek-modlens` 明确沿用 DeepSeek 官方 API 计价。对于未知或 API-compatible Provider，如果模型名唯一匹配一条官方模型规则，或在 token 边界上以**最长已知全称**唯一匹配一条官方模型规则（例如区域/部署后缀），会保留原始 Provider 并标记为 `estimated`，再按上述汇率换算为人民币；这是按公开价推算，不代表中转服务的实际账单。`-mini`、`-pro`、`-vision`、`:batch`、`:free` 等价格敏感后缀不会被猜测。`estimated` 状态继续写入 CSV/JSON 供审计，但界面不再显示约等于符号。显式 `relay`、`local` 未配置自定义费率时，以及订阅/Token Plan、未知模型或多条规则冲突时不会猜价，这些会话不进入主费用汇总，并在会话详情与 `meta.warnings` 中标注原因。
 
 ### 价格设置与自动更新
 
@@ -161,7 +161,7 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 | 状态 | 含义 |
 | --- | --- |
 | `exact` | 每一条有价用量都命中确定的内置规则。 |
-| `estimated` | 有金额，但至少一条记录来自动态价格快照、缺少会影响价格的元数据，或未知 API Provider 借用了唯一匹配的官方模型价；界面显示计算后的人民币金额，估算状态仅在数据与导出字段中保留。 |
+| `estimated` | 有金额，但至少一条记录来自动态价格快照、缺少会影响价格的元数据，或未知 API Provider 借用了唯一匹配或最长已知全称前缀匹配的官方模型价；界面显示计算后的人民币金额，估算状态仅在数据与导出字段中保留。 |
 | `free` | 命中的用量全部免费；汇总会保留零金额，不会误显示为未知消费。 |
 | `partial` | 一部分用量可计价，另一部分无法安全计价；主汇总显示已计价 CNY 并加 `*`，点击可查看说明。 |
 | `unsupported` | 没有足够可靠的规则；该会话不计入费用合计，界面显示“待计价”。 |
@@ -214,7 +214,7 @@ Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果
 <details>
 <summary><strong>为什么最常用模型显示 `(unknown)`？</strong></summary>
 
-原始会话日志可能没有保存 Provider/模型字段。尤其是模型字段缺失时，无法知道该用哪一条官方规则，因此显示 `(unknown)`；如果模型名存在但 Provider 未知且能唯一匹配官方规则，面板会显示模型和按公开价计算的人民币金额，同时在数据中保留 `estimated` 状态。无法唯一匹配时仍显示未知，不会制造虚假的消费金额。
+原始会话日志可能没有保存 Provider/模型字段。尤其是模型字段缺失时，无法知道该用哪一条官方规则，因此显示 `(unknown)`；如果模型名存在但 Provider 未知且能唯一匹配官方规则，或能按最长已知全称前缀唯一匹配，面板会显示模型和按公开价计算的人民币金额，同时在数据中保留 `estimated` 状态；价格敏感后缀（如 `-mini`、`:batch`）不会被猜测。无法唯一匹配时仍显示未知，不会制造虚假的消费金额。
 </details>
 
 <details>
@@ -319,7 +319,7 @@ npm publish
 - 首次读取大量会话时，宿主优先使用官方 projection cache 的 watermark 增量读取；旧宿主才回退解码日志，并使用 mtime 缓存减少重复开销。
 - 普通归档会话会标注“已归档”；归档、无日志且只有继承 cache 的 fork 会从统计中排除，并在告警中说明原因。
 - OpenRouter 使用带日期的模型目录快照；这类金额会标记为 `estimated`。
-- 消费统计固定统一为人民币，USD 使用文档记录的汇率快照换算；汇率会随日期变化，旧统计不会在每次打开面板时重新联网改写。未知 API Provider 仅在模型唯一匹配官方规则时给出 `estimated`，显式 relay/local、未知模型、歧义规则和订阅用量不会猜价。
+- 消费统计固定统一为人民币，USD 使用文档记录的汇率快照换算；汇率会随日期变化，旧统计不会在每次打开面板时重新联网改写。未知 API Provider 仅在模型唯一匹配、或按最长已知全称前缀唯一匹配官方规则时给出 `estimated`，显式 relay/local、未知模型、价格敏感后缀、歧义规则和订阅用量不会猜价。
 - 同一项目的并发会话在时间线中合并为墙钟区间，项目 LLM/工具时长仍是累计工作量指标。
 
 ## 🙌 参与与许可

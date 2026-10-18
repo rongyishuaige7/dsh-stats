@@ -363,6 +363,44 @@ test('route/region prefixes and reasoning suffixes on deepseek-v4.1 models price
 	}
 });
 
+test('longest-known alias fallback prices region suffixes as estimates', () => {
+	const at = Date.parse('2026-10-17T12:00:00Z');
+	const row = { providerId: 'workbuddy', time: at, uncached: 1000000, output: 1000000 };
+	const plain = priceUsage({ ...row, model: 'global:deepseek-v4.1-flash' });
+	const sg = priceUsage({ ...row, model: 'global:deepseek-v4.1-flash-sg' });
+	expect(plain).toMatchObject({ status: 'estimated', ruleId: 'deepseek/deepseek-v4-flash@2026-09-25' });
+	expect(sg).toMatchObject({
+		status: 'estimated',
+		currency: 'CNY',
+		modelCanonical: 'deepseek-v4-flash',
+		ruleId: 'deepseek/deepseek-v4-flash@2026-09-25',
+		unpricedTokens: 0,
+	});
+	expect(sg.amount).toBeCloseTo(plain.amount);
+
+	// A longer known model must win over its shorter prefix: mini, not gpt-5.4.
+	const mini = priceUsage({ ...row, model: 'gpt-5.4-mini' });
+	const miniSg = priceUsage({ ...row, model: 'gpt-5.4-mini-sg' });
+	expect(miniSg).toMatchObject({ status: 'estimated', modelCanonical: 'gpt-5.4-mini', ruleId: mini.ruleId, unpricedTokens: 0 });
+	expect(miniSg.amount).toBeCloseTo(mini.amount);
+	expect(miniSg.amount).not.toBeCloseTo(priceUsage({ ...row, model: 'gpt-5.4' }).amount);
+
+	// Official providers use the same longest-name fallback, but still estimate.
+	const official = priceUsage({ providerId: 'deepseek', model: 'deepseek-v4.1-flash-sg', time: at, uncached: 1000000, output: 1000000 });
+	expect(official).toMatchObject({ status: 'estimated', modelCanonical: 'deepseek-v4-flash', unpricedTokens: 0 });
+});
+
+test('longest-known alias fallback refuses price-bearing suffixes instead of guessing', () => {
+	const at = Date.parse('2026-10-17T12:00:00Z');
+	const row = { providerId: 'workbuddy', time: at, uncached: 1000000, output: 1000000 };
+	for (const model of ['gpt-5.4-vision', 'gpt-5.4:batch', 'gpt-5.4:free']) {
+		const result = priceUsage({ ...row, model });
+		expect(result, model).toMatchObject({ status: 'unsupported', amount: null, unpricedTokens: 2000000 });
+	}
+	// Do not match a known name embedded after an arbitrary vendor prefix.
+	expect(priceUsage({ ...row, model: 'vendor-gpt-5.4' }).status).toBe('unsupported');
+});
+
 test('official deepseek provider resolves deepseek-v4.1 and slash aliases with exact status', () => {
 	for (const model of ['deepseek-v4.1-flash', 'deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-flash']) {
 		const res = priceUsage({
