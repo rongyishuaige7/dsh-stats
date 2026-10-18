@@ -189,6 +189,7 @@ function ProjectsTable(props) {
 		setSessionPage(function(state) { return state.id === null && state.page === 0 ? state : { id: null, page: 0 }; });
 		if (viewport.current) viewport.current.scrollTop = 0;
 	}, [props.filterKey, hiddenKey]);
+	var viewportStyle = Number.isFinite(props.maxHeight) && props.maxHeight > 0 ? { "--dss-projects-max-height": props.maxHeight + "px" } : null;
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -324,7 +325,7 @@ function ProjectsTable(props) {
 
 	return e("div", { className: "dss-pcards-wrap" },
 		toolbar,
-		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
+		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : ""), style: viewportStyle },
 			e("div", { className: "dss-pcards" }, cards)
 		),
 		e(PageControls, { window: projectWindow, onPage: changeProjectPage, t, name: "projects" })
@@ -404,6 +405,14 @@ function timelineTipRows(blocks) {
 // All-mode timeline rows are cheap individually but can grow to years. Render
 // one 30-day page at a time, including when browsing the full history.
 var TIMELINE_PAGE_DAYS = 30;
+
+// The project overview shares the all-history timeline's viewport height so both
+// "all" views end at the same visual line instead of using two unrelated caps.
+function timelineAllViewportHeight(days) {
+	var ordered = timelineDisplayDays(days, false);
+	var pageDays = Math.min(ordered.length, TIMELINE_PAGE_DAYS);
+	return pageDays > MAX_VISIBLE_TIMELINE_DAYS ? timelineLayout(pageDays, false).rowMinH * MAX_VISIBLE_TIMELINE_DAYS : null;
+}
 
 function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
@@ -904,6 +913,8 @@ function StatsPanel(props) {
 		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
 		return data.timeline;
 	}, [data.timeline, effectiveDate]);
+	// In all mode the project list uses the same viewport cap as the timeline.
+	var projectViewportMaxHeight = effectiveDate ? null : timelineAllViewportHeight((data.timeline || {}).days);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
@@ -957,7 +968,7 @@ function StatsPanel(props) {
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, maxHeight: projectViewportMaxHeight, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, {
 					globals,
