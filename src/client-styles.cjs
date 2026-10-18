@@ -211,7 +211,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 /* 0.5.0 slice 3: single-scroll overview, KPIs, filter menu and project table */
 .dss-overlay{overflow:hidden;font-size:var(--dss-fs-md)}
 .dss-panel{height:min(1000px,calc(100vh - 10vh));height:min(1000px,calc(100dvh - 10vh))}
-.dss-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px 20px 20px;scrollbar-gutter:stable;--dss-body-pad-top:16px}
+.dss-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 20px 20px;scrollbar-gutter:stable;overscroll-behavior:contain;--dss-body-pad-top:16px}
+.dss-body::before{content:"";display:block;height:var(--dss-body-pad-top);flex:none}
 .dss-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:30px;margin-bottom:12px}
 .dss-seg{display:inline-flex;background:var(--dss-layer);border:1px solid var(--dss-line);border-radius:8px;padding:2px}
 .dss-seg button{border:0;background:none;color:var(--dss-text-2);font-size:var(--dss-fs-md);padding:4px 11px;border-radius:7px;white-space:nowrap;cursor:pointer}
@@ -260,7 +261,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-sort-narrow{display:none;margin-left:auto;align-items:center;gap:6px;font-size:var(--dss-fs-sm);color:var(--dss-text-3)}
 .dss-sort-narrow select{height:26px;border:1px solid var(--dss-line);border-radius:7px;background:var(--dss-panel);color:var(--dss-text);font-size:var(--dss-fs-sm);padding:0 6px}
 .dss-ptable{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--dss-fs-md);font-variant-numeric:tabular-nums}
-.dss-ptable th{position:sticky;top:calc(-1 * var(--dss-body-pad-top,0px));z-index:3;background:var(--dss-panel);font-size:var(--dss-fs-xs);color:var(--dss-text-3);font-weight:500;text-align:right;padding:7px 10px;border-bottom:1px solid var(--dss-line);white-space:nowrap}
+.dss-ptable th{position:sticky;top:0;z-index:3;background:var(--dss-panel);font-size:var(--dss-fs-xs);color:var(--dss-text-3);font-weight:500;text-align:right;padding:7px 10px;border-bottom:1px solid var(--dss-line);white-space:nowrap}
 .dss-ptable th.c-proj{text-align:left;padding-left:4px}
 .dss-ptable th.c-meta{display:none}
 .dss-sort-btn{border:0;background:none;padding:2px 0;color:inherit;font-size:inherit;display:inline-flex;align-items:center;gap:3px;border-radius:4px;cursor:pointer}
@@ -317,7 +318,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
   .dss-strip{gap:4px 14px}
 }
 @media (max-width:640px){
-  .dss-body{padding:12px 14px 16px;--dss-body-pad-top:12px}
+  .dss-body{padding:0 14px 16px;--dss-body-pad-top:12px}
 }
 @container dss-panel (max-width:640px){
   .dss-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
