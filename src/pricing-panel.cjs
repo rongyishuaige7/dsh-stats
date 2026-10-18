@@ -156,20 +156,24 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [focusTick, setFocusTick] = React.useState(0);
   const pendingFocusRef = React.useRef(null), focusAfterLocateRef = React.useRef(false), formRef = React.useRef(null);
   const fail = err => setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed'));
-  function locate(provider, model) {
-    setDraft(blankDraft(provider, model));
+  function locateDraft(nextDraft) {
+    if (!nextDraft) return false;
+    setDraft(nextDraft);
     setEditingId(null);
     setAdvanced(true);
     setFocusTick(n => n + 1);
     focusAfterLocateRef.current = true;
+    return true;
+  }
+  function locate(provider, model) {
+    return locateDraft(blankDraft(provider, model));
   }
   function accept(result) {
     pricing.validateCatalog(JSON.parse(result.catalogJson));
     const rules = pricing.validateOverrides(JSON.parse(result.overridesJson));
-    const pending = pendingFocusRef.current;
+    const pendingDraft = draftForFocus(pendingFocusRef.current);
     pendingFocusRef.current = null;
-    if (pending) locate(pending.provider, pending.model);
-    else setDraft(blankDraft());
+    if (!locateDraft(pendingDraft)) setDraft(blankDraft());
     setStatus(result); setOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setEditingId(null);
     setCatalogAt(Date.now());
   }
@@ -190,8 +194,9 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     return () => { cancelled = true; };
   }, [remote]);
   React.useEffect(() => {
-    if (!focusModel) return;
-    if (status) locate(focusModel.provider, focusModel.model);
+    const nextDraft = draftForFocus(focusModel);
+    if (!nextDraft) { pendingFocusRef.current = null; return; }
+    if (status) locateDraft(nextDraft);
     else pendingFocusRef.current = focusModel;
   }, [focusModel?.nonce]);
   React.useEffect(() => {

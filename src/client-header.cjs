@@ -111,6 +111,7 @@ function PricingDrawer({ open, focusModel, opener, gear, rootRef, onClose, remot
 		e("aside", {
 			className: "dss-drawer",
 			role: "dialog",
+			"aria-modal": "true",
 			"aria-labelledby": "dss-drawer-title",
 			ref: asideRef
 		},

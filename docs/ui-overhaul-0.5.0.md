@@ -661,7 +661,7 @@ npm pack --dry-run
 | R15 | 价格机器人推送 `lib/`，与 UI 切片在 rebase 时冲突 | 按 §10 重新构建后解决，不手工合并 |
 | R16 | 待审批工具调用时，Esc 可能同时关闭面板并拒绝审批 | 切片 R 在 0.2.1-rc.2 上构造待审批调用，确认 Esc 只关闭最上层 UI，不误拒绝；若宿主审批层优先，记录顺序并避免面板抢占 |
 
-**R1 alpha.4 静态审计（切片 2）**：宿主“停止生成”快捷键由 `dsh-client-shortcuts` 处理，触发条件是双击 Esc；监听在 `window` 冒泡阶段，`installStopShortcut` 只对 `[data-conversation-session] [data-conversation-region]` 内的会话生效，并跳过 `defaultPrevented` 的事件；宿主弹窗打开时不安装。宿主在捕获阶段只记录，不改变事件。面板 Esc 绑在 `.dss-panel` 根节点，调用 `preventDefault()` 和 `stopPropagation()`，且面板通常不在对话区域内，因此误触停止生成的风险低。仍按 §8 在 0.2.1-rc.2 上真实 Web 验证，并补测待审批工具调用的 Esc 行为（R16）。
+**R1 alpha.4 静态审计（切片 2）**：宿主“停止生成”快捷键由 `dsh-client-shortcuts` 处理，触发条件是双击 Esc；监听在 `window` 冒泡阶段，`installStopShortcut` 只对 `[data-conversation-session] [data-conversation-region]` 内的会话生效，并跳过 `defaultPrevented` 的事件；宿主弹窗打开时（`context.modal` 非空）跳过。宿主在捕获阶段只记录，不改变事件。面板 Esc 绑在 `.dss-panel` 根节点，调用 `preventDefault()` 和 `stopPropagation()`，且面板通常不在对话区域内，因此误触停止生成的风险低。仍按 §8 在 0.2.1-rc.2 上真实 Web 验证，并补测待审批工具调用的 Esc 行为（R16）。
 
 ## 12. 待定事项与默认值
 

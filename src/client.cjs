@@ -824,6 +824,13 @@ function StatsPanel(props) {
 		setDrawer({ open: true, focusModel: focusModel || null });
 	};
 	useEffect(function() { if (isOpen) setFocusedTab(tab); }, [isOpen, tab]);
+	useEffect(function() {
+		if (isOpen) return;
+		drawerOpenerRef.current = null;
+		setDrawer(function(current) {
+			return current.open || current.focusModel ? { open: false, focusModel: null } : current;
+		});
+	}, [isOpen]);
 
 	useEffect(() => {
 		if (!open || !open.open) return;
@@ -1045,6 +1052,7 @@ function StatsPanel(props) {
 								"data-action": "pricing",
 								"aria-label": t("price.title"),
 								title: t("price.title"),
+								"aria-haspopup": "dialog",
 								"aria-expanded": drawer.open,
 								onClick: function() { openDrawer(null, gearRef.current); }
 							}, e(IconGear, { size: 16 }))
