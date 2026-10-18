@@ -28,3 +28,20 @@ test('other keys and missing events are ignored', () => {
 	expect(escapeAction({ key: 'Tab', keyCode: 9 }, 0)).toBe('ignore');
 	expect(escapeAction(null, 0)).toBe('ignore');
 });
+
+test('layer stack pops the newest layer first', () => {
+	const { createLayerStack } = require('../src/client-dialog.cjs');
+	const calls = [];
+	const stack = createLayerStack();
+	stack.push(() => calls.push('first'));
+	stack.push(() => calls.push('second'));
+	expect(stack.size).toBe(2);
+	stack.pop();
+	expect(calls).toEqual(['second']);
+	expect(stack.size).toBe(1);
+	stack.pop();
+	expect(calls).toEqual(['second', 'first']);
+	expect(stack.size).toBe(0);
+	stack.pop();
+	expect(calls).toEqual(['second', 'first']);
+});

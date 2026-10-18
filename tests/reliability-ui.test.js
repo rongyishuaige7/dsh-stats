@@ -77,10 +77,11 @@ test('shared RPC contracts reject invalid status, URLs, and unknown fields in ev
 test('status band preserves data diagnostics without adding permanent price badges', () => {
 	const projects = [{ sessions: [{ stats: {}, cost: { status: 'partial', totals: [{ currency: 'CNY', amount: 1, exactAmount: 0, estimatedAmount: 1 }], unpricedTokens: 400, unknownRows: 1 } }] }];
 	const html = renderToStaticMarkup(React.createElement(StatsDataStatus, { state: { kind: 'stale', at: 1000, error: 'Connection lost' }, remote: true, projects, t: key => key }));
-	for (const text of ['source.host', 'source.stale', 'source.updated', 'source.details', 'Connection lost']) expect(html).toContain(text);
+	for (const text of ['source.host', 'status.stale', 'source.stale', 'source.details', 'Connection lost']) expect(html).toContain(text);
 	expect(html).not.toContain('pricing.partial');
 	expect(html).not.toContain('pricing.unpriced');
 	expect(html).toContain('aria-live="polite"');
+	expect(html).toContain('role="status"');
 });
 
 test('account RPC refresh failure labels retained successful balances as stale', () => {

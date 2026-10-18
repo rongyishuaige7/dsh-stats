@@ -257,7 +257,7 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
   - 打开时记下 `document.activeElement`，再把焦点移到面板内第一个可聚焦元素（通常是当前 tab）。
   - **只有用户主动关闭时才还焦点**，即 Esc、关闭按钮、点击遮罩，这三种都以 `onClose("dismiss")` 调用。还焦点时，如果记下的元素还在文档里就还给它，否则聚焦 `.dss-trigger`。
   - 点击会话会通过 `openStatsSession` 打开对话，再调用 `openStore.close()`（`client.cjs:1572-1575`）。这条路径不还焦点，否则会把焦点从宿主刚打开的对话里抢走。
-  - **焦点丢失兜底**：按钮在获得焦点时变成 `disabled`（刷新中的刷新按钮、最后一页的"下一页"）会让焦点掉到 `body`，之后 Esc 和 Tab 循环都会失效。在 `.dss-panel` 上监听 `focusout`：`relatedTarget` 为空时，在下一个微任务检查一次，如果面板仍打开且 `document.activeElement === document.body`，就把焦点移回面板本身（`tabIndex=-1`）。翻页按钮继续使用 `disabled`，因为 smoke 依赖 `button.disabled`。
+  - **焦点丢失兜底**：按钮在获得焦点时变成 `disabled`（刷新中的刷新按钮、最后一页的"下一页"）会让焦点掉到 `body`，之后 Esc 和 Tab 循环都会失效。在 `.dss-panel` 上监听 `focusout`，并用 `MutationObserver` 观察面板内 `disabled` 属性的变化。任一信号触发后开启 300ms 的恢复窗口：每 50ms 检查一次，如果面板仍打开且 `document.activeElement` 是 `body`、`documentElement` 或 `null`，就把焦点移回面板本身（`tabIndex=-1`）；窗口内再次触发会重置截止时间，面板关闭时清理定时器。不做永久轮询。翻页按钮继续使用 `disabled`，因为 smoke 依赖 `button.disabled`。
 - **`trapTab(ev, root)`**：Tab 和 Shift+Tab 在 `root` 内循环。可聚焦元素按 `button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])` 查询，排除 `disabled`、`hidden` 及不可见元素（`getClientRects().length === 0`）。抽屉打开时，`root` 换成抽屉。
 - **外部点击**：弹层和菜单的外部点击检测，监听面板根节点的 `onPointerDownCapture`，不在 `document` 上注册。面板外部只有遮罩，点击遮罩本来就会关闭整个面板。
 - **tablist**：`.dss-tabs[role=tablist][aria-label]`。每个按钮带 `role=tab`、`id=dss-tab-<name>`、`aria-selected`、`aria-controls=dss-tabpanel`，用 roving `tabIndex`。←/→/Home/End 只移动焦点，Enter/Space 才切换（手动激活）。原因：自动激活时，方向键扫过余额页就会触发 `account` RPC，破坏 smoke 中"余额只在其标签页查询"的断言。`.dss-body` 带 `id=dss-tabpanel`、`role=tabpanel`、`aria-labelledby`。
@@ -301,7 +301,7 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
   - `nonce` 每次点击 chip 都递增，同一模型连续点击也能重新定位。
   - 测试分两层：
     - 纯函数 `draftForFocus(focusModel)` 放在 `pricing-panel.cjs` 并导出，写单测。`renderToStaticMarkup` 不执行 effect，测不到定位效果。
-    - 浏览器 smoke 断言：抽屉加载完成后，表单的模型字段等于 fixture 的未计价模型 `fixture-unpriced`。
+    - 浏览器 smoke 的"表单模型字段等于 fixture 的未计价模型 `fixture-unpriced`"断言随切片 3 的待计价 chip 一起加；本切片只要求 `draftForFocus` 单测通过。
   - `missingModels(projects)` 已按 tokens 降序排列。chip 取 `missingModels(scopeProjects)[0]`；结果为空时（例如本地回退数据没有 `u.cost`），只打开抽屉，不做定位。
 
 ### 7.4 总览纯函数（`client-overview-model.cjs`）
@@ -451,7 +451,7 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
    - 按 Esc 关闭面板后，焦点回到 `.dss-trigger`。
    - 点击会话标题打开会话后，`document.activeElement` 不是 `.dss-trigger`。
 
-验收：上面的断言通过，原有断言不变。在 DSH 0.2.1-rc.2 Web 上手动确认：生成回复期间在面板内按 Esc，只关闭面板，不会中断宿主正在进行的生成（风险 R1）。
+验收：上面的断言通过，原有断言不变。真实 Web 的 Esc/生成冲突验证统一留到切片 R，在 DSH 0.2.1-rc.2 上做（风险 R1）；alpha.4 的静态审计已在切片 2 完成，结论见 §11 R1 的说明。
 
 ### 切片 2：头部与价格抽屉
 
@@ -467,7 +467,10 @@ smoke 改动：
 - `refresh()` 改为点击 `[data-action=refresh]`。
 - 价格设置的打开方式：`browser-fixture-smoke.mjs:273-274` 的 `priceButton('price.title')` 是按按钮的 `textContent` 匹配的，改成只有图标的齿轮按钮后就匹配不到了，要改为 `click('[data-action=pricing]')`。抽屉内的 `priceButton('price.next')` 等用法不变。
 - 价格面板相关检查改为先打开抽屉。catalog 的"320px 下检查全部规则"和"七个宽度下展开卡片"继续执行。桌面宽度下，抽屉内应使用窄布局。
-- 新增断言：Esc 先关闭导出菜单，焦点回到导出按钮；再按 Esc 关闭抽屉，焦点回到齿轮；第三次 Esc 关闭面板。
+- 新增两组 Esc 顺序断言（两个序列分别独立执行，不把菜单和抽屉套在一起）：
+  - 打开导出菜单 → Esc 关闭菜单，焦点回到导出按钮 → Esc 关闭面板，焦点回到触发器。
+  - 打开抽屉 → Esc 关闭抽屉，焦点回到齿轮 → Esc 关闭面板，焦点回到触发器。
+- tab 换行验收：tab 按钮加 `white-space: nowrap`；容器宽度 <860px 时 tablist 独占一行并横向滚动；smoke 在 320/390px 断言每个 `[role=tab]` 的文字只有一行，在 641/1024px 断言 tablist 是否独占一行与容器宽度一致。
 - 641/700/768/1024/1100/1101px 英文头部的"不重叠、不裁切"检查保持不变。
 
 验收：
@@ -476,6 +479,9 @@ smoke 改动：
 - `exact` 时没有横幅；`partial`、`stale`、`fallback` 时横幅可见，诊断信息可展开。
 - 导出文件内容与改动前一致（`projectCsvTable` 等现有单测保持通过）。
 - 标签文字不允许在词内断行（tab 加 `white-space: nowrap`）；面板容器宽度 <860px 时 tablist 独占一行，放不下时横向滚动；smoke 在 320/390px 断言每个 `[role=tab]` 只有一行文字。
+- 抽屉打开时焦点落在抽屉关闭按钮；抽屉打开期间 `trapTab` 的 root 换成抽屉；关闭后焦点回到 opener（齿轮或 chip），opener 不在文档时回到齿轮。
+- `data-action` 八个取值都实际渲染：`refresh`、`export`、`export-csv`、`export-json`、`pricing`、`close`、`retry`、`drawer-close`（`retry` 只在 stale/fallback 且有宿主 remote 时出现）。
+- `draftForFocus` 单测通过；`PricingPanel` 的 `accept()` 在状态加载后消费 `pendingFocusRef`，保存成功后表单仍照常清空。
 
 ### 切片 3：总览重排
 
@@ -516,6 +522,8 @@ smoke 改动：
 4. 更新 `DESIGN.md` 的"当前实现"一节到 0.5.0，删除已经过时的描述。
 5. 在 DSH 0.2.1-rc.2 上做真实 Web 验证，深浅两种主题都要看。验证项：
    - 打开、关闭面板，Esc 不影响宿主。
+   - 生成回复期间在面板内按 Esc，只关闭面板，不中断宿主正在进行的生成（1b 遗留项）。
+   - 在有待审批工具调用时按 Esc，确认只关闭最上层 UI，不会误拒绝审批（风险 R16）。
    - 状态点、横幅和诊断信息。
    - 筛选项目，以及隐藏状态在重开面板后保留。
    - 表格排序、展开行、打开会话。
@@ -636,7 +644,7 @@ npm pack --dry-run
 
 | # | 风险 | 对策 |
 | --- | --- | --- |
-| R1 | 宿主可能注册了全局 Esc（例如停止生成），和面板 Esc 冲突 | Esc 只在面板根节点处理并 `stopPropagation`，不注册 `document` 监听。切片 1b 在真实宿主上验证。如果宿主用捕获阶段监听、无法阻止，记录进兼容文档，不做绕过 |
+| R1 | 宿主可能注册了全局 Esc（例如停止生成），和面板 Esc 冲突 | Esc 只在面板根节点处理并 `stopPropagation`，不注册 `document` 监听。切片 R 在 0.2.1-rc.2 上验证（1b 的 Esc/生成验证一并移到这里）；alpha.4 的静态审计结论见下表后的说明。如果宿主用捕获阶段监听、无法阻止，记录进兼容文档，不做绕过 |
 | R2 | 移动端 `100vh` 包含浏览器地址栏，底部被遮住 | `100vh` 后面写一条 `100dvh` 声明；smoke 的 390px 和 320px 截图检查底部 |
 | R3 | 嵌入环境不支持容器查询 | 目标浏览器都已支持。smoke 断言 `CSS.supports("container-type", "inline-size")`，兼容文档写明最低版本 |
 | R4 | smoke 重写时丢失覆盖 | 按 §9.2 一对一迁移；比较改造前后的 `report.checks`；规模不变式原样保留 |
@@ -648,9 +656,12 @@ npm pack --dry-run
 | R10 | 字号映射让趋势和余额页的大数字变小（34px → 28px） | 切片 1a 对比截图；如果主观上不能接受，可在切片 5 重做时再调整，不额外加字号档 |
 | R11 | 表格在窄屏改为 `display:block` 后丢失表格语义 | 窄屏的汇总单元格自带文字标签，并提供排序下拉框；宽屏保持原生 table 语义 |
 | R12 | 隐藏项目让总数看起来变小 | 筛选按钮显示"已隐藏 N"，表格标题旁显示"N 个 · 已隐藏 M"，弹层底部附说明 |
-| R13 | 焦点所在的按钮变成 `disabled` 后焦点掉到 `body`，Esc 和 Tab 循环失效 | `focusout` 兜底（§7.2），由切片 1b 的 smoke 断言覆盖 |
+| R13 | 焦点所在的按钮变成 `disabled` 后焦点掉到 `body`，Esc 和 Tab 循环失效 | `focusout` + `disabled` 变化的 300ms 恢复窗口（§7.2），由切片 1b 的 smoke 断言覆盖；不做永久轮询 |
 | R14 | 中文输入法组字时按 Esc 误关弹层或面板 | `escapeAction` 排除 `isComposing` 和 `keyCode 229`，用单测覆盖 |
 | R15 | 价格机器人推送 `lib/`，与 UI 切片在 rebase 时冲突 | 按 §10 重新构建后解决，不手工合并 |
+| R16 | 待审批工具调用时，Esc 可能同时关闭面板并拒绝审批 | 切片 R 在 0.2.1-rc.2 上构造待审批调用，确认 Esc 只关闭最上层 UI，不误拒绝；若宿主审批层优先，记录顺序并避免面板抢占 |
+
+**R1 alpha.4 静态审计（切片 2）**：宿主“停止生成”快捷键由 `dsh-client-shortcuts` 处理，触发条件是双击 Esc；监听在 `window` 冒泡阶段，`installStopShortcut` 只对 `[data-conversation-session] [data-conversation-region]` 内的会话生效，并跳过 `defaultPrevented` 的事件；宿主弹窗打开时不安装。宿主在捕获阶段只记录，不改变事件。面板 Esc 绑在 `.dss-panel` 根节点，调用 `preventDefault()` 和 `stopPropagation()`，且面板通常不在对话区域内，因此误触停止生成的风险低。仍按 §8 在 0.2.1-rc.2 上真实 Web 验证，并补测待审批工具调用的 Esc 行为（R16）。
 
 ## 12. 待定事项与默认值
 

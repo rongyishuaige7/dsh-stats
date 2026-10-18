@@ -1,11 +1,12 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-let { PricingPanel } = require("./pricing-panel.cjs");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
 const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
+const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
+const { IconRefresh, IconGear } = require("./client-icons.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -764,39 +765,11 @@ function BalanceView(props) {
 	);
 }
 
-function StatsDataStatus({ state, remote, t }) {
-	return e("section", { className: "dss-data-status " + state.kind, "aria-live": "polite" },
-		e("div", { className: "dss-data-status-line" },
-			e("span", null, t(remote ? "source.host" : "source.local")),
-			e("strong", null, t("source." + state.kind)),
-			state.at != null ? e("span", null, t("source.updated") + " " + fmtClock(state.at)) : null
-		),
-		state.error ? e("details", { className: "dss-data-diagnostics" }, e("summary", null, t("source.details")), e("div", null, state.error)) : null
+function StatsDataStatus(props) {
+	return e(Fragment, null,
+		e(StatusIndicator, props),
+		e(StatusBanner, props)
 	);
-}
-
-class PricingErrorBoundary extends react.Component {
-	constructor(props) {
-		super(props);
-		this.state = { hasError: false, error: null };
-	}
-	static getDerivedStateFromError(error) {
-		return { hasError: true, error };
-	}
-	componentDidCatch(error, info) {
-		console.warn("[dsh-stats] PricingPanel render error:", error, info);
-	}
-	render() {
-		if (this.state.hasError) {
-			const t = this.props.t || ((k) => k);
-			return e("div", { className: "dss-pricing" },
-				e("h3", null, t("price.title")),
-				e("p", { role: "alert" }, (t("price.renderError") || "价格设置渲染异常") + ": " + (this.state.error?.message || "unknown")),
-				e("button", { type: "button", className: "dss-export", onClick: () => this.setState({ hasError: false, error: null }) }, t("price.retry") || "重试")
-			);
-		}
-		return this.props.children;
-	}
 }
 
 function StatsPanel(props) {
@@ -816,7 +789,10 @@ function StatsPanel(props) {
 	var onOpenSession = props.onOpenSession;
 	var t = props.t;
 	var aggregateRemote = props.aggregate;
-	var [showPrices, setShowPrices] = useState(false);
+	var gearRef = useRef(null);
+	var drawerRef = useRef(null);
+	var drawerOpenerRef = useRef(null);
+	var [drawer, setDrawer] = useState({ open: false, focusModel: null });
 	var balanceRemote = props.balance;
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview");
@@ -842,6 +818,11 @@ function StatsPanel(props) {
 	var [balanceRefreshRequest, setBalanceRefreshRequest] = useState({ tick: 0, force: false });
 	var markDismiss = useDialogFocus(panelRef, isOpen);
 	var dismiss = useCallback(function() { markDismiss(); onClose("dismiss"); }, [markDismiss, onClose]);
+	var closeDrawer = useCallback(function() { setDrawer({ open: false, focusModel: null }); }, []);
+	var openDrawer = function(focusModel, opener) {
+		drawerOpenerRef.current = opener || gearRef.current;
+		setDrawer({ open: true, focusModel: focusModel || null });
+	};
 	useEffect(function() { if (isOpen) setFocusedTab(tab); }, [isOpen, tab]);
 
 	useEffect(() => {
@@ -964,7 +945,7 @@ function StatsPanel(props) {
 
 	var onPanelKeyDown = function(ev) {
 		if (ev.key === "Tab") {
-			trapTab(ev, panelRef.current);
+			trapTab(ev, drawer.open && drawerRef.current ? drawerRef.current : panelRef.current);
 			return;
 		}
 		var action = escapeAction(ev, layerStack.size);
@@ -1040,26 +1021,52 @@ function StatsPanel(props) {
 						})
 					),
 					e("div", { className: "dss-head-actions" },
-						e("button", { className: "dss-export", onClick: () => setShowPrices(!showPrices), "aria-expanded": showPrices }, t("price.title")),
-						e("button", { className: "dss-export", onClick: refreshCurrent, disabled: isRefreshing }, t("refresh")),
-						tab !== "balance" ? e(Fragment, null,
-							e("button", { className: "dss-export", onClick: () => exportCSV(dateProjects, t) }, "CSV"),
-							e("button", { className: "dss-export", onClick: () => exportJSON(dateProjects) }, "JSON")
-						) : null,
-						e("button", { className: "dss-close", onClick: dismiss, title: t("close"), "aria-label": t("close") },
-							e(IconCloseOutline16, { size: 16 })
-						)
+						tab !== "balance" ? e(StatusIndicator, { state: sourceState, remote: data.remote, t }) : null,
+						e("div", { className: "dss-act-group" },
+							e("button", {
+								type: "button",
+								className: "dss-icon-btn",
+								"data-action": "refresh",
+								"aria-label": t("refresh"),
+								title: t("refresh"),
+								disabled: isRefreshing,
+								onClick: refreshCurrent
+							}, e(IconRefresh, { size: 16 })),
+							tab !== "balance" ? e(ExportMenu, {
+								projects: dateProjects,
+								t,
+								onExportCSV: function() { exportCSV(dateProjects, t); },
+								onExportJSON: function() { exportJSON(dateProjects); }
+							}) : null,
+							e("button", {
+								type: "button",
+								className: "dss-icon-btn",
+								ref: gearRef,
+								"data-action": "pricing",
+								"aria-label": t("price.title"),
+								title: t("price.title"),
+								"aria-expanded": drawer.open,
+								onClick: function() { openDrawer(null, gearRef.current); }
+							}, e(IconGear, { size: 16 }))
+						),
+						e("button", {
+							type: "button",
+							className: "dss-close",
+							"data-action": "close",
+							onClick: dismiss,
+							title: t("close"),
+							"aria-label": t("close")
+						}, e(IconCloseOutline16, { size: 16 }))
 					)
 				),
+				tab !== "balance" ? e(StatusBanner, { state: sourceState, remote: data.remote, t, onRetry: refreshCurrent }) : null,
 				e("div", {
 					className: "dss-body",
 					id: "dss-tabpanel",
 					role: "tabpanel",
 					"aria-labelledby": "dss-tab-" + tab
 				},
-					showPrices ? e(PricingErrorBoundary, { t }, e(PricingPanel, { remote: props.pricing, projects: data.projects, t, onChanged: () => setRefreshTick(x => x + 1) })) : null,
 					tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
-						e(StatsDataStatus, { state: sourceState, remote: data.remote, t }),
 						e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
 					tab === "overview" ? e("div", {
 						className: "dss-overview" + (overviewMaxHeight ? " bounded" : ""),
@@ -1078,7 +1085,19 @@ function StatsPanel(props) {
 						t
 					})
 					)
-				)
+				),
+				e(PricingDrawer, {
+					open: drawer.open,
+					focusModel: drawer.focusModel,
+					opener: drawerOpenerRef.current,
+					gear: gearRef.current,
+					rootRef: drawerRef,
+					onClose: closeDrawer,
+					remote: props.pricing,
+					projects: data.projects,
+					t,
+					onChanged: function() { setRefreshTick(x => x + 1); }
+				})
 			)
 		)
 	);
@@ -1579,7 +1598,7 @@ async function apply(ctx) {
 module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
-	StatsDataStatus, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
+	StatsDataStatus, StatusIndicator, StatusBanner, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,

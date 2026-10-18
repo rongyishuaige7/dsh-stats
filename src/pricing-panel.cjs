@@ -21,6 +21,10 @@ const fmtBeijing = value => beijingInput(value).replace('T', ' ');
 function blankDraft(provider = '', model = '') {
   return { provider, model, currency: 'CNY', uncached: '', cacheRead: '', cacheWrite: '', output: '', from: '', to: '', threshold: '', longUncached: '', longCacheRead: '', longCacheWrite: '', longOutput: '', priority: '', batch: '', flex: '', accountType: 'api' };
 }
+function draftForFocus(focusModel) {
+  if (!focusModel || typeof focusModel.provider !== 'string' || typeof focusModel.model !== 'string') return null;
+  return blankDraft(focusModel.provider, focusModel.model);
+}
 function draftRule(draft, existing, now = new Date()) {
   const number = text => text.trim() === '' ? null : Number(text);
   const rates = Object.fromEntries(fields.map(k => [k, number(draft[k])]));
@@ -97,6 +101,30 @@ function missingModels(projects) {
   }
   return [...rows.values()].sort((a, b) => b.tokens - a.tokens);
 }
+class PricingErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.warn('[dsh-stats] PricingPanel render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      const t = this.props.t || (key => key);
+      return e('div', { className: 'dss-pricing dss-pricing-error' },
+        e('h3', null, t('price.title')),
+        e('p', { role: 'alert' }, (t('price.renderError') || '价格设置渲染异常') + ': ' + (this.state.error?.message || 'unknown')),
+        e('button', { type: 'button', className: 'dss-export', onClick: () => this.setState({ hasError: false, error: null }) }, t('price.retry') || '重试')
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const PriceRuleCard = React.memo(function PriceRuleCard({ rule, phase, isUsed, t }) {
   const [open, setOpen] = React.useState(false);
   const primary = primaryRates(rule);
@@ -118,18 +146,31 @@ const PriceRuleCard = React.memo(function PriceRuleCard({ rule, phase, isUsed, t
         e('span', null, rule.currency + ' / 1M tokens · ' + rule.retrievedAt),
         rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗') : null)) : null);
 });
-function PricingPanel({ remote, projects, onChanged, t }) {
+function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
   const [overrides, setOverrides] = React.useState([]), [draft, setDraft] = React.useState(blankDraft), [search, setSearch] = React.useState('');
   const [preview, setPreview] = React.useState(null), [autoUpdate, setAutoUpdate] = React.useState(true), [dirty, setDirty] = React.useState(false);
   const [advanced, setAdvanced] = React.useState(false), [editingId, setEditingId] = React.useState(null);
   const [catalogOpen, setCatalogOpen] = React.useState(false), [includeHistory, setIncludeHistory] = React.useState(false);
   const [page, setPage] = React.useState(0), [catalogAt, setCatalogAt] = React.useState(Date.now);
+  const [focusTick, setFocusTick] = React.useState(0);
+  const pendingFocusRef = React.useRef(null), focusAfterLocateRef = React.useRef(false), formRef = React.useRef(null);
   const fail = err => setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed'));
+  function locate(provider, model) {
+    setDraft(blankDraft(provider, model));
+    setEditingId(null);
+    setAdvanced(true);
+    setFocusTick(n => n + 1);
+    focusAfterLocateRef.current = true;
+  }
   function accept(result) {
     pricing.validateCatalog(JSON.parse(result.catalogJson));
     const rules = pricing.validateOverrides(JSON.parse(result.overridesJson));
-    setStatus(result); setOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setDraft(blankDraft()); setEditingId(null);
+    const pending = pendingFocusRef.current;
+    pendingFocusRef.current = null;
+    if (pending) locate(pending.provider, pending.model);
+    else setDraft(blankDraft());
+    setStatus(result); setOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setEditingId(null);
     setCatalogAt(Date.now());
   }
   async function call(request, mode = 'accept') {
@@ -148,6 +189,18 @@ function PricingPanel({ remote, projects, onChanged, t }) {
     remote({ action: 'status' }).then(value => { if (!cancelled) accept(value); }).catch(err => { if (!cancelled) fail(err); }).finally(() => { if (!cancelled) setBusy(false); });
     return () => { cancelled = true; };
   }, [remote]);
+  React.useEffect(() => {
+    if (!focusModel) return;
+    if (status) locate(focusModel.provider, focusModel.model);
+    else pendingFocusRef.current = focusModel;
+  }, [focusModel?.nonce]);
+  React.useEffect(() => {
+    if (!focusAfterLocateRef.current || !advanced || !formRef.current) return;
+    focusAfterLocateRef.current = false;
+    formRef.current.scrollIntoView({ block: 'nearest' });
+    const input = formRef.current.querySelector('input');
+    if (input) input.focus();
+  }, [advanced, draft.provider, draft.model, focusTick]);
   function edit(key, value) { setDraft(old => ({ ...old, [key]: value })); setPreview(null); }
   function add() {
     try {
@@ -182,8 +235,8 @@ function PricingPanel({ remote, projects, onChanged, t }) {
       status.error ? e('p', { role: 'status' }, t('price.refreshFailed'), e('details', null, e('summary', null, t('source.details')), status.error)) : null,
       missing.length ? e('div', null, e('h4', null, t('price.missing')),
         missing.map(row => e('div', { key: row.provider + '/' + row.model, className: 'dss-price-row' },
-          e('span', null, row.provider + ' / ' + row.model), button(t('price.configure'), () => { setDraft(blankDraft(row.provider, row.model)); setEditingId(null); setAdvanced(true); })))) : null,
-      e('details', { open: advanced, onToggle: ev => setAdvanced(ev.currentTarget.open) },
+          e('span', null, row.provider + ' / ' + row.model), button(t('price.configure'), () => locate(row.provider, row.model))))) : null,
+      e('details', { open: advanced, onToggle: ev => setAdvanced(ev.currentTarget.open), ref: formRef },
         e('summary', null, t('price.custom') + (overrides.length ? ' (' + overrides.length + ')' : '')),
         e('p', { className: 'dss-price-muted' }, t('price.units')),
         overrides.map(rule => e('div', { key: rule.id, className: 'dss-price-row' }, e('span', null, rule.providerId + ' / ' + rule.canonical),
@@ -229,4 +282,4 @@ function PricingPanel({ remote, projects, onChanged, t }) {
           status.history.filter(v => v !== status.version).map(version => e('div', { key: version, className: 'dss-price-row' }, String(version), button(t('price.rollback'), () => call({ action: 'rollback', version, revision: status.revision }), dirty))))) : null)
     ));
 }
-module.exports = { PricingPanel, draftRule, missingModels, blankDraft, ruleDraft, fmtBeijing };
+module.exports = { PricingPanel, PricingErrorBoundary, draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing };

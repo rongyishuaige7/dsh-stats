@@ -283,13 +283,13 @@ try {
 	}
 	result.statsTabs = true;
 	if (process.env.DSH_SMOKE_EXPECT_PRICING === "1") {
-		if (!await page.clickText(["价格设置", "Price settings"], ".dss-panel button")) throw new Error("price settings button not found");
+		if (!await page.evaluate("(() => { const button = document.querySelector('[data-action=pricing]'); if (!button) return false; button.click(); return true; })()")) throw new Error("price settings button not found");
 		await waitForPage(page, "Boolean(document.querySelector('.dss-pricing input[type=checkbox]'))", deadline, "price settings RPC");
 		result.priceSettings = true;
 		result.priceVersionVisible = await page.evaluate("/2026[0-9]+/.test(document.querySelector('.dss-pricing')?.textContent || '')");
 		if (!result.priceVersionVisible) throw new Error("price catalog version is missing");
 		await capture("pricing");
-		await page.clickText(["价格设置", "Price settings"], ".dss-panel button");
+		await page.evaluate("(() => { const button = document.querySelector('[data-action=drawer-close]'); if (!button) return false; button.click(); return true; })()");
 	}
 
 	const accountClicked = (await page.clickText(["账户余额", "Account Balance"], ".dss-panel button"));

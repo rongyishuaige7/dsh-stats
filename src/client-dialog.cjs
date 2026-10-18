@@ -5,6 +5,7 @@
 // restored only for user-initiated dismissals (Escape, close button, scrim),
 // never when a session opens and the host takes over.
 const react = require("react");
+const e = react.createElement;
 
 const FOCUSABLE = "button, [href], input, select, textarea, summary, [tabindex]:not([tabindex='-1'])";
 
@@ -150,4 +151,101 @@ function useDialogFocus(panelRef, open) {
 	return react.useCallback(function() { restoreRef.current = true; }, []);
 }
 
-module.exports = { FOCUSABLE, focusableElements, trapTab, escapeAction, createLayerStack, LayerContext, useLayer, useDialogFocus };
+function MenuButton(props) {
+	var label = props.label;
+	var trigger = props.trigger;
+	var action = props.action;
+	var disabled = !!props.disabled;
+	var buttonClassName = props.buttonClassName || "dss-export-btn";
+	var menuClassName = props.menuClassName || "";
+	var openState = react.useState(false);
+	var open = openState[0], setOpen = openState[1];
+	var rootRef = react.useRef(null);
+	var buttonRef = react.useRef(null);
+	var menuRef = react.useRef(null);
+
+	var closeMenu = react.useCallback(function(restoreFocus) {
+		setOpen(false);
+		if (restoreFocus && buttonRef.current) buttonRef.current.focus();
+	}, []);
+	useLayer(open, function() { closeMenu(true); });
+
+	react.useEffect(function() {
+		if (!open) return undefined;
+		var first = menuRef.current && menuRef.current.querySelector('[role="menuitem"]:not([disabled])');
+		if (first) first.focus();
+		var root = rootRef.current;
+		var panel = root && root.closest(".dss-panel");
+		var onPointerDown = function(event) {
+			if (root && !root.contains(event.target)) closeMenu(false);
+		};
+		if (panel) panel.addEventListener("pointerdown", onPointerDown, true);
+		return function() {
+			if (panel) panel.removeEventListener("pointerdown", onPointerDown, true);
+		};
+	}, [open, closeMenu]);
+
+	var onMenuKeyDown = function(event) {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			closeMenu(true);
+			return;
+		}
+		if (event.key === "Tab") {
+			event.preventDefault();
+			event.stopPropagation();
+			closeMenu(true);
+			return;
+		}
+		var items = menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role="menuitem"]:not([disabled])')) : [];
+		if (!items.length) return;
+		var index = items.indexOf(document.activeElement);
+		var next = null;
+		if (event.key === "ArrowDown") next = items[(index + 1 + items.length) % items.length];
+		else if (event.key === "ArrowUp") next = items[(index - 1 + items.length) % items.length];
+		else if (event.key === "Home") next = items[0];
+		else if (event.key === "End") next = items[items.length - 1];
+		else return;
+		event.preventDefault();
+		event.stopPropagation();
+		next.focus();
+	};
+
+	return e("div", { className: "dss-menu-wrap " + (props.className || ""), ref: rootRef },
+		e("button", {
+			ref: buttonRef,
+			type: "button",
+			className: buttonClassName,
+			"aria-haspopup": "menu",
+			"aria-expanded": open,
+			"aria-label": label,
+			title: label,
+			disabled: disabled,
+			"data-action": action,
+			onClick: function() { setOpen(!open); }
+		}, trigger),
+		open ? e("div", {
+			className: "dss-menu " + menuClassName,
+			role: "menu",
+			"aria-label": label,
+			ref: menuRef,
+			onKeyDown: onMenuKeyDown,
+			onClick: function(event) { if (event.target.closest('[role="menuitem"]')) closeMenu(true); }
+		}, props.children) : null
+	);
+}
+
+function MenuItem(props) {
+	return e("button", {
+		type: "button",
+		role: "menuitem",
+		tabIndex: -1,
+		className: "dss-menu-item " + (props.className || ""),
+		"data-action": props.action,
+		disabled: props.disabled,
+		onClick: props.onSelect
+	}, props.children);
+}
+
+module.exports = { FOCUSABLE, focusableElements, trapTab, escapeAction, createLayerStack, LayerContext, useLayer, useDialogFocus, MenuButton, MenuItem };

@@ -94,8 +94,7 @@ async function click(selector) {
   assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.click(); return true; })()`), selector);
   await delay(100);
 }
-const REFRESH_SELECTOR = '.dss-head-actions .dss-export:nth-child(2)';
-async function refresh() { await click(REFRESH_SELECTOR); }
+async function refresh() { await click('[data-action=refresh]'); }
 async function tab(index) { await click('.dss-tabs button:nth-child(' + index + ')'); }
 async function focus(selector) {
   await until(`document.querySelector(${JSON.stringify(selector)})`, selector);
@@ -117,6 +116,33 @@ const PANEL_FOCUSABLES = `(() => {
   return [...panel.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
     .filter(node => !node.disabled && !node.hidden && node.getClientRects().length && node.tabIndex >= 0);
 })()`;
+const DRAWER_FOCUSABLES = `(() => {
+  const drawer = document.querySelector('.dss-drawer');
+  if (!drawer) return [];
+  return [...drawer.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
+    .filter(node => !node.disabled && !node.hidden && node.getClientRects().length && node.tabIndex >= 0);
+})()`;
+async function headerMetrics() {
+  return evaluate(`(() => {
+    const panel = document.querySelector('.dss-panel').getBoundingClientRect();
+    const title = document.querySelector('.dss-head h2').getBoundingClientRect();
+    const tabs = document.querySelector('.dss-tabs').getBoundingClientRect();
+    const lines = [...document.querySelectorAll('[role=tab]')].map(node => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getClientRects().length;
+    });
+    const status = document.querySelector('.dss-status-text');
+    const exportLabel = document.querySelector('.dss-export-label');
+    return {
+      panelWidth: panel.width,
+      ownRow: tabs.top >= title.bottom - 1,
+      lines,
+      statusDisplay: status ? getComputedStyle(status).display : 'none',
+      exportDisplay: exportLabel ? getComputedStyle(exportLabel).display : 'none'
+    };
+  })()`);
+}
 // Page.navigate can return before the old document is replaced; clear its ready
 // flag first so the wait cannot pass on the page being navigated away from.
 async function navigate(path) {
@@ -130,8 +156,13 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-balance-head','.dss-balance-account','.dss-hero','.dss-card'];
-    return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(node => node.getClientRects().length && node.scrollWidth > node.clientWidth + 2).map(node => selector + ': ' + node.scrollWidth + ' > ' + node.clientWidth));
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-balance-head','.dss-balance-account','.dss-hero','.dss-card'];
+    return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
+      if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
+      // The tablist is intentionally horizontally scrollable below 860px.
+      if (selector === '.dss-tabs' && getComputedStyle(node).overflowX === 'auto') return [];
+      return [selector + ': ' + node.scrollWidth + ' > ' + node.clientWidth];
+    }));
   })()`);
   assert.deepEqual(issues, [], name + ' content overflow');
   const pageSize = await evaluate(`({ width: innerWidth, scroll: document.documentElement.scrollWidth, nodes: [...document.querySelectorAll('body *')].filter(node => node.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map(node => [node.className, node.getBoundingClientRect().right]) })`);
@@ -184,6 +215,8 @@ try {
   await until('document.querySelector(".dss-data-status.exact")');
   assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'panel opens with focus on the current tab');
   assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'true', 'trigger exposes the open state');
+  assert(await evaluate('!document.querySelector(".dss-status-banner")'), 'exact state has no banner');
+  assert(await evaluate('["refresh","export","pricing","close"].every(a => !!document.querySelector("[data-action=" + a + "]"))'), 'header exposes data-action hooks');
   const hostRenders = await evaluate('window.__fixture.panelRenders');
   await evaluate('window.__fixture.sessionReads = 0; window.__fixture.bumpSessions(); window.__fixture.bumpWorkspaces()'); await delay(200);
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'host data must not be recomputed from session updates');
@@ -197,10 +230,20 @@ try {
   assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
   await tab(1);
   report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
-  // 1b: dialog semantics, focus trap, manual tab activation and Escape.
+  // 1b/2: export-menu Escape order, then panel Escape order.
+  await focus('[data-action=export]');
+  await click('[data-action=export]');
+  await until('document.querySelector("[role=menu]")');
+  assert.equal(await evaluate('document.querySelector("[data-action=export]").getAttribute("aria-expanded")'), 'true', 'export menu opens');
+  assert(await evaluate('!!document.querySelector("[data-action=export-csv]") && !!document.querySelector("[data-action=export-json]")'), 'export menu items expose data-action');
+  await press('Escape');
+  await until('!document.querySelector("[role=menu]")');
+  assert(await evaluate('document.activeElement === document.querySelector("[data-action=export]")'), 'export menu Escape returns focus to the export button');
+  assert(await evaluate('document.querySelector(".dss-panel") !== null'), 'export menu Escape must not close the panel');
+  assert.equal(await evaluate('document.querySelector("[data-action=export]").getAttribute("aria-expanded")'), 'false', 'export menu closes');
   await press('Escape');
   await until('!document.querySelector(".dss-panel")');
-  assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'Escape restores focus to the trigger');
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'panel Escape returns focus to the trigger');
   assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'false', 'trigger exposes the closed state');
   await focus('.dss-trigger');
   await click('.dss-trigger');
@@ -238,9 +281,9 @@ try {
   await evaluate('window.__fixture.releaseStats()');
   await until('document.querySelector(".dss-data-status.exact")');
   await evaluate('window.__fixture.released = false');
-  await focus(REFRESH_SELECTOR);
-  await click(REFRESH_SELECTOR);
-  await until(`document.querySelector(${JSON.stringify(REFRESH_SELECTOR)}).disabled`);
+  await focus('[data-action=refresh]');
+  await click('[data-action=refresh]');
+  await until("document.querySelector('[data-action=refresh]').disabled");
   await delay(100);
   const activeAfterDisabled = await evaluate(`(() => {
     const active = document.activeElement;
@@ -253,7 +296,7 @@ try {
   await until('!document.querySelector(".dss-panel")');
   assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'Escape after disabled refresh restores focus to the trigger');
   await evaluate('window.__fixture.releaseStats()').catch(() => {});
-  report.checks.push('dialog semantics: focus starts on the current tab, Tab/Shift+Tab loop, arrows move focus only, Enter activates, IME-safe Escape restores focus');
+  report.checks.push('dialog semantics: focus starts on the current tab, Tab/Shift+Tab loop, arrows move focus only, Enter activates, export-menu and panel Escape order, IME-safe Escape restores focus');
   for (const mode of ['stats=error', 'hold=1']) {
     await navigate('/?' + mode + '&lang=zh'); await click('.dss-trigger');
     await until('document.querySelector(".dss-cards")');
@@ -293,6 +336,11 @@ try {
     await tab(1);
     await until('document.querySelector(".dss-data-status.exact")');
     assert(await evaluate('!document.querySelector(".dss-data-cost")'));
+    const metrics = await headerMetrics();
+    assert(metrics.lines.every(n => n === 1), 'tab labels must not wrap at ' + width + 'px');
+    assert.equal(metrics.ownRow, metrics.panelWidth < 860, 'tablist row layout at ' + width + 'px');
+    assert.equal(metrics.statusDisplay === 'none', width < 420, 'status text display at ' + width + 'px');
+    assert.equal(metrics.exportDisplay === 'none', width < 420, 'export label display at ' + width + 'px');
     for (const [index, view] of [[1,'overview'],[2,'timeline'],[3,'trends'],[4,'balance']]) {
       await tab(index); await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && ['overview', 'trends'].includes(view)) {
@@ -308,15 +356,23 @@ try {
   }
   for (const width of [641, 700, 768, 1024, 1100, 1101]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    await navigate('/?lang=en'); await click('.dss-trigger');
+    await navigate('/?lang=en'); await click('.dss-trigger'); await tab(1);
     if (width === 641) {
       const panelTop = await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().top');
       assert(panelTop >= 45, 'desktop panel keeps a comfortable top offset');
     }
-    for (const index of [1, 2, 3, 4]) { await tab(index); await layout('header-' + width + '-' + index); }
+    const metrics = await headerMetrics();
+    assert(metrics.lines.every(n => n === 1), 'tab labels must not wrap at ' + width + 'px');
+    assert.equal(metrics.ownRow, metrics.panelWidth < 860, 'tablist row layout at ' + width + 'px');
+    assert.equal(metrics.statusDisplay === 'none', metrics.panelWidth < 420, 'status text display at ' + width + 'px');
+    assert.equal(metrics.exportDisplay === 'none', metrics.panelWidth < 420, 'export label display at ' + width + 'px');
+    assert(await evaluate('["refresh","export","pricing","close"].every(a => !!document.querySelector("[data-action=" + a + "]"))'), 'header action hooks at ' + width + 'px');
+    await tab(1);
     if (width === 641) await capture('intermediate-header');
+    if (width === 1024) await capture('header-1024');
+    for (const index of [1, 2, 3, 4]) { await tab(index); await layout('header-' + width + '-' + index); }
   }
-  report.checks.push('English header boundaries 641/700/768/1024/1100/1101px: all controls visible and disjoint');
+  report.checks.push('English header boundaries 641/700/768/1024/1100/1101px: all controls visible and disjoint, tabs stay on one line, tablist drops below 860px');
   await evaluate('window.__fixture.accountMode = "error"'); await refresh();
   await until('document.querySelector(".dss-balance-status.stale")');
   assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "current").length'), 0);
@@ -332,6 +388,9 @@ try {
   await tab(1);
   await evaluate('window.__fixture.statsMode = "partial"'); await refresh();
   await until('document.querySelector(".dss-data-status.partial")');
+  await until('document.querySelector(".dss-status-banner.partial")');
+  assert(await evaluate('!document.querySelector("[data-action=retry]")'), 'partial banner has no retry');
+  assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'partial banner exposes diagnostics');
   await until('document.querySelector(".dss-cards")?.textContent.includes("*")');
   await evaluate(`document.querySelector('.dss-cards [role=button][aria-label*="unpriced"]').click()`);
   await until('document.querySelector(".dss-cards [aria-expanded=true]")'); await layout('partial'); await capture('narrow-partial');
@@ -340,10 +399,16 @@ try {
   await layout('unsupported'); await capture('narrow-unsupported');
   await evaluate('window.__fixture.statsMode = "error"'); await refresh();
   await until('document.querySelector(".dss-data-status.stale")');
+  await until('document.querySelector(".dss-status-banner.stale")');
+  assert(await evaluate('!!document.querySelector("[data-action=retry]")'), 'stale banner exposes retry');
+  assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'stale banner exposes diagnostics');
   await layout('stale'); await capture('narrow-stale');
   await navigate('/?stats=error&lang=en');
   await click('.dss-trigger');
   await until('document.querySelector(".dss-data-status.fallback")');
+  await until('document.querySelector(".dss-status-banner.fallback")');
+  assert(await evaluate('!document.querySelector("[data-action=retry]")'), 'fallback without host remote has no retry');
+  assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'fallback banner exposes diagnostics');
   assert(await evaluate('document.querySelector(".dss-data-status").textContent.includes(window.__fixture.t("source.local"))'));
   await layout('fallback'); await capture('narrow-fallback');
   report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data and local fallback');
@@ -351,8 +416,17 @@ try {
   await evaluate('Date.now = () => 1792238400000'); // Catalog phases as of 2026-10-17; usage fixtures remain in September.
   await click('.dss-trigger'); await tab(1);
   const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
-  await priceButton('price.title');
+  await click('[data-action=pricing]');
   await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
+  await until('document.querySelector(".dss-drawer")');
+  assert.equal(await evaluate('document.querySelector(".dss-drawer").getAttribute("role")'), 'dialog', 'pricing drawer uses dialog semantics');
+  assert.equal(await evaluate('document.activeElement.getAttribute("data-action")'), 'drawer-close', 'drawer focuses its close button');
+  assert(await evaluate('!!document.querySelector("[data-action=drawer-close]")'), 'drawer exposes its close action');
+  await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; if (!nodes.length) return false; nodes[nodes.length - 1].focus(); return true; })()`);
+  await press('Tab');
+  assert(await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[0]; })()`), 'drawer Tab wraps to its first control');
+  await press('Tab', 8);
+  assert(await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[nodes.length - 1]; })()`), 'drawer Shift+Tab wraps to its last control');
   assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule").length'), 0, 'collapsed catalog mounts no cards');
   const catalogSummary = await evaluate(`(() => {
     const summary = [...document.querySelectorAll('summary')].find(s => s.textContent.includes(window.__fixture.t('price.catalog')));
@@ -397,11 +471,26 @@ try {
   for (const width of [320, 390, 641, 700, 768, 1024, 1440]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await layout('pricing-' + width);
-    if (width === 320 || width === 641) { await evaluate('document.querySelector(".dss-pricing").scrollIntoView()'); await capture('prices-' + width); }
+    const drawerBox = await evaluate(`(() => {
+      const drawer = document.querySelector('.dss-drawer').getBoundingClientRect();
+      const panelNode = document.querySelector('.dss-panel');
+      const panel = panelNode.getBoundingClientRect();
+      return { width: drawer.width, right: drawer.right, panelWidth: panelNode.clientWidth, panelRight: panel.right };
+    })()`);
+    assert.equal(Math.round(drawerBox.width), Math.round(Math.min(460, drawerBox.panelWidth)), 'drawer width at ' + width + 'px');
+    assert(Math.abs(drawerBox.right - drawerBox.panelRight) <= 1, 'drawer is flush with the panel right edge at ' + width + 'px');
+    if (width === 320 || width === 641) {
+      await evaluate('document.querySelector(".dss-pricing").scrollIntoView(); document.querySelector(".dss-overlay").scrollTop = 0');
+      await capture('prices-' + width);
+    }
+    if (width === 1440) {
+      await evaluate('document.querySelector(".dss-overlay").scrollTop = 0; document.querySelector(".dss-drawer-body").scrollTop = 0');
+      await capture('desktop-pricing-drawer');
+    }
   }
   await click('.dss-price-catalog-section > summary');
   await until('!document.querySelector(".dss-price-rule")');
-  report.checks.push('catalog: lazy cards and bodies, 25-row pages, search reset, history labels/counts, all ' + inspected + ' rules at 320px, expanded cards at seven widths');
+  report.checks.push('catalog: lazy cards and bodies, 25-row pages, search reset, history labels/counts, all ' + inspected + ' rules at 320px, expanded cards at seven widths inside the pricing drawer');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
   await priceButton('price.configure');
   for (const [field, value] of [['uncached','1'],['output','2'],['cacheRead','0']]) {
@@ -419,7 +508,14 @@ try {
   await priceButton('price.refresh');
   await until('document.querySelector(".dss-pricing").textContent.includes(window.__fixture.t("price.refreshFailed"))');
   await layout('pricing-failure'); await capture('narrow-pricing-failure');
-  report.checks.push('price settings: missing models, custom price preview/save/edit and offline refresh retains prices');
+  await press('Escape');
+  await until('!document.querySelector(".dss-drawer")');
+  assert(await evaluate('document.activeElement === document.querySelector("[data-action=pricing]")'), 'drawer Escape returns focus to the gear');
+  assert(await evaluate('document.querySelector(".dss-panel") !== null'), 'drawer Escape must not close the panel');
+  await press('Escape');
+  await until('!document.querySelector(".dss-panel")');
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'panel Escape after drawer returns focus to the trigger');
+  report.checks.push('price settings: missing models, custom price preview/save/edit, offline refresh and drawer Escape order');
   await navigate('/?theme=dark&lang=en');
   await click('.dss-trigger'); await tab(4);
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();
