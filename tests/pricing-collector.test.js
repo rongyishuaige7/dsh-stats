@@ -47,6 +47,7 @@ test('official parser maps long-context annotations and honours the unknown cach
   stale.rules.find(r => r.family === 'openai' && r.canonical === 'gpt-5.4' && !r.effectiveTo).contextTiers.long.output = 30;
   const changed = await collect({ fetchSource, at, baseCatalog: stale, deepSeekBaseline });
   expect(changed.report.candidates.filter(c => c.source.includes('openai')).map(c => c.model)).toEqual(['gpt-5.4']);
+  expect(changed.report.autoPublished.map(r => r.canonical)).not.toContain('gpt-5.4');
 });
 
 test('structured collector scopes models to OpenRouter and rejects unsupported billing dimensions', () => {
@@ -109,6 +110,20 @@ test('official Anthropic and Google adapters auto-publish new models as provisio
   expect(engine.priceUsage({ providerId: 'anthropic', model: 'claude-new-6', time: Date.parse(at), uncached: 1000000, output: 1000000 })).toMatchObject({ status: 'estimated' });
   expect(() => parseAnthropic('changed')).toThrow();
   expect(() => parseGoogle('<html></html>')).toThrow();
+});
+
+test('auto provisional policy skips retired and non-text models', async () => {
+  const retiredAnthropic = anthropicMd.replace('| Claude Opus 5 |', '| Claude Retired 1 (retired, except legacy deployments) |');
+  const nonTextGoogle = googleHtml + '<h2 id="gemini-image-1">Gemini Image 1</h2><table class="pricing-table"><tr><td>Input price</td><td>Free</td><td>$1</td></tr><tr><td>Output price</td><td>Free</td><td>$2</td></tr></table>';
+  const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) }
+    : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? retiredAnthropic : url.includes('google') ? nonTextGoogle : markdown;
+  const result = await collect({ fetchSource, at, deepSeekBaseline });
+  expect(result.report.failures).toEqual([]);
+  expect(result.report.autoPublished.map(r => r.canonical)).not.toContain('claude-retired-1');
+  expect(result.report.autoPublished.map(r => r.canonical)).not.toContain('gemini-image-1');
+  expect(result.report.candidates.find(c => c.model === 'claude-retired-1')).toMatchObject({ reason: 'Missing official model coverage' });
+  expect(result.report.candidates.find(c => c.model === 'gemini-image-1')).toBeUndefined();
+  expect(parseAnthropic(retiredAnthropic)[0]).toMatchObject({ model: 'claude-retired-1', restricted: true });
 });
 
 test('custom price times are Beijing time regardless of the host timezone', () => {

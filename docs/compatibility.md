@@ -11,6 +11,7 @@
 | `0.1.6-alpha.1` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v3 handles/live Session | fixture verified |
 | `0.1.7-rc.2` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v4 handles/live Session | full Web verified |
 | `0.2.0-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v4 handles/per-record/live Session | fixture verified |
+| `0.2.1-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v4 handles/per-record/live Session | fixture verified |
 
 `0.1.2-rc.1` is intentionally excluded from the verified matrix: it contains a known projection defect. Use `0.1.3-alpha.2` or later as the minimum verified baseline. Older rows are retained as historical context.
 
@@ -96,6 +97,16 @@ Current pnpm requires `add -w` because the profile is a workspace root.
 Full Web runs for `0.1.5-rc.2` and `0.1.6-alpha.1` remain unverified; their module
 contract and independent UI fixture coverage is unchanged. See
 [0.3.1 release verification](release-0.3.1.md).
+
+## October 18, 2026 verification (Harness 0.2.1-rc.2)
+
+npm reports `latest=0.2.0-rc.2`, `next=0.2.1-rc.2`. The `0.2.1-rc.2` package
+keeps the same storage/projection/token-meter contracts as `0.2.0-rc.2`, but
+changed several plugin entry points from a `default` export to a named `apply`
+object (for example `dsh-session-persistence-jsonl`). `scripts/harness-contract-smoke.mjs`
+now accepts both shapes and passes all six checks against an isolated
+`0.2.1-rc.2` installation. Full Web boot and a dedicated 0.2.1 browser run were
+not repeated; the synthetic browser fixture remains version-independent.
 
 ## October 2026 verification (Harness 0.2.0-rc.2)
 

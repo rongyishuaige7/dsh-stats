@@ -51,13 +51,13 @@ Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
 Pin a release:
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.4.3
+dsh plugin --profile web add @rongyi7/dsh-stats@0.5.0
 ```
 
 Install a local tarball:
 
 ```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.4.3.tgz
+dsh plugin --profile web add ./rongyi7-dsh-stats-0.5.0.tgz
 ```
 
 Verify the bundle registration:
@@ -269,7 +269,7 @@ See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and har
 
 ## 🛠️ Local development
 
-Compatibility covers Harness `0.1.3-alpha.2` through `0.2.0-rc.2`. `0.1.5-rc.3` and
+Compatibility covers Harness `0.1.3-alpha.2` through `0.2.1-rc.2`. `0.1.5-rc.3` and
 `0.1.7-rc.2` are verified in complete Web hosts; the other releases pass real
 module contract checks. See the
 [compatibility matrix](docs/compatibility.md). Harness 0.1.7+ needs plugin 0.4.1 or later;

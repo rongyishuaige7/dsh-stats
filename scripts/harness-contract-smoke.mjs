@@ -72,18 +72,25 @@ async function persist(header, events, inheritedEventCount = 0) {
   return persistence.inspect(header.id);
 }
 
+// Published packages changed between Harness releases: some export the plugin
+// as `default`, others expose the object with `apply` directly. Accept both
+// shapes without weakening the real-module contract.
+const pluginOf = async name => {
+  const module = await upstream(name);
+  return module.default || module;
+};
 try {
-  await ctx.plugin((await upstream('dsh-storage')).default);
-  await ctx.plugin(await upstream('dsh-storage-json'), { root: join(scratch, 'storage') });
-  await ctx.plugin(await upstream('dsh-storage-domain'), { backend: 'json' });
+  await ctx.plugin(await pluginOf('dsh-storage'));
+  await ctx.plugin(await pluginOf('dsh-storage-json'), { root: join(scratch, 'storage') });
+  await ctx.plugin(await pluginOf('dsh-storage-domain'), { backend: 'json' });
   await ctx.plugin(sessionModule.default);
-  await ctx.plugin((await upstream('dsh-session-projection')).default);
-  await ctx.plugin((await upstream('dsh-token-meter')).default);
-  await ctx.plugin(await upstream('dsh-session-stats'));
+  await ctx.plugin(await pluginOf('dsh-session-projection'));
+  await ctx.plugin(await pluginOf('dsh-token-meter'));
+  await ctx.plugin(await pluginOf('dsh-session-stats'));
   const sessionRoot = join(process.env.DSH_HOME, 'sessions');
   mkdirSync(sessionRoot, { recursive: true });
-  await ctx.plugin((await upstream('dsh-session-persistence-jsonl')).default, { root: sessionRoot, compression: 'none' });
-  await ctx.plugin((await upstream('dsh-session-projection-cache')).default, { writeEveryEvents: 100, writeIntervalMs: 60_000 });
+  await ctx.plugin(await pluginOf('dsh-session-persistence-jsonl'), { root: sessionRoot, compression: 'none' });
+  await ctx.plugin(await pluginOf('dsh-session-projection-cache'), { writeEveryEvents: 100, writeIntervalMs: 60_000 });
   await ctx.plugin(StatsService);
 
   const inherited = eventLog(9999, 1);
