@@ -54,6 +54,9 @@ jobs:
       - name: Preview npm package
         run: npm pack --dry-run
 
+      - name: Install CJK fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
       - name: Browser fixture
         run: |
           export CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
