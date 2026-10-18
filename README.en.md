@@ -82,7 +82,7 @@ If a newer pnpm reports `ERR_PNPM_ADDING_TO_ROOT`, use `dsh plugin --profile web
 | 👤 Balances and quotas | Balances and plan quotas for configured providers. |
 | 🔒 Privacy and export | Keys stay on the host, and statistics export to CSV/JSON. |
 
-The overview keeps up to seven projects visible, the timeline keeps the latest three days visible, and model distribution keeps three models visible. Additional content scrolls inside its own region, so the panel itself does not keep growing. `(ง •̀_•́)ง`
+The project overview uses a fixed-height panel with one scrolling body: KPIs, the metrics strip, filters, the project table, and expanded session details all live there. Projects page 50 at a time and sessions 100 at a time; paging never changes the top summary. Model distribution keeps three models visible. `(ง •̀_•́)ง`
 
 ## 🖼️ Interface tour
 
@@ -90,7 +90,9 @@ These are light-mode captures of the running UI. Dense views use the full README
 
 ### Project overview
 
-Summary cards cover projects, sessions, tokens, LLM/tool time, and spend. Project rows support sorting, filtering, and expandable session details.
+A cost-first KPI row, a Token-structure legend and active-span strip, a seven-column project table, and a filter menu. Sort by any column, keep the header sticky, and expand a row for project-level turns/steps, tool time, first token, tok/s, full path, and session details.
+
+Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu, or pricing drawer one layer at a time and finally closes the panel; `Enter` sorts from a header button or expands/collapses a row.
 
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Complete project overview with masked project identity fields" width="100%"></a>
@@ -156,9 +158,13 @@ Individual usage rows may also be marked `subscription` or `ambiguous`. Subscrip
 
 ### Price settings and updates
 
-The dashboard uses “Estimated cost”: `¥12.34` for available prices, `¥12.34*` for partially priced usage, and “Awaiting price” when no usable rate exists. Click an amount for details. Sources and update errors stay in Price settings.
+The dashboard uses “Estimated cost”: `¥12.34` for available prices, `¥12.34*` for partially priced usage, and “Awaiting price” when no usable rate exists. Click the ⓘ next to the cost for details. Sources and update errors stay in the price settings drawer.
 
-In Price settings, enter the exact provider/model IDs and prices per million tokens, then Add to draft → Preview changes → Save. Existing rules can be edited or removed. Empty means unknown; `0` means free. Additional conditions cover account type, dates, context thresholds and service multipliers. Without a start date, earlier usage is estimated; with a start date, the rule applies only within its interval. Start and end times are entered and shown in Beijing time (UTC+8), like the rest of the panel. Custom rules take precedence, including explicitly configured relay/local accounts. Subscription tokens never become API spend.
+The gear icon in the header opens the price settings drawer from the right. In it, enter the exact provider/model IDs and prices per million tokens, then Add to draft → Preview changes → Save. Existing rules can be edited or removed. Empty means unknown; `0` means free. Additional conditions cover account type, dates, context thresholds and service multipliers. Without a start date, earlier usage is estimated; with a start date, the rule applies only within its interval. Start and end times are entered and shown in Beijing time (UTC+8), like the rest of the panel. Custom rules take precedence, including explicitly configured relay/local accounts. Subscription tokens never become API spend.
+
+<p align="center">
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="Right-side price settings drawer with sync status, unpriced models, custom rates, and the catalog" width="100%"></a>
+</p>
 
 The host checks signed catalogs at startup and hourly, with a cooled-down check for unpriced models. Manual refresh, disabling updates and restoring a version are available. A restore pauses updates until automatic updates are enabled and saved again. Failed updates retain valid prices and expose the error in settings. Only public pricing data is downloaded; no sessions or credentials are uploaded.
 

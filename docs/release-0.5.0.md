@@ -19,8 +19,17 @@ Pre-1.0 feature release, 2026-10-18.
 - **Latest catalog coverage**: GPT-6.1 Sol, Claude Opus 5.5 and Gemini 4 Argon
   rules, plus provisional official coverage for current Anthropic and Google
   models.
-- **UI polish**: project overview bottoms align in daily/all modes and with the
-  timeline; bounded project lists keep the panel stable.
+- **Project overview rework (0.5.0)**: a cost-first KPI row, Token-structure
+  legend, active-span strip, a seven-column project table with a sticky header,
+  a filter menu with hidden-state persistence, and expandable project/session
+  details. The panel has a fixed height and a single body scroll for the overview; the
+  timeline keeps its internal viewport until slice 4. The header, status banner
+  and pricing drawer stay in place. The pricing settings moved to
+  a right-side drawer with focus-model locating, and Esc closes the top layer
+  (filter, menu, drawer) before the panel.
+- **Responsive detail**: 320/390/640 layouts keep session time, turns/steps,
+  LLM and tool time, cache hit, input/output and model in a non-truncated meta
+  line; wide rows keep every column unclipped.
 
 ## Compatibility
 
@@ -34,13 +43,13 @@ this Harness release; clean installation should no longer report peer mismatches
 
 ## Verification
 
-- Full test suite: **334 tests** pass in the default timezone and `TZ=UTC`.
-- Browser fixture: 13 check groups / **33 screenshots**, 0 console errors,
+- Full test suite: **357 tests** pass in the default timezone and `TZ=UTC`.
+- Browser fixture: **18 check groups / 37 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
-- Signed catalog `2026101804`: 834 rules, verified against the pinned public key.
+- Signed catalog `2026101805`: 836 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
 - Pricing auto-publish workflow run: success (16 provisional models signed).
@@ -68,8 +77,8 @@ independently; do not reinstall merely to receive new prices.
   follow the actual host/OpenRouter route.
 - Full Web boot and a dedicated 0.2.1 browser run were not repeated; the
   browser fixture is version-independent.
-- Daily/all panel alignment is asserted at desktop 1440 px; narrow wrapping is
-  not part of the alignment assertion.
+- The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
+  narrow layout and non-truncation are asserted separately at 320/390/640 px.
 
 ## Release gates
 
