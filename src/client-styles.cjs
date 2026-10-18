@@ -291,6 +291,9 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-prow td.c-last{color:var(--dss-text-2)}
 .dss-prow td.c-meta{display:none}
 .dss-pdetail td{padding:0 10px 14px 34px;text-align:left;white-space:normal;border-bottom:1px solid var(--dss-line)}
+.dss-pdetail-meta{display:flex;flex-wrap:wrap;gap:4px 16px;padding:8px 0 2px 10px;border-bottom:1px dashed var(--dss-line);margin-bottom:4px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);font-variant-numeric:tabular-nums}
+.dss-pdetail-meta b{color:var(--dss-text-2);font-weight:600}
+.dss-ppath-full{flex:1 1 220px;min-width:0;color:var(--dss-text-3);overflow-wrap:anywhere}
 .dss-sessions{display:flex;flex-direction:column;min-width:0}
 .dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 72px 70px 56px 44px 112px minmax(0,130px) 74px;gap:10px;padding:6px 0;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm)}
 .dss-ptable .dss-sess>:nth-child(n+2){transform:none}

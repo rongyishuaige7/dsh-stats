@@ -398,8 +398,16 @@ function ProjectTable(props) {
 			e("td", { className: "c-meta" }, meta)
 		));
 		if (isOpen) {
+			var detailStats = project.stats || {};
 			body.push(e("tr", { key: project.id + "-detail", className: "dss-pdetail" },
 				e("td", { colSpan: 8 },
+					e("div", { className: "dss-pdetail-meta" },
+						e("span", null, t("card.turnsSteps") + " ", e("b", null, fmtN(detailStats.turns || 0) + " / " + fmtN(detailStats.steps || 0))),
+						e("span", null, t("w.tool") + " ", e("b", null, fmtDuration(detailStats.toolMs || 0))),
+						e("span", null, t("th.ttft") + " ", e("b", null, detailStats.ttftAvgMs != null ? fmtDuration(detailStats.ttftAvgMs) : "—")),
+						e("span", null, t("th.tps") + " ", e("b", null, detailStats.tps != null ? fmtTps(detailStats.tps) : "—")),
+						e("span", { className: "dss-ppath-full", title: project.path }, project.path)
+					),
 					e(ProjectSessions, {
 						project: project,
 						page: sessionPage.id === project.id ? sessionPage.page : 0,

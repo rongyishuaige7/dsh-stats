@@ -703,12 +703,15 @@ try {
   assert.equal(await evaluate('document.querySelector("th[data-sort-key=name]").getAttribute("aria-sort")'), 'ascending');
   await openProject('large-0');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
+  assert(await evaluate('!!document.querySelector(".dss-pdetail-meta")'), 'expanded row exposes project detail metrics');
+  const detailMeta = await evaluate('document.querySelector(".dss-pdetail-meta").textContent');
+  assert(detailMeta.includes('/fixture/large-0') && detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta keeps turns/steps, tool, ttft, tps and full path: ' + detailMeta);
   await focus('[data-project-id=large-0] [data-action=expand]');
   await press('Enter');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'false');
   await press('Enter');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
-  report.checks.push('table keyboard sort and expand keep aria-sort/aria-expanded in sync');
+  report.checks.push('table keyboard sort and expand keep aria-sort/aria-expanded in sync; detail meta keeps turns/steps, tool, ttft, tps and path');
 
   const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
   assert.equal(sessionIds.length, 205, 'main and subagent sessions all reachable');
