@@ -413,6 +413,14 @@ function timelineAllViewportHeight(days) {
 	return pageDays > MAX_VISIBLE_TIMELINE_DAYS ? timelineLayout(pageDays, false).rowMinH * MAX_VISIBLE_TIMELINE_DAYS : null;
 }
 
+// Both tabs start their content block on the same line. Matching the timeline
+// viewport plus its hint/limit/heat controls makes the two panels end together.
+var TIMELINE_CONTROLS_HEIGHT = 90;
+
+function timelineOverviewContentHeight(days) {
+	return (timelineAllViewportHeight(days) || 480) + TIMELINE_CONTROLS_HEIGHT;
+}
+
 function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
 }
@@ -914,7 +922,7 @@ function StatsPanel(props) {
 	}, [data.timeline, effectiveDate]);
 	// In all mode the whole overview content (summary + legend + list) shares
 	// the timeline viewport height; the list takes whatever height remains.
-	var overviewMaxHeight = effectiveDate ? null : (timelineAllViewportHeight((data.timeline || {}).days) || 480);
+	var overviewMaxHeight = effectiveDate ? null : timelineOverviewContentHeight((data.timeline || {}).days);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);

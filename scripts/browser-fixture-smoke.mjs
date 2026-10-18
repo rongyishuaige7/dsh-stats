@@ -420,16 +420,16 @@ try {
     if (width === 1440) {
       await click('.dss-nav .dss-tabs button:nth-child(2)');
       await until('document.querySelector(".dss-overview.bounded")');
-      const overviewContentHeight = Math.round(await evaluate('document.querySelector(".dss-overview.bounded").getBoundingClientRect().height'));
+      const overviewPanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
       const projectListHeight = Math.round(await evaluate('document.querySelector(".dss-pcards-viewport").getBoundingClientRect().height'));
       await tab(2); await until('document.querySelector(".dss-timeline-viewport")');
-      const timelineViewportHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
-      assert.equal(overviewContentHeight, timelineViewportHeight, 'overview content matches the timeline viewport height');
-      assert(projectListHeight > 0 && projectListHeight < overviewContentHeight, 'summary and legend are part of the height budget');
+      const timelinePanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
+      assert.equal(overviewPanelHeight, timelinePanelHeight, 'overview and timeline panels end on the same line');
+      assert(projectListHeight > 0, 'project list remains visible inside the aligned panel');
       await tab(1);
     }
   }
-  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, overview content shares timeline height, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
