@@ -476,6 +476,36 @@ test('ruleMatchesModel supports route prefixes and compound suffixes', () => {
 	expect(pricing.ruleMatchesModel(rule, 'cn:deepseek-v4.1-pro')).toBe(false);
 });
 
+test('official GPT-6.1 Sol, Opus 5.5 and Gemini 4 Argon rules', () => {
+	const at = Date.parse('2026-10-18T12:00:00Z');
+	const tokens = { uncached: 1000000, cacheRead: 1000000, cacheWrite: 1000000, output: 1000000 };
+
+	const gpt = priceUsage({ providerId: 'openai', model: 'gpt-6.1-sol', time: at, contextTokens: 1000, ...tokens });
+	expect(gpt).toMatchObject({ status: 'exact', currency: 'USD', modelCanonical: 'gpt-6.1-sol', ruleId: 'openai/gpt-6.1-sol@2026-10-18', unpricedTokens: 0 });
+	expect(gpt.amount).toBeCloseTo(14.6);
+	expect(priceUsage({ providerId: 'openai', model: 'gpt-6.1-sol', time: at, contextTokens: 272001, ...tokens }).amount).toBeCloseTo(24.2);
+	expect(priceUsage({ providerId: 'openai', model: 'gpt-6.1-sol', time: at, contextTokens: 1000, serviceTier: 'fast', ...tokens }).amount).toBeCloseTo(29.2);
+	expect(priceUsage({ providerId: 'openai', model: 'gpt-6.1-sol', time: at, contextTokens: 1000, serviceTier: 'batch', ...tokens }).amount).toBeCloseTo(7.3);
+
+	const claude = priceUsage({ providerId: 'anthropic', model: 'claude-opus-5-5', time: at, ...tokens });
+	expect(claude).toMatchObject({ status: 'exact', currency: 'USD', modelCanonical: 'claude-opus-5-5', ruleId: 'anthropic/claude-opus-5-5@2026-10-18', unpricedTokens: 0 });
+	expect(claude.amount).toBeCloseTo(29.2);
+	expect(priceUsage({ providerId: 'anthropic', model: 'claude-opus-5.5', time: at, ...tokens }).ruleId).toBe(claude.ruleId);
+	expect(priceUsage({ providerId: 'anthropic', model: 'claude-opus-5-5', time: at, serviceTier: 'fast', ...tokens }).amount).toBeCloseTo(58.4);
+	expect(priceUsage({ providerId: 'anthropic', model: 'claude-opus-5-5', time: at, serviceTier: 'batch', ...tokens }).amount).toBeCloseTo(14.6);
+
+	const gemini = priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: at, ...tokens });
+	expect(gemini).toMatchObject({ status: 'exact', currency: 'USD', modelCanonical: 'gemini-4-argon', ruleId: 'google/gemini-4-argon@2026-10-18', unpricedTokens: 0 });
+	expect(gemini.amount).toBeCloseTo(14.1);
+	expect(priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: at, serviceTier: 'priority', ...tokens }).amount).toBeCloseTo(25.38);
+	expect(priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: at, serviceTier: 'batch', ...tokens }).amount).toBeCloseTo(7.05);
+
+	const dec = Date.parse('2026-12-01T00:00:00Z');
+	expect(priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: dec, ...tokens })).toMatchObject({ status: 'exact', amount: 28.2, ruleId: 'google/gemini-4-argon@2026-12-01' });
+	expect(priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: dec, serviceTier: 'priority', ...tokens }).amount).toBeCloseTo(50.76);
+	expect(priceUsage({ providerId: 'google', model: 'gemini-4-argon', time: dec, serviceTier: 'batch', ...tokens }).amount).toBeCloseTo(14.1);
+});
+
 test('provider-scoped catalog rules take precedence over family rules', () => {
 	const base = structuredClone(pricing.BUILTIN);
 	const common = {

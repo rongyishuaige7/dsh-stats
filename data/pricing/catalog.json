@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026092566,
-  "publishedAt": "2026-10-17T20:34:36.690Z",
+  "version": 2026101801,
+  "publishedAt": "2026-10-18T04:30:00Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -17672,6 +17672,132 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-17T20:34:36.690Z"
+    },
+    {
+      "id": "openai/gpt-6.1-sol@2026-10-18",
+      "family": "openai",
+      "canonical": "gpt-6.1-sol",
+      "aliases": [
+        "gpt-6.1-sol",
+        "openai/gpt-6.1-sol"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "retrievedAt": "2026-10-18",
+      "rates": null,
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "observedFrom": "2026-10-18T00:00:00Z",
+      "contextTiers": {
+        "short": {
+          "cacheRead": 0.1,
+          "uncached": 2,
+          "cacheWrite": 2.5,
+          "output": 10
+        },
+        "long": {
+          "cacheRead": 0.2,
+          "uncached": 4,
+          "cacheWrite": 5,
+          "output": 15
+        }
+      },
+      "contextThreshold": 272000,
+      "tierMultipliers": {
+        "standard": 1,
+        "priority": 2,
+        "batch": 0.5,
+        "flex": 0.5
+      },
+      "note": "Standard, Fast/priority, Batch and Flex are modeled; Ultrafast 6x and regional +10% are not."
+    },
+    {
+      "id": "anthropic/claude-opus-5-5@2026-10-18",
+      "family": "anthropic",
+      "canonical": "claude-opus-5-5",
+      "aliases": [
+        "claude-opus-5-5",
+        "anthropic/claude-opus-5-5",
+        "claude-opus-5.5",
+        "anthropic/claude-opus-5.5"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "retrievedAt": "2026-10-18",
+      "rates": {
+        "cacheRead": 0.2,
+        "uncached": 4,
+        "cacheWrite": 5,
+        "output": 20
+      },
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "effectiveFrom": "2026-09-22T00:00:00Z",
+      "observedFrom": "2026-10-18T00:00:00Z",
+      "tierMultipliers": {
+        "standard": 1,
+        "priority": 2,
+        "batch": 0.5
+      },
+      "note": "5m cache writes are $5; 1h cache writes are $8 and are not separately modeled. Fast maps to priority; Batch is 50%."
+    },
+    {
+      "id": "google/gemini-4-argon@2026-10-18",
+      "family": "google",
+      "canonical": "gemini-4-argon",
+      "aliases": [
+        "gemini-4-argon",
+        "google/gemini-4-argon"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "retrievedAt": "2026-10-18",
+      "rates": {
+        "cacheRead": 0.1,
+        "uncached": 2,
+        "cacheWrite": 2,
+        "output": 10
+      },
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "observedFrom": "2026-10-18T00:00:00Z",
+      "effectiveTo": "2026-12-01T00:00:00Z",
+      "tierMultipliers": {
+        "standard": 1,
+        "priority": 1.8,
+        "batch": 0.5,
+        "flex": 0.5
+      },
+      "note": "Price through 2026-11-30; the Contributor tier is not separately modeled."
+    },
+    {
+      "id": "google/gemini-4-argon@2026-12-01",
+      "family": "google",
+      "canonical": "gemini-4-argon",
+      "aliases": [
+        "gemini-4-argon",
+        "google/gemini-4-argon"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "retrievedAt": "2026-10-18",
+      "rates": {
+        "cacheRead": 0.2,
+        "uncached": 4,
+        "cacheWrite": 4,
+        "output": 20
+      },
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "observedFrom": "2026-10-18T00:00:00Z",
+      "effectiveFrom": "2026-12-01T00:00:00Z",
+      "tierMultipliers": {
+        "standard": 1,
+        "priority": 1.8,
+        "batch": 0.5,
+        "flex": 0.5
+      },
+      "note": "Price from 2026-12-01; the Contributor tier is not separately modeled."
     }
   ],
   "fx": [
