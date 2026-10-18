@@ -126,7 +126,7 @@ function Legend(props) {
 	var [page, setPage] = useState(0);
 	useEffect(function() { setPage(0); }, [props.filterKey]);
 	var window = pageRows(projects, page, PROJECT_CARD_LIMIT);
-	return e("div", null, e("div", { className: "dss-legend" },
+	return e("div", { className: "dss-legend-wrap" }, e("div", { className: "dss-legend" },
 		window.rows.map(function(p, i) {
 			return e("span", {
 				key: p.id, className: "dss-chip" + (hidden[p.id] ? " off" : ""),
@@ -189,7 +189,6 @@ function ProjectsTable(props) {
 		setSessionPage(function(state) { return state.id === null && state.page === 0 ? state : { id: null, page: 0 }; });
 		if (viewport.current) viewport.current.scrollTop = 0;
 	}, [props.filterKey, hiddenKey]);
-	var viewportStyle = Number.isFinite(props.maxHeight) && props.maxHeight > 0 ? { "--dss-projects-max-height": props.maxHeight + "px" } : null;
 
 	var fallbackColorIndexes = projectColorIndexes(projects);
 	var effSortKey = (dayMode && sort.key === "lastActive") ? "cost" : sort.key;
@@ -325,7 +324,7 @@ function ProjectsTable(props) {
 
 	return e("div", { className: "dss-pcards-wrap" },
 		toolbar,
-		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : ""), style: viewportStyle },
+		e("div", { ref: viewport, className: "dss-pcards-viewport" + (cards.length > MAX_VISIBLE_PROJECTS ? " scrollable" : "") },
 			e("div", { className: "dss-pcards" }, cards)
 		),
 		e(PageControls, { window: projectWindow, onPage: changeProjectPage, t, name: "projects" })
@@ -913,8 +912,9 @@ function StatsPanel(props) {
 		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
 		return data.timeline;
 	}, [data.timeline, effectiveDate]);
-	// In all mode the project list uses the same viewport cap as the timeline.
-	var projectViewportMaxHeight = effectiveDate ? null : timelineAllViewportHeight((data.timeline || {}).days);
+	// In all mode the whole overview content (summary + legend + list) shares
+	// the timeline viewport height; the list takes whatever height remains.
+	var overviewMaxHeight = effectiveDate ? null : (timelineAllViewportHeight((data.timeline || {}).days) || 480);
 
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
@@ -964,11 +964,14 @@ function StatsPanel(props) {
 				tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
 					e(StatsDataStatus, { state: sourceState, remote: data.remote, t }),
 					e(DateNavigator, { nav, setNav, dates, effectiveDate, t }),
-				tab === "overview" ? e(Fragment, null,
+				tab === "overview" ? e("div", {
+					className: "dss-overview" + (overviewMaxHeight ? " bounded" : ""),
+					style: overviewMaxHeight ? { "--dss-overview-max-height": overviewMaxHeight + "px" } : null
+				},
 					e(SummaryCards, { projects: visibleProjects, t }),
 					e(Legend, { projects: statProjects, colorIndexes, hidden, onToggle: toggle, t, filterKey: effectiveDate }),
 					visibleProjects.length === 0 ? e("div", { className: "dss-empty" }, t("empty")) :
-						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, maxHeight: projectViewportMaxHeight, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
+						 e(ProjectsTable, { projects: statProjects, colorIndexes, hidden, selected, t, filterKey: effectiveDate, dayMode: effectiveDate != null, onOpenSession, onSelect: (id) => setSelected((s) => s === id ? null : id) })
 				) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
 				: e(TrendsView, {
 					globals,

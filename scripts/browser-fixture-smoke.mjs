@@ -385,13 +385,10 @@ try {
   const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
   assert.equal(sessionIds.length, 205, 'main and subagent sessions all reachable');
   assert(await evaluate('document.querySelector(".dss-group").textContent.includes("95")'));
-  const projectAllViewportHeight = await evaluate('getComputedStyle(document.querySelector(".dss-pcards-viewport")).maxHeight');
   await click('.dss-sess-title');
   assert(sessionIds.includes(await evaluate('window.__fixture.openedSession')), 'paged sessions retain navigation');
   await click('.dss-trigger'); await tab(2);
   await until('document.querySelector(".dss-timeline-limit")');
-  const timelineAllViewportHeight = await evaluate('getComputedStyle(document.querySelector(".dss-timeline-viewport")).maxHeight');
-  assert.equal(projectAllViewportHeight, timelineAllViewportHeight, 'project and timeline all views share one viewport height');
   const recentDay = await evaluate('document.querySelector(".dss-day").id');
   const datesSeen = [];
   for (;;) {
@@ -420,8 +417,19 @@ try {
     await layout('large-sessions-' + width);
     await evaluate('document.querySelector(".dss-pcards-wrap").scrollIntoView({ block: "start" })');
     await capture('large-pages-' + width);
+    if (width === 1440) {
+      await click('.dss-nav .dss-tabs button:nth-child(2)');
+      await until('document.querySelector(".dss-overview.bounded")');
+      const overviewContentHeight = Math.round(await evaluate('document.querySelector(".dss-overview.bounded").getBoundingClientRect().height'));
+      const projectListHeight = Math.round(await evaluate('document.querySelector(".dss-pcards-viewport").getBoundingClientRect().height'));
+      await tab(2); await until('document.querySelector(".dss-timeline-viewport")');
+      const timelineViewportHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
+      assert.equal(overviewContentHeight, timelineViewportHeight, 'overview content matches the timeline viewport height');
+      assert(projectListHeight > 0 && projectListHeight < overviewContentHeight, 'summary and legend are part of the height budget');
+      await tab(1);
+    }
   }
-  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, shared all-view height, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/legend filters, 205 main/subagent sessions, 75 history days; stable totals, overview content shares timeline height, sort/date reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
