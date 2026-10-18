@@ -200,7 +200,8 @@ reflects its action ("newest", not a 30-day filter).
 
 Verification: 329 tests pass in default and UTC timezones; the four bundles are
 rebuilt and compared byte-for-byte with a fresh build; signed pricing checks,
-artifact syntax checks and npm package dry-run remain unchanged. The real
+artifact syntax checks and npm package dry-run remain unchanged. CI now
+rejects committed bundle drift with `git diff --exit-code -- lib`. The real
 Chrome fixture passed with 33 screenshots and zero browser errors, including
 the new date-filter page-reset checks and all 809 catalog rules.
 
