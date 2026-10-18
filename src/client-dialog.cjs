@@ -109,17 +109,33 @@ function useDialogFocus(panelRef, open) {
 			var active = document.activeElement;
 			if (active === document.body || active === document.documentElement || active == null) current.focus();
 		};
-		var onFocusOut = function() { Promise.resolve().then(checkFocus); };
-		if (panel) panel.addEventListener("focusout", onFocusOut);
-		var observer = typeof MutationObserver !== "undefined" ? new MutationObserver(function() { setTimeout(checkFocus, 0); }) : null;
-		if (observer && panel) observer.observe(panel, { attributes: true, attributeFilter: ["disabled"], subtree: true });
 		// Chrome's focus fixup for a newly disabled button can run after the
-		// microtask, so keep a cheap watchdog while the modal is open.
-		var watchdog = setInterval(checkFocus, 50);
+		// event, so poll for 300ms after focusout/disabled changes. A new
+		// trigger restarts the window instead of leaving a permanent interval.
+		var burstUntil = 0;
+		var burstTimer = null;
+		var startFocusBurst = function() {
+			burstUntil = Date.now() + 300;
+			if (burstTimer !== null) return;
+			burstTimer = setInterval(function() {
+				checkFocus();
+				if (Date.now() >= burstUntil) {
+					clearInterval(burstTimer);
+					burstTimer = null;
+				}
+			}, 50);
+		};
+		var onFocusOut = function() { startFocusBurst(); };
+		if (panel) panel.addEventListener("focusout", onFocusOut);
+		var observer = typeof MutationObserver !== "undefined" ? new MutationObserver(function() { startFocusBurst(); }) : null;
+		if (observer && panel) observer.observe(panel, { attributes: true, attributeFilter: ["disabled"], subtree: true });
 		return function() {
 			if (panel) panel.removeEventListener("focusout", onFocusOut);
 			if (observer) observer.disconnect();
-			clearInterval(watchdog);
+			if (burstTimer !== null) {
+				clearInterval(burstTimer);
+				burstTimer = null;
+			}
 			if (!restoreRef.current) return;
 			restoreRef.current = false;
 			var opener = openerRef.current;
