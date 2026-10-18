@@ -8,10 +8,10 @@ function icon(children, props) {
 	return e("svg", {
 		width: size,
 		height: size,
-		viewBox: "0 0 16 16",
+		viewBox: props && props.viewBox ? props.viewBox : "0 0 16 16",
 		fill: "none",
 		stroke: "currentColor",
-		strokeWidth: "1.6",
+		strokeWidth: props && props.strokeWidth != null ? props.strokeWidth : "1.6",
 		strokeLinecap: "round",
 		strokeLinejoin: "round",
 		"aria-hidden": "true",
@@ -41,12 +41,12 @@ function IconChevronDown(props) {
 
 function IconGear(props) {
 	return icon([
-		e("circle", { key: "ring", cx: 8, cy: 8, r: 2.2 }),
+		e("circle", { key: "ring", cx: 12, cy: 12, r: 3 }),
 		e("path", {
-			key: "spokes",
-			d: "M8 1.9v1.5M8 12.6v1.5M1.9 8h1.5M12.6 8h1.5M3.7 3.7l1.1 1.1M11.2 11.2l1.1 1.1M12.3 3.7l-1.1 1.1M4.8 11.2l-1.1 1.1"
+			key: "teeth",
+			d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
 		})
-	], props);
+	], Object.assign({}, props, { viewBox: "0 0 24 24", strokeWidth: 2 }));
 }
 
 function IconFilter(props) {

@@ -885,10 +885,15 @@ try {
       await tab(2); await until('document.querySelector(".dss-timeline-viewport")');
       const timelinePanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
       assert.equal(overviewPanelHeight, timelinePanelHeight, 'overview and timeline panels end on the same line');
+      const allTimelineHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
+      await click('[data-action=mode-day]');
+      await until('document.querySelector(".dss-day.day-mode")');
+      const dayTimelineHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
+      assert.equal(dayTimelineHeight, allTimelineHeight, 'day and all timeline viewports share the same height');
       await tab(1);
     }
   }
-  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, day/all timeline viewports share height, sort/date reset, recent reset, session navigation, three widths');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

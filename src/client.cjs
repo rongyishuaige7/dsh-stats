@@ -162,6 +162,7 @@ function TimelineView(props) {
 	useEffect(function() { setPage(function(page) { return page ? 0 : page; }); }, [props.filterKey]);
 
 	var days = timeline.days || [];
+	var allDays = (props.allTimeline && props.allTimeline.days) || days;
 	var allDisplayDays = timelineDisplayDays(days, dayMode);
 	var pageCount = Math.max(1, Math.ceil(allDisplayDays.length / TIMELINE_PAGE_DAYS));
 	var currentPage = Math.min(page, pageCount - 1);
@@ -172,6 +173,12 @@ function TimelineView(props) {
 	var maxBlockH = layout.maxBlockH;
 	var maxProjects = layout.maxProjects;
 	var rowMinH = layout.rowMinH;
+	// Day mode has one row of project lanes; all mode caps at three visible day
+	// rows. Give the day viewport the same height as the all-history viewport so
+	// switching modes does not leave a short card over a large blank body.
+	var allLayout = timelineLayout(allDays.length, false);
+	var allViewportH = Math.min(allDays.length * allLayout.rowMinH, allLayout.rowMinH * MAX_VISIBLE_TIMELINE_DAYS);
+	var dayViewportH = dayMode ? Math.max(rowMinH, allViewportH) : 0;
 
 	return e("div", null,
 		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
@@ -219,7 +226,7 @@ function TimelineView(props) {
 			),
 			e("div", {
 				className: "dss-timeline-viewport" + (!dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? " scrollable" : ""),
-				style: !dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null
+				style: dayMode ? { minHeight: dayViewportH + "px" } : (!dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null)
 			}, displayDays.map((d) => {
 				var grouped = groupTimelineBlocks(d, hidden);
 				var projList = grouped.projects;
@@ -237,7 +244,7 @@ function TimelineView(props) {
 					return sum + blocks.reduce(function(slotSum, b) { return slotSum + b.ms; }, 0);
 				}, 0);
 				var dayLaneContentH = projList.length ? projList.length * layout.laneHeight + Math.max(0, projList.length - 1) * layout.laneGap + 16 : 56;
-				var dayRowMinH = dayMode ? Math.max(56, Math.min(rowMinH, dayLaneContentH)) : rowMinH;
+				var dayRowMinH = dayMode ? Math.max(56, Math.min(rowMinH, dayLaneContentH), dayViewportH) : rowMinH;
 				var rightCol = e("div", { className: "dss-day-info" },
 					e("div", { className: "dur" }, fmtDuration(visibleMs)),
 					e("div", { className: "span" }, spanText),
@@ -807,7 +814,7 @@ function StatsPanel(props) {
 								onShowAll: showAll,
 								t
 							})
-						) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
+						) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, allTimeline: data.timeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
 						: e(TrendsView, {
 							globals,
 							dateGlobals,
