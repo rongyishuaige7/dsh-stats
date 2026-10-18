@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101802,
-  "publishedAt": "2026-10-18T04:00:00Z",
+  "version": 2026101803,
+  "publishedAt": "2026-10-18T04:29:41.303Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -4910,7 +4910,8 @@
         "cacheWrite": null
       },
       "confidence": "estimated",
-      "reasoningIncludedInOutput": true
+      "reasoningIncludedInOutput": true,
+      "effectiveTo": "2026-10-18T04:29:41.303Z"
     },
     {
       "id": "openrouter/thedrummer/skyfall-36b-v2@2026-09-17T08:46:53.180Z",
@@ -13184,7 +13185,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-08T23:19:28.596Z"
+      "effectiveFrom": "2026-10-08T23:19:28.596Z",
+      "effectiveTo": "2026-10-18T04:29:41.303Z"
     },
     {
       "id": "openrouter/mistralai/mistral-nemo@2026-10-08T23:19:28.596Z",
@@ -17671,7 +17673,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-17T20:34:36.690Z"
+      "effectiveFrom": "2026-10-17T20:34:36.690Z",
+      "effectiveTo": "2026-10-18T04:29:41.303Z"
     },
     {
       "id": "openai/gpt-6.1-sol@2026-10-18",
@@ -17798,6 +17801,89 @@
         "flex": 0.5
       },
       "note": "Price from 2026-12-01; the Contributor tier is not separately modeled."
+    },
+    {
+      "id": "openrouter/unbiased/pareto-26.10@2026-10-18T04:29:41.303Z",
+      "family": "openrouter",
+      "canonical": "unbiased/pareto-26.10",
+      "aliases": [
+        "unbiased/pareto-26.10"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T04:29:41.303Z",
+      "rates": {
+        "uncached": 0.7999999999999999,
+        "output": 3.1999999999999997,
+        "cacheRead": 0.03,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true
+    },
+    {
+      "id": "openrouter/~deepseek/deepseek-flash-latest@2026-10-18T04:29:41.303Z",
+      "family": "openrouter",
+      "canonical": "~deepseek/deepseek-flash-latest",
+      "aliases": [
+        "~deepseek/deepseek-flash-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T04:29:41.303Z",
+      "rates": {
+        "uncached": 0.049999999999999996,
+        "output": 0.6,
+        "cacheRead": 0.008,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T04:29:41.303Z"
+    },
+    {
+      "id": "openrouter/qwen/qwen3-30b-a3b-instruct-2507@2026-10-18T04:29:41.303Z",
+      "family": "openrouter",
+      "canonical": "qwen/qwen3-30b-a3b-instruct-2507",
+      "aliases": [
+        "qwen/qwen3-30b-a3b-instruct-2507"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T04:29:41.303Z",
+      "rates": {
+        "uncached": 0.09,
+        "output": 0.3,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T04:29:41.303Z"
+    },
+    {
+      "id": "openrouter/google/gemma-3-27b-it@2026-10-18T04:29:41.303Z",
+      "family": "openrouter",
+      "canonical": "google/gemma-3-27b-it",
+      "aliases": [
+        "google/gemma-3-27b-it"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-18",
+      "observedFrom": "2026-10-18T04:29:41.303Z",
+      "rates": {
+        "uncached": 0.08,
+        "output": 0.35,
+        "cacheRead": 0.04,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-18T04:29:41.303Z"
     }
   ],
   "fx": [
