@@ -112,6 +112,8 @@ test('sortProjects covers every key, direction and stable name tie-break', () =>
 	const c = project('c', 'Charlie', projectStats(30, 20, 3, 200), [session(1)], { sessionCount: 3, lastActiveAt: 200 });
 	const names = list => list.map(p => p.name);
 	expect(names(sortProjects([a, b, c], 'name', 1))).toEqual(['Alpha', 'Beta', 'Charlie']);
+	const numeric = [project('n10', 'Project 10', projectStats(1, 0, 0, 0), []), project('n2', 'Project 2', projectStats(1, 0, 0, 0), [])];
+	expect(names(sortProjects(numeric, 'name', 1))).toEqual(['Project 2', 'Project 10']);
 	expect(names(sortProjects([a, b, c], 'cost', -1))).toEqual(['Beta', 'Alpha', 'Charlie']);
 	expect(names(sortProjects([a, b, c], 'sessions', -1))).toEqual(['Charlie', 'Alpha', 'Beta']);
 	expect(names(sortProjects([a, b, c], 'tokens', -1))).toEqual(['Beta', 'Alpha', 'Charlie']);

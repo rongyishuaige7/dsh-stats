@@ -7,7 +7,7 @@ const { localDayKey, modelNameOnly } = require("./client-data.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
 
 const e = react.createElement;
-const { useState, useEffect } = react;
+const { useState, useEffect, useMemo } = react;
 const PROJECT_PAGE = 50;
 const SESSION_PAGE = 100;
 
@@ -97,15 +97,16 @@ function OverviewKpis(props) {
 		e("div", { className: "dss-kpi" },
 			e("div", { className: "dss-kpi-k" }, t("kpi.tokens")),
 			e("div", { className: "dss-kpi-v" }, fmtTokens(tokenTotal)),
-			e("div", { className: "dss-tokbar", role: "img", "aria-label": t("w.input") + " " + fmtTokens(input) + " · " + t("kpi.hit") + " " + (hitPct == null ? "—" : hitPct + "%") + " · " + t("w.output") + " " + fmtTokens(output) },
+			e("div", { className: "dss-tokbar", role: "img", "aria-label": t("kpi.tokAria").replace("%s", fmtTokens(cache)).replace("%s", fmtTokens(uncached)).replace("%s", fmtTokens(output)) },
 				e("i", { className: "cache", style: { flexGrow: cache } }),
 				e("i", { className: "unc", style: { flexGrow: uncached } }),
 				e("i", { className: "out", style: { flexGrow: output } })
 			),
 			e("div", { className: "dss-tok-legend" },
-				e("span", null, e("i", { className: "dot cache" }), t("w.input") + " " + fmtTokens(input)),
-				e("span", null, e("i", { className: "dot unc" }), t("kpi.hit") + " " + (hitPct == null ? "—" : hitPct + "%")),
-				e("span", null, e("i", { className: "dot out" }), t("w.output") + " " + fmtTokens(output))
+				e("span", null, e("i", { className: "dot cache" }), t("kpi.hit") + " " + (hitPct == null ? "—" : hitPct + "%")),
+				e("span", null, e("i", { className: "dot unc" }), t("kpi.uncached")),
+				e("span", null, e("i", { className: "dot out" }), t("w.output") + " " + fmtTokens(output)),
+				e("span", null, t("w.input") + " " + fmtTokens(input))
 			)
 		),
 		e("div", { className: "dss-kpi" },
@@ -139,7 +140,7 @@ function OverviewStrip(props) {
 	} else {
 		parts.push(e("span", { key: "active-days" }, t("strip.activeDays") + " ", e("b", null, fmtN(props.activeDays))));
 	}
-	return e("div", { className: "dss-strip", "aria-label": t("strip.span") }, parts);
+	return e("div", { className: "dss-strip" }, parts);
 }
 
 function OverviewTools(props) {
@@ -193,7 +194,7 @@ function ProjectFilterMenu(props) {
 		e("span", null, t("filter.title")),
 		hiddenCount > 0 ? e("span", { className: "dss-filter-badge" }, t("filter.hidden").replace("%d", String(hiddenCount))) : null
 	);
-	return e(Popover, { label: t("filter.title"), action: "filter", buttonClassName: "dss-tool-btn dss-filter-btn", panelClassName: "dss-filter-popover", trigger: trigger },
+	return e(Popover, { label: t("filter.title"), ariaLabel: false, action: "filter", buttonClassName: "dss-tool-btn dss-filter-btn", panelClassName: "dss-filter-popover", trigger: trigger },
 		e("div", { className: "dss-filter-head" },
 			e("span", null, t("filter.title")),
 			e("button", { type: "button", className: "dss-link-btn", "data-action": "filter-show-all", onClick: props.onShowAll }, t("filter.showAll"))
@@ -223,12 +224,43 @@ function ProjectFilterMenu(props) {
 	);
 }
 
+
+function sessionStamp(value, dayMode) {
+	if (!value) return { short: "—", full: "—" };
+	var date = new Date(value);
+	if (Number.isNaN(date.getTime())) return { short: "—", full: "—" };
+	var mm = pad(date.getMonth() + 1), dd = pad(date.getDate());
+	var hh = pad(date.getHours()), mi = pad(date.getMinutes());
+	var clock = hh + ":" + mi;
+	return { short: dayMode ? clock : mm + "-" + dd + " " + clock, full: date.getFullYear() + "-" + mm + "-" + dd + " " + clock };
+}
+
+function sessionMeta(session, stamp, model, t) {
+	var stats = session.stats || {};
+	var turns = fmtN(stats.turns || 0) + "/" + fmtN(stats.steps || 0);
+	var llm = fmtDuration(stats.llmMs || 0), tool = fmtDuration(stats.toolMs || 0);
+	var hit = stats.cacheHitPct == null ? "—" : fmtPct(stats.cacheHitPct);
+	var tokens = fmtTokens(stats.inputTokens || 0) + " / " + fmtTokens(stats.outputTokens || 0);
+	return stamp.short + " · " + turns + " · LLM " + llm + " · " + t("w.tool") + " " + tool + " · " + t("kpi.hit") + " " + hit + " · " + t("sess.inOut") + " " + tokens + " · " + (model || "—");
+}
+
 function ProjectSessions(props) {
 	var project = props.project, t = props.t;
+	var dayMode = !!props.dayMode;
 	var all = project.sessions || [];
 	var main = all.filter(function(session) { return !session.subagent; });
 	var sub = all.filter(function(session) { return session.subagent; });
 	var window = pageRows(main.concat(sub), props.page || 0, SESSION_PAGE);
+	var header = e("div", { className: "dss-sess dss-sess-h", "aria-hidden": "true" },
+		e("span", null, t("th.sessions")),
+		e("span", { className: "dss-sess-time" }, dayMode ? t("sess.time") : t("sess.updated")),
+		e("span", { className: "dss-sess-turns" }, t("sess.turnsSteps")),
+		e("span", { className: "dss-sess-llm" }, t("th.llm") + " / " + t("th.tool")),
+		e("span", { className: "dss-sess-hit" }, t("sess.hit")),
+		e("span", { className: "dss-sess-token" }, t("sess.tokenInOut")),
+		e("span", { className: "dss-sess-model" }, t("sess.model")),
+		e("span", { className: "dss-sess-cost" }, t("sess.cost"))
+	);
 	var rows = [];
 	var grouped = false;
 	window.rows.forEach(function(session) {
@@ -238,31 +270,40 @@ function ProjectSessions(props) {
 		}
 		var title = session.title || t("w.untitled");
 		var model = modelNameOnly(session);
+		var stats = session.stats || {};
+		var stamp = sessionStamp(session.updatedAt, dayMode);
 		var cost = fmtCostSummary(sessionCostSummary(session), t);
+		var turns = fmtN(stats.turns || 0) + " · " + fmtN(stats.steps || 0);
+		var llm = fmtDuration(stats.llmMs || 0), tool = fmtDuration(stats.toolMs || 0);
+		var hit = stats.cacheHitPct == null ? "—" : fmtPct(stats.cacheHitPct);
+		var tokens = fmtTokens(stats.inputTokens || 0) + " / " + fmtTokens(stats.outputTokens || 0);
 		var tags = [
 			session.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null,
 			session.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null,
 			session.quality === "partial" ? e("span", { className: "dss-tag", key: "partial", title: t("w.partialHint") }, t("w.partialTag")) : session.quality === "stale" ? e("span", { className: "dss-tag", key: "stale", title: t("w.staleHint") }, t("w.staleTag")) : null
 		];
+		var titleNode = props.onOpenSession ? e("button", {
+			type: "button",
+			className: "ti dss-sess-title",
+			title: t("openSession") + ": " + title,
+			"aria-label": t("openSession") + ": " + title,
+			onClick: function(ev) { ev.stopPropagation(); props.onOpenSession(session); }
+		}, title, tags) : e("span", { className: "ti dss-sess-title", title: title }, title, tags);
 		rows.push(e("div", { className: "dss-sess" + (session.subagent ? " sub" : ""), key: session.id, "data-session-id": session.id },
-			props.onOpenSession ? e("button", {
-				type: "button",
-				className: "ti dss-sess-title",
-				title: t("openSession") + ": " + title,
-				"aria-label": t("openSession") + ": " + title,
-				onClick: function(ev) { ev.stopPropagation(); props.onOpenSession(session); }
-			}, title, tags) : e("span", { className: "ti", title: title }, title, tags),
-			e("span", { className: "me" }, fmtClock(session.updatedAt)),
-			e("span", { className: "st" }, fmtN(session.stats.turns) + " " + t("w.turns") + " · " + fmtN(session.stats.steps) + " " + t("w.steps")),
-			e("span", { className: "st" }, "LLM " + fmtDuration(session.stats.llmMs)),
-			e("span", { className: "st" }, fmtPct(session.stats.cacheHitPct)),
-			e("span", { className: "st" }, fmtTokens(session.stats.inputTokens) + " / " + fmtTokens(session.stats.outputTokens)),
-			e("span", { className: "st dss-sess-model", title: model }, model || "—"),
-			e("span", { className: "st dss-cost dss-sess-cost", title: cost }, cost)
+			titleNode,
+			e("span", { className: "st dss-sess-time", title: stamp.full }, stamp.short),
+			e("span", { className: "st dss-sess-turns" }, turns),
+			e("span", { className: "st dss-sess-llm", title: "LLM " + llm + " · " + t("w.tool") + " " + tool }, llm + " / " + tool),
+			e("span", { className: "st dss-sess-hit" }, hit),
+			e("span", { className: "st dss-sess-token" }, tokens),
+			e("span", { className: "st dss-sess-model", title: model || "" }, model || "—"),
+			e("span", { className: "st dss-cost dss-sess-cost", title: cost }, cost),
+			e("span", { className: "dss-sess-meta" }, sessionMeta(session, stamp, model, t))
 		));
 	});
 	return e("div", { className: "dss-sessions" },
 		e(PageControls, { window: window, onPage: props.onPage, t: t, name: "sessions" }),
+		header,
 		rows.length ? rows : e("div", { className: "dss-empty" }, t("empty"))
 	);
 }
@@ -287,7 +328,9 @@ function ProjectTable(props) {
 		if (expandedId && !projects.some(function(project) { return project.id === expandedId; })) setExpandedId(null);
 	}, [projects, expandedId]);
 	var shares = props.shares || costShares(projects);
-	var sorted = sortProjects(projects, sort.key, sort.dir, { dayMode: props.dayMode, spans: props.spans });
+	var sorted = useMemo(function() {
+		return sortProjects(projects, sort.key, sort.dir, { dayMode: props.dayMode, spans: props.spans });
+	}, [projects, sort.key, sort.dir, props.dayMode, props.spans]);
 	var window = pageRows(sorted, projectPage, PROJECT_PAGE);
 	var changeSort = function(key) {
 		setSort(function(current) { return current.key === key ? { key: key, dir: -current.dir } : { key: key, dir: defaultSortDir(key) }; });
@@ -413,6 +456,7 @@ function ProjectTable(props) {
 						page: sessionPage.id === project.id ? sessionPage.page : 0,
 						onPage: function(page) { setSessionPage({ id: project.id, page: page }); },
 						onOpenSession: props.onOpenSession,
+						dayMode: props.dayMode,
 						t: t
 					})
 				)

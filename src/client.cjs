@@ -620,7 +620,7 @@ function StatsPanel(props) {
 
 	// 这些 memo 必须放在早退之前，保证面板关闭时 hooks 数量不变。
 	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
-	var visibleProjects = statProjects.filter(function(project) { return !hidden[project.id]; });
+	var visibleProjects = useMemo(function() { return statProjects.filter(function(project) { return !hidden[project.id]; }); }, [statProjects, hiddenKey]);
 	var prevDate = previousActiveDate(dates, effectiveDate);
 	var previousSummary = useMemo(function() {
 		if (!prevDate) return null;
@@ -633,14 +633,14 @@ function StatsPanel(props) {
 		return day ? projectDaySpans(day) : new Map();
 	}, [data.timeline, effectiveDate]);
 	var activeDays = useMemo(function() { return activeDayCount(data.timeline, hidden); }, [data.timeline, hiddenKey]);
+	var totals = useMemo(function() { return overviewTotals(visibleProjects); }, [visibleProjects]);
+	var shares = useMemo(function() { return costShares(visibleProjects); }, [visibleProjects]);
+	var pending = useMemo(function() { return pendingFocus(visibleProjects); }, [visibleProjects]);
 
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...(h && typeof h === "object" && !Array.isArray(h) ? h : {}), [id]: !(h && h[id]) }));
 	var showAll = function() { setHidden({}); };
-	var totals = overviewTotals(visibleProjects);
-	var shares = costShares(visibleProjects);
-	var pending = pendingFocus(visibleProjects);
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";

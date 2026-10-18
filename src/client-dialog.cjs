@@ -186,12 +186,6 @@ function MenuButton(props) {
 	}, [open, closeMenu]);
 
 	var onMenuKeyDown = function(event) {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			event.stopPropagation();
-			closeMenu(true);
-			return;
-		}
 		if (event.key === "Tab") {
 			event.preventDefault();
 			event.stopPropagation();
@@ -288,7 +282,7 @@ function Popover(props) {
 			className: buttonClassName,
 			"aria-haspopup": "dialog",
 			"aria-expanded": open,
-			"aria-label": label,
+			"aria-label": props.ariaLabel === false ? undefined : label,
 			title: label,
 			"data-action": action,
 			onClick: function() { setOpen(!open); }
@@ -298,13 +292,7 @@ function Popover(props) {
 			className: "dss-popover " + panelClassName,
 			role: "dialog",
 			"aria-label": label,
-			tabIndex: -1,
-			onKeyDown: function(event) {
-				if (event.key !== "Escape") return;
-				event.preventDefault();
-				event.stopPropagation();
-				closePopover(true);
-			}
+			tabIndex: -1
 		}, props.children) : null
 	);
 }

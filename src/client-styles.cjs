@@ -240,7 +240,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-info{border:0;background:none;padding:2px;border-radius:5px;color:var(--dss-text-3);display:inline-grid;cursor:pointer}
 .dss-info:hover{color:var(--dss-text)}
 .dss-info-tip{display:none;position:absolute;top:calc(100% + 6px);left:-10px;width:270px;z-index:20;background:var(--dss-panel);border:1px solid var(--dss-line);border-radius:10px;box-shadow:var(--dss-shadow-pop);padding:9px 11px;font-size:var(--dss-fs-sm);color:var(--dss-text-2);line-height:1.55}
-.dss-info:hover+.dss-info-tip,.dss-info:focus-visible+.dss-info-tip{display:block}
+.dss-info:hover+.dss-info-tip,.dss-info:focus+.dss-info-tip,.dss-info:focus-visible+.dss-info-tip{display:block}
+.dss-info-wrap:focus-within .dss-info-tip{display:block}
 .dss-tokbar{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:2px;background:var(--dss-line-soft)}
 .dss-tokbar i{flex-basis:0;min-width:2px}
 .dss-tokbar .cache,.dss-tok-legend .dot.cache{background:var(--dss-accent)}
@@ -296,9 +297,21 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pdetail-meta b{color:var(--dss-text-2);font-weight:600}
 .dss-ppath-full{flex:1 1 220px;min-width:0;color:var(--dss-text-3);overflow-wrap:anywhere}
 .dss-sessions{display:flex;flex-direction:column;min-width:0}
-.dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 72px 70px 56px 44px 112px minmax(0,130px) 74px;gap:10px;padding:6px 0;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm)}
+.dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 74px 62px 104px 36px 92px minmax(110px,150px) 68px;gap:6px;padding:6px 8px;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm);align-items:center;width:100%;box-sizing:border-box;min-width:0}
 .dss-ptable .dss-sess>:nth-child(n+2){transform:none}
-.dss-ptable .dss-sess .dss-sess-model{transform:none!important;text-align:right!important}
+.dss-ptable .dss-sess .dss-sess-model{transform:none!important;text-align:left!important}
+.dss-ptable .dss-sess>.dss-sess-title{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;width:100%;border:0;background:none;color:var(--dss-text);font:inherit;font-size:var(--dss-fs-sm);font-weight:600;line-height:1.4;text-align:left;cursor:pointer;padding:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.dss-ptable .dss-sess>.dss-sess-title .dss-tag{margin-left:0}
+.dss-ptable .dss-sess>.st{min-width:0;white-space:nowrap;overflow:visible;text-overflow:clip;font-variant-numeric:tabular-nums}
+.dss-ptable .dss-sess>.dss-sess-model{white-space:normal;overflow-wrap:anywhere}
+.dss-ptable .dss-sess>.dss-sess-cost{grid-column:auto;width:auto;text-align:right!important;transform:none!important;color:var(--dss-cost);font-weight:600}
+.dss-ptable .dss-sess>.dss-sess-meta{display:none;grid-column:1/-1;text-align:left;color:var(--dss-text-3);font-size:var(--dss-fs-xs);white-space:normal;overflow-wrap:anywhere}
+.dss-ptable .dss-sess.sub>.dss-sess-title{padding-left:16px}
+.dss-ptable .dss-sess.sub>.dss-sess-meta{padding-left:16px}
+.dss-ptable .dss-sess-h{font-size:var(--dss-fs-xs);color:var(--dss-text-3);padding-top:2px;border-top:1px dashed var(--dss-line);border-bottom:0;white-space:nowrap}
+.dss-ptable .dss-sess-h>span{text-align:right;white-space:nowrap;overflow:visible}
+.dss-ptable .dss-sess-h>span:first-child{text-align:left}
+.dss-ptable .dss-sess-h>.dss-sess-model{text-align:left}
 .dss-ptable .dss-sess .dss-sess-cost{grid-column:auto;width:auto;text-align:right!important}
 .dss-popover{position:absolute;top:calc(100% + 6px);right:0;z-index:30;background:var(--dss-panel);border:1px solid var(--dss-line);border-radius:12px;box-shadow:var(--dss-shadow-pop);padding:10px;width:min(290px,calc(100vw - 32px));max-height:min(360px,70vh);overflow-y:auto;overscroll-behavior:contain}
 .dss-filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:var(--dss-fs-sm);color:var(--dss-text-3)}
@@ -339,12 +352,17 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
   .dss-ptable tr.dss-prow td.c-meta{display:block;grid-area:meta;text-align:left;white-space:normal;color:var(--dss-text-3);font-size:var(--dss-fs-sm);padding-left:47px}
   .dss-ptable tr.dss-pdetail{display:block}
   .dss-ptable tr.dss-pdetail td{display:block;padding:0 6px 12px 12px}
-  .dss-ptable .dss-sess{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:6px 4px;font-size:var(--dss-fs-xs)}
+  .dss-ptable .dss-sess{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:6px 6px;font-size:var(--dss-fs-xs)}
   .dss-ptable .dss-sess>span{display:none}
-  .dss-ptable .dss-sess>.ti,.dss-ptable .dss-sess>.dss-sess-cost{display:block}
-  .dss-ptable .dss-sess>.ti{display:flex;align-items:center;gap:4px}
-  .dss-ptable .dss-sess .me{display:block;grid-column:2;grid-row:1;text-align:right}
-  .dss-ptable .dss-sess .dss-sess-cost{display:block;grid-column:1/-1;text-align:left!important;color:var(--dss-text-3);font-size:var(--dss-fs-xs)}
+  .dss-ptable .dss-sess>.dss-sess-title{display:flex;grid-column:1;grid-row:1;min-width:0;font-size:var(--dss-fs-sm)}
+  .dss-ptable .dss-sess>.dss-sess-cost{display:block;grid-column:2;grid-row:1;text-align:right!important;white-space:nowrap;color:var(--dss-cost);font-size:var(--dss-fs-xs)}
+  .dss-ptable .dss-sess>.dss-sess-meta{display:block;grid-column:1/-1;grid-row:2;text-align:left;color:var(--dss-text-3);font-size:var(--dss-fs-xs);white-space:normal;overflow-wrap:anywhere}
+  .dss-ptable .dss-sess.sub>.dss-sess-title,.dss-ptable .dss-sess.sub>.dss-sess-meta{padding-left:16px}
+  .dss-ptable .dss-sess-h{display:none}
+  .dss-pdetail-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;align-items:start;padding-left:8px}
+  .dss-ppath-full{grid-column:1/-1;flex:none}
+  .dss-kpi.cost .dss-info-wrap{position:static}
+  .dss-kpi.cost .dss-info-tip{left:14px;right:14px;width:auto;top:calc(100% + 6px);z-index:25}
 }
 @container dss-panel (max-width:420px){
   .dss-tools{gap:6px}

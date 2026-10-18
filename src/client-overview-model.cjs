@@ -109,7 +109,7 @@ function sortProjects(projects, key, dir, ctx) {
 	var direction = dir == null ? defaultSortDir(key) : (dir > 0 ? 1 : -1);
 	function primary(a, b) {
 		if (key === "cost") return compareProjectCost(a, b);
-		if (key === "name") return nameOf(a).localeCompare(nameOf(b));
+		if (key === "name") return nameOf(a).localeCompare(nameOf(b), undefined, { numeric: true });
 		var va, vb;
 		if (key === "sessions") { va = a.sessionCount || 0; vb = b.sessionCount || 0; }
 		else if (key === "tokens") { va = (a.stats && a.stats.inputTokens || 0) + (a.stats && a.stats.outputTokens || 0); vb = (b.stats && b.stats.inputTokens || 0) + (b.stats && b.stats.outputTokens || 0); }
@@ -124,7 +124,7 @@ function sortProjects(projects, key, dir, ctx) {
 	}
 	list.sort(function(a, b) {
 		var compared = primary(a, b) * direction;
-		return compared || nameOf(a).localeCompare(nameOf(b));
+		return compared || nameOf(a).localeCompare(nameOf(b), undefined, { numeric: true });
 	});
 	return list;
 }

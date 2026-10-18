@@ -571,6 +571,19 @@ try {
   const previousFixtureDate = fixtureDates[fixtureDates.length - 2];
   const deltaText = await evaluate('document.querySelector(".dss-kpi-delta")?.textContent || ""');
   assert(deltaText.includes(previousFixtureDate.slice(5)), 'day view compares against the previous active day: ' + deltaText);
+  await click('.dss-prow [data-action=expand]');
+  await until('document.querySelector(".dss-pdetail")');
+  const daySession = await evaluate(`(() => {
+    const header = document.querySelector('.dss-sess-h');
+    const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
+    return { header: header?.textContent || '', time: row?.querySelector('.dss-sess-time')?.textContent || '', title: row?.querySelector('.dss-sess-time')?.getAttribute('title') || '', llm: row?.querySelector('.dss-sess-llm')?.textContent || '' };
+  })()`);
+  assert(daySession.header.includes('时间'), 'day session header says time: ' + daySession.header);
+  assert(/^\d{2}:\d{2}$/.test(daySession.time), 'day time is HH:MM: ' + daySession.time);
+  assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(daySession.title), 'session time title is full: ' + daySession.title);
+  assert(daySession.llm.includes(' / '), 'day session row shows LLM and tool: ' + daySession.llm);
+  await click('.dss-prow [data-action=expand]');
+  await until('!document.querySelector(".dss-pdetail")');
   while (!(await evaluate('document.querySelector("[data-action=date-prev]").disabled'))) {
     const currentLabel = await evaluate('document.querySelector(".dss-date-label").textContent');
     await click('[data-action=date-prev]');
@@ -624,6 +637,31 @@ try {
     }
   }
 
+  async function assertSessionCellsFit(label) {
+    const issues = await evaluate(`(() => {
+      const bad = [];
+      for (const row of document.querySelectorAll('.dss-pdetail .dss-sess:not(.dss-sess-h)')) {
+        for (const cell of [...row.children]) {
+          if (!cell.getClientRects().length) continue;
+          if (cell.scrollWidth > cell.clientWidth + 1) bad.push({ cls: String(cell.className || ''), text: cell.textContent.slice(0, 36), sw: cell.scrollWidth, cw: cell.clientWidth });
+        }
+      }
+      return bad.slice(0, 10);
+    })()`);
+    assert.deepEqual(issues, [], label + ' session cells must not truncate: ' + JSON.stringify(issues));
+  }
+  async function assertNarrowSessionMeta() {
+    const meta = await evaluate(`(() => {
+      const node = document.querySelector('.dss-pdetail .dss-sess-meta');
+      if (!node) return null;
+      const rect = node.getBoundingClientRect();
+      return { display: getComputedStyle(node).display, text: node.textContent, sw: node.scrollWidth, cw: node.clientWidth, w: rect.width };
+    })()`);
+    assert(meta && meta.display !== 'none' && meta.text.includes('工具') && meta.text.includes('LLM') && meta.text.includes('命中') && meta.text.includes('入/出'), 'narrow session meta exists: ' + JSON.stringify(meta));
+    assert(meta.sw <= meta.cw + 1, 'narrow session meta must not truncate: ' + JSON.stringify(meta));
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-sess-h")).display'), 'none', 'narrow session header must be hidden');
+  }
+
   const scrollables = await evaluate(`(() => {
     const panel = document.querySelector('.dss-panel');
     return [...panel.querySelectorAll('*')].filter(node => {
@@ -642,6 +680,15 @@ try {
     return bad.slice(0, 10);
   })()`);
   assert.deepEqual(smallFonts, [], 'all direct text must be >= 11px: ' + JSON.stringify(smallFonts));
+  const legend = await evaluate(`[...document.querySelectorAll('.dss-tok-legend span')].map(node => ({ text: node.textContent, dots: node.querySelectorAll('.dot').length }))`);
+  assert.equal(legend.length, 4, 'token legend keeps four items');
+  assert(legend[0].text.startsWith('命中') && legend[0].dots === 1, 'cache legend dot belongs to hit: ' + JSON.stringify(legend));
+  assert(legend[1].text === '未命中' && legend[1].dots === 1, 'uncached legend has a dot and no amount: ' + JSON.stringify(legend));
+  assert(legend[2].text.startsWith('输出') && legend[2].dots === 1, 'output legend has a dot: ' + JSON.stringify(legend));
+  assert(legend[3].text.startsWith('输入') && legend[3].dots === 0, 'input legend has no dot: ' + JSON.stringify(legend));
+  const tokenAria = await evaluate('document.querySelector(".dss-tokbar").getAttribute("aria-label")');
+  assert(tokenAria.startsWith('缓存命中输入 ') && tokenAria.includes('，未命中输入 ') && tokenAria.includes('，输出 '), 'token bar aria-label names cache/uncached/output: ' + tokenAria);
+  assert(await evaluate('!document.querySelector(".dss-strip").hasAttribute("aria-label")'), 'strip must not carry an aria-label');
   await evaluate('document.querySelector(".dss-body").scrollTop = 400');
   await delay(80);
   const sticky = await evaluate(`(() => {
@@ -652,7 +699,7 @@ try {
   assert(Math.abs(sticky.thTop - sticky.bodyTop) <= 1, 'thead sticks to the body top: ' + JSON.stringify(sticky));
   await capture('overview-sticky');
   await evaluate('document.querySelector(".dss-body").scrollTop = 0');
-  report.checks.push('single scroll container, >=11px text floor and sticky project header');
+  report.checks.push('single scroll container, >=11px text floor, sticky project header and aligned token legend');
 
   const projectIds = await collectPages('projects', '.dss-prow', 'node.dataset.projectId');
   assert.equal(projectIds.length, 120, 'all projects reachable');
@@ -660,6 +707,12 @@ try {
   assert(await evaluate('document.querySelector("[data-pages=projects] button").disabled'));
   await click('[data-pages=projects] button:last-child');
   assert(!(await evaluate('document.querySelector("[data-pages=projects] button").disabled')));
+  await openFilter();
+  assert.equal(await evaluate('document.querySelector("[data-action=filter]").hasAttribute("aria-label")'), false, 'filter button name comes from its visible text');
+  await press('Escape');
+  await until('!document.querySelector(".dss-filter-item")');
+  assert(await evaluate('!!document.querySelector(".dss-panel")'), 'filter Escape leaves the panel open');
+  assert.equal(await evaluate('document.activeElement.getAttribute("data-action")'), 'filter', 'filter Escape returns focus to the trigger');
   await openFilter();
   const legendIds = await collectPages('legend', '.dss-filter-item', 'node.dataset.projectId');
   assert.equal(legendIds.length, 120, 'all filter items reachable');
@@ -704,7 +757,7 @@ try {
   assert(await evaluate("(() => { const button = document.querySelector('[data-pages=legend] button'); return !button || button.disabled; })()"), 'filter search returns to page one');
   await evaluate(`(() => { const input = document.querySelector('.dss-filter-search'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await closeFilter();
-  report.checks.push('filter hide/show, persistence, show-all, KPI/strip sync and search page reset');
+  report.checks.push('filter Escape/focus, hide/show, persistence, show-all, KPI/strip sync and search page reset');
 
   await click('[data-action=mode-all]');
   await until('document.querySelector(".dss-kpis")');
@@ -713,6 +766,16 @@ try {
   assert.equal(await evaluate('document.querySelector("th[data-sort-key=name]").getAttribute("aria-sort")'), 'ascending');
   await openProject('large-0');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
+  await assertSessionCellsFit('large zh 1440');
+  const wideSession = await evaluate(`(() => {
+    const header = document.querySelector('.dss-sess-h');
+    const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
+    return { header: header?.textContent || '', hidden: header?.getAttribute('aria-hidden'), time: row?.querySelector('.dss-sess-time')?.textContent || '', llm: row?.querySelector('.dss-sess-llm')?.textContent || '' };
+  })()`);
+  assert.equal(wideSession.hidden, 'true');
+  assert(wideSession.header.includes('会话') && wideSession.header.includes('更新') && wideSession.header.includes('轮 · 步') && wideSession.header.includes('LLM / 工具') && wideSession.header.includes('Token 入 / 出'), 'wide session header labels: ' + wideSession.header);
+  assert(/^\d{2}-\d{2} \d{2}:\d{2}$/.test(wideSession.time), 'all-mode time shows MM-DD HH:MM: ' + wideSession.time);
+  assert(wideSession.llm.includes(' / '), 'session row shows LLM and tool: ' + wideSession.llm);
   assert(await evaluate('!!document.querySelector(".dss-pdetail-meta")'), 'expanded row exposes project detail metrics');
   const detailMeta = await evaluate('document.querySelector(".dss-pdetail-meta").textContent');
   assert(detailMeta.includes('/fixture/large-0') && detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta keeps turns/steps, tool, ttft, tps and full path: ' + detailMeta);
@@ -721,9 +784,9 @@ try {
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'false');
   await press('Enter');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'true');
-  report.checks.push('table keyboard sort and expand keep aria-sort/aria-expanded in sync; detail meta keeps turns/steps, tool, ttft, tps and path');
+  report.checks.push('table keyboard sort and expand keep aria-sort/aria-expanded in sync; session header/time/LLM+tool and detail meta keep every metric');
 
-  const sessionIds = await collectPages('sessions', '.dss-sess', 'node.dataset.sessionId');
+  const sessionIds = await collectPages('sessions', '.dss-sess:not(.dss-sess-h)', 'node.dataset.sessionId');
   assert.equal(sessionIds.length, 205, 'main and subagent sessions all reachable');
   assert(await evaluate('document.querySelector(".dss-group").textContent.includes("95")'));
   await click('.dss-sess-title');
@@ -755,7 +818,31 @@ try {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await navigate('/?stats=large&lang=' + lang); await click('.dss-trigger');
     await tab(1); await layout('large-pages-' + width);
+    if (width === 320) {
+      await focus('.dss-kpi.cost .dss-info');
+      await delay(50);
+      const tip = await evaluate(`(() => {
+        const node = document.querySelector('.dss-kpi.cost .dss-info-tip');
+        const body = document.querySelector('.dss-body').getBoundingClientRect();
+        const rect = node.getBoundingClientRect();
+        return { display: getComputedStyle(node).display, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, bodyLeft: body.left, bodyRight: body.right, bodyTop: body.top, bodyBottom: body.bottom };
+      })()`);
+      assert(tip.display !== 'none' && tip.left >= tip.bodyLeft - 1 && tip.right <= tip.bodyRight + 1 && tip.top >= tip.bodyTop - 1 && tip.bottom <= tip.bodyBottom + 1, 'cost info tip stays inside the body at 320: ' + JSON.stringify(tip));
+      await evaluate('document.activeElement.blur()');
+    }
     await openProject('large-0');
+    if (width === 320) {
+      await assertNarrowSessionMeta();
+      const detailLayout = await evaluate(`(() => {
+        const meta = document.querySelector('.dss-pdetail-meta');
+        const items = [...meta.children].filter(node => node.getClientRects().length);
+        const tps = items.find(node => node.textContent.startsWith('tok/s'));
+        const ttft = items.find(node => node.textContent.startsWith('首 token'));
+        return { display: getComputedStyle(meta).display, tpsTop: tps?.getBoundingClientRect().top, ttftTop: ttft?.getBoundingClientRect().top };
+      })()`);
+      assert(detailLayout.display === 'grid' && Math.abs(detailLayout.tpsTop - detailLayout.ttftTop) <= 1, '320 detail metrics align on a grid: ' + JSON.stringify(detailLayout));
+    }
+    if (width === 1440) await assertSessionCellsFit('large en 1440');
     await layout('large-sessions-' + width);
     await evaluate('document.querySelector(".dss-ptable").scrollIntoView({ block: "start" })');
     await capture('large-pages-' + width);
