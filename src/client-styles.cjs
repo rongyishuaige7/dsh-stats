@@ -1,5 +1,5 @@
 // Panel styles injected once by apply().
-const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--dsw-alias-bg-mask-1,rgba(10,12,16,.65));backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:4vh 3vw;overflow:auto}" +
+const css = ".dss-overlay{position:fixed;inset:0;z-index:1000;background:var(--dsw-alias-bg-mask-1,rgba(10,12,16,.65));backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:6vh 3vw 4vh;overflow:auto}" +
 	".dss-panel button,.dss-trigger{-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none}" +
 	".dss-trigger{box-sizing:border-box;cursor:pointer;color:var(--dsw-alias-label-primary,#f9fafb);background:transparent;border:0;display:flex;align-items:center;flex:0 0 auto;font-family:inherit;overflow:hidden;transition:background-color 140ms ease,color 140ms ease}" +
 	".dss-trigger.wide{width:calc(100% + 8px);height:34px;margin:4px -4px;padding:6px 2px 6px 10px;gap:8px;border-radius:12px;justify-content:flex-start;font-size:14px;line-height:22px}" +

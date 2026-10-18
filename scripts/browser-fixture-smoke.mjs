@@ -229,6 +229,10 @@ try {
   for (const width of [641, 700, 768, 1024, 1100, 1101]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
     await navigate('/?lang=en'); await click('.dss-trigger');
+    if (width === 641) {
+      const panelTop = await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().top');
+      assert(panelTop >= 45, 'desktop panel keeps a comfortable top offset');
+    }
     for (const index of [1, 2, 3, 4]) { await tab(index); await layout('header-' + width + '-' + index); }
     if (width === 641) await capture('intermediate-header');
   }
