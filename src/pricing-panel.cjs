@@ -1,6 +1,7 @@
 const React = require('react');
 const pricing = require('./pricing.cjs');
 const { fmtRateValue, usedModelKeys, catalogGroups, selectCatalog } = require('./pricing-view.cjs');
+const { missingModels } = require('./client-overview-model.cjs');
 const e = React.createElement;
 const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const PAGE_SIZE = 25;
@@ -90,16 +91,6 @@ function ruleDetails(rule, t) {
     rule.effectiveFrom ? e('p', { className: 'dss-price-note' }, t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom) + ' ' + t('price.beijing')) : null,
     rule.effectiveTo ? e('p', { className: 'dss-price-note' }, t('price.to') + ': ' + fmtBeijing(rule.effectiveTo) + ' ' + t('price.beijing')) : null,
     rule.observedFrom ? e('p', { className: 'dss-price-note' }, t('price.observed') + ': ' + fmtBeijing(rule.observedFrom) + ' ' + t('price.beijing')) : null);
-}
-function missingModels(projects) {
-  const rows = new Map();
-  for (const project of projects || []) for (const session of project.sessions || []) for (const u of session.slotUsage || []) {
-    if (!(u.cost?.unpricedTokens > 0) || u.cost.status === 'subscription') continue;
-    const key = JSON.stringify([u.providerId, u.modelRaw || u.model]);
-    const row = rows.get(key) || { provider: u.providerId, model: u.modelRaw || u.model, tokens: 0 };
-    row.tokens += u.cost.unpricedTokens; rows.set(key, row);
-  }
-  return [...rows.values()].sort((a, b) => b.tokens - a.tokens);
 }
 class PricingErrorBoundary extends React.Component {
   constructor(props) {

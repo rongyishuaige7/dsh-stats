@@ -7,6 +7,7 @@ const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemo
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
+const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels } = require("./client-overview-model.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -157,23 +158,6 @@ function sortValue(p, key) {
 		case "lastActive": return p.lastActiveAt || 0;
 		default: return 0;
 	}
-}
-
-function projectCostSortData(project) {
-	var totals = projectCostSummary(project).totals || [];
-	var ordered = totals.slice().sort(function(a, b) { return a.currency.localeCompare(b.currency); });
-	return { signature: ordered.map(function(total) { return total.currency; }).join("|") , amounts: ordered.map(function(total) { return total.amount; }) };
-}
-
-// 消费汇总已统一为 CNY，排序直接比较同一币种的金额向量。
-function compareProjectCost(a, b) {
-	var ca = projectCostSortData(a), cb = projectCostSortData(b);
-	if (ca.signature !== cb.signature) return ca.signature.localeCompare(cb.signature);
-	for (var i = 0; i < Math.max(ca.amounts.length, cb.amounts.length); i++) {
-		var va = ca.amounts[i] ?? -1, vb = cb.amounts[i] ?? -1;
-		if (va !== vb) return va > vb ? 1 : -1;
-	}
-	return 0;
 }
 
 function ProjectsTable(props) {
@@ -1607,6 +1591,7 @@ module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
 	StatsDataStatus, StatusIndicator, StatusBanner, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
+	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, missingModels,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
