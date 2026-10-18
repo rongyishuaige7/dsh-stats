@@ -152,12 +152,21 @@ records/frames, 500,000 expanded events and 1,000,000 interval-slot operations.
 Actual bytes read are bounded even when a file grows after stat. Stable reads
 also verify the open descriptor against the current path, retry replacements,
 and mark continually appended snapshots partial after three attempts. Cached
-normalized statistics have both a 300-entry LRU cap and a 100,000-unit weight
-cap based on retained timestamps, usages and slot rows. Over-budget entries are
-not cached, and asynchronous cache hits cannot resurrect an evicted entry.
+normalized statistics have a 300-entry LRU cap and a 32 MiB estimated
+retained-byte cap covering timestamps, usage samples and slot rows. The byte
+budget is deliberately larger than a typical working set so a stable scan does
+not evict the oldest session before it is revisited. Over-budget entries are
+not cached, stale entries for a file that grew over budget are dropped, and
+asynchronous cache hits cannot resurrect an evicted entry.
 
 A budget failure emits `SESSION_LOG_BUDGET_EXCEEDED` and degraded metadata;
-available projection totals remain partial and other sessions still aggregate.
+available projection totals remain available as a partial fallback. Unversioned
+legacy rows are used directly; versioned rows are used without a verified log
+watermark and additionally emit `SESSION_CACHE_WATERMARK_UNKNOWN`. Forks whose
+parent/seed lifecycle is known from the projection entry exclude the
+seed-inclusive projection totals instead of guessing attribution, and the
+session keeps its parent/seed metadata. An over-budget file also drops its
+previous cached statistics. Other sessions still aggregate.
 Committed malformed records, plain uncommitted tails, complete Zstd batches,
 skippable frames, fork boundaries, retries and sequence checks retain their
 existing behavior. Oversized logs require an official session/projection
@@ -172,6 +181,24 @@ to 120 projects/legend filters, 205 main/subagent sessions and 75 history days,
 stable totals across pages, responsive breakpoints and subscription transitions.
 The first five delivery slices have successful full CI runs; the final push
 repeats the build/browser checks and seven-version Harness contract matrix.
+
+## Follow-up slice: degraded attribution and cache working sets
+
+The follow-up keeps budget failures attributable without trusting an unknown
+log watermark. Versioned projection rows serve as a partial fallback and add
+`SESSION_CACHE_WATERMARK_UNKNOWN`; fork parent/seed metadata is recovered from
+the projection identity; seed-inclusive projection totals are not attributed
+to a known fork; and a file that grows over budget drops its stale cache entry.
+The legacy cache now uses a 32 MiB estimated retained-byte cap (300-entry LRU)
+instead of 100,000 abstract weight units, so a stable scan over a normal
+working set does not evict the oldest session before it is revisited. A
+regression test covers 130 sessions x 800 events; the old cap would have
+re-read every file on each aggregate.
+
+Verification: 329 tests pass in default and UTC timezones; the four bundles are
+rebuilt and compared byte-for-byte with a fresh build; signed pricing checks,
+artifact syntax checks and npm package dry-run remain unchanged. The browser
+fixture is unchanged and continues to run in CI.
 
 Provider prices, signed catalogs, dependencies and package version are
 unchanged. This delivery does not publish npm or replace a running service.

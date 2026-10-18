@@ -839,12 +839,19 @@ function streamFirstTokenTime(stream) {
 // seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
 // 读取使用 stat/read/stat 稳定快照，并只消费完整 zstd frame；活跃尾部会标记 partial。
 const sessionInfoCache = new Map(); // filePath -> { mtimeMs, ctimeMs, size, ino, info }
-const SESSION_CACHE_LIMIT = 300;
-const SESSION_CACHE_WEIGHT = 100000;
-let sessionCacheWeight = 0;
+// Bound retained arrays by an estimated byte size rather than array counts:
+// timestamps (8 B), usage samples (200 B) and slot rows (200 B) have very
+// different costs. Keep the budget larger than a typical working set so a
+// stable scan does not evict the oldest session before it is revisited.
+// Tests may lower `bytes` to exercise eviction without huge fixtures.
+const SESSION_CACHE_LIMITS = { entries: 300, bytes: 32 * 1024 * 1024 };
+let sessionCacheBytes = 0;
+function sessionInfoBytes(info) {
+	return 256 + info.times.length * 8 + info.usages.length * 200 + info.slotStats.length * 200 + (info.header ? 512 : 0);
+}
 function forgetSessionInfo(file) {
 	const old = sessionInfoCache.get(file);
-	if (old) sessionCacheWeight -= old.weight;
+	if (old) sessionCacheBytes -= old.bytes;
 	sessionInfoCache.delete(file);
 }
 async function sessionInfo(home, sessionId) {
@@ -865,23 +872,31 @@ async function sessionInfo(home, sessionId) {
 		}
 		snapshot = await readStable(file);
 	} catch (error) {
-		if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") throw error;
+		if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") { forgetSessionInfo(file); throw error; }
 		if (cached) return { ...cached.info, stale: true, readError: error.message };
 		throw error;
 	}
 	const { mtimeMs, ctimeMs, size, ino } = snapshot;
-	const decoded = await readSessionRecords(file, snapshot);
-	const info = await deriveSessionInfoAsync(decoded.records, null, { partial: decoded.truncated || !snapshot.stable });
-	const weight = 1 + info.times.length + info.usages.length * 2 + info.slotStats.length * 4;
-	forgetSessionInfo(file);
-	if (weight <= SESSION_CACHE_WEIGHT) {
-		sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info, weight });
-		sessionCacheWeight += weight;
+	let info;
+	try {
+		const decoded = await readSessionRecords(file, snapshot);
+		info = await deriveSessionInfoAsync(decoded.records, null, { partial: decoded.truncated || !snapshot.stable });
+	} catch (error) {
+		// A file that grew over budget must not keep serving its smaller cached
+		// statistics: the next aggregate already has to degrade this session.
+		if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") forgetSessionInfo(file);
+		throw error;
 	}
-	while (sessionInfoCache.size > SESSION_CACHE_LIMIT || sessionCacheWeight > SESSION_CACHE_WEIGHT) {
+	const bytes = sessionInfoBytes(info);
+	forgetSessionInfo(file);
+	if (bytes <= SESSION_CACHE_LIMITS.bytes) {
+		sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info, bytes });
+		sessionCacheBytes += bytes;
+	}
+	while (sessionInfoCache.size > SESSION_CACHE_LIMITS.entries || sessionCacheBytes > SESSION_CACHE_LIMITS.bytes) {
 		forgetSessionInfo(sessionInfoCache.keys().next().value);
 	}
 	return info;
 }
 
-export { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };
+export { SESSION_CACHE_LIMITS, STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };

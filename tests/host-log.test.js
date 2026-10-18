@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { LEGACY_LOG_LIMITS, readSessionRecords, readStable } from '../src/host-log.js';
-import { deriveSessionInfoAsync, deriveSessionInfoFromEvents, sessionInfo } from '../src/host-sessions.js';
+import { deriveSessionInfoAsync, deriveSessionInfoFromEvents, SESSION_CACHE_LIMITS, sessionInfo } from '../src/host-sessions.js';
 
 const homes = [];
 afterEach(() => {
@@ -176,7 +176,7 @@ test('invalid packed timestamps reject the whole batch without emitting a partia
 	expect(result).toMatchObject({ times: [], malformedRecords: 1, partial: true });
 });
 
-test('legacy caches evict by retained statistics weight and reuse entries that still fit', async () => {
+test('legacy caches evict by estimated retained bytes and reuse entries that still fit', async () => {
 	const home = tempHome();
 	const payload = Array.from({ length: 51000 }, (_, seq) => JSON.stringify({ type: 'event', seq, time: 1000 + seq })).join('\n') + '\n';
 	for (const id of ['first', 'second']) {
@@ -186,11 +186,34 @@ test('legacy caches evict by retained statistics weight and reuse entries that s
 	}
 	const opened = vi.spyOn(fs, 'open');
 	syncBuiltinESMExports();
-	expect((await sessionInfo(home, 'first')).times).toHaveLength(51000);
-	expect((await sessionInfo(home, 'second')).times).toHaveLength(51000);
+	const originalBytes = SESSION_CACHE_LIMITS.bytes;
+	SESSION_CACHE_LIMITS.bytes = 500 * 1024;
+	try {
+		expect((await sessionInfo(home, 'first')).times).toHaveLength(51000);
+		expect((await sessionInfo(home, 'second')).times).toHaveLength(51000);
+		const reads = opened.mock.calls.length;
+		await sessionInfo(home, 'second');
+		expect(opened).toHaveBeenCalledTimes(reads);
+		await sessionInfo(home, 'first');
+		expect(opened).toHaveBeenCalledTimes(reads + 1);
+	} finally { SESSION_CACHE_LIMITS.bytes = originalBytes; }
+});
+
+test('legacy cache retains a working set larger than the old unit cap', async () => {
+	const home = tempHome();
+	const payload = Array.from({ length: 800 }, (_, seq) => JSON.stringify({ type: 'request/header', seq, time: 1000 + seq * 1000 })).join('\n') + '\n';
+	for (let index = 0; index < 130; index++) {
+		const dir = join(home, 'sessions', 'workspace', 's' + index);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'session.jsonl'), payload);
+	}
+	const opened = vi.spyOn(fs, 'open');
+	syncBuiltinESMExports();
+	const scan = async () => {
+		for (let index = 0; index < 130; index++) expect((await sessionInfo(home, 's' + index)).times).toHaveLength(800);
+	};
+	await scan();
 	const reads = opened.mock.calls.length;
-	await sessionInfo(home, 'second');
+	await scan();
 	expect(opened).toHaveBeenCalledTimes(reads);
-	await sessionInfo(home, 'first');
-	expect(opened).toHaveBeenCalledTimes(reads + 1);
 });

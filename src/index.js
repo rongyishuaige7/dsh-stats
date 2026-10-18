@@ -399,9 +399,24 @@ let StatsService = (() => {
 					info = await sessionInfo(home, sessionId);
 				} catch (err) {
 					const message = err?.message || String(err);
+					const budgetExceeded = err?.code === "SESSION_LOG_BUDGET_EXCEEDED";
 					console.warn(`[dsh-stats] 会话 ${sessionId} 日志解码失败（使用 projection cache）:`, message);
-					warnings.push({ code: err?.code === "SESSION_LOG_BUDGET_EXCEEDED" ? err.code : "SESSION_DECODE_FAILED", sessionId, message });
-					info = { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [], stats: null, partial: false, stale: false, missing: false, unavailable: true };
+					warnings.push({ code: budgetExceeded ? err.code : "SESSION_DECODE_FAILED", sessionId, message });
+					// Recover lifecycle metadata that does not depend on reading the
+					// bounded log. Without it a fork over budget would be treated as a
+					// root session and could borrow its parent's seed usage.
+					const fallbackParent = firstString(entry?.identity?.parentSession);
+					const fallbackSeed = Number.isSafeInteger(entry?.identity?.seedLength) && entry.identity.seedLength >= 0 ? entry.identity.seedLength : null;
+					info = {
+						times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [],
+						origin: firstString(entry?.identity?.origin) ?? (fallbackParent ? "subagent" : null),
+						parentSession: fallbackParent, seedLength: fallbackSeed, inheritedEventCount: 0,
+						stats: null, partial: false, stale: false, missing: false, unavailable: true,
+						// A budget failure cannot provide a log watermark, but the
+						// projection cache is still an explicit, partial fallback.
+						// Other decode failures keep the previous conservative behavior.
+						...(budgetExceeded ? { lastSeq: -1, projectionOnly: true } : {})
+					};
 				}
 				if (officialValues) {
 					if (objectRecord(officialValues.sessionStats)) statsRow = officialValues.sessionStats;
@@ -522,6 +537,7 @@ let StatsService = (() => {
 					totalUncached = projectionUsage.uncached; totalOutput = projectionUsage.output;
 					totalCacheRead = projectionUsage.cacheRead; totalCacheWrite = projectionUsage.cacheWrite;
 					warnings.push({ code: "SESSION_USAGE_FALLBACK", sessionId, message: "token usage came from the projection cache and may include inherited fork context" });
+					if (info.projectionOnly) warnings.push({ code: "SESSION_CACHE_WATERMARK_UNKNOWN", sessionId, message: "session log exceeded its budget; projection totals were used without a verified log watermark" });
 				}
 				const eventStats = info.stats || statsRow || {};
 				const raw = {

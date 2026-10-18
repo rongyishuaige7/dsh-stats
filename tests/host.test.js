@@ -788,6 +788,48 @@ test('over-budget legacy logs degrade explicitly while preserving projection tot
 	} finally { warn.mockRestore(); }
 });
 
+test('over-budget logs fall back to versioned projection totals without a log watermark', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	const home = fixture({ huge: versionedProjection(now, 3, { uncachedInputTokens: 42, outputTokens: 5 }) });
+	writePlainLog(home, 'huge', []);
+	truncateSync(join(home, 'sessions', 'workspace', 'huge', 'session.jsonl'), LEGACY_LOG_LIMITS.fileBytes + 1);
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	try {
+		const result = await aggregate();
+		const session = result.projects[0].sessions[0];
+		expect(session.quality).toBe('partial');
+		expect(session.stats).toMatchObject({ uncached: 42, output: 5 });
+		expect(result.meta.warnings).toEqual(expect.arrayContaining([
+			expect.objectContaining({ code: 'SESSION_LOG_BUDGET_EXCEEDED', sessionId: 'huge' }),
+			expect.objectContaining({ code: 'SESSION_USAGE_FALLBACK', sessionId: 'huge' }),
+			expect.objectContaining({ code: 'SESSION_CACHE_WATERMARK_UNKNOWN', sessionId: 'huge' })
+		]));
+		TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+	} finally { warn.mockRestore(); }
+});
+
+test('over-budget forks retain lifecycle metadata and do not borrow inherited projection usage', async () => {
+	const now = Date.parse('2026-09-08T10:00:00+08:00');
+	const entry = projection(now, { usage: { uncachedInputTokens: 42, outputTokens: 5 } });
+	entry.identity.parentSession = 'parent';
+	entry.identity.seedLength = 3;
+	const home = fixture({ child: entry });
+	writePlainLog(home, 'child', []);
+	truncateSync(join(home, 'sessions', 'workspace', 'child', 'session.jsonl'), LEGACY_LOG_LIMITS.fileBytes + 1);
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	try {
+		const result = await aggregate();
+		const child = result.projects[0].sessions[0];
+		expect(child).toMatchObject({ parentSession: 'parent', seedLength: 3, subagent: true, quality: 'partial' });
+		expect(child.stats).toMatchObject({ uncached: 0, output: 0 });
+		expect(result.meta.warnings).toEqual(expect.arrayContaining([
+			expect.objectContaining({ code: 'SESSION_LOG_BUDGET_EXCEEDED', sessionId: 'child' })
+		]));
+		expect(result.meta.warnings.some((warning) => warning.code === 'SESSION_USAGE_FALLBACK' && warning.sessionId === 'child')).toBe(false);
+		TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+	} finally { warn.mockRestore(); }
+});
+
 test('timeline merges overlapping sessions within one project', async () => {
 	const now = Date.parse('2026-08-17T10:00:00+08:00');
 	const home = fixture({ a: projection(now), b: projection(now + 120000) });
