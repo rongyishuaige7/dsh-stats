@@ -61,6 +61,28 @@ test('the six font-size tokens are defined at the documented sizes', () => {
 	}
 });
 
+test('host-variable fallbacks keep their a833247 values', () => {
+	const legacy = [
+		['--dss-mask', 'var(--dsw-alias-bg-mask-1, rgba(10,12,16,.65))'],
+		['--dss-shadow', 'var(--dsw-shadow-lv3, 0 20px 60px rgba(0,0,0,.5))'],
+		['--dss-shadow-pop', '0 8px 24px rgba(0,0,0,.45)'],
+		['--dss-tip-bg', 'var(--dsw-alias-tooltip-bg, #1d222c)'],
+		['--dss-hover', 'var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.08))'],
+		['--dss-hover-soft', 'var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.06))'],
+		['--dss-hover-row', 'var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.04))'],
+		['--dss-active', 'var(--dsw-alias-interactive-bg-active, rgba(255,255,255,.12))'],
+		['--dss-surface', 'rgba(255,255,255,.015)'],
+		['--dss-scroll', 'rgba(166,173,187,.28)'],
+		['--dss-scroll-hover', 'rgba(166,173,187,.5)']
+	];
+	for (const [name, value] of legacy) {
+		const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		// A count of two would mean a light-theme override was reintroduced and
+		// the fallback no longer matches a833247.
+		expect(css.match(new RegExp(name + ':\\s*' + escaped + ';', 'g'))).toHaveLength(1);
+	}
+});
+
 test('every referenced --dss-* token is defined', () => {
 	const defined = new Set([...css.matchAll(/--dss-([a-z0-9-]+)\s*:/g)].map(match => match[1]));
 	const referenced = new Set([...css.matchAll(/var\(--dss-([a-z0-9-]+)/g)].map(match => match[1]));

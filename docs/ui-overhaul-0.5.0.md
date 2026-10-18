@@ -192,10 +192,12 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
 | `--dss-cost` | `#ff922b` | `#c2510f`（保证浅色背景上的对比度） |
 | `--dss-warn` / `--dss-warn-soft` / `--dss-warn-line` | 琥珀色系 | 加深后的琥珀色系 |
 | `--dss-ok` / `--dss-danger` | `#34d399` / `#f87171` | `#047857` / `#dc2626` |
-| `--dss-shadow` | `var(--dsw-shadow-lv3, 0 12px 40px rgba(0,0,0,.45))` | 宿主值 |
-| `--dss-mask` | `var(--dsw-alias-bg-mask-1, rgba(0,0,0,.5))` | 宿主值 |
-| `--dss-tip-bg` | `var(--dsw-alias-tooltip-bg, #0b0d12)` | 宿主值 |
+| `--dss-shadow` | `var(--dsw-shadow-lv3, 0 20px 60px rgba(0,0,0,.5))` | 宿主值 |
+| `--dss-mask` | `var(--dsw-alias-bg-mask-1, rgba(10,12,16,.65))` | 宿主值 |
+| `--dss-tip-bg` | `var(--dsw-alias-tooltip-bg, #1d222c)` | 宿主值 |
 | `--dss-p0` … `--dss-p15` | 16 色项目调色板（现有值） | 不变 |
+
+兜底值一律沿用 a833247 中对应宿主变量的原兜底值；真实宿主（含 0.1.0-rc.6）定义了这些变量，兜底值只影响 fixture 和缺少主题变量的环境。
 
 `color-mix()` 要求 Chrome 111 以上。如果实现时发现目标宿主版本不支持，`--dss-line-soft` 改用固定的半透明值。
 
@@ -473,6 +475,7 @@ smoke 改动：
 - 价格预览、保存、编辑和离线刷新的 smoke 全部通过。
 - `exact` 时没有横幅；`partial`、`stale`、`fallback` 时横幅可见，诊断信息可展开。
 - 导出文件内容与改动前一致（`projectCsvTable` 等现有单测保持通过）。
+- 标签文字不允许在词内断行（tab 加 `white-space: nowrap`）；面板容器宽度 <860px 时 tablist 独占一行，放不下时横向滚动；smoke 在 320/390px 断言每个 `[role=tab]` 只有一行文字。
 
 ### 切片 3：总览重排
 
