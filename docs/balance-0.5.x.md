@@ -107,7 +107,7 @@
 **B3 摘要条。** 列表里的账户 ≥2 个时，在列表上方显示摘要条；只有 1 个时不显示。最多三格：
 - **可用余额**（首格，大字）：只统计 `mode === "balance"`、`balance` 不为空且不是 `unlimited` 的账户，按币种分别合计，用整数"分"累加以避免浮点误差。有 CNY 时 CNY 是大字，否则取第一个出现的币种。副行依次为：其他币种合计（用" · "连接）、"N 个余额账户"、"N 个为过期快照"（`stale` 账户数，为 0 时省略）、"N 个未读到"（`balance` 为空的余额账户数，为 0 时省略）。没有任何可合计金额时大字显示"—"。
 - **最紧的额度**：所有订阅账户所有窗口中 `remainingPercent` 最小的那个，相同时取先出现的。大字是"剩余 X%"，按 B6 的阈值着色；副行是"<账户名> <窗口名> · <相对重置时间>"。没有任何订阅窗口时这一格不渲染，网格改为两列。
-- **需要关注**：列表中色调不是 `ok` 的账户数，按其中最严重的色调着色。副行按 B2 的顺序列出账户名（每个名字不换行），用"、"连接；为 0 时大字是"0"，副行是"全部正常"，不着色。
+- **需要关注**：列表中色调不是 `ok` 的账户数，按其中最严重的色调着色。副行按 B2 的顺序列出账户名，分隔符取 `balance.kpi.nameSep`（中文"、"，英文", "）。每个名字本身不换行，名字之间在任何宽度下都允许换行：1440px 下 5 个名字也要完整显示，不用省略号截断。为 0 时大字是"0"，副行是"全部正常"，不着色。
 
 **B4 账户行。** 左列依次是状态点（色调颜色，`aria-hidden`）、账户名（单行省略）、副行和标签（只在异常时出现，见 B7）。正常的行没有可见标签，只在名字后放一个仅读屏可见的"状态正常"。
 - 副行取第一个成立的规则：
@@ -156,7 +156,7 @@
 金额下方的原因行只在以下情况出现，取第一个成立的：
 1. `stale`：有 `lastSuccessAt` 时写"刷新失败，显示的是 <fmtClock(lastSuccessAt)> 的结果"，否则用 `balance.staleHint`。原型写的是"最近几次刷新失败"，但宿主一次失败就会标记 `stale`，所以改为"刷新失败"。
 2. `status` 不是 `ok`：用 `balance.message.<status>`。原型里 `unauthorized` 的原因带了凭证键名，客户端拿不到失败账户的凭证键名，所以不带。
-3. 余额为 0：写"余额为 0，充值后才能继续调用"。
+3. 余额为 0 且不是 `unlimited`：写"余额为 0，充值后才能继续调用"。`unlimited` 已显示为"不限额"，余额为 0 时也没有原因行，与上表"余额已用完"的条件一致。
 
 额度紧张和余额偏低不加原因行，颜色和提醒线已经说明了。宿主的 `warnings[].message` 和 `errorCode` 都不进入行内文字。
 
@@ -223,6 +223,7 @@
   - 余额列两条占位条：订阅为 60% 宽，余额为 110px 宽，下面一条 36% 宽。
 - 骨架行 ≥2 个时，上方加摘要条骨架。底部写"正在读取 N 个账户…"。
 - `providers` 还没回来、不可用或为空时，显示 3 行无名占位，没有摘要条骨架，底部写 `balance.loading`。
+- `providers` 不为空但全部未接入时（`skeletonModel` 返回 `rows: []`、`named: true`）：不画骨架行和摘要条骨架；未接入组默认展开，与 B9"全部未接入"时一致，避免读完后跳变；底部写 `balance.loading`，不写"正在读取 0 个账户…"。
 - 骨架区域带 `aria-busy="true"`，占位条 `aria-hidden`。`prefers-reduced-motion` 时占位条不闪烁。
 - 之后的刷新不再显示骨架，只在头部显示"正在刷新"。
 
@@ -244,7 +245,7 @@
 ### 5.1 正常状态
 
 ```text
-section.dss-bal                                       外层 .dss-body 已经是 tabpanel，这里不再加 aria-labelledby
+section.dss-bal[style=--dss-bal-mk]                   外层 .dss-body 已经是 tabpanel，这里不再加 aria-labelledby；--dss-bal-mk 见 §6.2
   p.dss-bal-note[data-code=LEGACY_ACCOUNT_API]        仅 B12
   section.dss-bal-kpis[aria-label=账户摘要](.is-two)   仅当列表 ≥2 个账户（B3）；没有"最紧的额度"时加 .is-two
     div.dss-bal-kpi.is-lead      div.dss-bal-kpi-k 可用余额 · div.dss-bal-kpi-v · div.dss-bal-kpi-s
@@ -327,15 +328,17 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | 行 | 内边距 12px 4px，底边 `--dss-line-soft`，悬停 `--dss-hover-row` | 同 | 内边距 12px 2px |
 | 状态点 / 标签 | 8px 圆点，`margin-top: 6px` 与名字首行对齐；标签 `fs-xs` 600，行高 18px，内边距 0 6px，圆角 5px | 同 | 同 |
 | 金额 / 副行 | `fs-xl` 650 / `fs-sm` `--dss-text-3` | 同 | 同 |
-| 额度条一行 | `grid-template-columns: 3.6em minmax(80px,300px) 4.2em minmax(9.5em,auto)`，列距 10px，`fs-sm` | `3.6em minmax(0,1fr) 4.2em`，重置时间换到第二行（`grid-column: 2 / -1`，`fs-xs`） | 同 ≤860 |
+| 额度条一行 | `grid-template-columns: var(--dss-bal-mk) minmax(80px,300px) 4.2em minmax(9.5em,auto)`，列距 10px，`fs-sm` | `var(--dss-bal-mk) minmax(0,1fr) 4.2em`，重置时间换到第二行（`grid-column: 2 / -1`，`fs-xs`） | 同 ≤860 |
+| 额度条标签列 `--dss-bal-mk` | 取 `t("balance.meterKeyWidth")`：中文 `4.2em`，英文 `8em`。写在 `section.dss-bal` 的行内 `style` 上；CSS 在 `.dss-bal` 上给默认值 `8em`，满足 `tests/styles.test.js` 对 `--dss-*` 必须有定义的检查 | 同 | 同 |
 | 条 | 高 6px，圆角 3px，轨道 `--dss-track` | 同 | 同 |
 | 铃铛 | 26×26px，圆角 7px | 同 | 同 |
 | 提醒弹层 | 宽 270px（`panelClassName` 覆盖 `.dss-popover` 的 290px），内边距 12px，间距 9px；输入框高 32px | 同 | 同 |
-| 摘要条 | `grid-template-columns: 1.45fr repeat(2,minmax(0,1fr))`，`.is-two` 为 `1.45fr minmax(0,1fr)`；首格大字 `fs-2xl`，其余 `fs-xl`，副行 `fs-xs` | 两列：首格占满一行，另两格共用下一行；`.is-two` 时第二格也占满一行；副行允许换行 | 内边距 10px 12px；首格大字 `fs-xl` |
+| 摘要条 | `grid-template-columns: 1.45fr repeat(2,minmax(0,1fr))`，`.is-two` 为 `1.45fr minmax(0,1fr)`；首格大字 `fs-2xl`，其余 `fs-xl`，副行 `fs-xs` | 两列：首格占满一行，另两格共用下一行；`.is-two` 时第二格也占满一行；副行允许换行（"需要关注"的副行在宽屏也允许换行，见 B3） | 内边距 10px 12px；首格大字 `fs-xl` |
 | 未接入 | 外框 `--dss-line-soft`，圆角 10px；摘要行内边距 9px 12px，`fs-sm`；每行左缩进 34px | 同 | 名字和原因上下排，左缩进 30px |
 | 骨架 | 占位条高 10px，`.is-lg` 20px，`.is-xl` 26px（摘要条大字），圆角 4px | 同 | 同 |
 
 - 断点一律用 `@container dss-panel (max-width: …)`，和现有样式一致。
+- 额度条标签列不用原型的固定 `3.6em`：它装不下"计费周期"和英文的 "Current window"，标签会压住条。也不对所有语言统一用 `8em`：中文标签只有两三个字，后面会空出一大块，390px 下尤其明显。所以按语言取宽，同一面板内各行的条起点仍然对齐。
 - 头部状态文字的隐藏规则不变：面板 <420px 时隐藏（smoke `:345` 断言了这一点）。原型在 640px 隐藏，不照搬。
 - 余额页内部不出现 `overflow: auto/scroll`，只有 `.dss-body` 一个滚动容器。提醒弹层沿用 `.dss-popover` 的最大高度，内容很短，不会出现滚动。
 - `.dss-popover.is-up{top:auto;bottom:calc(100% + 6px)}` 写成通用规则，不绑定余额页。
@@ -371,14 +374,14 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | `sortAccounts(active, alerts)` | → 新数组 | B2；不修改输入 |
 | `accountMeta(account)` | → `{type: "subscription" \| "balance", detail: {kind: "plan" \| "route" \| "id", value}}` | B4 的副行规则；文案由组件拼 |
 | `accountReason(account)` | → `{key, at?} \| null` | B7 的原因行；`at` 是 `stale` 时的 `lastSuccessAt` |
-| `balanceParts(account, alert)` | → `{amount, currency, zero, unlimited, parts[{key, value}], alertLine: {amount, below} \| null, meter: {remaining} \| null}` | B5；`parts` 已省略 `null` 和 0，`key` ∈ `toppedUp`、`granted`、`used`（`value` 为 `[used, total]`） |
+| `balanceParts(account, alert)` | → `{amount, currency, zero, unlimited, parts[{key, value}], alertLine: {amount, below} \| null, meter: {remaining} \| null}` | B5；`parts` 已省略 `null` 和 0，`key` ∈ `toppedUp`、`granted`、`used`（`value` 为 `[used, total]`）。`meter.remaining` 按整数"分"计算：`floor(round(remaining×100)×100 / round(total×100))`，夹在 0–100，避免浮点误差让 1.4/20 得 6；`total` 折成 0 分时没有额度条 |
 | `resetParts(resetsAt, now)` | → `null \| {soon: true} \| {days, hours, minutes}` | B6；`days > 0` 时不再返回 `minutes` |
 | `balanceTotals(active)` | → `{lead: {currency, amount} \| null, others[{currency, amount}], balanceCount, staleCount, unreadCount}` | B3 首格；按"分"累加，输出时除以 100 |
 | `tightestWindow(active)` | → `{account, window} \| null` | B3 第二格 |
 | `attentionList(active, alerts)` | → `{tone, accounts[]}` | B3 第三格；`accounts` 按 B2 排序 |
 | `balanceHeaderState(state, data, hasRemote)` | → `{kind, at, error}` | B10 的表；`stale` 的 `at` 取上次 `data.generatedAt`，`error` 保留原文 |
 | `legacyNotice(data)` | → 布尔 | B12 |
-| `skeletonModel(providers)` | `providers[] \| null` → `{rows[{id, name, type}], idle[{id, name, reason}], named}` | B11；`null` 或空数组返回 3 行 `{id: null}`，`named: false` |
+| `skeletonModel(providers)` | `providers[] \| null` → `{rows[{id, name, type}], idle[{id, name, reason}], named}` | B11；`null` 或空数组返回 3 行 `{id: null}`，`named: false`；全部未接入时返回 `rows: []`、`named: true`，组件按 B11 最后一条处理 |
 | `safeActionUrl(url)` | → 字符串或 `null` | 能被 `new URL()` 解析且 `protocol === "https:"` 时原样返回 |
 
 ### 7.2 新增组件文件 `src/client-balance.cjs`
@@ -483,6 +486,8 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | `balance.kpi.accounts` / `.staleCount` / `.unreadCount` | %d 个余额账户 / %d 个为过期快照 / %d 个未读到 | %d balance accounts / %d stale / %d unread |
 | `balance.kpi.tightest` / `.tightestValue` | 最紧的额度 / 剩余 %s% | Tightest quota / %s% left |
 | `balance.kpi.attention` / `.allClear` | 需要关注 / 全部正常 | Needs attention / All clear |
+| `balance.kpi.nameSep` | 、 | `, `（逗号后有一个空格） |
+| `balance.meterKeyWidth` | 4.2em | 8em |
 | `balance.alert.title` / `balance.alert.button` | %s 余额提醒 / 余额提醒 | %s balance alert / Balance alert |
 | `balance.alert.aria` / `.below` / `.unset` | %s 余额提醒：%s / 低于 %s / 未设置 | %s balance alert: %s / below %s / not set |
 | `balance.alert.field` / `.placeholder` / `.inputLabel` | 低于 / 例如 20 / 提醒金额（%s） | Below / e.g. 20 / Alert amount (%s) |
@@ -647,13 +652,13 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 2. **标签**：前三行的 `.dss-bal-chip` 依次是"额度将用完"（`.is-danger`）、"额度紧张"（`.is-warn`）、"已过期"（`.is-warn`）。后三行没有 `.dss-bal-chip`，各有一个文字为"状态正常"的 `.dss-sr`。
 3. **副行**：`kimi-coding` 是"订阅 · kimi-coding"，`minimax-coding` 是"订阅 · Professional Coding Plan"，`yi-api` 是"余额 · 自定义路由"。
 4. **额度条**：`kimi-coding` 的条 `role=meter`、`aria-valuenow="4"`，带 `.is-danger`；`minimax-coding` 本时段的条 `aria-valuenow="18"`，带 `.is-warn`。条内 `i` 的 `style.width` 等于 `aria-valuenow + "%"`，即画的是剩余。
-5. **重置时间**：`minimax-coding` 本时段写"2 小时 10 分后重置"，聚焦它后 `#dss-tooltip` 含"北京时间 2026-09-08 12:10 重置"；`kimi-coding` 写"2 天 14 小时后重置"。
-6. **摘要条**：首格大字"¥159.65"，副行含"$58.30"、"4 个余额账户"和"1 个为过期快照"；第二格"剩余 4%"，带 `.is-danger`，副行含"Kimi For Coding 本周"；第三格大字"3"，副行依次是 Kimi For Coding、MiniMax Coding Plan、Moonshot。
+5. **重置时间**：`minimax-coding` 本时段写"2 小时 10 分后重置"，聚焦它后 `#dss-tooltip` 含"北京时间 2026-09-08 12:10 重置"；`kimi-coding` 写"2 天 14 小时后重置"。无头 Chrome 聚焦需要 `Emulation.setFocusEmulationEnabled`：只在这条断言前打开，断言后立刻关闭。全局打开会让之后每张截图的当前标签页都带焦点环。
+6. **摘要条**：首格大字"¥159.65"，副行含"$58.30"、"4 个余额账户"和"1 个为过期快照"；第二格"剩余 4%"，带 `.is-danger`，副行含"Kimi For Coding 本周"；第三格大字"3"，副行依次是 Kimi For Coding、MiniMax Coding Plan、Moonshot。英文段（`:389` 起，`lang=en`）的"需要关注"副行用", "连接，不含"、"。
 7. **余额构成**：`deepseek-official` 副行是"充值 ¥100.00 · 赠送 ¥23.45"；`openrouter` 金额"$15.50"，副行"已用 $4.50 / $20.00"，有一条 `data-kind="credit"` 的条，`aria-valuenow="77"`，不带 `.is-warn` / `.is-danger`；`moonshotai-cn` 的原因行是"刷新失败，显示的是 2026-09-08 09:34 的结果"，金额带 `.is-stale`。
 8. **未接入**：`details.dss-bal-idle` 默认没有 `open`，摘要是"未接入 2 个：Z.ai Coding Plan · Anthropic"。展开后 `zai-coding-cn` 行有 `code` 文字 `ZAI_API_KEY` 和一个"控制台"外链，`anthropic` 行没有外链。点一次刷新后仍然展开。
 9. **外链**：所有 `.dss-bal-link` 的 `href` 以 `https:` 开头，`target="_blank"`，`rel` 含 `noreferrer`。`yi-api` 行没有外链。
 10. **不透传英文**：中文界面下 `.dss-panel` 的 `innerText` 不含夹具 `warnings[].message` 的原文。
-11. **单一滚动与字号**：三种宽度的余额页都执行。沿用 `:670-677` 的扫描，结果只能是 `['dss-body']`；`.dss-overlay` 内所有直接文本 ≥11px。
+11. **单一滚动与字号**：三种宽度的余额页都执行。沿用 `:670-677` 的扫描：390px 和 320px 下内容溢出，结果必须是 `['dss-body']`；1440px 下内容装得下，结果可以为空，但不能出现 `dss-body` 以外的元素。`.dss-overlay` 内所有直接文本 ≥11px。
 12. **单账户与需要处理**：
     - `accountSet=single`：只有 1 行，没有 `.dss-bal-kpis`。
     - `accountSet=attention`：前三行依次是 `deepseek-official`（"余额已用完"，金额"¥0.00"带 `.is-zero`，原因"余额为 0，充值后才能继续调用"）、`openrouter`（"凭证无效"，金额"—"，原因是 `balance.message.unauthorized`）、`kimi-coding`。截图 `desktop-balance-attention`。
