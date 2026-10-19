@@ -290,10 +290,8 @@ function TimelineDay(props) {
 				const height = Math.max(3, bar.value / maxValue * 100).toFixed(1) + "%";
 				const range = clock(bar.slot) + "–" + clock(bar.slot + 1);
 				const tip = tipProps(function() {
-					return tipRows(range + " · " + t("tl.halfHour"), [
-						[isCost ? t("tl.metricCost") : t("tl.metricToken"), valueText],
-						partial ? ["*", t("tl.partial")] : null
-					].filter(Boolean));
+					const line = range + " · " + valueText + (isCost ? "" : " Token") + (!isCost && partial ? "*" : "");
+					return tipRows(line, []);
 				});
 				return e("button", {
 					key: bar.slot,

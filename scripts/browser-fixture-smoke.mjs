@@ -949,6 +949,24 @@ try {
   assert.deepEqual(misalignedTicks, [], 'day timeline ticks align with hour grid lines: ' + JSON.stringify(misalignedTicks));
   const minRunWidth = await evaluate('Math.min(...[...document.querySelectorAll(".dss-tl-run")].map(node => node.getBoundingClientRect().width))');
   assert(minRunWidth >= 3.5, 'day timeline runs keep at least 4px: ' + minRunWidth);
+  const hoverFirstBar = () => evaluate(`(() => {
+    const bar = document.querySelector('.dss-tl-bar');
+    const rect = bar.getBoundingClientRect();
+    bar.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rect.left + rect.width / 2, clientY: rect.top + 2 }));
+  })()`);
+  await hoverFirstBar();
+  await until('document.querySelector(".dss-tt.show")');
+  const costBarTip = await evaluate('document.querySelector(".dss-tt").textContent');
+  assert(/^\d{2}:\d{2}–\d{2}:\d{2} · ¥/.test(costBarTip), 'cost bar tooltip is one line: ' + costBarTip);
+  assert(!costBarTip.includes('半小时') && !costBarTip.includes('30 min'), 'cost bar tooltip omits the half-hour unit: ' + costBarTip);
+  await click('[data-action=tl-metric-token]');
+  await delay(100);
+  await hoverFirstBar();
+  await until('document.querySelector(".dss-tt.show")');
+  const tokenBarTip = await evaluate('document.querySelector(".dss-tt").textContent');
+  assert(/^\d{2}:\d{2}–\d{2}:\d{2} · .+ Token$/.test(tokenBarTip), 'token bar tooltip is one line with its unit: ' + tokenBarTip);
+  assert(!tokenBarTip.includes('半小时') && !tokenBarTip.includes('30 min'), 'token bar tooltip omits the half-hour unit: ' + tokenBarTip);
+  await click('[data-action=tl-metric-cost]');
   const barState = () => evaluate(`(() => {
     const bars = [...document.querySelectorAll('.dss-tl-bar')];
     return { count: bars.length, activeIndex: bars.indexOf(document.activeElement), zero: bars.map(bar => bar.tabIndex) };
