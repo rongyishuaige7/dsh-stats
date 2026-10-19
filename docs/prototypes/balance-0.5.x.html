@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dsh-stats 账户余额改版</title>
+<style>
+/* Layout: intro + prototype controls → dimmed host stage holding the plugin panel (container queries on panel width) → problems / changes / data / questions.
+   Panel tokens mirror the DSH --dsw-alias palette the plugin inherits; status colors mirror the plugin's --dss-ok / --dss-warn / --dss-danger. */
+:root{
+  --page:#eef0f3; --stage:#5c626c; --panel:#ffffff; --layer:#f5f6f8; --hover:#eef1f5; --seg-on:#ffffff;
+  --line:#dce0e5; --line-soft:#eaedf1; --text:#20242b; --text-2:#565e6b; --text-3:#6a727e;
+  --accent:#2f6fe4; --accent-soft:rgba(47,111,228,.10); --on-accent:#ffffff;
+  --ok:#047857; --warn:#92400e; --warn-fill:#d97706; --warn-soft:#fdf4e3; --warn-line:#efd3a0;
+  --danger:#dc2626; --danger-soft:rgba(220,38,38,.07); --danger-line:rgba(220,38,38,.24);
+  --track:#e6e9ee; --skel:#eceff3;
+  --shadow:0 18px 50px rgba(16,22,34,.28); --pop-shadow:0 10px 30px rgba(16,22,34,.16);
+  --tip-bg:#20242b; --tip-text:#f3f5f8; --toast-bg:#20242b; --toast-text:#ffffff;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif;
+  --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:15px; --fs-xl:20px; --fs-2xl:28px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#232937; --seg-on:#2b3241;
+    --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+    --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --on-accent:#0d1220;
+    --ok:#34d399; --warn:#fbbf24; --warn-fill:#f59e0b; --warn-soft:rgba(251,191,36,.10); --warn-line:rgba(251,191,36,.26);
+    --danger:#f87171; --danger-soft:rgba(248,113,113,.10); --danger-line:rgba(248,113,113,.28);
+    --track:#2a303c; --skel:#232933;
+    --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+    --tip-bg:#2b3241; --tip-text:#e7eaf0; --toast-bg:#e7eaf0; --toast-text:#161a21;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#232937; --seg-on:#2b3241;
+  --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+  --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --on-accent:#0d1220;
+  --ok:#34d399; --warn:#fbbf24; --warn-fill:#f59e0b; --warn-soft:rgba(251,191,36,.10); --warn-line:rgba(251,191,36,.26);
+  --danger:#f87171; --danger-soft:rgba(248,113,113,.10); --danger-line:rgba(248,113,113,.28);
+  --track:#2a303c; --skel:#232933;
+  --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+  --tip-bg:#2b3241; --tip-text:#e7eaf0; --toast-bg:#e7eaf0; --toast-text:#161a21;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font-family:var(--font-ui);font-size:var(--fs-md);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{display:block;flex:none}
+.page{max-width:1280px;margin:0 auto;padding-block:28px 56px;display:flex;flex-direction:column;gap:20px}
+
+/* ---------- intro & prototype controls ---------- */
+.intro{display:flex;flex-direction:column;gap:6px;max-width:80ch}
+.eyebrow{margin:0;font-size:var(--fs-xs);letter-spacing:.06em;color:var(--text-3)}
+.intro h1{margin:0;font-size:var(--fs-xl);font-weight:650}
+.lede{margin:0;color:var(--text-2)}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin-top:6px}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctl-k{font-size:var(--fs-sm);color:var(--text-3);white-space:nowrap}
+.seg{display:inline-flex;background:var(--layer);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px}
+.seg button{border:0;background:none;padding:4px 11px;border-radius:7px;font-size:var(--fs-md);color:var(--text-2);white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.switch{display:inline-flex;align-items:center;gap:8px;color:var(--text-2);cursor:pointer;position:relative}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch .sw{width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.switch .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch input:checked + .sw{background:var(--accent)}
+.switch input:checked + .sw::after{transform:translateX(12px)}
+.switch input:focus-visible + .sw{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- host stage ---------- */
+.stage{background:var(--stage);border-radius:16px;padding:28px;position:relative}
+.panel{container:panel / inline-size;position:relative;width:100%;max-width:1180px;margin-inline:auto;height:min(820px,calc(100vh - 60px));min-height:600px;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;color:var(--text)}
+.stage[data-w="tablet"] .panel{max-width:760px}
+.stage[data-w="phone"] .panel{max-width:390px;border-radius:20px}
+.toast{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-text);font-size:var(--fs-sm);
+  padding:8px 14px;border-radius:9px;box-shadow:var(--pop-shadow);z-index:60;max-width:calc(100% - 32px);text-align:center}
+.anno{display:none}
+.stage.annos .anno{display:grid;place-items:center;position:absolute;top:-9px;left:-9px;width:18px;height:18px;border-radius:50%;
+  background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;line-height:1;box-shadow:0 0 0 2px var(--panel);z-index:6;pointer-events:none;font-variant-numeric:tabular-nums}
+.stage.annos .anno.r{left:auto;right:-9px}
+
+/* ---------- panel header (same as the shipped 0.5.0 header; the balance tab gets the status dot back) ---------- */
+.p-head{display:flex;align-items:center;gap:16px;padding:12px 16px 12px 20px;border-bottom:1px solid var(--line);flex:none}
+.p-head h2{margin:0;font-size:var(--fs-lg);font-weight:650;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;color:var(--text-2);font-size:var(--fs-md);padding:6px 12px;border-radius:8px;white-space:nowrap}
+.tab:hover{color:var(--text);background:var(--hover)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--text);font-weight:600}
+.p-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.sync{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-sm);color:var(--text-3);padding:0 6px;white-space:nowrap;position:relative}
+.sync .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.sync.busy .dot{background:var(--accent);animation:pulse 1s ease-in-out infinite}
+.sync.warn .dot{background:var(--warn-fill)}
+.sync.warn{color:var(--warn)}
+@keyframes pulse{50%{opacity:.35}}
+.act-group{display:inline-flex;align-items:center;gap:2px;padding-left:6px;border-left:1px solid var(--line-soft)}
+.icon-btn{width:32px;height:32px;border-radius:8px;border:0;background:none;color:var(--text-2);display:inline-grid;place-items:center;flex:none}
+.icon-btn:hover:not(:disabled){background:var(--hover);color:var(--text)}
+.icon-btn:disabled{opacity:.45;cursor:default}
+.icon-btn.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- status banner (only when the whole account query failed) ---------- */
+.banner{display:flex;align-items:flex-start;gap:10px;padding:9px 20px;background:var(--warn-soft);border-bottom:1px solid var(--warn-line);color:var(--warn);font-size:var(--fs-sm);flex:none;position:relative}
+.banner .msg{flex:1;min-width:0;position:relative}
+.banner details{margin-top:2px;color:var(--text-2)}
+.banner summary{cursor:pointer;color:var(--warn);width:max-content}
+.banner code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-xs)}
+.btn-sm{height:26px;padding:0 10px;border:1px solid var(--warn-line);border-radius:7px;background:var(--panel);color:var(--text);font-size:var(--fs-sm);white-space:nowrap;flex:none}
+.btn-sm:hover{border-color:var(--warn)}
+/* ---------- body: the only scroll area ---------- */
+.p-body{flex:1;min-height:0;overflow:auto;padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
+
+/* ---------- summary strip (same frame as the overview KPIs) ---------- */
+.kpis{display:grid;grid-template-columns:1.45fr repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:14px;font-variant-numeric:tabular-nums;position:relative}
+.kpi{padding:10px 16px 11px;display:flex;flex-direction:column;gap:4px;min-width:0;position:relative}
+.kpi+.kpi{border-left:1px solid var(--line-soft)}
+.kpi.lead{background:var(--layer);border-radius:13px 0 0 13px}
+.kpi-k{font-size:var(--fs-sm);color:var(--text-2);display:flex;align-items:center;gap:5px;white-space:nowrap}
+.kpi-v{font-size:var(--fs-xl);font-weight:650;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi.lead .kpi-v{font-size:var(--fs-2xl)}
+.kpi-s{font-size:var(--fs-xs);color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-warn{color:var(--warn)}
+.t-danger{color:var(--danger)}
+
+/* ---------- account list: one row per account, amounts and meters share columns ---------- */
+.acc{--cols:minmax(170px,1.15fr) minmax(0,3.4fr) 92px;--areas:"id main act";position:relative}
+.acc-head,.acc-row{display:grid;grid-template-columns:var(--cols);grid-template-areas:var(--areas);column-gap:20px}
+.acc-head{font-size:var(--fs-xs);color:var(--text-3);padding:0 4px 6px;border-bottom:1px solid var(--line);position:relative}
+.acc-list{list-style:none;margin:0;padding:0}
+.acc-row{padding:12px 4px;border-bottom:1px solid var(--line-soft);align-items:start;position:relative}
+.acc-row:hover{background:var(--hover)}
+.acc-id{grid-area:id;display:flex;gap:9px;min-width:0;position:relative}
+.sdot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:var(--ok)}
+.sdot.warn{background:var(--warn-fill)}
+.sdot.danger{background:var(--danger)}
+.sdot.idle{background:var(--line)}
+.acc-nm{display:flex;flex-direction:column;gap:2px;min-width:0;position:relative}
+.nm-wrap{position:relative;display:flex;min-width:0;align-self:flex-start;max-width:100%}
+.acc-nm b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-meta{font-size:var(--fs-xs);color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-wrap{position:relative;align-self:flex-start;margin-top:3px}
+.chip{display:inline-block;font-size:var(--fs-xs);font-weight:600;padding:0 6px;border-radius:5px;line-height:18px;border:1px solid transparent;white-space:nowrap}
+.chip.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-line)}
+.chip.danger{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-line)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.acc-main{grid-area:main;min-width:0;display:flex;flex-direction:column;gap:5px;position:relative}
+.amt-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px;min-width:0}
+.amt{font-size:var(--fs-xl);font-weight:650;line-height:1.2;letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.stale{color:var(--text-2)}
+.amt.none{color:var(--text-3);font-weight:500}
+.amt-sub{font-size:var(--fs-sm);color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mline{display:grid;grid-template-columns:3.6em minmax(80px,300px) 4.2em minmax(9.5em,auto);align-items:center;column-gap:10px;font-size:var(--fs-sm);font-variant-numeric:tabular-nums;position:relative}
+.mline .k{color:var(--text-2);white-space:nowrap;position:relative}
+.bar{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.bar.warn i{background:var(--warn-fill)}
+.bar.danger i{background:var(--danger)}
+.bar.empty{background:var(--danger-soft);box-shadow:inset 0 0 0 1px var(--danger-line)}
+.mline .v{font-weight:600;text-align:right;white-space:nowrap}
+.mline .r{color:var(--text-3);white-space:nowrap}
+.mline .r[data-tip]{cursor:help}
+.reason{font-size:var(--fs-sm);color:var(--text-2);line-height:1.45}
+.reason code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-xs);background:var(--hover);padding:0 4px;border-radius:4px;color:var(--text)}
+.acc-act{grid-area:act;display:flex;justify-content:flex-end}
+.ext{display:inline-flex;align-items:center;gap:3px;color:var(--accent);font-size:var(--fs-sm);text-decoration:none;white-space:nowrap;padding:1px 2px;border-radius:5px}
+.ext:hover{text-decoration:underline}
+
+/* per-account balance alert: bell button + popover form, anchored to the action cell */
+.acc-act{position:relative;align-items:center;gap:4px}
+.bell{width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--text-3);display:inline-grid;place-items:center;position:relative;margin-top:-3px}
+.bell:hover{background:var(--hover);color:var(--text)}
+.bell.on{color:var(--accent)}
+.bell.on svg path:first-child{fill:currentColor;fill-opacity:.18}
+.alert-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:270px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--pop-shadow);padding:12px;display:flex;flex-direction:column;gap:9px;font-size:var(--fs-sm)}
+.alert-pop.up{top:auto;bottom:calc(100% + 6px)}
+.alert-pop h3{margin:0;font-size:var(--fs-md);font-weight:600}
+.nw{white-space:nowrap}
+.alert-pop .hint{margin:0;color:var(--text-3);font-size:var(--fs-xs);line-height:1.5}
+.alert-field{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--layer)}
+.alert-field:focus-within{border-color:var(--accent)}
+.alert-field span{color:var(--text-3);font-variant-numeric:tabular-nums}
+.alert-field input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:var(--fs-md);font-variant-numeric:tabular-nums}
+.alert-err{color:var(--danger);font-size:var(--fs-xs)}
+.alert-btns{display:flex;justify-content:flex-end;gap:6px}
+.alert-btns .clear{margin-right:auto}
+.btn{height:28px;padding:0 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:var(--fs-sm);white-space:nowrap}
+.btn:hover{border-color:var(--text-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.link{border-color:transparent;color:var(--text-2);padding:0 4px}
+.btn.link:hover{color:var(--danger)}
+
+/* not-connected accounts: folded into one row at the end */
+.idle{border:1px solid var(--line-soft);border-radius:10px;position:relative}
+.idle summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:var(--fs-sm);color:var(--text-2);border-radius:10px;position:relative}
+.idle summary::-webkit-details-marker{display:none}
+.idle summary:hover{background:var(--hover)}
+.idle summary svg{transition:transform .15s;color:var(--text-3)}
+.idle[open] summary svg{transform:rotate(90deg)}
+.idle-row{display:flex;align-items:baseline;gap:10px;padding:7px 12px 7px 34px;border-top:1px solid var(--line-soft);font-size:var(--fs-sm)}
+.idle-row b{font-weight:600;white-space:nowrap}
+.idle-row .reason{flex:1;min-width:0;color:var(--text-3)}
+.foot{font-size:var(--fs-xs);color:var(--text-3);padding:0 4px}
+/* first-load skeleton: rows come from stats/providers, values are placeholders */
+.sk{display:inline-block;height:10px;border-radius:4px;background:var(--skel);vertical-align:middle;animation:pulse 1.4s ease-in-out infinite}
+.sk.lg{height:20px}
+.sk.xl{height:26px}
+
+/* floating tooltip for data-tip */
+.ftip{position:fixed;z-index:100;pointer-events:none;background:var(--tip-bg);color:var(--tip-text);font-size:var(--fs-xs);line-height:1.55;padding:6px 9px;border-radius:7px;box-shadow:var(--pop-shadow);max-width:280px}
+
+/* ---------- notes ---------- */
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 36px;padding-top:4px}
+.notes section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.notes h2{margin:0;font-size:var(--fs-lg);font-weight:650}
+.note-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.note-list li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:var(--fs-sm);color:var(--text-2);max-width:68ch}
+.note-list li b{color:var(--text);font-weight:600}
+.num{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.num.p{background:var(--line);color:var(--text-2)}
+.note-list code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-xs);background:var(--hover);padding:1px 5px;border-radius:4px;color:var(--text)}
+
+/* ---------- container queries: panel width, not viewport ---------- */
+@container panel (max-width: 860px){
+  .p-head{flex-wrap:wrap;row-gap:6px;padding:10px 12px 8px 16px}
+  .tabs{order:3;flex-basis:100%;margin-left:-4px}
+  /* lead on its own row; the other two cells share the next row */
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi.lead{grid-column:1 / -1;border-radius:13px 13px 0 0;border-bottom:1px solid var(--line-soft)}
+  .kpi+.kpi{border-left:0}
+  .kpi:nth-child(3){border-left:1px solid var(--line-soft)}
+  .kpi-s{white-space:normal}
+  .acc-meta{white-space:normal;overflow-wrap:anywhere}
+  .acc{--cols:minmax(140px,1fr) minmax(0,3.2fr) 84px}
+  .acc .mline{grid-template-columns:3.6em minmax(0,1fr) 4.2em}
+  .acc .mline .r{grid-column:2 / -1;font-size:var(--fs-xs)}
+}
+@container panel (max-width: 640px){
+  .p-body{padding:12px 14px 16px}
+  .banner{padding:9px 14px}
+  .sync-label{display:none}
+  .kpi{padding:10px 12px}
+  .kpi.lead .kpi-v{font-size:var(--fs-xl)}
+  .acc{--cols:minmax(0,1fr) auto;--areas:"id act" "main main"}
+  .acc-head{display:none}
+  .acc-row{row-gap:10px;padding:12px 2px}
+  .idle-row{flex-direction:column;gap:2px;padding-left:30px}
+}
+@media (max-width: 760px){ .notes{grid-template-columns:1fr} }
+@media (max-width: 600px){ .stage{padding:10px;border-radius:12px} }
+@media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="intro">
+    <p class="eyebrow">DSH-STATS 0.5.x · 账户余额 · 静态高保真原型</p>
+    <h1>账户余额改版</h1>
+    <p class="lede">余额页从“下拉框选一个、看一个”改成一屏列出全部账户，按紧急程度排序；多账户时顶部用一条摘要回答“还剩多少、哪个最紧”。面板里的账户和金额都是虚构示例。可以直接操作：切换示例、主题和宽度；点余额行右侧的铃铛设置“余额低于多少时提醒”；悬停或聚焦重置时间看北京时间；展开底部的“未接入”。刷新按钮会模拟一次刷新；“刷新失败”示例点刷新或“重试”后恢复正常，“首次加载”停在骨架状态方便查看。</p>
+    <div class="controls">
+      <div class="ctl"><span class="ctl-k">面板宽度</span><div class="seg" id="width-seg"><button type="button" data-v="desktop" aria-pressed="true">桌面 1180</button><button type="button" data-v="tablet" aria-pressed="false">平板 760</button><button type="button" data-v="phone" aria-pressed="false">手机 390</button></div></div>
+      <div class="ctl"><span class="ctl-k">示例</span><div class="seg" id="scene-seg"><button type="button" data-v="multi" aria-pressed="true">多账户</button><button type="button" data-v="single" aria-pressed="false">单账户</button><button type="button" data-v="attention" aria-pressed="false">需要处理</button><button type="button" data-v="failed" aria-pressed="false">刷新失败</button><button type="button" data-v="loading" aria-pressed="false">首次加载</button></div></div>
+      <div class="ctl"><span class="ctl-k">主题</span><div class="seg" id="theme-seg"><button type="button" data-v="auto" aria-pressed="true">跟随系统</button><button type="button" data-v="light" aria-pressed="false">浅色</button><button type="button" data-v="dark" aria-pressed="false">深色</button></div></div>
+      <label class="switch"><input type="checkbox" id="anno-toggle" checked><span class="sw" aria-hidden="true"></span>显示改动编号</label>
+    </div>
+  </header>
+
+  <div class="stage annos" id="stage" data-w="desktop">
+    <div class="panel" id="panel" role="dialog" aria-labelledby="dlg-title"></div>
+  </div>
+  <div class="notes">
+    <section aria-labelledby="n-prob">
+      <h2 id="n-prob">现在的问题</h2>
+      <ol class="note-list">
+        <li><span class="num p">a</span><span><b>一次只能看一个账户。</b>配了多个 Provider 时，要逐个切下拉框才知道哪个快用完了。</span></li>
+        <li><span class="num p">b</span><span><b>下拉框标签会重名。</b>标签优先显示 <code>providerFamily</code>，<code>moonshotai</code> 和 <code>kimi-coding</code> 都显示成 “moonshot”。</span></li>
+        <li><span class="num p">c</span><span><b>状态只看第一个账户。</b>页面状态和警告取 <code>accounts[0]</code> 和 <code>warnings[0]</code>，和当前选中的账户可能对不上；警告是宿主的英文原文。</span></li>
+        <li><span class="num p">d</span><span><b>两种卡片外观。</b>DeepSeek 有专属渐变卡（12 个专用 token），其他 Provider 是普通卡片，切换账户时视觉重量跟着变。</span></li>
+        <li><span class="num p">e</span><span><b>空间利用差。</b>1440px 下一张卡只占面板约 1/3 的高度；充值、赠送两个框各占半宽，里面只有一个数字。</span></li>
+        <li><span class="num p">f</span><span><b>订阅信息主次颠倒。</b>套餐名出现三次，用的是全页最大字号；额度数字反而是小字。</span></li>
+        <li><span class="num p">g</span><span><b>额度条读反了。</b>条画的是已用，旁边写“68% 剩余”；额度低时不变色，重置时间只有绝对时刻。</span></li>
+        <li><span class="num p">h</span><span><b>和另外三页不一致。</b>标题重复 tab 名，头部没有状态点，加载时只有一行文字。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-chg">
+      <h2 id="n-chg">改动要点（对应面板里的编号）</h2>
+      <ol class="note-list">
+        <li><span class="num">1</span><span><b>头部状态点：</b>和其他页一样显示“已同步 · HH:MM”“正在刷新…”“快照已过期”，去掉正文里的“更新时间”和每张卡的“上次成功”。</span></li>
+        <li><span class="num">2</span><span><b>摘要条：</b>可用余额（按币种分别合计，不换算）、最紧的额度、需要关注的账户数。只有一个账户时不显示。</span></li>
+        <li><span class="num">3</span><span><b>全部账户一屏列出</b>，按紧急程度排序：需要处理 → 需要关注 → 正常。下拉框删除。</span></li>
+        <li><span class="num">4</span><span><b>统一的账户行：</b>状态点、名称，副行是类型和套餐或路由 id，同一 family 的账户不会重名。不再有 DeepSeek 专属渐变。</span></li>
+        <li><span class="num">5</span><span><b>余额与额度同一列：</b>金额右侧是构成（充值 · 赠送、已用 / 总额）。额度条表示剩余，低于 20% 变琥珀色，低于 5% 变红；重置时间写成“2 天后重置”，悬停显示北京时间。</span></li>
+        <li><span class="num">6</span><span><b>异常才有标签：</b>额度紧张、额度已用完、余额偏低、余额已用完、凭证无效、已过期等，原因写在金额下方，文案本地化，不再透传宿主英文。正常的账户只有绿色状态点，没有标签。</span></li>
+        <li><span class="num">7</span><span><b>余额提醒：</b>每个余额账户右侧有一个铃铛，点开填“低于多少时提醒”。设了的账户在金额旁显示“提醒线 ¥20.00”，铃铛变蓝；余额低于提醒线时显示琥珀色“余额偏低”，排到前面，并计入“需要关注”。默认不设，余额为 0 时始终显示红色“余额已用完”。</span></li>
+        <li><span class="num">8</span><span><b>未接入的账户</b>折叠成最后一行，展开后列出缺少的凭证键名或“不支持”。</span></li>
+        <li><span class="num">9</span><span><b>页面横幅只在整个查询失败时出现：</b>写明显示的是几点的快照，诊断信息可展开，有“重试”。单个账户失败只在它自己的行里显示。</span></li>
+        <li><span class="num">10</span><span><b>首次加载用骨架行：</b>账户名来自宿主已有的 <code>stats/providers</code>，数值是占位。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-data">
+      <h2 id="n-data">数据从哪来（不改宿主接口）</h2>
+      <ul class="note-list">
+        <li><span class="num p">·</span><span>账户列表沿用 <code>stats/account</code> 的 <code>accounts[]</code>，字段不变；紧急程度、标签、排序、汇总都在客户端纯函数里算（计划放在新的 <code>client-balance-model.cjs</code>）。</span></li>
+        <li><span class="num p">·</span><span>余额按币种分别合计，不做汇率换算；非人民币金额显示为 <code>$15.50</code>，不再是 <code>15.50 USD</code>。</span></li>
+        <li><span class="num p">·</span><span>余额页只用账户接口的数据，不读会话统计；“近 7 天消耗 · 可用天数”已确定不做。</span></li>
+        <li><span class="num p">·</span><span>余额提醒存在新的本地偏好 <code>dsh-stats.balanceAlerts</code>，形如 <code>{ "deepseek-official": { "amount": 20, "currency": "CNY" } }</code>，和 <code>dsh-stats.hidden</code> 一样用 <code>usePref</code> 读写。只和同币种的余额比较；账户币种变了，提醒自动失效，不做换算。不经过宿主，也不改 RPC。</span></li>
+        <li><span class="num p">·</span><span>首次加载的骨架行来自 <code>stats/providers</code>（客户端已注册，目前没有调用）；旧宿主没有这个方法时显示 3 行空骨架。</span></li>
+      </ul>
+    </section>
+    <section aria-labelledby="n-ask">
+      <h2 id="n-ask">已确定 / 还剩一项</h2>
+      <ol class="note-list">
+        <li><span class="num p">✓</span><span><b>列表布局</b>，不做卡片网格。</span></li>
+        <li><span class="num p">✓</span><span><b>不做“近 7 天消耗 · 可用天数”。</b></span></li>
+        <li><span class="num p">✓</span><span><b>余额提醒按账户配置金额</b>，默认不设；余额为 0 始终提醒。</span></li>
+        <li><span class="num p">✓</span><span><b>只有一个账户时隐藏摘要条</b>（看“单账户”示例）。</span></li>
+        <li><span class="num p">✓</span><span><b>正常的账户不显示“正常”标签</b>，只有绿色状态点。</span></li>
+        <li><span class="num p">?</span><span><b>订阅额度阈值</b>先按全局默认：剩余 20% 变琥珀色，5% 变红。没意见就按这个写进实施文档。</span></li>
+      </ol>
+    </section>
+  </div>
+</main>
+<script>
+(function(){
+  "use strict";
+  var H=3600e3, D=24*H;
+  var NOW=Date.parse("2026-10-19T21:40:00+08:00");
+  var I={
+    refresh:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>',
+    gear:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.4"/><circle cx="8" cy="8" r="1.7"/><path d="M13 8h1.6M11.5 11.5l1.1 1.1M8 13v1.6M4.5 11.5l-1.1 1.1M3 8H1.4M4.5 4.5 3.4 3.4M8 3V1.4M11.5 4.5l1.1-1.1"/></svg>',
+    close:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+    chev:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>',
+    warn:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2 14.3 13H1.7z"/><path d="M8 6.5v3"/><path d="M8 11.4v.1"/></svg>',
+    ext:'<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3H3v10h10v-3"/><path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/></svg>',
+    bell:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5V7.2a4 4 0 0 1 8 0v4.3l1.2 1.3H2.8z"/><path d="M6.6 14.2a1.5 1.5 0 0 0 2.8 0"/></svg>'
+  };
+  var TABS=[["overview","项目总览"],["timeline","开发时间线"],["trends","用量趋势"],["balance","账户余额"]];
+  var RANK={ok:0,warn:1,danger:2};
+
+  /* ---------- example accounts (fictional numbers) ---------- */
+  // kind: official | relay | aggregator
+  var DS={id:"deepseek-official",name:"DeepSeek",mode:"balance",kind:"official",status:"ok",cur:"CNY",remaining:123.45,toppedUp:100,granted:23.45,url:1};
+  var MM={id:"minimax-cn",name:"MiniMax",mode:"subscription",kind:"official",status:"ok",plan:"MiniMax Coding Plan",url:1,
+    windows:[{kind:"本时段",rem:18,reset:NOW+2*H+10*60e3},{kind:"本周",rem:68,reset:NOW+D+H}]};
+  var OR={id:"openrouter",name:"OpenRouter",mode:"balance",kind:"aggregator",status:"ok",cur:"USD",remaining:15.5,total:20,used:4.5,url:1};
+  var KM={id:"kimi-coding",name:"Kimi For Coding",mode:"subscription",kind:"official",status:"ok",plan:null,url:1,
+    windows:[{kind:"本周",rem:4,reset:NOW+2*D+14*H}]};
+  var MS={id:"moonshotai-cn",name:"Moonshot",mode:"balance",kind:"official",status:"unavailable",stale:true,lastOk:NOW-26*60e3,cur:"CNY",remaining:36.2,toppedUp:30,granted:6.2,url:1};
+  var YI={id:"yi-api",name:"yi-api",mode:"balance",kind:"relay",status:"ok",cur:"USD",remaining:42.8};
+  var ZI={id:"zai-coding-cn",name:"Z.ai Coding Plan",idle:"not-configured",key:"ZAI_API_KEY",url:1};
+  var AN={id:"anthropic",name:"Anthropic",idle:"unsupported"};
+  var KI={id:"kimi-coding",name:"Kimi For Coding",idle:"not-configured",key:"KIMI_API_KEY",url:1};
+  var DS2=Object.assign({},DS,{remaining:0,toppedUp:0,granted:0});
+  var MM2=Object.assign({},MM,{windows:[{kind:"本时段",rem:0,reset:NOW+H+25*60e3},{kind:"本周",rem:12,reset:NOW+3*D+2*H}]});
+  var OR2={id:"openrouter",name:"OpenRouter",mode:"balance",kind:"aggregator",status:"unauthorized",cur:"USD",url:1};
+  var MS2={id:"moonshotai-cn",name:"Moonshot",mode:"balance",kind:"official",status:"rate-limited",cur:"CNY",url:1};
+  var SCENES={
+    multi:{list:[DS,MM,OR,KM,MS,YI],idle:[ZI,AN]},
+    single:{list:[DS],idle:[]},
+    attention:{list:[DS2,MM2,OR2,MS2],idle:[KI]},
+    failed:{list:[DS,MM,OR,KM,MS,YI],idle:[ZI,AN],failed:true},
+    loading:{list:[DS,MM,OR,KM,MS,YI],idle:[ZI,AN],loading:true}
+  };
+  var q=new URLSearchParams(location.search);
+  function pick(name,list,def){var v=q.get(name);return list.indexOf(v)>=0?v:def;}
+  var state={
+    w:pick("w",["desktop","tablet","phone"],"desktop"),
+    scene:pick("scene",["multi","single","attention","failed","loading"],"multi"),
+    theme:pick("theme",["auto","light","dark"],"auto"),
+    annos:q.get("anno")!=="0", busy:false, idleOpen:false,
+    // Per-account balance alerts; the plugin would keep them in a localStorage pref. Two presets for the demo.
+    alerts:{"deepseek-official":{amount:20,cur:"CNY"},"yi-api":{amount:50,cur:"USD"}},
+    pop:q.get("pop")||null, popErr:"", popVal:""
+  };
+  /* ---------- helpers ---------- */
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+  var marks={};
+  function anno(n){return '<span class="anno" aria-hidden="true">'+n+"</span>";}
+  function once(n){if(marks[n])return "";marks[n]=1;return anno(n);}
+  function onceR(n){return once(n).replace('class="anno"','class="anno r"');}
+  function pad(n){return (n<10?"0":"")+n;}
+  // Beijing time regardless of the viewer's zone, as the plugin does
+  function bj(ms){var d=new Date(ms+8*H);return d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate())+" "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes());}
+  function bjClock(ms){return bj(ms).slice(11);}
+  function money(v,cur){
+    var n=v>=1000?v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):v.toFixed(2);
+    return cur==="CNY"?"¥"+n:cur==="USD"?"$"+n:n+" "+cur;
+  }
+  function resetIn(ts){
+    var m=Math.max(0,Math.round((ts-NOW)/60e3));
+    if(m<60)return m+" 分钟后重置";
+    if(m<24*60){var h=Math.floor(m/60),mm=m%60;return h+" 小时"+(mm?" "+mm+" 分":"")+"后重置";}
+    var d=Math.floor(m/1440),hh=Math.floor(m%1440/60);return d+" 天"+(hh?" "+hh+" 小时":"")+"后重置";
+  }
+  function worse(a,b){return RANK[b]>RANK[a]?b:a;}
+
+  /* ---------- model (would live in client-balance-model.cjs) ---------- */
+  function winLevel(rem){return rem<5?"danger":rem<20?"warn":"ok";}
+  var STATUS={
+    unauthorized:["danger","凭证无效"], blocked:["danger","已拦截"],
+    "rate-limited":["warn","请求受限"], unavailable:["warn","暂不可用"], "invalid-response":["warn","响应异常"]
+  };
+  var REASON={
+    unauthorized:function(a){return "凭证无效或没有查询权限，请检查 <code>"+(a.id==="openrouter"?"OPENROUTER_MANAGEMENT_KEY":"API Key")+"</code>";},
+    blocked:function(){return "账户端点不在安全白名单内";},
+    "rate-limited":function(){return "Provider 限流，没有读到余额，稍后刷新";},
+    unavailable:function(){return "Provider 账户服务暂不可用";},
+    "invalid-response":function(){return "Provider 返回了无法识别的账户数据";}
+  };
+  // One label per row, the most severe signal wins.
+  function chipOf(a){
+    if(a.stale)return ["warn","已过期"];
+    if(STATUS[a.status])return STATUS[a.status];
+    if(a.mode==="subscription"){
+      var min=Math.min.apply(null,a.windows.map(function(w){return w.rem;}));
+      if(min<=0)return ["danger","额度已用完"];
+      var lv=winLevel(min);
+      if(lv!=="ok")return [lv,lv==="danger"?"额度将用完":"额度紧张"];
+      return null;
+    }
+    // Balances flag facts only: nothing left, or below the line the user set for this account.
+    if(a.remaining===0)return ["danger","余额已用完"];
+    if(belowAlert(a))return ["warn","余额偏低"];
+    return null;
+  }
+  // An alert applies only while the account still reports in the currency it was set in.
+  function alertOf(a){var al=state.alerts[a.id];return al&&a.mode==="balance"&&al.cur===a.cur?al:null;}
+  function belowAlert(a){var al=alertOf(a);return !!al&&a.remaining!=null&&a.remaining>0&&a.remaining<al.amount;}
+  function toneOf(a){var c=chipOf(a);return c?c[0]:"ok";}
+  function sortAccounts(list){
+    return list.map(function(a,i){return {a:a,i:i,t:RANK[toneOf(a)]};}).sort(function(x,y){return y.t-x.t||x.i-y.i;}).map(function(x){return x.a;});
+  }
+  function metaOf(a){
+    var type=a.mode==="subscription"?"订阅":"余额";
+    if(a.plan&&a.plan!==a.name)return type+" · "+a.plan;
+    if(a.kind==="relay")return type+" · 自定义路由";
+    return type+" · "+a.id;
+  }
+  /* ---------- summary strip ---------- */
+  function kpis(list){
+    if(list.length<2)return "";
+    var sums={},order=[],balanceN=0,unread=0,stale=0;
+    list.forEach(function(a){
+      if(a.mode!=="balance")return;
+      balanceN++;
+      if(a.remaining==null){unread++;return;}
+      if(a.stale)stale++;
+      if(!(a.cur in sums)){sums[a.cur]=0;order.push(a.cur);}
+      sums[a.cur]+=a.remaining;
+    });
+    order.sort(function(x,y){return (x==="CNY"?0:1)-(y==="CNY"?0:1);});
+    var lead=order.length?money(sums[order[0]],order[0]):"—";
+    var leadSub=[];
+    if(order.length>1)leadSub.push(order.slice(1).map(function(c){return money(sums[c],c);}).join(" · "));
+    leadSub.push(balanceN+" 个余额账户");
+    if(stale)leadSub.push(stale+" 个为过期快照");
+    if(unread)leadSub.push(unread+" 个未读到");
+    var cells=['<div class="kpi lead">'+once(2)+'<div class="kpi-k">可用余额</div><div class="kpi-v">'+lead+'</div><div class="kpi-s">'+esc(leadSub.join(" · "))+"</div></div>"];
+    var tight=null;
+    list.forEach(function(a){(a.windows||[]).forEach(function(w){if(!tight||w.rem<tight.w.rem)tight={a:a,w:w};});});
+    if(tight){
+      var lv=winLevel(tight.w.rem);
+      cells.push('<div class="kpi"><div class="kpi-k">最紧的额度</div><div class="kpi-v'+(lv==="ok"?"":" t-"+lv)+'">剩余 '+tight.w.rem+'%</div><div class="kpi-s">'+esc(tight.a.name+" "+tight.w.kind+" · "+resetIn(tight.w.reset))+"</div></div>");
+    }
+    var hit=sortAccounts(list).map(function(a){return {a:a,t:toneOf(a)};}).filter(function(x){return x.t!=="ok";});
+    var worst=hit.reduce(function(acc,x){return worse(acc,x.t);},"ok");
+    cells.push('<div class="kpi"><div class="kpi-k">需要关注</div><div class="kpi-v'+(worst==="ok"?"":" t-"+worst)+'">'+hit.length+'</div><div class="kpi-s">'+(hit.length?hit.map(function(x){return '<span class="nw">'+esc(x.a.name)+"</span>";}).join("、"):"全部正常")+"</div></div>");
+    return '<section class="kpis" aria-label="账户摘要">'+cells.join("")+"</section>";
+  }
+
+  /* ---------- account rows ---------- */
+  // w.reset: quota windows; w.note: plain text instead of a reset countdown (OpenRouter credits)
+  function meterLine(w){
+    var lv=winLevel(w.rem);
+    var label=w.kind+"剩余 "+w.rem+"%"+(w.reset?"，北京时间 "+bj(w.reset)+" 重置":"");
+    var tail=w.reset?'<span class="r" tabindex="0" data-tip="'+esc("北京时间 "+bj(w.reset)+" 重置")+'">'+resetIn(w.reset)+"</span>":'<span class="r">'+esc(w.note||"")+"</span>";
+    return '<div class="mline"><span class="k">'+esc(w.kind)+onceR(5)+'</span>'+
+      '<span class="bar'+(lv==="ok"?"":" "+lv)+(w.rem<=0?" empty":"")+'" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+w.rem+'" aria-label="'+esc(label)+'"><i style="width:'+w.rem+'%"></i></span>'+
+      '<span class="v'+(lv==="ok"?"":" t-"+lv)+'">'+w.rem+"%</span>"+tail+"</div>";
+  }
+  function mainCell(a){
+    var out=[];
+    if(a.mode==="subscription"){out=a.windows.map(meterLine);}
+    else if(a.remaining==null){out.push('<div class="amt-line"><span class="amt none">—</span></div>');}
+    else{
+      var sub=[];
+      if(a.toppedUp)sub.push("充值 "+money(a.toppedUp,a.cur));
+      if(a.granted)sub.push("赠送 "+money(a.granted,a.cur));
+      if(a.total!=null)sub.push("已用 "+money(a.used,a.cur)+" / "+money(a.total,a.cur));
+      var al=alertOf(a);
+      if(al)sub.push(a.remaining<al.amount?'<span class="t-warn">提醒线 '+money(al.amount,al.cur)+"</span>":"提醒线 "+money(al.amount,al.cur));
+      out.push('<div class="amt-line"><span class="amt'+(a.stale?" stale":a.remaining===0?" t-danger":"")+'">'+money(a.remaining,a.cur)+"</span>"+(sub.length?'<span class="amt-sub">'+sub.join(" · ")+"</span>":"")+"</div>");
+      if(a.total!=null)out.push(meterLine({kind:"可用",rem:Math.round(a.remaining/a.total*100)}));
+    }
+    if(a.stale)out.push('<div class="reason">这个账户最近几次刷新失败，显示的是 '+bjClock(a.lastOk)+" 的结果</div>");
+    else if(a.mode==="balance"&&a.remaining===0)out.push('<div class="reason">余额为 0，充值后才能继续调用</div>');
+    else if(REASON[a.status])out.push('<div class="reason">'+REASON[a.status](a)+"</div>");
+    return '<div class="acc-main">'+out.join("")+"</div>";
+  }
+  function row(a){
+    var c=chipOf(a),tone=c?c[0]:"ok";
+    var chip=c?'<span class="chip-wrap">'+onceR(6)+'<span class="chip '+c[0]+'">'+c[1]+"</span></span>":'<span class="sr">状态正常</span>';
+    var link=a.url?'<a class="ext" href="#" data-act="ext" data-v="'+esc(a.name)+'">'+(a.mode==="balance"?"充值":"管理")+I.ext+'<span class="sr">（新标签页打开）</span></a>':"";
+    var al=alertOf(a),open=state.pop===a.id;
+    var bell=a.mode==="balance"?'<button type="button" class="bell'+(al?" on":"")+'" data-act="bell" data-v="'+esc(a.id)+'" data-k="bell-'+esc(a.id)+'" aria-haspopup="dialog" aria-expanded="'+open+'" title="余额提醒" aria-label="'+esc(a.name+" 余额提醒："+(al?"低于 "+money(al.amount,al.cur):"未设置"))+'">'+onceR(7)+I.bell+"</button>":"";
+    return '<li class="acc-row">'+
+      '<div class="acc-id"><i class="sdot '+tone+'" aria-hidden="true"></i><div class="acc-nm"><span class="nm-wrap"><b>'+esc(a.name)+"</b>"+onceR(4)+'</span><span class="acc-meta">'+esc(metaOf(a))+"</span>"+chip+"</div></div>"+
+      mainCell(a)+'<div class="acc-act">'+bell+link+(open?alertPop(a):"")+"</div></li>";
+  }
+  function alertPop(a){
+    var al=alertOf(a),val=state.popVal!==""?state.popVal:(al?String(al.amount):"");
+    var sym=a.cur==="CNY"?"¥":a.cur==="USD"?"$":a.cur;
+    return '<form class="alert-pop" role="dialog" aria-labelledby="alert-h" novalidate>'+
+      '<h3 id="alert-h">'+esc(a.name)+" 余额提醒</h3>"+
+      '<label class="alert-field"><span>低于</span><span aria-hidden="true">'+esc(sym)+'</span><input id="alert-amt" inputmode="decimal" autocomplete="off" placeholder="例如 20" value="'+esc(val)+'" aria-label="提醒金额（'+esc(a.cur)+'）"'+(state.popErr?' aria-invalid="true" aria-describedby="alert-err"':"")+"></label>"+
+      (state.popErr?'<div class="alert-err" id="alert-err">'+esc(state.popErr)+"</div>":"")+
+      '<p class="hint">余额低于这个金额时，这一行显示“余额偏低”并排到前面。按 '+esc(a.cur)+" 比较，不换算汇率；只保存在当前浏览器。</p>"+
+      '<div class="alert-btns">'+(al?'<button type="button" class="btn link clear" data-act="alert-clear">清除提醒</button>':"")+
+      '<button type="button" class="btn" data-act="alert-cancel">取消</button><button type="submit" class="btn primary">保存</button></div></form>';
+  }
+  function accList(list){
+    var head='<div class="acc-head"><div>账户</div><div>余额 / 剩余额度</div><div></div></div>';
+    return '<section class="acc" aria-label="账户列表">'+onceR(3)+head+
+      '<ul class="acc-list">'+sortAccounts(list).map(row).join("")+"</ul></section>";
+  }
+  function idleGroup(list){
+    if(!list.length)return "";
+    var rows=list.map(function(a){
+      var why=a.idle==="not-configured"?"未配置凭证 <code>"+esc(a.key)+"</code>":"没有可用的官方账户查询接口，不影响 Token 统计";
+      return '<div class="idle-row"><b>'+esc(a.name)+'</b><span class="reason">'+why+"</span>"+
+        (a.url?'<a class="ext" href="#" data-act="ext" data-v="'+esc(a.name)+'">控制台'+I.ext+'<span class="sr">（新标签页打开）</span></a>':"")+"</div>";
+    }).join("");
+    return '<details class="idle" id="idle"'+(state.idleOpen?" open":"")+'><summary data-k="idle">'+once(8)+I.chev+
+      "未接入 "+list.length+" 个："+esc(list.map(function(a){return a.name;}).join(" · "))+"</summary>"+rows+"</details>";
+  }
+  var SNAPSHOT=NOW-18*60e3;
+  function banner(sc){
+    if(!sc.failed||state.busy)return "";
+    return '<section class="banner" role="status">'+I.warn+'<div class="msg">'+anno(9)+'刷新失败，下面显示的是 '+bjClock(SNAPSHOT)+" 的快照。"+
+      "<details><summary>诊断信息</summary><code>stats/account · gateway/timeout · 15s 内没有响应</code></details></div>"+
+      '<button type="button" class="btn-sm" data-act="refresh" data-k="retry">重试</button></section>';
+  }
+  function loadingView(sc){
+    var k='<section class="kpis" aria-hidden="true">'+[0,1,2].map(function(i){
+      return '<div class="kpi'+(i?"":" lead")+'"><div class="kpi-k"><span class="sk" style="width:56px"></span></div><div class="kpi-v"><span class="sk '+(i?"lg":"xl")+'" style="width:'+(i?72:120)+'px"></span></div><div class="kpi-s"><span class="sk" style="width:90px"></span></div></div>';
+    }).join("")+"</section>";
+    // stats/providers knows names and account modes, not plans or amounts
+    var rows=sc.list.map(function(a){
+      return '<li class="acc-row"><div class="acc-id"><i class="sdot idle" aria-hidden="true"></i><div class="acc-nm"><b>'+esc(a.name)+'</b><span class="acc-meta">'+(a.mode==="subscription"?"订阅":"余额")+" · "+esc(a.id)+"</span></div></div>"+
+        '<div class="acc-main"><span class="sk lg" style="width:'+(a.mode==="subscription"?"60%":"110px")+'"></span><span class="sk" style="width:36%"></span></div>'+
+        '<div class="acc-act"></div></li>';
+    }).join("");
+    return k+'<section class="acc" aria-busy="true" aria-label="正在读取账户">'+anno(10).replace('class="anno"','class="anno r"')+
+      '<div class="acc-head"><div>账户</div><div>余额 / 剩余额度</div><div></div></div>'+
+      '<ul class="acc-list">'+rows+"</ul></section>"+idleGroup(sc.idle)+
+      '<p class="foot">正在读取 '+sc.list.length+" 个账户。账户名来自 stats/providers，金额和额度读到后替换占位。</p>";
+  }
+
+  /* ---------- panel chrome ---------- */
+  function head(sc){
+    var cls="sync",label,title;
+    if(sc.loading){cls+=" busy";label="正在读取…";title="正在读取账户数据";}
+    else if(state.busy){cls+=" busy";label="正在刷新…";title="正在刷新账户数据";}
+    else if(sc.failed){cls+=" warn";label="快照已过期 · "+bjClock(SNAPSHOT);title="刷新失败，显示上次成功的快照";}
+    else{label="已同步 · "+bjClock(NOW);title="账户数据已同步";}
+    var spinning=sc.loading||state.busy;
+    return '<header class="p-head"><h2 id="dlg-title">DSH 用量</h2>'+
+      '<div class="tabs" role="tablist" aria-label="DSH 用量">'+TABS.map(function(t){var on=t[0]==="balance";
+        return '<button type="button" class="tab" role="tab" id="tab-'+t[0]+'" aria-selected="'+on+'" tabindex="'+(on?0:-1)+'" data-act="tab" data-v="'+t[0]+'" data-k="tab-'+t[0]+'">'+t[1]+"</button>";}).join("")+"</div>"+
+      '<div class="p-actions"><span class="'+cls+'" role="status" title="'+title+'">'+anno(1)+'<i class="dot" aria-hidden="true"></i><span class="sync-label">'+label+"</span></span>"+
+      '<span class="act-group"><button type="button" class="icon-btn'+(spinning?" spin":"")+'" data-act="refresh" data-k="refresh" aria-label="刷新" title="刷新"'+(spinning?" disabled":"")+">"+I.refresh+"</button>"+
+      '<button type="button" class="icon-btn" data-act="chrome" data-k="gear" aria-label="价格设置" title="价格设置">'+I.gear+"</button></span>"+
+      '<button type="button" class="icon-btn" data-act="chrome" data-k="close" aria-label="关闭" title="关闭（Esc）">'+I.close+"</button></div></header>";
+  }
+
+  /* ---------- render ---------- */
+  var panelEl=document.getElementById("panel"),stage=document.getElementById("stage");
+  function render(focusKey){
+    marks={};
+    var sc=SCENES[state.scene];
+    var body=document.getElementById("body"),scroll=body?body.scrollTop:0;
+    var ae=document.activeElement,key=focusKey||(ae&&panelEl.contains(ae)&&ae.getAttribute("data-k"));
+    var inner=sc.loading?loadingView(sc):kpis(sc.list)+accList(sc.list)+idleGroup(sc.idle)+
+      '<p class="foot">数据来自各 Provider 的官方账户接口，凭证只在宿主侧使用。结果缓存 5 分钟，点刷新会绕过缓存。</p>';
+    panelEl.innerHTML=head(sc)+banner(sc)+'<div class="p-body" id="body" role="tabpanel" aria-labelledby="tab-balance">'+inner+"</div>";
+    body=document.getElementById("body");body.scrollTop=scroll;
+    placePop(body);
+    if(key){var el=panelEl.querySelector('[data-k="'+key+'"]');if(el&&!el.disabled)el.focus();}
+  }
+  // Open upward when the popover would run past the bottom of the scroll area and there is room above.
+  function placePop(body){
+    var pop=panelEl.querySelector(".alert-pop");if(!pop)return;
+    var b=body.getBoundingClientRect(),p=pop.getBoundingClientRect(),anchor=pop.parentNode.getBoundingClientRect();
+    if(p.bottom>b.bottom-8&&anchor.top-b.top>p.height+12)pop.classList.add("up");
+  }
+  var toastTimer=null;
+  function toast(msg){
+    var t=stage.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");stage.appendChild(t);}
+    t.textContent=msg;clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.remove();},2400);
+  }
+  var timer=null;
+  function refresh(){
+    if(state.busy||SCENES[state.scene].loading)return;
+    state.busy=true;render();
+    timer=setTimeout(function(){
+      state.busy=false;
+      var wasFailed=state.scene==="failed";
+      if(wasFailed){state.scene="multi";syncSeg("scene-seg",state.scene);}
+      render("refresh");
+      toast(wasFailed?"刷新成功：横幅消失，头部恢复“已同步”":"已刷新（原型数据不变）");
+    },1100);
+  }
+  /* ---------- tooltip for data-tip ---------- */
+  var tip=document.createElement("div");tip.className="ftip";tip.hidden=true;document.body.appendChild(tip);
+  function showTip(el,x,y){
+    tip.textContent=el.getAttribute("data-tip");tip.hidden=false;
+    var r=tip.getBoundingClientRect(),left=x+14,top=y+14;
+    if(left+r.width>innerWidth-8)left=x-r.width-14;
+    if(top+r.height>innerHeight-8)top=y-r.height-14;
+    tip.style.left=Math.max(8,left)+"px";tip.style.top=Math.max(8,top)+"px";
+  }
+  function hideTip(){tip.hidden=true;}
+  panelEl.addEventListener("mousemove",function(e){var el=e.target.closest("[data-tip]");if(el&&panelEl.contains(el))showTip(el,e.clientX,e.clientY);else hideTip();});
+  panelEl.addEventListener("mouseleave",hideTip);
+  panelEl.addEventListener("focusin",function(e){var el=e.target.closest("[data-tip]");if(el){var r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom);}});
+  panelEl.addEventListener("focusout",hideTip);
+
+  /* ---------- interactions ---------- */
+  function accById(id){var l=SCENES[state.scene].list;for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null;}
+  function focusAmt(){var inp=document.getElementById("alert-amt");if(inp){inp.focus();inp.select();}}
+  // Closing the alert popover returns focus to its bell, as Popover does in the plugin.
+  function closePop(focusBell){
+    var id=state.pop;state.pop=null;state.popErr="";state.popVal="";
+    render(focusBell?"bell-"+id:null);
+  }
+  panelEl.addEventListener("click",function(e){
+    var t=e.target.closest("[data-act]");
+    // A pointer press outside the popover closes it without moving focus back.
+    if(state.pop&&!e.target.closest(".alert-pop")&&!(t&&t.getAttribute("data-act")==="bell"))closePop(false);
+    if(!t)return;
+    var act=t.getAttribute("data-act"),v=t.getAttribute("data-v");
+    if(act==="bell"){
+      if(state.pop===v){closePop(true);return;}
+      state.pop=v;state.popErr="";state.popVal="";render();focusAmt();return;
+    }
+    if(act==="alert-cancel"){closePop(true);return;}
+    if(act==="alert-clear"){var c=accById(state.pop);delete state.alerts[state.pop];closePop(true);toast("已清除 "+(c?c.name:"")+" 的余额提醒");return;}
+    if(act==="tab"){if(v!=="balance")toast("原型只做了账户余额页");return;}
+    if(act==="refresh"){refresh();return;}
+    if(act==="chrome"){toast("头部按钮沿用 0.5.0 已上线的行为，原型里不做交互");return;}
+    if(act==="ext"){e.preventDefault();toast("在新标签页打开 "+v+" 的官方控制台");}
+  });
+  panelEl.addEventListener("toggle",function(e){if(e.target.id==="idle")state.idleOpen=e.target.open;},true);
+  panelEl.addEventListener("submit",function(e){
+    e.preventDefault();
+    var a=accById(state.pop);if(!a)return;
+    var raw=(document.getElementById("alert-amt").value||"").trim().replace(/[,，\s]/g,"");
+    if(raw===""){
+      if(state.alerts[a.id]){delete state.alerts[a.id];closePop(true);toast("已清除 "+a.name+" 的余额提醒");}
+      else{state.popErr="请输入金额";state.popVal="";render();focusAmt();}
+      return;
+    }
+    var n=Number(raw);
+    if(!/^\d+(\.\d{1,2})?$/.test(raw)||!(n>0)){state.popErr="请输入大于 0 的金额，最多两位小数";state.popVal=raw;render();focusAmt();return;}
+    state.alerts[a.id]={amount:n,cur:a.cur};
+    closePop(true);
+    toast("已设置：" +a.name+" 余额低于 "+money(n,a.cur)+" 时提醒");
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key!=="Escape"||e.isComposing||e.keyCode===229)return;
+    if(state.pop){e.preventDefault();closePop(true);return;}
+    if(panelEl.contains(document.activeElement)){e.preventDefault();toast("Esc 会关闭面板（原型里不关）");}
+  });
+
+  /* ---------- prototype controls (also readable from the query string:
+     ?w=phone&scene=attention&theme=dark&anno=0&pop=deepseek-official) ---------- */
+  function syncSeg(id,val){Array.prototype.forEach.call(document.getElementById(id).querySelectorAll("button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-v")===val));});}
+  function applyTheme(){if(state.theme==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",state.theme);}
+  function bindSeg(id,key,after){
+    document.getElementById(id).addEventListener("click",function(e){
+      var b=e.target.closest("button");if(!b)return;
+      state[key]=b.getAttribute("data-v");syncSeg(id,state[key]);if(after)after();render();
+    });
+  }
+  bindSeg("width-seg","w",function(){stage.setAttribute("data-w",state.w);});
+  bindSeg("scene-seg","scene",function(){clearTimeout(timer);state.busy=false;state.idleOpen=false;state.pop=null;state.popErr="";state.popVal="";});
+  bindSeg("theme-seg","theme",applyTheme);
+  var annoT=document.getElementById("anno-toggle");
+  annoT.addEventListener("change",function(){state.annos=this.checked;stage.classList.toggle("annos",this.checked);});
+
+  syncSeg("width-seg",state.w);syncSeg("scene-seg",state.scene);syncSeg("theme-seg",state.theme);
+  annoT.checked=state.annos;
+  stage.setAttribute("data-w",state.w);stage.classList.toggle("annos",state.annos);applyTheme();
+  render();
+})();
+</script>
+</body>
+</html>
