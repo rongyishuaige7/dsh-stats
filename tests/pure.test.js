@@ -7,7 +7,7 @@ const {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct, fmtCostSummary,
 	applyDate, activityDates, fmtDateCN,
-	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
+	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage,
 	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
@@ -628,32 +628,6 @@ test('hasTokenUsage excludes activity-only projects from date statistics', () =>
 	expect(hasTokenUsage({ stats: { inputTokens: 0, outputTokens: 0, toolMs: 1000 } })).toBe(false);
 });
 
-test('timelineLayout shows more projects when the visible range is short', () => {
-	expect(timelineLayout(1)).toMatchObject({ maxBlockH: 200, maxProjects: 6, laneHeight: 72, laneViewportH: 306, rowMinH: 214 });
-	expect(timelineLayout(7)).toMatchObject({ maxBlockH: 112, maxProjects: 5, rowMinH: 184 });
-	expect(timelineLayout(30)).toMatchObject({ maxBlockH: 56, maxProjects: 4, rowMinH: 160 });
-});
-
-test('timelineDisplayDays puts the newest day first only in all-days mode', () => {
-	const days = [{ date: '2025-03-12' }, { date: '2025-03-15' }, { date: '2025-03-14' }];
-	expect(timelineDisplayDays(days, false).map(day => day.date)).toEqual(['2025-03-15', '2025-03-14', '2025-03-12']);
-	expect(timelineDisplayDays(days, true).map(day => day.date)).toEqual(['2025-03-12', '2025-03-15', '2025-03-14']);
-	expect(days.map(day => day.date)).toEqual(['2025-03-12', '2025-03-15', '2025-03-14']);
-});
-
-test('timelineDisplayDays caps all-mode rows but leaves day mode intact', () => {
-	const days = [{ date: '2026-01-01' }, { date: '2026-02-01' }, { date: '2026-03-01' }];
-	expect(timelineDisplayDays(days, false, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
-	expect(timelineDisplayDays(days, true, 2)).toHaveLength(3);
-});
-
-test('timelinePageDays slices an already ordered timeline', () => {
-	const days = [{ date: '2026-03-01' }, { date: '2026-02-01' }, { date: '2026-01-01' }];
-	expect(timelinePageDays(days, 0, 2).map(day => day.date)).toEqual(['2026-03-01', '2026-02-01']);
-	expect(timelinePageDays(days, 1, 2).map(day => day.date)).toEqual(['2026-01-01']);
-	expect(timelinePageDays(days, 9, 2)).toEqual([]);
-});
-
 test('paged lists retain every row, bound every page and clamp after filtering', () => {
 	const rows = Array.from({ length: 205 }, (_, i) => i);
 	const pages = [0, 1, 2].map(page => pageRows(rows, page, 100));
@@ -661,20 +635,6 @@ test('paged lists retain every row, bound every page and clamp after filtering',
 	expect(pages.flatMap(page => page.rows)).toEqual(rows);
 	expect(pageRows(rows.slice(0, 12), 2, 100)).toMatchObject({ currentPage: 0, pageCount: 1, total: 12 });
 	expect(pageRows([], 10, 50)).toMatchObject({ rows: [], currentPage: 0, pageCount: 1 });
-});
-
-test('groupTimelineBlocks merges duplicate project slots and keeps concurrent projects separate', () => {
-	const grouped = groupTimelineBlocks({ slotBlocks: [
-		{ slot: 4, projectId: 'a', name: 'A', colorIndex: 0, ms: 1000 },
-		{ slot: 4, projectId: 'a', name: 'A', colorIndex: 0, ms: 2000 },
-		{ slot: 4, projectId: 'b', name: 'B', colorIndex: 1, ms: 5000 },
-		{ slot: 48, projectId: 'ignored', name: 'Ignored', colorIndex: 2, ms: 9999 },
-	] }, {});
-	const a = grouped.projects.find(p => p.projectId === 'a');
-	expect(grouped.projects).toHaveLength(2);
-	expect(a.slots.get(4)).toBe(3000);
-	expect(grouped.slots[4].map(b => b.projectId)).toEqual(['a', 'b']);
-	expect(grouped.slots[48]).toBeUndefined();
 });
 
 test('activityDates extracts sorted active dates from timeline', () => {

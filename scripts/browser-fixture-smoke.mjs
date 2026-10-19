@@ -822,26 +822,27 @@ try {
   assert(await evaluate('document.activeElement !== document.querySelector(".dss-trigger")'), 'opening a session must not restore focus to the trigger');
   assert.equal(await evaluate('document.querySelector(".dss-trigger").getAttribute("aria-expanded")'), 'false', 'trigger closes its expanded state');
   await click('.dss-trigger'); await tab(2);
-  await until('document.querySelector(".dss-timeline-limit")');
-  const recentDay = await evaluate('document.querySelector(".dss-day").id');
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-tl-pager")');
+  const recentDay = await evaluate('document.querySelector(".dss-mx-row.is-day").dataset.date');
   const datesSeen = [];
   for (;;) {
-    const dates = await evaluate('[...document.querySelectorAll(".dss-day")].map(node => node.id)');
+    const dates = await evaluate('[...document.querySelectorAll(".dss-mx-row.is-day")].map(node => node.dataset.date)');
     assert(dates.length <= 30, 'timeline mounted day budget'); datesSeen.push(...dates);
-    if (await evaluate('document.querySelector(".dss-timeline-limit button:nth-of-type(2)").disabled')) break;
-    await click('.dss-timeline-limit button:nth-of-type(2)');
+    if (await evaluate('document.querySelector("[data-action=tl-older]").disabled')) break;
+    await click('[data-action=tl-older]');
   }
   assert.equal(datesSeen.length, 75, 'all history dates reachable');
   assert.equal(new Set(datesSeen).size, 75, 'history pages do not overlap');
-  await click('.dss-timeline-limit button:last-child');
-  assert.equal(await evaluate('document.querySelector(".dss-day").id'), recentDay, 'recent button returns to newest page');
-  await click('.dss-timeline-limit button:nth-of-type(2)');
+  await click('[data-action=tl-latest]');
+  assert.equal(await evaluate('document.querySelector(".dss-mx-row.is-day").dataset.date'), recentDay, 'latest button returns to newest page');
+  await click('[data-action=tl-older]');
   await click('[data-action=mode-day]');
-  await until('!document.querySelector(".dss-timeline-limit")');
+  await until('!document.querySelector(".dss-tl-pager")');
   await click('[data-action=mode-all]');
-  await until('document.querySelector(".dss-timeline-limit")');
-  await until('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled');
-  assert(await evaluate('document.querySelector(".dss-timeline-limit button:nth-of-type(1)").disabled'));
+  await until('document.querySelector(".dss-tl-pager")');
+  await until('document.querySelector("[data-action=tl-newer]").disabled');
+  assert(await evaluate('document.querySelector("[data-action=tl-newer]").disabled'));
   for (const [width, lang] of [[320,'zh'], [641,'en'], [1440,'en']]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await navigate('/?stats=large&lang=' + lang); await click('.dss-trigger');
@@ -873,7 +874,7 @@ try {
     if (width === 1440) await assertSessionCellsFit('large en 1440');
     await layout('large-sessions-' + width);
     await evaluate('document.querySelector(".dss-ptable").scrollIntoView({ block: "start" })');
-    await capture('large-pages-' + width);
+    await capture('large-sessions-' + width);
     if (width === 1440) {
       await click('[data-action=mode-all]');
       await until('document.querySelector(".dss-kpis")');
@@ -891,12 +892,18 @@ try {
       await until('document.querySelector(".dss-tl[data-mode=day]")');
       await tab(1);
     }
+    await tab(2);
+    if (await evaluate('!!document.querySelector("[data-action=mode-all]")')) await click('[data-action=mode-all]');
+    await until('document.querySelector(".dss-mx")');
+    await layout('large-pages-' + width);
+    await capture('large-pages-' + width);
   }
-  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; timeline calendar pages, idle rows and week gaps, slot details; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
 
   // 4b: day timeline
   await navigate('/?stats=estimated&lang=zh');
   await click('.dss-trigger'); await tab(1); await until('document.querySelector(".dss-data-status.exact")');
+  await click('[data-action=mode-day]');
   const estimatedKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
   await tab(2); await until('document.querySelector(".dss-tl")');
   if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
@@ -1011,6 +1018,7 @@ try {
   await evaluate('localStorage.removeItem("dsh-stats.hidden")');
   await navigate('/?stats=partial&lang=zh');
   await click('.dss-trigger'); await tab(1); await until('document.querySelector(".dss-data-status.partial")');
+  await click('[data-action=mode-day]');
   const partialKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
   await tab(2); await until('document.querySelector(".dss-tl")');
   if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
@@ -1056,6 +1064,90 @@ try {
     await capture('timeline-now-' + width);
   }
   report.checks.push('day timeline: now line stays behind labels at 320/390/641');
+
+  // 4c: all-mode calendar matrix
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?stats=large&lang=zh');
+  await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl")');
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-mx")');
+  const allScrollables = await evaluate(`(() => {
+    const panel = document.querySelector('.dss-panel');
+    return [...panel.querySelectorAll('*')].filter(node => {
+      const style = getComputedStyle(node);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    }).map(node => String(node.className || node.tagName));
+  })()`);
+  assert.deepEqual(allScrollables.filter(name => name !== 'dss-body'), [], 'all timeline keeps a single scroll container: ' + JSON.stringify(allScrollables));
+  const allSmallFonts = await evaluate(`(() => {
+    const bad = [];
+    for (const node of document.querySelectorAll('.dss-overlay *')) {
+      if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
+      const size = parseFloat(getComputedStyle(node).fontSize);
+      if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
+    }
+    return bad.slice(0, 10);
+  })()`);
+  assert.deepEqual(allSmallFonts, [], 'all timeline text must be >= 11px: ' + JSON.stringify(allSmallFonts));
+  await click('[data-action=filter]'); await until('document.querySelector(".dss-filter-item")');
+  await evaluate('document.querySelector(\'.dss-filter-item[data-project-id="large-0"] input\').click()');
+  await until('document.querySelectorAll(".dss-mx-row.is-day.is-idle").length === 29');
+  await press('Escape'); await until('!document.querySelector(".dss-filter-item")');
+  const idleGeometry = await evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.dss-mx-row.is-day')];
+    const today = rows.find(row => !row.classList.contains('is-idle'));
+    const idle = rows.filter(row => row.classList.contains('is-idle'));
+    const todayHeight = today.getBoundingClientRect().height;
+    const heights = idle.map(row => Math.round(row.getBoundingClientRect().height * 10) / 10);
+    const disabled = idle.every(row => row.querySelector('.dss-mx-date').disabled);
+    const gaps = [];
+    for (let index = 1; index < rows.length; index++) {
+      gaps.push(Math.round((rows[index].getBoundingClientRect().top - rows[index - 1].getBoundingClientRect().bottom) * 10) / 10);
+    }
+    const weekGaps = rows.slice(1).map((row, index) => row.classList.contains('is-week') ? gaps[index] : null).filter(value => value != null);
+    return { count: idle.length, todayHeight: todayHeight, heights: heights, disabled: disabled, gaps: [...new Set(gaps)], weekGaps: [...new Set(weekGaps)] };
+  })()`);
+  assert.equal(idleGeometry.count, 29, 'first page has 29 idle rows after hiding large-0');
+  assert(idleGeometry.heights.every(height => Math.abs(height - idleGeometry.todayHeight) <= 0.5), 'idle rows match the active row height: ' + JSON.stringify(idleGeometry));
+  assert(idleGeometry.disabled, 'idle date buttons are disabled');
+  assert.equal(idleGeometry.gaps.length, 2, 'week gaps add one spacing value: ' + JSON.stringify(idleGeometry.gaps));
+  assert(idleGeometry.weekGaps.length === 1 && idleGeometry.gaps.includes(idleGeometry.weekGaps[0]), 'week rows carry the larger gap: ' + JSON.stringify(idleGeometry));
+  assert(Math.abs(Math.max(...idleGeometry.gaps) - Math.min(...idleGeometry.gaps) - 8) <= 1, 'week gap is 8px: ' + JSON.stringify(idleGeometry.gaps));
+  await focus('.dss-mx-row.is-day:not(.is-idle) .dss-mx-date');
+  await until('document.querySelector(".dss-tt.show")');
+  const dailyTip = await evaluate(`({ text: document.querySelector('.dss-tt').textContent, rows: document.querySelectorAll('.dss-tt .dss-tip-row').length })`);
+  assert(dailyTip.text.includes('另有 111 个项目'), 'daily bar tooltip merges projects beyond eight: ' + dailyTip.text);
+  assert.equal(dailyTip.rows, 11, 'daily bar tooltip keeps two summary rows, eight projects and one more row');
+  await evaluate('document.activeElement.blur()');
+  await focus('#dss-tl-active-only');
+  await press(' ');
+  await until('document.querySelectorAll(".dss-mx-row.is-day").length === 1');
+  assert(await evaluate('document.querySelector(".dss-tl-pager span").textContent.includes("1/1")'), 'active-only collapses to one page');
+  await focus('#dss-tl-active-only');
+  await press(' ');
+  await until('document.querySelectorAll(".dss-mx-row.is-day").length === 30');
+  assert(await evaluate('document.querySelector(".dss-tl-pager span").textContent.includes("1/3")'), 'unchecking active-only restores calendar paging');
+  const columnsAt = async width => {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    await evaluate('window.dispatchEvent(new Event("resize"))');
+    await delay(200);
+    return evaluate('document.querySelector(".dss-mx-cells").children.length');
+  };
+  assert.equal(await columnsAt(1440), 48, '1440 uses 48 matrix columns');
+  assert.equal(await columnsAt(390), 24, '390 uses 24 matrix columns');
+  assert.equal(await columnsAt(320), 24, '320 uses 24 matrix columns');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await delay(200);
+  await click('.dss-mx-row.is-day:not(.is-idle) .dss-mx-cell:not([data-level="0"])');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  assert((await evaluate('document.querySelector(".dss-date-label").textContent')).includes('2026-09-08'), 'cell jump selects the row date');
+  assert.equal(await evaluate('document.querySelector(".dss-tl-lane[data-project-id] .dss-tl-chev").getAttribute("aria-expanded")'), 'true', 'cell jump opens the first lane');
+  await press('Escape');
+  await until('!document.querySelector(".dss-tl-pop")');
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-tl-day")'), 'closing a jumped slot detail focuses the day');
+  await press('Escape');
+  report.checks.push('all-mode timeline: single scroll, >=11px text, calendar pages, idle rows and week gaps, daily tooltip, active-only paging, 24/48 columns, cell jump');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

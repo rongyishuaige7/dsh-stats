@@ -1,7 +1,7 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
-const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, costOf, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
+const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
@@ -72,203 +72,6 @@ function projectColorIndex(project, indexes, fallbackIndex) {
 	var index = indexes && indexes.get(project.id);
 	var value = Number.isInteger(index) ? index : Number.isInteger(fallbackIndex) ? fallbackIndex : 0;
 	return ((value % 16) + 16) % 16;
-}
-
-// 槽索引（0-47，每槽 30 分钟）→ HH:MM
-function slotToClock(s) {
-	var m = s * 30;
-	return pad(Math.floor(m / 60)) + ":" + pad(m % 60);
-}
-
-function groupTimelineBlocks(day, hidden) {
-	var projects = new Map();
-	var slots = Array.from({ length: 48 }, function() { return []; });
-	(day && day.slotBlocks || []).forEach(function(b) {
-		if (hidden && hidden[b.projectId]) return;
-		if (b.slot < 0 || b.slot >= slots.length) return;
-		var project = projects.get(b.projectId);
-		if (!project) {
-			project = { projectId: b.projectId, name: b.name, colorIndex: b.colorIndex, slots: new Map() };
-			projects.set(b.projectId, project);
-		}
-		project.slots.set(b.slot, (project.slots.get(b.slot) || 0) + Math.max(0, b.ms || 0));
-	});
-	projects.forEach(function(project) {
-		project.slots.forEach(function(ms, slot) {
-			slots[slot].push({ projectId: project.projectId, name: project.name, colorIndex: project.colorIndex, ms: ms });
-		});
-	});
-	return { projects: Array.from(projects.values()), slots: slots };
-}
-
-function timelineLayout(dayCount, dayMode) {
-	// 保留单日默认值供旧调用方使用；全部模式即使只有一天也走紧凑布局。
-	var isDayMode = dayMode == null ? dayCount <= 1 : dayMode;
-	if (isDayMode) {
-		var dayMaxBlockH = 200;
-		var dayMaxProjects = 6;
-		var dayProjectListH = dayMaxProjects * 15 + Math.max(0, dayMaxProjects - 1) * 9 + 20;
-		return {
-			maxBlockH: dayMaxBlockH,
-			maxProjects: dayMaxProjects,
-			laneHeight: 72,
-			laneGap: 6,
-			laneViewportH: 306,
-			rowMinH: Math.max(dayMaxBlockH + 14, dayProjectListH)
-		};
-	}
-	var maxBlockH = dayCount <= 7 ? 112 : 56;
-	var maxProjects = dayCount <= 7 ? 5 : 4;
-	// 日期行自身、列表首个间距与字体行高需要额外空间，确保三日视口不裁掉第三行。
-	var projectListH = maxProjects * 15 + Math.max(0, maxProjects - 1) * 9 + 51 + (dayCount > 1 ? 22 : 0);
-	return { maxBlockH: maxBlockH, maxProjects: maxProjects, rowMinH: Math.max(maxBlockH + 14, projectListH) };
-}
-
-function timelineDisplayDays(days, dayMode, limit) {
-	var ordered = Array.isArray(days) ? days.slice() : [];
-	if (!dayMode) {
-		ordered.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
-		if (Number.isFinite(limit) && limit > 0) ordered = ordered.slice(0, limit);
-	}
-	return ordered;
-}
-
-function timelinePageDays(orderedDays, page, pageSize) {
-	var ordered = Array.isArray(orderedDays) ? orderedDays : [];
-	var size = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : ordered.length;
-	var start = Math.max(0, Math.floor(page) * size);
-	return ordered.slice(start, start + size);
-}
-
-function timelineTipRows(blocks) {
-	return blocks.map(function(b) { return [b.name, fmtDuration(b.ms)]; });
-}
-
-// All-mode timeline rows are cheap individually but can grow to years. Render
-// one 30-day page at a time, including when browsing the full history.
-var TIMELINE_PAGE_DAYS = 30;
-
-function showTimelineBlocksTip(date, slot, blocks, ev) {
-	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
-}
-
-function LegacyTimelineAll(props) {
-	var timeline = props.timeline;
-	var hidden = props.hidden;
-	var slotMinutes = 30;
-	var slotMs = slotMinutes * 60000;
-	var tt = props.tt;
-	var [page, setPage] = useState(0);
-
-	var days = timeline.days || [];
-	var allDisplayDays = timelineDisplayDays(days, false);
-	var pageCount = Math.max(1, Math.ceil(allDisplayDays.length / TIMELINE_PAGE_DAYS));
-	var currentPage = Math.min(page, pageCount - 1);
-	var displayDays = timelinePageDays(allDisplayDays, currentPage, TIMELINE_PAGE_DAYS);
-	var maxDay = displayDays.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
-	var layout = timelineLayout(displayDays.length, false);
-	var maxBlockH = layout.maxBlockH;
-	var maxProjects = layout.maxProjects;
-	var rowMinH = layout.rowMinH;
-
-	return e("div", { className: "dss-tl", "data-mode": "all" },
-		e("div", { className: "dss-hint" }, tt("hint.timeline.all")),
-		allDisplayDays.length > TIMELINE_PAGE_DAYS ? e("div", { className: "dss-timeline-limit" },
-			e("span", { "aria-live": "polite" }, tt("hint.timeline.page").replace("%d", String(currentPage + 1)).replace("%d", String(pageCount))),
-			e("button", {
-				type: "button",
-				className: "dss-export",
-				disabled: currentPage === 0,
-				onClick: () => setPage(Math.max(0, currentPage - 1))
-				}, tt("hint.timeline.newer")),
-			e("button", {
-				type: "button",
-				className: "dss-export",
-				disabled: currentPage >= pageCount - 1,
-				onClick: () => setPage(Math.min(pageCount - 1, currentPage + 1))
-				}, tt("hint.timeline.older")),
-			e("button", {
-				type: "button",
-				className: "dss-export",
-				disabled: currentPage === 0,
-				onClick: () => setPage(0)
-				}, tt("hint.timeline.showRecent"))
-		) : null,
-		displayDays.length > 1 ? e("div", { className: "dss-heat" },
-			displayDays.map((d) => {
-				var lvl = d.dayTotalMs / maxDay;
-				return e("div", {
-					key: d.date,
-					className: "dss-hm" + (d.dayTotalMs > 0 ? " has" : ""),
-					style: d.dayTotalMs > 0 ? { background: `rgba(79,140,255,${(0.18 + 0.82 * lvl).toFixed(2)})` } : null,
-					onMouseEnter: (ev) => showTipRaw(tipRows(d.date, [[tt("w.duration"), fmtDuration(d.dayTotalMs)]]), ev),
-					onMouseLeave: hideTip,
-					onClick: () => { var el = document.getElementById("dss-day-" + d.date); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
-				});
-			})
-		) : null,
-		displayDays.length === 0 ? e("div", { className: "dss-empty" }, tt("hint.rangeEmpty")) :
-		e("div", null,
-			e("div", { className: "dss-axis" },
-				e("div", null),
-				e("div", { className: "dss-hours" }, [0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => e("span", { key: h }, h + "h"))),
-				e("div", null)
-			),
-			e("div", {
-				className: "dss-timeline-viewport" + (displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? " scrollable" : ""),
-				style: displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null
-			}, displayDays.map((d) => {
-				var grouped = groupTimelineBlocks(d, hidden);
-				var projList = grouped.projects;
-				var minSlot = 47, maxSlot = -1;
-				grouped.slots.forEach(function(blocks, slot) {
-					if (!blocks.length) return;
-					minSlot = Math.min(minSlot, slot);
-					maxSlot = Math.max(maxSlot, slot);
-				});
-				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00Z").getUTCDay()];
-				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
-				var visibleMs = grouped.slots.reduce(function(sum, blocks) {
-					return sum + blocks.reduce(function(slotSum, b) { return slotSum + b.ms; }, 0);
-				}, 0);
-				var rightCol = e("div", { className: "dss-day-info" },
-					e("div", { className: "dur" }, fmtDuration(visibleMs)),
-					e("div", { className: "span" }, spanText),
-					e("div", { className: "cnt" }, projList.length + " " + tt("w.projects"))
-				);
-				var leftCol = e("div", { className: "dss-day-projs" },
-					e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd),
-					projList.slice(0, maxProjects).map(function(project) {
-						return e("div", { className: "dss-day-proj", key: project.projectId },
-							e("span", { className: "dss-day-dot", "data-color": String((project.colorIndex || 0) % 16) }),
-							e("span", { className: "dss-day-pname", title: project.name }, project.name)
-						);
-					}),
-					projList.length > maxProjects ? e("div", { className: "dss-day-more" }, "+" + (projList.length - maxProjects) + " " + tt("w.projects")) : null
-				);
-				var cells = grouped.slots.map(function(blocks, slot) {
-					if (!blocks.length) return e("div", { className: "dss-cell", key: slot });
-					var maxMs = blocks.reduce(function(max, b) { return Math.max(max, b.ms); }, 0);
-					var h = Math.min(maxBlockH, Math.max(2, Math.round((maxMs / slotMs) * maxBlockH)));
-					return e("div", { className: "dss-cell", key: slot },
-						e("div", {
-							className: "dss-blk-composite",
-							style: { height: h + "px" },
-							onMouseEnter: function(ev) { showTimelineBlocksTip(d.date, slot, blocks, ev); },
-							onMouseLeave: hideTip
-						}, blocks.map(function(block, i) {
-							return e("i", { key: block.projectId + "-" + i, className: "dss-blk-segment", "data-color": String((block.colorIndex || 0) % 16), style: { flexGrow: Math.max(1, block.ms) } });
-						}))
-					);
-				});
-				return e("div", { className: "dss-day", id: "dss-day-" + d.date, key: d.date, style: { minHeight: rowMinH + "px" } },
-					leftCol,
-					e("div", { className: "dss-track" }, cells),
-					rightCol
-				);
-			}))
-		)
-	);
 }
 
 function download(filename, content, mime) {
@@ -819,7 +622,6 @@ function StatsPanel(props) {
 							onOpenSession,
 							onShowAll: showAll,
 							remote: data.remote,
-							legacyAll: LegacyTimelineAll,
 							t
 						})
 						: e(TrendsView, {
@@ -1311,7 +1113,7 @@ module.exports.__test = {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
-	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage, groupTimelineBlocks, timelineLayout, timelineDisplayDays, timelinePageDays,
+	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows, escapeAction
 };

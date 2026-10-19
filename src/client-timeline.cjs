@@ -15,7 +15,10 @@ const {
 	runSlotAt,
 	timelineDayModel,
 	timelinePeak,
-	timelineSlotDetail
+	timelineSlotDetail,
+	timelineRangeModel,
+	timelineJumpSlot,
+	dayCostSummaries
 } = require("./client-timeline-model.cjs");
 const { PageControls, pageRows } = require("./client-overview.cjs");
 const { useLayer } = require("./client-dialog.cjs");
@@ -67,17 +70,10 @@ function tipProps(getHtml) {
 function TimelineView(props) {
 	const [jump, setJump] = useState(null);
 	if (props.date == null) {
-		const Legacy = props.legacyAll;
-		return Legacy ? e(Legacy, {
-			timeline: props.timeline,
-			hidden: props.hidden,
-			filterKey: props.date,
-			tt: props.t
-		}) : null;
+		return e(TimelineRange, Object.assign({}, props, { onJump: setJump }));
 	}
 	return e(TimelineDay, Object.assign({}, props, {
 		jump: jump,
-		onJump: setJump,
 		onJumpConsumed: function() { setJump(null); }
 	}));
 }
@@ -140,9 +136,17 @@ function TimelineDay(props) {
 
 	useEffect(function() {
 		if (!props.jump || props.jump.date !== date) return;
+		if (firstLaneId != null) {
+			setExpanded(function(current) {
+				if (current.has(firstLaneId)) return current;
+				const next = new Set(current);
+				next.add(firstLaneId);
+				return next;
+			});
+		}
 		setPop({ slot: props.jump.slot, opener: null });
 		if (props.onJumpConsumed) props.onJumpConsumed();
-	}, [props.jump, date]);
+	}, [props.jump, date, firstLaneId]);
 
 	const closeDetail = useCallback(function(restoreFocus) {
 		const opener = popRef.current && popRef.current.opener;
@@ -667,4 +671,279 @@ function SlotPopover(props) {
 	);
 }
 
-module.exports = { TimelineView, TimelineDay, SlotPopover, tipProps };
+function useTimelineColumns(ref) {
+	const [columns, setColumns] = useState(48);
+	useEffect(function() {
+		if (typeof ResizeObserver === "undefined") return undefined;
+		const root = ref.current;
+		const panel = root && typeof root.closest === "function" ? root.closest(".dss-panel") : null;
+		if (!panel) return undefined;
+		const update = function() {
+			const width = panel.getBoundingClientRect().width;
+			if (width > 0) setColumns(width <= 640 ? 24 : 48);
+		};
+		update();
+		const observer = new ResizeObserver(update);
+		observer.observe(panel);
+		window.addEventListener("resize", update);
+		return function() {
+			observer.disconnect();
+			window.removeEventListener("resize", update);
+		};
+	}, []);
+	return columns;
+}
+
+function rangeText(summary, t) {
+	const from = summary.from || "";
+	const to = summary.to || "";
+	const full = from.slice(0, 4) !== to.slice(0, 4);
+	const fromText = from ? (full ? from : from.slice(5)) : "—";
+	const toText = to ? (full ? to : to.slice(5)) : "—";
+	return t("tl.rangeValue").replace("%s", fromText).replace("%s", toText);
+}
+
+function TimelineRange(props) {
+	const t = props.t;
+	const prefs = props.prefs;
+	const setPrefs = props.setPrefs;
+	const rootRef = useRef(null);
+	const columns = useTimelineColumns(rootRef);
+	const [page, setPage] = useState(0);
+	const jumpNonce = useRef(0);
+	const today = localDayKey(Date.now());
+	const dayCosts = useMemo(function() {
+		return dayCostSummaries(props.allProjects || [], props.hidden);
+	}, [props.allProjects, props.hidden]);
+	const model = useMemo(function() {
+		return timelineRangeModel({
+			days: props.timeline.days || [],
+			hidden: props.hidden,
+			today: today,
+			page: page,
+			activeOnly: prefs.activeOnly,
+			columns: columns,
+			dayCosts: dayCosts,
+			colorIndexes: props.colorIndexes
+		});
+	}, [props.timeline, props.hidden, today, page, prefs.activeOnly, columns, dayCosts, props.colorIndexes]);
+	useEffect(function() { setPage(0); }, [prefs.activeOnly]);
+	useEffect(function() {
+		setPage(function(current) { return Math.min(current, model.pageCount - 1); });
+	}, [props.hiddenKey, model.pageCount]);
+
+	const per = 48 / columns;
+	const now = new Date(Date.now() + 8 * 3600000);
+	const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+	const nowColumn = Math.floor(nowMinutes / (per * 30));
+	const profileMax = Math.max(1, Math.max.apply(null, model.profile));
+	const peakStart = model.peak == null ? null : clock(model.peak * per);
+	const profileAria = peakStart == null
+		? t("tl.profile")
+		: t("tl.profile") + " · " + t("tl.profilePeak").replace("%s", peakStart);
+	const profileBars = model.profile.map(function(value, index) {
+		if (!(value > 0)) return null;
+		return e("i", {
+			key: index,
+			className: "dss-mx-prof-bar" + (model.peak === index ? " is-peak" : ""),
+			style: {
+				left: "calc(" + index + " * (100% + 2px) / " + columns + ")",
+				width: "calc((100% + 2px) / " + columns + " - 2px)",
+				height: Math.max(2, value / profileMax * 100).toFixed(1) + "%"
+			}
+		});
+	});
+	const weekdayOf = function(date) {
+		return t("w.weekdays").split(",")[new Date(date + "T00:00:00Z").getUTCDay()];
+	};
+	const dailyTip = function(row) {
+		const rows = [
+			[t("w.duration"), fmtDuration(row.total)],
+			[t("tl.cost"), fmtCostSummary(row.cost, t)]
+		];
+		row.projects.slice(0, 8).forEach(function(project) { rows.push([project.name, fmtDuration(project.ms)]); });
+		if (row.projects.length > 8) {
+			const rest = row.projects.slice(8).reduce(function(total, project) { return total + project.ms; }, 0);
+			rows.push([t("tl.moreProjects").replace("%d", String(row.projects.length - 8)), fmtDuration(rest)]);
+		}
+		return tipRows(row.date + " " + t("w.dayPrefix") + weekdayOf(row.date), rows);
+	};
+	const onCellsClick = function(ev, row) {
+		const target = ev.target && typeof ev.target.closest === "function" ? ev.target.closest("i.dss-mx-cell") : null;
+		if (!target || target.dataset.level === "0") return;
+		const day = (props.timeline.days || []).find(function(item) { return item.date === row.date; });
+		const slot = timelineJumpSlot(day, props.hidden, Number(target.dataset.col), per);
+		jumpNonce.current += 1;
+		if (props.onJump) props.onJump({ date: row.date, slot: slot, nonce: jumpNonce.current });
+		props.onSelectDate(row.date);
+	};
+
+	const rows = model.rows.map(function(row) {
+		const weekday = weekdayOf(row.date);
+		const dateText = row.date + " " + t("w.dayPrefix") + weekday;
+		const aria = row.idle
+			? dateText + " " + t("tl.noActivity")
+			: dateText + " " + t("tl.openDay").replace("%s", fmtDuration(row.total));
+		const colors = new Map(row.projects.map(function(project) { return [project.projectId, project.colorIndex]; }));
+		const tip = tipProps(function() { return dailyTip(row); });
+		const barWidth = model.maxDay ? (row.total / model.maxDay * 100).toFixed(1) + "%" : "0%";
+		return e("div", {
+			key: row.date,
+			className: "dss-mx-row is-day" + (row.idle ? " is-idle" : "") + (row.newWeek ? " is-week" : ""),
+			"data-date": row.date
+		},
+			e("button", {
+				type: "button",
+				className: "dss-mx-date" + (row.weekend ? " is-weekend" : "") + (row.today ? " is-today" : ""),
+				"data-action": "tl-goto-day",
+				"data-date": row.date,
+				disabled: row.idle,
+				"aria-label": aria,
+				onClick: function() { props.onSelectDate(row.date); },
+				...tip
+			}, row.date.slice(5), e("span", { className: "dss-mx-wd" }, " " + weekday)),
+			e("div", { className: "dss-mx-cells", "aria-hidden": "true", onClick: function(ev) { onCellsClick(ev, row); } },
+				row.cells.map(function(cell, index) {
+					const isNow = row.today && index === nowColumn;
+					const color = prefs.color === "project" && cell.dominant ? colors.get(cell.dominant) : null;
+					return e("i", {
+						key: index,
+						className: "dss-mx-cell" + (isNow ? " is-now" : ""),
+						"data-level": cell.level,
+						"data-col": index,
+						"data-color": color == null ? undefined : String(color)
+					});
+				})
+			),
+			e("div", { className: "dss-mx-tot" },
+				e("span", { className: "dss-mx-bar" },
+					e("span", { style: { width: barWidth } },
+						row.projects.map(function(project) {
+							return e("i", { key: project.projectId, "data-color": String(project.colorIndex), style: { flexGrow: Math.max(1, project.ms) } });
+						})
+					)
+				),
+				e("span", { className: "dss-mx-dur" }, row.idle ? "—" : fmtDuration(row.total))
+			)
+		);
+	});
+
+	const summary = model.summary;
+	const summaryNode = e("div", { className: "dss-tl-sum" },
+		e("span", null, t("tl.range"), e("b", null, rangeText(summary, t))),
+		e("span", null, t("tl.activeOf"), e("b", null, t("tl.activeValue").replace("%d", String(summary.activeDays)).replace("%d", String(summary.spanDays)))),
+		e("span", null, t("w.duration"), e("b", null, fmtDuration(summary.total))),
+		e("span", null, t("tl.avg"), e("b", null, fmtDuration(summary.avg))),
+		e("span", null, t("tl.cost"), e("b", { className: "dss-tl-sum-cost" }, fmtCostSummary(summary.cost, t))),
+		e("span", null, t("tl.streak"), e("b", null, t("tl.days").replace("%d", String(summary.streak))))
+	);
+	const pager = e("div", { className: "dss-tl-pager" },
+		e("span", { "aria-live": "polite" }, t("hint.timeline.page").replace("%d", String(model.currentPage + 1)).replace("%d", String(model.pageCount))),
+		e("button", {
+			type: "button",
+			className: "dss-tool-btn",
+			"data-action": "tl-newer",
+			disabled: model.currentPage === 0,
+			onClick: function() { setPage(Math.max(0, model.currentPage - 1)); }
+		}, t("hint.timeline.newer")),
+		e("button", {
+			type: "button",
+			className: "dss-tool-btn",
+			"data-action": "tl-older",
+			disabled: model.currentPage >= model.pageCount - 1,
+			onClick: function() { setPage(Math.min(model.pageCount - 1, model.currentPage + 1)); }
+		}, t("hint.timeline.older")),
+		e("button", {
+			type: "button",
+			className: "dss-tool-btn",
+			"data-action": "tl-latest",
+			disabled: model.currentPage === 0,
+			onClick: function() { setPage(0); }
+		}, t("hint.timeline.showRecent"))
+	);
+	const controls = e("div", { className: "dss-tl-ctl" },
+		e("div", { className: "dss-tl-ctl-inline" },
+			e("span", { className: "dss-tl-ctl-k" }, t("tl.color")),
+			e("div", { className: "dss-seg", role: "group", "aria-label": t("tl.color") },
+				e("button", {
+					type: "button",
+					className: prefs.color === "level" ? "on" : "",
+					"aria-pressed": prefs.color === "level",
+					"data-action": "tl-color-level",
+					onClick: function() { setPrefs({ color: "level" }); }
+				}, t("tl.colorLevel")),
+				e("button", {
+					type: "button",
+					className: prefs.color === "project" ? "on" : "",
+					"aria-pressed": prefs.color === "project",
+					"data-action": "tl-color-project",
+					onClick: function() { setPrefs({ color: "project" }); }
+				}, t("tl.colorProject"))
+			)
+		),
+		e("label", { className: "dss-tl-check" },
+			e("input", {
+				id: "dss-tl-active-only",
+				type: "checkbox",
+				checked: prefs.activeOnly,
+				onChange: function(ev) { setPrefs({ activeOnly: ev.target.checked }); }
+			}),
+			t("tl.activeOnly")
+		),
+		pager
+	);
+	const seen = new Map();
+	model.rows.forEach(function(row) { row.projects.forEach(function(project) { seen.set(project.projectId, project); }); });
+	const legend = prefs.color === "level"
+		? e("div", { className: "dss-tl-legend" },
+			e("span", { className: "dss-tl-scale" },
+				e("span", null, t("trends.less")),
+				[1, 2, 3, 4].map(function(level) { return e("i", { key: level, className: "dss-mx-lg", "data-level": level }); }),
+				e("span", null, t("trends.more"))
+			),
+			e("span", null, t("tl.cellUnit").replace("%s", columns === 24 ? t("tl.hour") : t("tl.halfHour"))),
+			e("span", null, t("tl.clickDate"))
+		)
+		: e("div", { className: "dss-tl-legend" },
+			Array.from(seen.values()).map(function(project) {
+				return e("span", { key: project.projectId, className: "dss-mx-proj" },
+					e("i", { className: "dss-pdot", "data-color": String(project.colorIndex) }),
+					project.name
+				);
+			}),
+			e("span", null, t("tl.cellDominant")),
+			e("span", null, t("tl.clickDate"))
+		);
+
+	const head = e("div", { className: "dss-mx-row is-head" },
+		e("div", { className: "dss-mx-k" }, t("tl.profile")),
+		e("div", { className: "dss-mx-prof", "aria-label": profileAria }, profileBars),
+		e("div", { className: "dss-mx-side" }, peakStart == null ? null : t("tl.profilePeak").replace("%s", peakStart))
+	);
+	const axis = e("div", { className: "dss-mx-row is-axis", "aria-hidden": "true" },
+		e("div", null),
+		e("div", { className: "dss-mx-axis" },
+			[0, 3, 6, 9, 12, 15, 18, 21, 24].map(function(hour, index) {
+				const classes = ["dss-tl-tick"];
+				if (hour === 0) classes.push("is-first");
+				if (hour === 24) classes.push("is-last");
+				if (index % 2 === 1) classes.push("is-odd");
+				return e("span", {
+					key: hour,
+					className: classes.join(" "),
+					style: { left: hour === 24 ? "100%" : "calc(" + (hour * columns / 24) + " * (100% + 2px) / " + columns + ")" }
+				}, pad(hour));
+			})
+		),
+		e("div", { className: "dss-mx-side" }, t("tl.dayTotal"))
+	);
+
+	return e("div", { className: "dss-tl", "data-mode": "all", ref: rootRef },
+		summaryNode,
+		controls,
+		e("div", { className: "dss-mx", style: { "--n": String(columns) } }, head, axis, rows),
+		legend
+	);
+}
+
+module.exports = { TimelineView, TimelineDay, TimelineRange, SlotPopover, tipProps };

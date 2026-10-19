@@ -3,9 +3,10 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { TimelineDay } = require('../src/client-timeline.cjs');
+const { TimelineDay, TimelineRange } = require('../src/client-timeline.cjs');
 const { fmtCostSummary, fmtDuration } = require('../src/client-format.cjs');
 const { dayStartMs } = require('../src/client-data.cjs');
+const { weekOf } = require('../src/client-timeline-model.cjs');
 const { zh, en } = require('../src/client-locale.cjs');
 
 const SLOT_MS = 1800000;
@@ -93,6 +94,86 @@ test('TimelineDay flips the now label near the end of the active window', () => 
 		const html = render({ timeline: { days: [lateDay] }, prefs: { ...PREFS, axis: 'focus' } });
 		expect(html).toContain('dss-tl-now is-flip');
 		expect(html).toContain('现在 23:00');
+	} finally {
+		Date.now = original;
+	}
+});
+
+function rangeDays() {
+	return [
+		{ date: '2026-10-11', slotBlocks: [] },
+		{ date: '2026-10-12', slotBlocks: [] },
+		{ date: '2026-10-14', slotBlocks: [{ slot: 10, projectId: 'p', name: 'Project P', colorIndex: 0, ms: SLOT_MS }] },
+	];
+}
+
+function renderRange(props = {}) {
+	const dictionary = props.lang === 'en' ? en : zh;
+	return renderToStaticMarkup(React.createElement(TimelineRange, {
+		timeline: { days: props.days || rangeDays() },
+		hidden: {},
+		hiddenKey: '',
+		colorIndexes: new Map([['p', 0]]),
+		allProjects: [],
+		prefs: { ...PREFS, activeOnly: false },
+		setPrefs: () => {},
+		onSelectDate: () => {},
+		onJump: () => {},
+		t: key => dictionary[key] ?? key,
+		...props,
+	}));
+}
+
+test('TimelineRange marks idle rows and disables their date buttons', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		const html = renderRange();
+		expect(html).toContain('dss-mx-row is-day is-idle');
+		expect(html).toMatch(/<button[^>]*data-date="2026-10-13"[^>]*disabled/);
+		expect(html).toMatch(/<button[^>]*data-date="2026-10-12"[^>]*disabled/);
+	} finally {
+		Date.now = original;
+	}
+});
+
+test('TimelineRange puts is-week on the first row of a new calendar week', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		const html = renderRange();
+		const rows = [...html.matchAll(/<div class="([^"]*dss-mx-row is-day[^"]*)" data-date="([^"]+)"/g)];
+		const byDate = new Map(rows.map(row => [row[2], row[1]]));
+		expect(weekOf('2026-10-11')).not.toBe(weekOf('2026-10-12'));
+		expect(byDate.get('2026-10-11')).toContain('is-week');
+		expect(byDate.get('2026-10-12')).not.toContain('is-week');
+		expect(byDate.get('2026-10-13')).not.toContain('is-week');
+	} finally {
+		Date.now = original;
+	}
+});
+
+test('TimelineRange has no missing zh/en timeline keys', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		for (const lang of ['zh', 'en']) {
+			const html = renderRange({ lang });
+			expect(html).not.toMatch(/\btl\.[a-zA-Z]+/);
+		}
+	} finally {
+		Date.now = original;
+	}
+});
+
+test('TimelineRange omits peak text and marker when the page has no profile', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		const html = renderRange({ days: [{ date: '2026-10-14', slotBlocks: [] }] });
+		expect(html).not.toContain('高峰');
+		expect(html).not.toContain('is-peak');
+		expect(html).toContain('dss-mx-row is-day is-idle');
 	} finally {
 		Date.now = original;
 	}
