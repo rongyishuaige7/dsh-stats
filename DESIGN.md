@@ -13,13 +13,13 @@
 - **包与构建**：包名 `@rongyi7/dsh-stats`。`scripts/build.mjs` 用 esbuild 把 `src/` 打成 `lib/`（随包发布，勿手改）；没有 tsdown 或 typert-generator。
 - **Typert 描述符**：手写在 `src/typert-host.js`、`src/typert-remote-client.js` 和客户端内联描述符中，共用 `src/rpc-schemas.cjs` 的 zod schema。每个严格 codec 同时提供 `schema`（Harness 0.1.5）和 `create()`（0.1.7）。
 - **模块**：宿主 `index.js`（StatsService）+ `host-util` / `host-balance` / `host-sessions` / `host-usage`；客户端 `client.cjs`（React 视图与 `apply()`）+ `client-overview.cjs` / `client-overview-model.cjs` / `client-format` / `client-data` / `client-remote` / `client-dialog.cjs` / `client-header.cjs` / `client-icons.cjs` / `client-locale` / `client-styles`；计价 `pricing.cjs`、`pricing-store.js`、`pricing-panel.cjs`；账户 `accounts.js`。
-- **总览与交互**：`.dss-panel` 固定高度，正文以 `.dss-body` 为主滚动（时间线的内部视口留到后续 0.5.x 版本）；费用优先 KPI、Token 图例、活跃时段指标条、7 列项目表和行内展开会话；筛选弹层、表头排序、展开按钮和分层 Esc 都走面板的 `layerStack`；价格设置是右侧抽屉，支持待计价模型定位。
+- **总览与交互**：`.dss-panel` 固定高度，正文以 `.dss-body` 为唯一滚动容器；费用优先 KPI、Token 图例、活跃时段指标条、7 列项目表和行内展开会话；筛选弹层、表头排序、展开按钮和分层 Esc 都走面板的 `layerStack`；价格设置是右侧抽屉，支持待计价模型定位。
 - **时间**：时间线、峰谷时段、日期范围和价格设置统一按北京时间（UTC+8），不随宿主或浏览器时区变化。
 - **状态**：React `useState` + `localStorage` 偏好（`usePref`），没有 zustand；总览派生数据用 `useMemo`，`pageRows` 负责 50/100 条分页。
 - **安装**：只用 `dsh plugin --profile web add -w <包或 tarball>`，不要用 npm/pnpm 直接改 profile。
 - **兼容**：Harness `0.1.3-alpha.2` 至 `0.2.1-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
 - **计价**：签名价格目录、自定义费率与复核流程见 [动态价格](docs/pricing-updates.md)。
-- **验证**：CI 跑 365 个单元测试（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（18 个检查组、37 张截图、1440/390/320 三种宽度）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
+- **验证**：CI 跑 399 个单元测试（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（22 个检查组、45 张截图、1440/390/320 三种宽度）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
 
 ---
 
@@ -62,7 +62,7 @@
 │  sidebar.footer.action  →  StatsTrigger（统计按钮）        │
 │  shell.overlay          →  StatsPanel（全屏浮层）          │
 │     ├─ OverviewTab（项目总览表 + 汇总卡 + 会话明细）        │
-│     └─ TimelineTab（每日热力条 + 30min 槽块时间线）         │
+│     └─ TimelineTab（按日泳道/费用柱 + 全部日历矩阵）        │
 │  数据获取：                                              │
 │     Tier1: ctx.workspaces + ctx.sessions(projectionValues) │
 │     Tier2: ctx.remote.stats.aggregate(range)              │
@@ -241,7 +241,7 @@ class StatsService extends Service {
 
 ## 6. UI 组件（0.5.0）
 
-复用独立面板的视觉与格式化逻辑，React 化；原语用 `@deepseek-ai/dsh-client-ui-primitives`（Tooltip 等）。
+复用独立面板的视觉与格式化逻辑，React 化；不引入 UI primitives 的 Modal/Tooltip/Menu，图标以内联 SVG 为主，弹层和 tooltip 由客户端自己实现。
 
 | 组件 | 职责 |
 |---|---|
@@ -253,8 +253,9 @@ class StatsService extends Service {
 | `ProjectTable` | 7 列项目表，表头吸顶、排序、分页；展开行显示项目级指标和会话子列表 |
 | `ProjectFilterMenu` | 当前视图筛选、隐藏徽标、搜索、全部显示；复用 `PageControls` |
 | `PricingDrawer` | 右侧价格设置抽屉，遮罩、焦点限制和 opener 恢复 |
-| `TimelineHeatmap` / `TimelineGrid` | 时间线热力条与 48 槽泳道（后续 0.5.x 重做） |
-| `Tooltip` | 块悬停：项目/日期/时段/时长/占比 |
+| `TimelineView` / `TimelineDay` / `TimelineRange` | 时间线入口、按日泳道与费用柱、全部日历矩阵 |
+| `SlotPopover` | 半小时明细弹层：按项目/会话展示时长、Token、费用，可打开会话 |
+| `Tooltip` | 色条、格子、每日条和日期按钮的悬停/聚焦提示 |
 
 状态：React `useState` + `localStorage`（`dsh-stats.tab` / `dsh-stats.hidden` / `dsh-stats.nav`），没有 zustand；面板和抽屉的 Esc 由 `LayerContext` 的 LIFO 栈统一处理。
 

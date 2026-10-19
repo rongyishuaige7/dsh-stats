@@ -78,7 +78,7 @@ dsh --profile web --dump-config
 | 能力 | 你能看到什么 |
 | --- | --- |
 | 📊 项目用量 | 每个项目用了多少 Token、花了多少时间和费用。 |
-| ⏱️ 开发时间 | 按天查看什么时候最忙，半小时一格的时间线一目了然。 |
+| ⏱️ 开发时间 | 按日查看项目泳道、费用/Token 柱和半小时明细；全部模式用日历矩阵按 30 天分页。 |
 | 📈 趋势与模型 | 查看近 7 天变化，找出最常用的模型和项目。 |
 | 💳 费用估算 | 按公开模型价格换算成人民币；无法确认的部分不会乱算。 |
 | 👤 余额与额度 | 查看已配置平台的余额和套餐额度。 |
@@ -102,10 +102,13 @@ dsh --profile web --dump-config
 
 ### 开发时间线
 
-每行对应一天，颜色对应项目；重叠活动按同一时间槽合并显示，悬停可以查看各项目时长。
+按日视图把项目排成泳道，上方是每半小时的费用或 Token 柱；点色条或柱子查看这半小时的明细，展开泳道可以打开会话。全部模式改为日历矩阵，每页 30 天，点格子进入当天。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="项目身份已打码的开发时间线界面" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="开发时间线按日视图（夹具数据）" width="100%"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="开发时间线全部模式日历矩阵（夹具数据）" width="100%"></a>
 </p>
 
 ### 用量趋势

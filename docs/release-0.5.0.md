@@ -22,11 +22,17 @@ Pre-1.0 feature release, 2026-10-18.
 - **Project overview rework (0.5.0)**: a cost-first KPI row, Token-structure
   legend, active-span strip, a seven-column project table with a sticky header,
   a filter menu with hidden-state persistence, and expandable project/session
-  details. The panel has a fixed height and a single body scroll for the overview; the
-  timeline keeps its internal viewport until a later 0.5.x release. The header, status banner
+  details. The panel has a fixed height and a single body scroll for both the
+  overview and the timeline. The header, status banner
   and pricing drawer stay in place. The pricing settings moved to
   a right-side drawer with focus-model locating, and Esc closes the top layer
   (filter, menu, drawer) before the panel.
+- **Timeline rework (0.5.x)**: the day view now uses project lanes above
+  half-hour cost/token bars, a keyboard-reachable half-hour detail popover and
+  expandable session rows. The all view is a calendar matrix, 30 days per page,
+  with intensity/project coloring, idle rows, week gaps, a time-of-day profile
+  and daily bars. The timeline has no internal viewport; the panel keeps its
+  single body scroll.
 - **Responsive detail**: 320/390/640 layouts keep session time, turns/steps,
   LLM and tool time, cache hit, input/output and model in a non-truncated meta
   line; wide rows keep every column unclipped.
@@ -43,8 +49,8 @@ this Harness release; clean installation should no longer report peer mismatches
 
 ## Verification
 
-- Full test suite: **365 tests** pass in the default timezone and `TZ=UTC`.
-- Browser fixture: **18 check groups / 37 screenshots**, 0 console errors,
+- Full test suite: **399 tests** pass in the default timezone and `TZ=UTC`.
+- Browser fixture: **22 check groups / 45 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
@@ -79,7 +85,8 @@ independently; do not reinstall merely to receive new prices.
   approval Esc. Unpriced-price flows and partial/stale banners remain
   fixture-only; no provider was added to exercise them.
 - The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
-  narrow layout and non-truncation are asserted separately at 320/390/640 px.
+  the timeline no longer has an internal viewport. Narrow layout and
+  non-truncation are asserted separately at 320/390/640 px.
 
 ## Release gates
 

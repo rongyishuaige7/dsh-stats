@@ -4,7 +4,7 @@
 - 日期：2026-10-18
 - 基线：`a833247`（`package.json` 已是 0.5.0，尚未打 tag，npm 仍是 0.4.3）
 - 设计参考：[`docs/prototypes/overview-0.5.0.html`](prototypes/overview-0.5.0.html)。这是自包含的静态原型，打开后可以切换宽度、数据状态和改动标注。原型数据是虚构样例。
-- 范围：0.5.0 包含切片 1a、1b、2、3 和收尾发布；切片 4（时间线）、切片 5（趋势与余额）放到 0.5.x。
+- 范围：0.5.0 包含切片 1a、1b、2、3、4 和收尾发布；切片 4（时间线）已并入 0.5.0，发布前由维护者确认；切片 5（趋势与余额）放到 0.5.x。
 
 本文写明每个切片改哪些文件、加哪些组件、怎样测试、怎样验收。实现时如果和原型冲突，以本文为准；本文没写到的视觉细节，以原型为准。
 
@@ -59,7 +59,7 @@
 - 不新增依赖，不使用 primitives 的 Modal、Menu、Tooltip、Button 等组件（它们的 API 在各个 Harness 版本间是否稳定还没有验证）。
 - 不改 CSV/JSON 字段和内容，只改导出的入口。
 - 不改 `StatsTrigger` 的外观，只补可访问性属性。
-- 时间线、趋势和余额的重做不进 0.5.0（见切片 4、5）。
+- 趋势和余额的重做不进 0.5.0；时间线重做已并入 0.5.0，发布前由维护者确认（见切片 4）。
 - 不处理和 UI 无关的遗留问题（README:192 的 generic-usage 描述、`pricing-updates.md` 中 6 小时与 30 分钟的出入、本地 `tests/pricing-delivery.test.js:52` 超时）。这些另行处理。
 
 ## 3. 兼容约束
@@ -503,7 +503,7 @@ smoke 改动：
    - 页码重置规则与现在相同：日期、隐藏集合或排序变化时回到第一页，同一视图的数据刷新时不重置。
 5. 改为单一滚动（D10）：
    - 删除 `.dss-overview.bounded`、`--dss-overview-max-height`、`timelineOverviewContentHeight`、`TIMELINE_CONTROLS_HEIGHT`、`.dss-pcards-viewport`。
-   - 时间线自己的 `timelineAllViewportHeight` 视口留到切片 4 再去掉。在此之前，时间线的"全部"模式会暂时保留一层内部滚动，这是已知的过渡状态。
+   - 时间线已改为单一滚动；`timelineAllViewportHeight` 和内部视口已在切片 4 移除。
 6. 删除 `SummaryCards`、`CostValue`、`Legend`、`ProjectsTable`、`DateNavigator`、`StatsDataStatus` 别名，以及对应的 CSS（`.dss-cards`、`.dss-card`、`.dss-pcard*`、`.dss-sortbar*`、`.dss-chip`、`.dss-legend*`、`.dss-nav*`）。同时更新 `__test` 导出。
 7. 按 §9.2 迁移 smoke，同步更新 `rc2-browser-smoke.mjs` 的 `summaryCards` 采集，改为读取 `.dss-kpi` 的 `.dss-kpi-k` 和 `.dss-kpi-v`。
 
@@ -516,7 +516,7 @@ smoke 改动：
 
 ### 切片 R：收尾发布
 
-1. 用 CI 的 `browser-results`（已装 CJK 字体）重新生成 README 截图：`docs/images/hero-overview.png`、`overview.png`，以及价格抽屉截图。截图来自 fixture 数据，不含真实路径或账户信息。`timeline.png`、`trends.png`、`balance.png` 等切片 4、5 完成后再换。
+1. 用 CI 的 `browser-results`（已装 CJK 字体）重新生成 README 截图：`docs/images/hero-overview.png`、`overview.png`，以及价格抽屉截图。截图来自 fixture 数据，不含真实路径或账户信息。`timeline.png` 已在切片 4d 更新；`trends.png`、`balance.png` 等切片 5 完成后再换。
 2. 更新 `README.md`、`README.zh.md`、`README.en.md` 中的总览说明、价格设置入口和键盘操作说明。
 3. 更新 `docs/release-0.5.0.md`：把"UI polish: project overview bottoms align…"一条替换为总览改版的要点（D1–D10 的用户可见部分），并刷新验证数字（测试数、截图数、检查组数）。
 4. 更新 `DESIGN.md` 的"当前实现"一节到 0.5.0，删除已经过时的描述。
@@ -537,6 +537,8 @@ smoke 改动：
 可选方案：如果需要尽快让用户用上 0.2.1 支持，可以在切片 1a 之前从 `a833247` 发布 `0.5.0-rc.1`，UI 改版随正式版发布。默认不这样做。
 
 ### 切片 4（0.5.x）：时间线
+
+- 状态：✅ 已完成。4a `e6b8c62`、4a 修正 `ffd67cd`；4b `c1eba23`、4b 修正 `b5f1d37`、`c93d24b`；4c `d471c83`、4c 修正 `a16d997`。已并入 0.5.0，发布前由维护者确认。
 
 细化文档见 [`docs/timeline-0.5.x.md`](timeline-0.5.x.md)，原型见 [`docs/prototypes/timeline-0.5.x.html`](prototypes/timeline-0.5.x.html)。以细化文档为准，原来这里的规划要点已被它取代（例如刻度改为按真实时间定位，全部模式改为按日历分页，并加"只看活跃日期"勾选框）。
 
@@ -598,7 +600,7 @@ smoke 改动：
 
 ### 9.3 新增 smoke 断言（切片 3）
 
-1. **单一滚动**：遍历 `.dss-panel` 内的元素，`overflow-y` 为 `auto` 或 `scroll` 且 `scrollHeight > clientHeight + 1` 的只能是 `.dss-body`。豁免已打开的抽屉内容区、已打开的弹层，以及切片 4 之前的时间线视口。
+1. **单一滚动**：遍历 `.dss-panel` 内的元素，`overflow-y` 为 `auto` 或 `scroll` 且 `scrollHeight > clientHeight + 1` 的只能是 `.dss-body`。豁免已打开的抽屉内容区和已打开的弹层。
 2. **表头吸顶**：把 `.dss-body.scrollTop` 设为 400 后，`thead th` 的顶部与 `.dss-body` 可视区顶部相差不超过 1px。
 3. **字号**：`.dss-overlay` 内所有含直接文本节点的元素，计算后的 `font-size` 都不小于 11px。
 4. **环比**：fixture 按日模式（第 2 个及以后的活跃日）显示"较 MM-DD"，日期等于上一个活跃日；第一个活跃日不显示。全部模式显示的活跃日数等于 fixture 的去重日期数。

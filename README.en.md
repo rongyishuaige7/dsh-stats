@@ -76,7 +76,7 @@ If a newer pnpm reports `ERR_PNPM_ADDING_TO_ROOT`, use `dsh plugin --profile web
 | Capability | What you get |
 | --- | --- |
 | 📊 Usage by project | Tokens, time, and spend for every project. |
-| ⏱️ Development time | A simple day-by-day timeline with one block per 30 minutes. |
+| ⏱️ Development time | Day lanes with cost/token bars and half-hour details; a 30-day calendar matrix for all history. |
 | 📈 Trends and models | Seven-day changes plus the models and projects you use most. |
 | 💳 Cost estimates | Public model prices converted to RMB; unknown amounts are never guessed. |
 | 👤 Balances and quotas | Balances and plan quotas for configured providers. |
@@ -100,10 +100,13 @@ Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu, or prici
 
 ### Development timeline
 
-Each row is one day and each color is one project. Overlapping activity shares the same time slot, while hover reveals each project's duration.
+The day view arranges projects as lanes above half-hour cost or token bars; click a segment or bar for that half hour, or expand a lane to open its sessions. The all view is a calendar matrix, 30 days per page; click a cell to open that day.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Development timeline with masked project identity fields" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Development timeline day view (fixture data)" width="100%"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Development timeline calendar matrix (fixture data)" width="100%"></a>
 </p>
 
 ### Usage trends

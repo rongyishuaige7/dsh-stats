@@ -1076,6 +1076,9 @@ try {
   await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl")');
   await click('[data-action=mode-all]');
   await until('document.querySelector(".dss-mx")');
+  await click('[data-action=tl-color-level]');
+  await layout('desktop-timeline-all');
+  await capture('desktop-timeline-all');
   const allScrollables = await evaluate(`(() => {
     const panel = document.querySelector('.dss-panel');
     return [...panel.querySelectorAll('*')].filter(node => {
