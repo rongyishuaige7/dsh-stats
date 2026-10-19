@@ -53,6 +53,7 @@ function findSessionFile(home, sessionId) {
 	// installations wrote safe ids literally, so retain that compatibility path
 	// only when the raw id itself cannot alter path resolution.
 	const rawIdIsSafe = sessionId !== "." && sessionId !== ".." && !/[/\\\0]/.test(sessionId);
+	let best = null;
 	for (const enc of sessionDirs(home)) {
 		const dirIds = rawIdIsSafe && encodedId !== sessionId ? [encodedId, sessionId] : [encodedId];
 		for (const dirId of dirIds) for (const suffix of ["session.v4.jsonl.zstd", "session.v4.jsonl", "session.v3.jsonl.zstd", "session.v3.jsonl", "session.v2.jsonl.zstd", "session.v2.jsonl", "session.v1.jsonl.zstd", "session.v1.jsonl", "session.jsonl.zstd", "session.jsonl"]) {
@@ -63,11 +64,18 @@ function findSessionFile(home, sessionId) {
 				const real = realpathSync(cand);
 				const rel = relative(root, real);
 				if (rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel)) {
-					rememberSessionFile(home, sessionId, real);
-					return real;
+					// A migrated v3/v4 log can be a compacted prefix while the legacy
+					// JSONL still holds the full history (and the projection cache still
+					// references its watermark). Prefer the larger physical log instead
+					// of blindly taking the newest suffix.
+					if (!best || stat.size > best.size) best = { real, size: stat.size };
 				}
 			} catch { /* Missing or unsafe candidate. */ }
 		}
+	}
+	if (best) {
+		rememberSessionFile(home, sessionId, best.real);
+		return best.real;
 	}
 	rememberSessionFile(home, sessionId, null);
 	return null;

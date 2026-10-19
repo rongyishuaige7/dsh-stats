@@ -536,7 +536,7 @@ function StatsPanel(props) {
 			setSourceState(function(prev) { return { kind: remoteDataRef.current ? "refreshing" : "loading", error: null, at: prev.at }; });
 			return aggregateRemote().then((r) => {
 				setRemoteData(r);
-				setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code); }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
+				setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code) && w.code !== "SESSION_CACHE_STALE" && w.code !== "SESSION_ORPHAN_FORK_DISCARDED"; }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
 			}).catch((err) => {
 				console.warn("[dsh-stats] aggregate 调用失败:", err);
 				setSourceState({ kind: remoteDataRef.current ? "stale" : "fallback", error: err?.message || String(err), at: remoteDataRef.current?.meta?.generatedAt || null });

@@ -14,7 +14,7 @@ const LEGACY_LOG_LIMITS = Object.freeze({
 	recordBytes: 8 * MiB,
 	records: 250000,
 	frames: 250000,
-	events: 500000,
+	events: 1000000,
 	slotOperations: 1000000
 });
 const LOG_BATCH_SIZE = 512;

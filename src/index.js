@@ -54,11 +54,18 @@ function finalizeWarnings(warnings) {
 			delete warning.count;
 		}
 	}
-	const truncated = actionable.length > MAX_WARNINGS;
-	const output = truncated ? actionable.slice(0, MAX_WARNINGS) : actionable.slice();
-	if (truncated) output.push({ code: "WARNINGS_TRUNCATED", message: `${actionable.length - MAX_WARNINGS} additional warnings were omitted` });
-	output.push(...informational);
-	return { warnings: output, unique: actionable };
+	// A cache that is merely behind the log is expected: the log is authoritative
+	// and complete. An archived fork with no own usage has nothing attributable
+	// to display. Keep both visible in diagnostics, but do not mark the whole
+	// view as degraded or consume the actionable warning budget.
+	const informationalCodes = new Set(["SESSION_CACHE_STALE", "SESSION_ORPHAN_FORK_DISCARDED"]);
+	const actionableFinal = actionable.filter((warning) => !informationalCodes.has(warning.code));
+	const informationalFinal = informational.concat(actionable.filter((warning) => informationalCodes.has(warning.code)));
+	const truncated = actionableFinal.length > MAX_WARNINGS;
+	const output = truncated ? actionableFinal.slice(0, MAX_WARNINGS) : actionableFinal.slice();
+	if (truncated) output.push({ code: "WARNINGS_TRUNCATED", message: `${actionableFinal.length - MAX_WARNINGS} additional warnings were omitted` });
+	output.push(...informationalFinal);
+	return { warnings: output, unique: actionableFinal };
 }
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
 import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";

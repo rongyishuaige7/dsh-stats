@@ -8,7 +8,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import pricing from '../src/pricing.cjs';
 import { pricingStore } from '../src/pricing-store.js';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
-import { infoFromProjectionValues } from '../src/host-sessions.js';
+import { infoFromProjectionValues, sessionInfo } from '../src/host-sessions.js';
 import { readJson, readSessionProjcache, scanZstdFrames } from '../src/host-util.js';
 import { LEGACY_LOG_LIMITS } from '../src/host-log.js';
 import { TYPERT } from '../src/typert-host.js';
@@ -1354,8 +1354,8 @@ test('versioned statsRoute v1 cache is normalized instead of rejected', async ()
 
 test('cache row warnings are grouped per session', async () => {
 	const now = Date.parse('2026-08-17T12:45:00+08:00');
-	const entry = versionedProjection(now, 99, { uncachedInputTokens: 10, outputTokens: 1 });
-	for (let index = 0; index < 12; index++) entry.rows['extra' + index] = { ver: 1, seq: 99, val: {} };
+	const entry = versionedProjection(now, 0, { uncachedInputTokens: 10, outputTokens: 1 });
+	for (let index = 0; index < 12; index++) entry.rows['extra' + index] = { ver: 1, seq: 0, val: {} };
 	const home = fixture({ groupedStale: entry });
 	writeLog(home, 'groupedStale', [
 		{ type: 'session', seq: 0, time: now },
@@ -1366,6 +1366,24 @@ test('cache row warnings are grouped per session', async () => {
 	expect(stale).toHaveLength(1);
 	expect(stale[0].message).toContain('occurrences');
 	expect(result.meta.warnings.some(w => w.code === 'WARNINGS_TRUNCATED')).toBe(false);
+	expect(result.meta.degraded).toBe(false);
+});
+
+test('prefers the larger legacy log over a compacted versioned log', async () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-dual-log-'));
+	createdHomes.push(home);
+	const dir = join(home, 'sessions', 'workspace', encodeSessionId('dual-log'));
+	mkdirSync(dir, { recursive: true });
+	const full = [
+		{ type: 'session', seq: 0, time: 1000 },
+		{ type: 'assistant/message', seq: 1, time: 1100, data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 2 } } },
+		{ type: 'step/end', seq: 2, time: 1200, data: { turn: 0, step: 0 } }
+	];
+	const small = [{ type: 'session', seq: 0, time: 1000 }];
+	writeFileSync(join(dir, 'session.jsonl.zstd'), zstdCompressSync(Buffer.from(full.map(JSON.stringify).join('\n') + '\n')));
+	writeFileSync(join(dir, 'session.v3.jsonl.zstd'), zstdCompressSync(Buffer.from(small.map(JSON.stringify).join('\n') + '\n')));
+	const info = await sessionInfo(home, 'dual-log');
+	expect(info.lastSeq).toBe(2);
 });
 
 test('warning details are capped while degradation is preserved', async () => {
