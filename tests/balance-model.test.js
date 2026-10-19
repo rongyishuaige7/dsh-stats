@@ -130,6 +130,14 @@ test('normalizeBalanceAlerts keeps only valid entries', () => {
 	});
 });
 
+test('normalizeBalanceAlerts never lets a stored __proto__ key touch the prototype', () => {
+	// An object literal cannot create an own "__proto__" key; JSON.parse can.
+	const stored = JSON.parse('{"__proto__":{"amount":20,"currency":"CNY"}}');
+	const normalized = normalizeBalanceAlerts(stored);
+	expect(normalized).toEqual({});
+	expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype);
+});
+
 test('alertFor requires a readable, limited balance account in the same currency', () => {
 	const alerts = { 'deepseek-official': { amount: 200, currency: 'CNY' } };
 	expect(alertFor(account(), alerts)).toEqual({ amount: 200, currency: 'CNY' });
@@ -165,6 +173,10 @@ test('accountChip follows the B7 table row by row', () => {
 	expect(accountChip(subscription({ windows: [quotaWindow(4.99)] }), {})).toEqual({ tone: 'danger', key: 'chip.quotaDanger' });
 	expect(accountChip(subscription({ windows: [quotaWindow(19.99)] }), {})).toEqual({ tone: 'warn', key: 'chip.quotaWarn' });
 	expect(accountChip(account({ balance: balance({ remaining: 0, toppedUp: 0, granted: 0 }) }), {})).toEqual({ tone: 'danger', key: 'chip.balanceOut' });
+	expect(accountChip(
+		account({ balance: balance({ remaining: 0, toppedUp: 0, granted: 0 }) }),
+		{ 'deepseek-official': { amount: 20, currency: 'CNY' } },
+	)).toEqual({ tone: 'danger', key: 'chip.balanceOut' });
 	expect(accountChip(account({ balance: balance({ remaining: 5 }) }), { 'deepseek-official': { amount: 20, currency: 'CNY' } })).toEqual({ tone: 'warn', key: 'chip.balanceLow' });
 	expect(accountChip(account(), {})).toBeNull();
 });
@@ -261,6 +273,15 @@ test('balanceParts omits empty parts and clamps the available meter', () => {
 	expect(balanceParts(account({
 		balance: balance({ remaining: 25, total: 20, used: 5, toppedUp: 0, granted: 0 }),
 	}), null).meter).toEqual({ remaining: 100 });
+});
+
+test('balanceParts computes the available meter from integer cents', () => {
+	expect(balanceParts(account({ balance: balance({ remaining: 1.4, total: 20, toppedUp: 0, granted: 0 }) }), null).meter)
+		.toEqual({ remaining: 7 });
+	expect(balanceParts(account({ balance: balance({ remaining: 0.57, total: 1, toppedUp: 0, granted: 0 }) }), null).meter)
+		.toEqual({ remaining: 57 });
+	expect(balanceParts(account({ balance: balance({ remaining: 15.5, total: 20, toppedUp: 0, granted: 0 }) }), null).meter)
+		.toEqual({ remaining: 77 });
 });
 
 test('balanceParts marks the alert line and never warns unlimited balances', () => {

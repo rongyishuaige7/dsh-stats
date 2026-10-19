@@ -207,9 +207,11 @@ function balanceParts(account, alert) {
 		&& alert.amount > 0 && alert.currency === balance.currency) {
 		alertLine = { amount: alert.amount, below: remaining > 0 && remaining < alert.amount };
 	}
+	// Work in integer cents: 1.4 / 20 must be 7, not 6 from float error.
+	const totalCents = isFiniteNumber(balance.total) ? Math.round(balance.total * 100) : 0;
 	let meter = null;
-	if (!unlimited && remaining != null && isFiniteNumber(balance.total) && balance.total > 0) {
-		meter = { remaining: Math.max(0, Math.min(100, Math.floor(remaining / balance.total * 100))) };
+	if (!unlimited && remaining != null && totalCents > 0) {
+		meter = { remaining: Math.max(0, Math.min(100, Math.floor(Math.round(remaining * 100) * 100 / totalCents))) };
 	}
 	return {
 		amount: remaining,
