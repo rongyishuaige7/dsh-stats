@@ -68,6 +68,13 @@ function IconInfo(props) {
 	], props);
 }
 
+function IconBell(props) {
+	return icon([
+		e("path", { key: "body", d: "M8 2.2a4 4 0 0 0-4 4v2.3L2.8 10.6h10.4L12 8.5V6.2a4 4 0 0 0-4-4z" }),
+		e("path", { key: "clapper", d: "M6.4 12.2a1.7 1.7 0 0 0 3.2 0" })
+	], props);
+}
+
 function IconWarning(props) {
 	return icon([
 		e("path", { key: "triangle", d: "M8 2.2 14 13H2z" }),
@@ -76,4 +83,4 @@ function IconWarning(props) {
 	], props);
 }
 
-module.exports = { IconRefresh, IconDownload, IconChevronDown, IconGear, IconFilter, IconArrow, IconInfo, IconWarning };
+module.exports = { IconRefresh, IconDownload, IconChevronDown, IconGear, IconFilter, IconArrow, IconInfo, IconWarning, IconBell };

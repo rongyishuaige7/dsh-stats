@@ -631,6 +631,28 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
   .dss-bal-idle-row{flex-direction:column;gap:2px;padding-left:30px}
 }
 
+.dss-bal-bell{width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--dss-text-3);display:inline-grid;place-items:center;position:relative;margin-top:-3px;cursor:pointer;flex:none}
+.dss-bal-bell:hover{background:var(--dss-hover);color:var(--dss-text)}
+.dss-bal-bell.is-on{color:var(--dss-accent)}
+.dss-bal-bell.is-on svg path:first-child{fill:currentColor;fill-opacity:.18}
+.dss-popover.is-up{top:auto;bottom:calc(100% + 6px)}
+.dss-popover.dss-bal-alert{width:270px;padding:12px;display:flex;flex-direction:column;gap:9px;font-size:var(--dss-fs-sm)}
+.dss-bal-alert-form{display:flex;flex-direction:column;gap:9px;margin:0}
+.dss-bal-alert-title{margin:0;font-size:var(--dss-fs-md);font-weight:600;color:var(--dss-text)}
+.dss-bal-alert-field{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--dss-line);border-radius:8px;background:var(--dss-layer)}
+.dss-bal-alert-field:focus-within{border-color:var(--dss-accent)}
+.dss-bal-alert-prefix,.dss-bal-alert-symbol{color:var(--dss-text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dss-bal-alert-field input{flex:1;min-width:0;border:0;background:none;outline:none;color:var(--dss-text);font-size:var(--dss-fs-md);font-variant-numeric:tabular-nums;font-family:inherit}
+.dss-bal-alert-hint{margin:0;color:var(--dss-text-3);font-size:var(--dss-fs-xs);line-height:1.5}
+.dss-bal-alert-error{color:var(--dss-danger);font-size:var(--dss-fs-xs)}
+.dss-bal-alert-btns{display:flex;justify-content:flex-end;gap:6px}
+.dss-bal-alert-btn{height:28px;padding:0 11px;border:1px solid var(--dss-line);border-radius:7px;background:var(--dss-panel);color:var(--dss-text);font-size:var(--dss-fs-sm);white-space:nowrap;cursor:pointer;font-family:inherit}
+.dss-bal-alert-btn:hover{border-color:var(--dss-text-3)}
+.dss-bal-alert-primary{background:var(--dss-accent);border-color:var(--dss-accent);color:var(--dss-on-accent);font-weight:600}
+.dss-bal-alert-primary:hover{background:var(--dss-accent-strong);border-color:var(--dss-accent-strong)}
+.dss-bal-alert-clear{margin-right:auto;border-color:transparent;background:none;color:var(--dss-text-2);padding:0 4px}
+.dss-bal-alert-clear:hover{color:var(--dss-danger);border-color:transparent}
+
 :is(.dss-overlay, .dss-trigger, .dss-tt):focus-visible,
 :is(.dss-overlay, .dss-trigger, .dss-tt) :focus-visible {
   outline: 2px solid var(--dss-accent);

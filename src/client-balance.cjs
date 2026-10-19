@@ -5,9 +5,11 @@ const { fmtBalanceAmount, fmtClock } = require("./client-format.cjs");
 const {
 	accountChip, accountMeta, accountReason, alertFor, attentionList, balanceParts, balanceTotals,
 	fmtQuotaPercent, legacyNotice, quotaLevel, resetParts, safeActionUrl,
-	sortAccounts, splitAccounts, tightestWindow
+	sortAccounts, splitAccounts, tightestWindow, validateAlertAmount
 } = require("./client-balance-model.cjs");
 const { tipProps, tipRows } = require("./client-tip.cjs");
+const { Popover } = require("./client-dialog.cjs");
+const { IconBell } = require("./client-icons.cjs");
 
 const e = react.createElement;
 
@@ -216,6 +218,138 @@ function AccountMain(props) {
 	return e("div", { className: "dss-bal-main" }, nodes);
 }
 
+function currencySymbol(currency) {
+	if (currency === "CNY") return "¥";
+	if (currency === "USD") return "$";
+	return currency || "";
+}
+
+function BalanceAlert(props) {
+	const account = props.account;
+	const t = props.t;
+	const currency = account.balance.currency;
+	const alert = props.alert;
+	const valueState = react.useState(alert ? String(alert.amount) : "");
+	const value = valueState[0], setValue = valueState[1];
+	const errorState = react.useState(null);
+	const error = errorState[0], setError = errorState[1];
+	const inputRef = react.useRef(null);
+
+	// If the row disappears while focus is still inside the popover, hand focus
+	// to the panel instead of letting it fall to the body.
+	react.useEffect(function() {
+		return function() {
+			if (typeof document === "undefined") return;
+			const active = document.activeElement;
+			if (active === document.body || active === document.documentElement || active == null) {
+				const panel = document.querySelector(".dss-panel");
+				if (panel && typeof panel.focus === "function") panel.focus();
+			}
+		};
+	}, []);
+
+	const submit = function(event) {
+		if (event) event.preventDefault();
+		const result = validateAlertAmount(value);
+		if (result.kind === "ok") {
+			props.onChange(account.id, { amount: result.amount, currency: currency });
+			props.close(true);
+			return;
+		}
+		if (result.kind === "empty") {
+			if (alert) {
+				props.onChange(account.id, null);
+				props.close(true);
+				return;
+			}
+			setError(t("balance.alert.required"));
+		} else {
+			setError(t("balance.alert.invalid"));
+		}
+		if (inputRef.current) inputRef.current.focus();
+	};
+
+	return e("form", {
+		className: "dss-bal-alert-form",
+		noValidate: true,
+		onSubmit: submit
+	},
+		e("h3", { className: "dss-bal-alert-title" }, fill(t("balance.alert.title"), [account.displayName || account.id])),
+		e("label", { className: "dss-bal-alert-field" },
+			e("span", { className: "dss-bal-alert-prefix" }, t("balance.alert.field")),
+			e("span", { className: "dss-bal-alert-symbol", "aria-hidden": "true" }, currencySymbol(currency)),
+			e("input", {
+				ref: inputRef,
+				type: "text",
+				inputMode: "decimal",
+				autoComplete: "off",
+				placeholder: t("balance.alert.placeholder"),
+				"aria-label": fill(t("balance.alert.inputLabel"), [currency]),
+				"data-popover-autofocus": true,
+				"aria-invalid": error ? "true" : undefined,
+				"aria-describedby": error ? "dss-bal-alert-error" : undefined,
+				value: value,
+				onChange: function(event) {
+					setValue(event.target.value);
+					if (error) setError(null);
+				}
+			})
+		),
+		error ? e("div", { className: "dss-bal-alert-error", id: "dss-bal-alert-error" }, error) : null,
+		e("p", { className: "dss-bal-alert-hint" }, fill(t("balance.alert.hint"), [currency])),
+		e("div", { className: "dss-bal-alert-btns" },
+			alert ? e("button", {
+				type: "button",
+				className: "dss-bal-alert-btn dss-bal-alert-clear",
+				"data-action": "balance-alert-clear",
+				onClick: function() {
+					props.onChange(account.id, null);
+					props.close(true);
+				}
+			}, t("balance.alert.clear")) : null,
+			e("button", {
+				type: "button",
+				className: "dss-bal-alert-btn",
+				"data-action": "balance-alert-cancel",
+				onClick: function() { props.close(true); }
+			}, t("balance.alert.cancel")),
+			e("button", {
+				type: "submit",
+				className: "dss-bal-alert-btn dss-bal-alert-primary",
+				"data-action": "balance-alert-save"
+			}, t("balance.alert.save"))
+		)
+	);
+}
+
+function alertBell(account, props) {
+	if (account.mode !== "balance" || !account.balance) return null;
+	const alert = alertFor(account, props.alerts);
+	const name = account.displayName || account.id;
+	const label = alert
+		? fill(props.t("balance.alert.aria"), [name, fill(props.t("balance.alert.below"), [fmtBalanceAmount(alert.amount, alert.currency)])])
+		: fill(props.t("balance.alert.aria"), [name, props.t("balance.alert.unset")]);
+	return e(Popover, {
+		label: label,
+		title: props.t("balance.alert.button"),
+		panelLabel: fill(props.t("balance.alert.title"), [name]),
+		action: "balance-alert",
+		buttonClassName: "dss-bal-bell" + (alert ? " is-on" : ""),
+		panelClassName: "dss-bal-alert",
+		trigger: e(IconBell, { size: 15 }),
+		flip: true,
+		children: function(api) {
+			return e(BalanceAlert, {
+				account: account,
+				alert: alert,
+				t: props.t,
+				onChange: props.onAlertChange,
+				close: api.close
+			});
+		}
+	});
+}
+
 function AccountRow(props) {
 	const account = props.account;
 	const chip = accountChip(account, props.alerts);
@@ -238,6 +372,7 @@ function AccountRow(props) {
 		),
 		e(AccountMain, { account: account, alerts: props.alerts, now: props.now, t: props.t }),
 		e("div", { className: "dss-bal-act" },
+			alertBell(account, props),
 			link ? e("a", {
 				className: "dss-bal-link",
 				"data-action": "balance-link",
@@ -357,7 +492,14 @@ function BalanceView(props) {
 					e("span", null, "")),
 				e("ul", { className: "dss-bal-rows", "aria-label": t("balance.listLabel") },
 					sorted.map(function(account) {
-						return e(AccountRow, { key: account.id, account: account, alerts: alerts, now: now, t: t });
+						return e(AccountRow, {
+							key: account.id,
+							account: account,
+							alerts: alerts,
+							onAlertChange: props.onAlertChange,
+							now: now,
+							t: t
+						});
 					})
 				)
 			) : e("p", { className: "dss-empty" }, t("balance.noActive")),
@@ -373,4 +515,4 @@ function BalanceView(props) {
 	);
 }
 
-module.exports = { BalanceView, BalanceKpis, AccountRow, QuotaMeter, IdleAccounts };
+module.exports = { BalanceView, BalanceKpis, AccountRow, QuotaMeter, IdleAccounts, BalanceAlert };

@@ -1,7 +1,9 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { escapeAction } = require('../src/client-dialog.cjs');
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+const { escapeAction, Popover } = require('../src/client-dialog.cjs');
 
 test('Escape closes the panel when no layer is open', () => {
 	expect(escapeAction({ key: 'Escape', keyCode: 27 }, 0)).toBe('close');
@@ -44,4 +46,33 @@ test('layer stack pops the newest layer first', () => {
 	expect(stack.size).toBe(0);
 	stack.pop();
 	expect(calls).toEqual(['second', 'first']);
+});
+
+test('Popover keeps the default labels and skips function children while closed', () => {
+	let called = false;
+	const html = renderToStaticMarkup(React.createElement(Popover, {
+		label: '筛选项目',
+		action: 'filter',
+		children: () => {
+			called = true;
+			return React.createElement('span', null, 'panel-content');
+		},
+	}));
+	expect(html).toContain('title="筛选项目"');
+	expect(html).toContain('aria-label="筛选项目"');
+	expect(html).toContain('aria-haspopup="dialog"');
+	expect(html).toContain('aria-expanded="false"');
+	expect(html).not.toContain('panel-content');
+	expect(called).toBe(false);
+});
+
+test('Popover title override changes only the title', () => {
+	const html = renderToStaticMarkup(React.createElement(Popover, {
+		label: '筛选项目',
+		title: '自定义提示',
+		action: 'filter',
+	}));
+	expect(html).toContain('title="自定义提示"');
+	expect(html).toContain('aria-label="筛选项目"');
+	expect(html).not.toContain('title="筛选项目"');
 });

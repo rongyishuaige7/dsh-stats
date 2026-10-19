@@ -7,7 +7,7 @@ const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemo
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
 const { BalanceView } = require("./client-balance.cjs");
-const { balanceHeaderState } = require("./client-balance-model.cjs");
+const { balanceHeaderState, normalizeBalanceAlerts } = require("./client-balance-model.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
 const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
@@ -185,6 +185,15 @@ function StatsPanel(props) {
 			return normalizeTimelinePrefs(Object.assign({}, normalizeTimelinePrefs(current), patch));
 		});
 	}, [timelinePair[1]]);
+	var alertsPair = usePref("balanceAlerts", {});
+	var balanceAlerts = normalizeBalanceAlerts(alertsPair[0]);
+	var setBalanceAlert = useCallback(function(id, value) {
+		alertsPair[1](function(current) {
+			var next = Object.assign({}, normalizeBalanceAlerts(current));
+			if (value) next[id] = value; else delete next[id];
+			return next;
+		});
+	}, [alertsPair[1]]);
 	// 旧版本曾保存 7/30/90 模式；这些模式已从界面移除，统一回退到按日。
 	var navMode = storedNav.mode === "all" ? "all" : "day";
 	var nav = { mode: navMode, date: storedNav.date || null };
@@ -499,7 +508,8 @@ function StatsPanel(props) {
 						state: balanceState,
 						remote: !!balanceRemote,
 						providers: null,
-						alerts: {},
+						alerts: balanceAlerts,
+						onAlertChange: setBalanceAlert,
 						onRetry: refreshCurrent,
 						t
 					}) : e(Fragment, null,

@@ -242,6 +242,25 @@ function MenuItem(props) {
 	}, props.children);
 }
 
+// Measures an open popover against the panel body and flips it above the
+// trigger when the content would cross the visible bottom. Mounted only while
+// open, so static rendering never reaches useLayoutEffect.
+function PopoverFlip(props) {
+	react.useLayoutEffect(function() {
+		var panel = props.panelRef.current;
+		if (!panel) return;
+		var body = panel.closest(".dss-body");
+		var anchor = panel.parentElement;
+		if (!body || !anchor) return;
+		var panelRect = panel.getBoundingClientRect();
+		var bodyRect = body.getBoundingClientRect();
+		var anchorRect = anchor.getBoundingClientRect();
+		var roomAbove = anchorRect.top - bodyRect.top - 6;
+		props.onChange(panelRect.bottom > bodyRect.bottom + 1 && roomAbove >= panelRect.height);
+	}, [props.panelRef, props.onChange]);
+	return null;
+}
+
 function Popover(props) {
 	var label = props.label;
 	var trigger = props.trigger;
@@ -257,6 +276,10 @@ function Popover(props) {
 		setOpen(false);
 		if (restoreFocus && buttonRef.current) buttonRef.current.focus();
 	}, []);
+	var upState = react.useState(false);
+	var up = upState[0], setUp = upState[1];
+	react.useEffect(function() { if (!open) setUp(false); }, [open]);
+	var onFlip = react.useCallback(function(value) { setUp(value); }, []);
 	useLayer(open, function() { closePopover(true); });
 	react.useEffect(function() {
 		if (!open) return undefined;
@@ -275,6 +298,9 @@ function Popover(props) {
 			if (owner) owner.removeEventListener("pointerdown", onPointerDown, true);
 		};
 	}, [open, closePopover]);
+	var content = open
+		? (typeof props.children === "function" ? props.children({ close: closePopover }) : props.children)
+		: null;
 	return e("div", { className: "dss-popover-wrap " + (props.className || ""), ref: rootRef },
 		e("button", {
 			ref: buttonRef,
@@ -283,17 +309,20 @@ function Popover(props) {
 			"aria-haspopup": "dialog",
 			"aria-expanded": open,
 			"aria-label": props.ariaLabel === false ? undefined : label,
-			title: label,
+			title: props.title || label,
 			"data-action": action,
 			onClick: function() { setOpen(!open); }
 		}, trigger),
 		open ? e("div", {
 			ref: panelRef,
-			className: "dss-popover " + panelClassName,
+			className: "dss-popover " + panelClassName + (up ? " is-up" : ""),
 			role: "dialog",
-			"aria-label": label,
+			"aria-label": props.panelLabel || label,
 			tabIndex: -1
-		}, props.children) : null
+		},
+			props.flip ? e(PopoverFlip, { panelRef: panelRef, onChange: onFlip }) : null,
+			content
+		) : null
 	);
 }
 

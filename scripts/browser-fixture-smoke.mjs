@@ -486,6 +486,139 @@ try {
   assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "account").at(-1)[1]'), true, 'balance retry forces a host refresh');
   report.checks.push('balance: attention fixture and first-load failure retry');
 
+  // 5c: per-account balance alerts.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await evaluate('localStorage.removeItem("dsh-stats.balanceAlerts")');
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  const bellIds = await evaluate(`[...document.querySelectorAll('[data-action=balance-alert]')].map(node => node.closest('[data-account-id]').dataset.accountId)`);
+  assert.deepEqual([...bellIds].sort(), ['deepseek-official', 'moonshotai-cn', 'openrouter', 'yi-api'], 'bells only on readable balance rows');
+  assert(await evaluate(`[...document.querySelectorAll('[data-action=balance-alert]')].every(node => !node.classList.contains('is-on'))`), 'no bell starts enabled');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').getAttribute('aria-label')`), 'DeepSeek 余额提醒：未设置');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').getAttribute('aria-expanded')`), 'false');
+
+  const setAlertValue = value => evaluate(`(() => { const input = document.querySelector('.dss-bal-alert input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert[role=dialog]")');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').getAttribute('aria-expanded')`), 'true');
+  assert.equal(await evaluate('document.activeElement.getAttribute("data-popover-autofocus")'), 'true', 'alert input receives focus');
+  await setAlertValue('abc');
+  await click('[data-action=balance-alert-save]');
+  await until('document.querySelector(".dss-bal-alert-error")');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-alert-error").textContent'), '请输入大于 0 的金额，最多两位小数');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-alert input").getAttribute("aria-invalid")'), 'true');
+  assert(await evaluate('!!document.querySelector(".dss-bal-alert") && document.activeElement === document.querySelector(".dss-bal-alert input")'), 'invalid input keeps focus');
+  await setAlertValue('');
+  await click('[data-action=balance-alert-save]');
+  await until('document.querySelector(".dss-bal-alert-error")?.textContent === "请输入金额"');
+  await setAlertValue('200');
+  await click('[data-action=balance-alert-save]');
+  await until('!document.querySelector(".dss-bal-alert")');
+  assert(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').classList.contains('is-on')`), 'saved bell is on');
+  assert(await evaluate(`document.activeElement === document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]')`), 'save returns focus to the bell');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] .dss-bal-chip').textContent`), '余额偏低');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] .dss-bal-alert-line.is-warn').textContent`), '提醒线 ¥200.00');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].map(node => node.dataset.accountId)`), ['kimi-coding', 'deepseek-official', 'minimax-coding', 'moonshotai-cn', 'openrouter', 'yi-api'], 'alert moves the row');
+  await delay(200);
+  const storedAlerts = await evaluate('localStorage.getItem("dsh-stats.balanceAlerts")');
+  assert.deepEqual(JSON.parse(storedAlerts), { 'deepseek-official': { amount: 200, currency: 'CNY' } });
+  assert.equal(await evaluate('document.querySelector(".dss-bal-kpi:nth-child(3) .dss-bal-kpi-v").textContent'), '4');
+
+  await click('[data-action=close]');
+  await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  assert(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').classList.contains('is-on')`), 'alert survives reopening');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] .dss-bal-chip').textContent`), '余额偏低');
+
+  await focus('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await press('Escape');
+  await until('!document.querySelector(".dss-bal-alert")');
+  assert(await evaluate('!!document.querySelector(".dss-panel")'), 'first Escape closes only the popover');
+  assert(await evaluate(`document.activeElement === document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]')`), 'popover Escape returns focus to the bell');
+  await press('Escape');
+  await until('!document.querySelector(".dss-panel")');
+
+  await focus('.dss-trigger');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await evaluate(`document.querySelector('.dss-bal-foot').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+  await until('!document.querySelector(".dss-bal-alert")');
+  assert(await evaluate(`document.activeElement !== document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]')`), 'outside pointer does not restore the bell');
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await evaluate(`document.querySelector('[data-account-id=openrouter] [data-action=balance-alert]').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+  await click('[data-account-id=openrouter] [data-action=balance-alert]');
+  await until('document.querySelectorAll(".dss-bal-alert").length === 1');
+  assert(await evaluate('!!document.querySelector("[data-account-id=openrouter] .dss-bal-alert")'), 'only the newest bell popover stays open');
+  await click('[data-account-id=openrouter] [data-action=balance-alert]');
+  await until('!document.querySelector(".dss-bal-alert")');
+
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await click('[data-action=balance-alert-clear]');
+  await until('!document.querySelector(".dss-bal-alert")');
+  assert(await evaluate(`!document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').classList.contains('is-on')`), 'clear turns the bell off');
+  assert(await evaluate(`!document.querySelector('[data-account-id=deepseek-official] .dss-bal-chip')`), 'clear removes the chip');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].map(node => node.dataset.accountId)`), ['kimi-coding', 'minimax-coding', 'moonshotai-cn', 'deepseek-official', 'openrouter', 'yi-api'], 'clear restores the order');
+  assert(await evaluate('!("deepseek-official" in JSON.parse(localStorage.getItem("dsh-stats.balanceAlerts")))'), 'clear removes the stored alert');
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await setAlertValue('200');
+  await click('[data-action=balance-alert-save]');
+  await until('!document.querySelector(".dss-bal-alert")');
+  await click('[data-account-id=deepseek-official] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await setAlertValue('');
+  await click('[data-action=balance-alert-save]');
+  await until('!document.querySelector(".dss-bal-alert")');
+  assert(await evaluate('!("deepseek-official" in JSON.parse(localStorage.getItem("dsh-stats.balanceAlerts")))'), 'empty submit clears an existing alert');
+
+  await evaluate('localStorage.setItem("dsh-stats.balanceAlerts", JSON.stringify({ openrouter: { amount: 999, currency: "CNY" } }))');
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  assert(await evaluate(`!document.querySelector('[data-account-id=openrouter] [data-action=balance-alert]').classList.contains('is-on')`), 'currency mismatch disables the alert');
+  assert.equal(await evaluate(`document.querySelector('[data-account-id=openrouter] [data-action=balance-alert]').getAttribute('aria-label')`), 'OpenRouter 余额提醒：未设置');
+  assert.equal(await evaluate('document.querySelector("[data-account-id=openrouter]").dataset.tone'), 'ok');
+
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 10000'); await delay(100);
+  await evaluate(`(() => { const bells = [...document.querySelectorAll('[data-action=balance-alert]')]; bells[bells.length - 1].click(); return true; })()`);
+  await until('document.querySelector(".dss-bal-alert")');
+  const alertBox = await evaluate(`(() => {
+    const panel = document.querySelector('.dss-bal-alert').getBoundingClientRect();
+    const body = document.querySelector('.dss-body').getBoundingClientRect();
+    return { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right,
+      bodyTop: body.top, bodyBottom: body.bottom, bodyLeft: body.left, bodyRight: body.right,
+      up: document.querySelector('.dss-bal-alert').classList.contains('is-up') };
+  })()`);
+  assert(alertBox.top >= alertBox.bodyTop - 1 && alertBox.bottom <= alertBox.bodyBottom + 1 && alertBox.left >= alertBox.bodyLeft - 1 && alertBox.right <= alertBox.bodyRight + 1, 'alert popover stays inside the body: ' + JSON.stringify(alertBox));
+  await layout('mobile-balance-alert'); await capture('mobile-balance-alert');
+
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  await click('[data-account-id=yi-api] [data-action=balance-alert]');
+  await until('document.querySelector(".dss-bal-alert")');
+  await evaluate('window.__fixture.omit = ["yi-api"]');
+  await evaluate('document.querySelector("[data-action=refresh]").click()');
+  await until('!document.querySelector("[data-account-id=yi-api]")');
+  await until('!document.querySelector(".dss-bal-alert")');
+  const afterRemoval = await evaluate(`(() => { const active = document.activeElement; return { body: active === document.body, html: active === document.documentElement, inside: !!(active && active.closest && active.closest('.dss-panel')) }; })()`);
+  assert(!afterRemoval.body && !afterRemoval.html && afterRemoval.inside, 'removed row hands focus to the panel: ' + JSON.stringify(afterRemoval));
+  await evaluate('window.__fixture.omit = []');
+  report.checks.push('balance alerts: bell, validation, persistence, Esc, outside click, clear, currency mismatch, flip and row removal');
+
   for (const width of [641, 700, 768, 1024, 1100, 1101]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
     await navigate('/?lang=en'); await click('.dss-trigger'); await tab(1);
