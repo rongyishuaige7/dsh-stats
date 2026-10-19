@@ -442,7 +442,10 @@ test('timelineRangeModel paginates newest first, clamps out-of-range pages and k
 	const idle = idleModel.rows.find(row => row.date === idleDate);
 	expect(idle).toMatchObject({ idle: true, total: 0, projects: [] });
 	expect(idle.cells.every(cell => cell.level === 0 && cell.ms === 0 && cell.dominant === null)).toBe(true);
-	expect(idleModel.summary).toMatchObject({ dayCount: 3, activeDays: 2, streak: 1 });
+	expect(idleModel.summary).toMatchObject({
+		from: addDays(today, -2), to: today, rowCount: 3, spanDays: 3,
+		activeDays: 2, total: 2 * SLOT_MS, avg: SLOT_MS, streak: 1,
+	});
 });
 
 test('timelineRangeModel marks the first row of each calendar week and the first active row after a gap', () => {
@@ -477,12 +480,51 @@ test('timelineRangeModel activeOnly keeps calendar streaks broken by skipped idl
 	const model = timelineRangeModel({ days, hidden: {}, today, page: 0, activeOnly: true, columns: 48 });
 	expect(model.rows.map(row => row.date)).toEqual(['2026-10-14', '2026-10-12']);
 	expect(model.summary).toMatchObject({
-		from: '2026-10-12', to: '2026-10-19', dayCount: 8,
+		from: '2026-10-12', to: '2026-10-14', rowCount: 2, spanDays: 3,
 		activeDays: 2, total: 2 * SLOT_MS, avg: SLOT_MS, streak: 1,
 	});
+	expect(model.summary.spanDays).toBeGreaterThan(model.summary.rowCount);
 	const hiddenModel = timelineRangeModel({ days, hidden: { a: true }, today, page: 0, activeOnly: true, columns: 48 });
 	expect(hiddenModel.rows).toEqual([]);
-	expect(hiddenModel.summary).toMatchObject({ activeDays: 0, total: 0, avg: 0, streak: 0 });
+	expect(hiddenModel.summary).toMatchObject({
+		from: '', to: '', rowCount: 0, spanDays: 0,
+		activeDays: 0, total: 0, avg: 0, streak: 0,
+	});
+});
+
+test('timelineRangeModel returns a null peak for a page with no profile activity', () => {
+	const empty = timelineRangeModel({ days: [], hidden: {}, today: '2026-10-19', page: 0, activeOnly: false, columns: 48 });
+	expect(empty.rows).toEqual([]);
+	expect(empty.profile.every(value => value === 0)).toBe(true);
+	expect(empty.peak).toBeNull();
+	expect(empty.summary).toMatchObject({
+		from: '', to: '', rowCount: 0, spanDays: 0,
+		activeDays: 0, total: 0, avg: 0, streak: 0,
+	});
+	const idle = timelineRangeModel({
+		days: [{ date: '2026-10-18', slotBlocks: [] }],
+		hidden: {}, today: '2026-10-18', page: 0, activeOnly: false, columns: 48,
+	});
+	expect(idle.rows[0].idle).toBe(true);
+	expect(idle.peak).toBeNull();
+});
+
+test('timeline models normalize project color indexes into the 0-15 palette', () => {
+	const today = '2026-10-14';
+	const day = { date: today, slotBlocks: [
+		block(10, 'a', SLOT_MS, { colorIndex: 119 }),
+		block(11, 'b', SLOT_MS, { colorIndex: 119 }),
+	] };
+	const dayModel = timelineDayModel({ day, projects: [], hidden: {}, date: today, colorIndexes: new Map([['a', 17]]) });
+	expect(dayModel.lanes.find(lane => lane.projectId === 'a').colorIndex).toBe(1);
+	expect(dayModel.lanes.find(lane => lane.projectId === 'b').colorIndex).toBe(7);
+	const range = timelineRangeModel({
+		days: [day], hidden: {}, today, page: 0, activeOnly: false, columns: 48,
+		colorIndexes: new Map([['a', 17]]),
+	});
+	const projects = range.rows[0].projects;
+	expect(projects.find(project => project.projectId === 'a').colorIndex).toBe(1);
+	expect(projects.find(project => project.projectId === 'b').colorIndex).toBe(7);
 });
 
 test('timelinePeak returns the earliest maximum inside the window', () => {

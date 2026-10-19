@@ -75,7 +75,7 @@ function projectSlotMs(day, hidden) {
 			entry = {
 				projectId: block.projectId,
 				name: block.name || "",
-				colorIndex: Number.isInteger(block.colorIndex) ? block.colorIndex : 0,
+				colorIndex: normalizeColorIndex(block.colorIndex),
 				ms: new Array(48).fill(0)
 			};
 			projects.set(block.projectId, entry);
@@ -249,6 +249,20 @@ function colorIndexFrom(colorIndexes, id) {
 	return Number.isInteger(value) ? value : null;
 }
 
+// The host and the local fallback assign project ordinals, which can exceed
+// the 16 palette slots on large datasets.
+function normalizeColorIndex(value) {
+	const number = Number(value);
+	if (!Number.isFinite(number)) return 0;
+	return ((Math.trunc(number) % 16) + 16) % 16;
+}
+
+function resolveColorIndex(colorIndexes, id, fallback) {
+	const explicit = colorIndexFrom(colorIndexes, id);
+	const value = explicit == null ? fallback : explicit;
+	return value == null ? null : normalizeColorIndex(value);
+}
+
 function firstSlotOf(ms) {
 	for (let slot = 0; slot < 48; slot++) if (ms[slot] > 0) return slot;
 	return 48;
@@ -308,7 +322,7 @@ function timelineDayModel(input) {
 		projectIndex.set(project.id, {
 			projectId: project.id,
 			name: project.name || "",
-			colorIndex: colorIndexFrom(colorIndexes, project.id)
+			colorIndex: resolveColorIndex(colorIndexes, project.id, null)
 		});
 	});
 	projectSlots.forEach(function(entry, projectId) {
@@ -318,10 +332,7 @@ function timelineDayModel(input) {
 			projectIndex.set(projectId, info);
 		}
 		if (!info.name && entry.name) info.name = entry.name;
-		if (info.colorIndex == null) {
-			const explicit = colorIndexFrom(colorIndexes, projectId);
-			info.colorIndex = explicit == null ? entry.colorIndex : explicit;
-		}
+		if (info.colorIndex == null) info.colorIndex = resolveColorIndex(colorIndexes, projectId, entry.colorIndex);
 	});
 	projectIndex.forEach(function(info) {
 		if (info.colorIndex == null) info.colorIndex = 0;
@@ -354,7 +365,7 @@ function timelineDayModel(input) {
 		lanes.push({
 			projectId: projectId,
 			name: info.name || entry.name || "",
-			colorIndex: info.colorIndex == null ? entry.colorIndex : info.colorIndex,
+			colorIndex: info.colorIndex == null ? normalizeColorIndex(entry.colorIndex) : info.colorIndex,
 			ms: entry.ms,
 			total: totalOf(entry.ms),
 			first: firstSlotOf(entry.ms),
@@ -580,6 +591,7 @@ function timelineRangeModel(input) {
 	const per = 48 / columns;
 	const activeOnly = options.activeOnly === true;
 	const dayCosts = options.dayCosts;
+	const colorIndexes = options.colorIndexes;
 	const allDates = calendarDates(days, today);
 	const dayMap = new Map();
 	days.forEach(function(day) {
@@ -634,10 +646,11 @@ function timelineRangeModel(input) {
 		const projects = [];
 		data.perProject.forEach(function(ms, projectId) {
 			const entry = data.slots.get(projectId);
+			const colorIndex = resolveColorIndex(colorIndexes, projectId, entry ? entry.colorIndex : null);
 			projects.push({
 				projectId: projectId,
 				name: entry ? entry.name : "",
-				colorIndex: entry && Number.isInteger(entry.colorIndex) ? entry.colorIndex : 0,
+				colorIndex: colorIndex == null ? 0 : colorIndex,
 				ms: ms
 			});
 		});
@@ -662,9 +675,12 @@ function timelineRangeModel(input) {
 		maxDay = Math.max(maxDay, row.total);
 		row.cells.forEach(function(cell, index) { profile[index] += cell.ms; });
 	});
-	let peak = 0;
-	for (let index = 1; index < profile.length; index++) if (profile[index] > profile[peak]) peak = index;
+	let peak = null;
+	for (let index = 0; index < profile.length; index++) {
+		if (profile[index] > 0 && (peak == null || profile[index] > profile[peak])) peak = index;
+	}
 
+	// T10: the summary describes the rows on this page, not the full history.
 	let activeDays = 0;
 	let total = 0;
 	let streak = 0;
@@ -672,22 +688,25 @@ function timelineRangeModel(input) {
 	let previousActive = false;
 	let previousDate = null;
 	const costSummaries = [];
-	allDates.forEach(function(date) {
-		const dayTotal = dayModels.get(date).total;
-		if (dayTotal > 0) {
+	rows.slice().reverse().forEach(function(row) {
+		if (!row.idle) {
 			activeDays++;
-			streak = previousActive && previousDate && addDays(previousDate, 1) === date ? streak + 1 : 1;
+			streak = previousActive && previousDate && addDays(previousDate, 1) === row.date ? streak + 1 : 1;
 			longestStreak = Math.max(longestStreak, streak);
 			previousActive = true;
 		} else {
 			streak = 0;
 			previousActive = false;
 		}
-		previousDate = date;
-		total += dayTotal;
-		const summary = dayCostOf(dayCosts, date);
-		if (summary) costSummaries.push(summary);
+		previousDate = row.date;
+		total += row.total;
+		if (row.cost) costSummaries.push(row.cost);
 	});
+	const from = pageDates.length ? pageDates[pageDates.length - 1] : "";
+	const to = pageDates.length ? pageDates[0] : "";
+	const spanDays = pageDates.length
+		? Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 864e5) + 1
+		: 0;
 
 	return {
 		rows: rows,
@@ -697,9 +716,10 @@ function timelineRangeModel(input) {
 		peak: peak,
 		maxDay: maxDay,
 		summary: {
-			from: allDates.length ? allDates[0] : "",
-			to: allDates.length ? allDates[allDates.length - 1] : "",
-			dayCount: allDates.length,
+			from: from,
+			to: to,
+			rowCount: rows.length,
+			spanDays: spanDays,
 			activeDays: activeDays,
 			total: total,
 			avg: activeDays ? total / activeDays : 0,
