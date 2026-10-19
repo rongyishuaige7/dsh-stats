@@ -1369,6 +1369,24 @@ test('cache row warnings are grouped per session', async () => {
 	expect(result.meta.degraded).toBe(false);
 });
 
+test('legacy descriptor v2 host errors fall back to the legacy log', async () => {
+	const now = Date.parse('2026-08-17T13:00:00+08:00');
+	const home = fixture({ legacyDescriptor: versionedProjection(now, 1) });
+	writeLog(home, 'legacyDescriptor', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 7, outputTokens: 2 }, message: { source: { model: 'deepseek-v4-flash' } } } }
+	]);
+	const result = await StatsService.prototype.aggregate.call({ ctx: {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: ['legacyDescriptor'] }] },
+		sessionQuery: { readSession: async () => { throw new Error('failed to read stored session: subagent/descriptor 6 uses unsupported descriptor version 2; source v0 artifact remains unchanged'); } }
+	} });
+	const session = result.projects[0].sessions[0];
+	expect(session.stats).toMatchObject({ uncached: 7, output: 2 });
+	expect(result.meta.warnings.map(w => w.code)).not.toContain('OFFICIAL_PERSISTENCE_FAILED');
+	expect(result.meta.warnings.map(w => w.code)).toContain('OFFICIAL_LEGACY_DESCRIPTOR');
+	expect(result.meta.degraded).toBe(false);
+});
+
 test('prefers the larger legacy log over a compacted versioned log', async () => {
 	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-dual-log-'));
 	createdHomes.push(home);

@@ -142,6 +142,14 @@ function* expandStorageRecord(record, remaining = Infinity, eventLimit = LEGACY_
 	}
 }
 
+// A v0 log may contain a subagent descriptor version written by an older
+// runtime. The current host migration rejects it before exposing events, but
+// the legacy JSONL reader can still read the usage/stat events safely. Keep the
+// host limitation informational instead of failing the whole session.
+function isLegacyDescriptorError(error) {
+	return /unsupported descriptor version 2/i.test(error?.message || String(error));
+}
+
 function contextService(ctx, name) {
 	try {
 		if (!ctx) return null;
@@ -731,7 +739,8 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 					return snapshot.values;
 				}
 			} catch (error) {
-				warnings.push({ code: "OFFICIAL_PROJECTION_CACHE_FAILED", sessionId, message: error?.message || String(error) });
+				const message = error?.message || String(error);
+				warnings.push({ code: isLegacyDescriptorError(error) ? "OFFICIAL_LEGACY_DESCRIPTOR" : "OFFICIAL_PROJECTION_CACHE_FAILED", sessionId, message });
 			}
 		}
 		if (!projections) return null;
@@ -913,4 +922,4 @@ async function sessionInfo(home, sessionId) {
 	return info;
 }
 
-export { SESSION_CACHE_LIMITS, STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };
+export { SESSION_CACHE_LIMITS, STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };

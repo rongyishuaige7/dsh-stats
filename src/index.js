@@ -37,7 +37,7 @@ function finalizeWarnings(warnings) {
 	const actionable = [];
 	const grouped = new Map();
 	for (const warning of unique) {
-		if (/^OFFICIAL_.*_USED$/.test(warning.code)) { informational.push(warning); continue; }
+		if (/^OFFICIAL_.*_USED$/.test(warning.code) || warning.code === "OFFICIAL_LEGACY_DESCRIPTOR") { informational.push(warning); continue; }
 		const cacheRow = warning.code === "SESSION_CACHE_STALE" || warning.code === "SESSION_CACHE_AHEAD_OF_LOG" ||
 			warning.code === "SESSION_CACHE_ROW_VERSION_UNSUPPORTED" || warning.code === "SESSION_CACHE_ROW_INVALID";
 		if (!cacheRow) { actionable.push(warning); continue; }
@@ -68,7 +68,7 @@ function finalizeWarnings(warnings) {
 	return { warnings: output, unique: actionableFinal };
 }
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
-import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";
+import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";
 import { addRaw, emptyRaw, modelUsages, projectionSlotUsage, repriceSnapshot, slotDurations, slotUsages } from "./host-usage.js";
 // ES decorators 运行时（与官方编译产物一致）
 var __runInitializers = function (thisArg, initializers, value) {
@@ -400,7 +400,8 @@ let StatsService = (() => {
 							};
 						}
 					} catch (error) {
-						warnings.push({ code: "OFFICIAL_PERSISTENCE_FAILED", sessionId, message: error?.message || String(error) });
+						const message = error?.message || String(error);
+						warnings.push({ code: isLegacyDescriptorError(error) ? "OFFICIAL_LEGACY_DESCRIPTOR" : "OFFICIAL_PERSISTENCE_FAILED", sessionId, message });
 					}
 					if (revision !== null && officialSource && info && !info.partial && !info.stale &&
 						warnings.slice(warningStart).every(row => row.code.startsWith("OFFICIAL_") && row.code.endsWith("_USED"))) {
