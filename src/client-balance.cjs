@@ -95,7 +95,7 @@ function BalanceKpis(props) {
 
 	const names = [];
 	attention.accounts.forEach(function(account, index) {
-		if (index) names.push("、");
+		if (index) names.push(t("balance.kpi.nameSep"));
 		names.push(e("span", { className: "dss-bal-nw", key: account.id }, account.displayName || account.id));
 	});
 	cells.push(e("div", { className: "dss-bal-kpi", key: "attention" },
@@ -294,6 +294,13 @@ function IdleAccounts(props) {
 	);
 }
 
+function balanceShell(children, t) {
+	return e("section", {
+		className: "dss-bal",
+		style: { "--dss-bal-mk": t("balance.meterKeyWidth") }
+	}, children);
+}
+
 function BalanceView(props) {
 	const data = props.data;
 	const state = props.state || { kind: "loading" };
@@ -304,14 +311,16 @@ function BalanceView(props) {
 	const alerts = props.alerts || {};
 
 	if (!props.remote) {
-		return e("section", { className: "dss-bal" },
-			e("div", { className: "dss-bal-failed" }, e("p", null, t("balance.unavailable"))));
+		return balanceShell(
+			e("div", { className: "dss-bal-failed" }, e("p", null, t("balance.unavailable"))),
+			t
+		);
 	}
 	if (!data && (state.kind === "loading" || state.kind === "refreshing")) {
-		return e("section", { className: "dss-bal" }, e("p", { className: "dss-bal-loading" }, t("balance.loading")));
+		return balanceShell(e("p", { className: "dss-bal-loading" }, t("balance.loading")), t);
 	}
 	if (!data && state.kind === "error") {
-		return e("section", { className: "dss-bal" },
+		return balanceShell(
 			e("div", { className: "dss-bal-failed", role: "status" },
 				e("p", null, t("balance.failed")),
 				state.error ? e("details", { className: "dss-data-diagnostics" },
@@ -323,39 +332,44 @@ function BalanceView(props) {
 					"data-action": "balance-retry",
 					onClick: props.onRetry
 				}, t("price.retry")) : null
-			));
+			),
+			t
+		);
 	}
 
 	const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
 	if (!accounts.length) {
-		return e("section", { className: "dss-bal" }, e("p", { className: "dss-empty" }, t("balance.empty")));
+		return balanceShell(e("p", { className: "dss-empty" }, t("balance.empty")), t);
 	}
 	const split = splitAccounts(accounts);
 	const active = split.active;
 	const idle = split.idle;
 	const sorted = sortAccounts(active, alerts);
 
-	return e("section", { className: "dss-bal" },
-		legacyNotice(data) ? e("p", { className: "dss-bal-note", "data-code": "LEGACY_ACCOUNT_API" }, t("balance.legacy")) : null,
-		active.length < 2 ? null : e(BalanceKpis, { active: active, alerts: alerts, now: now, t: t }),
-		active.length ? e("section", { className: "dss-bal-list" },
-			e("div", { className: "dss-bal-cols", "aria-hidden": "true" },
-				e("span", null, t("balance.col.account")),
-				e("span", null, t("balance.col.value")),
-				e("span", null, "")),
-			e("ul", { className: "dss-bal-rows", "aria-label": t("balance.listLabel") },
-				sorted.map(function(account) {
-					return e(AccountRow, { key: account.id, account: account, alerts: alerts, now: now, t: t });
-				})
-			)
-		) : e("p", { className: "dss-empty" }, t("balance.noActive")),
-		e(IdleAccounts, {
-			idle: idle,
-			open: idleOpen || active.length === 0,
-			onToggle: function(event) { setIdleOpen(event.currentTarget.open); },
-			t: t
-		}),
-		e("p", { className: "dss-bal-foot" }, t("balance.foot"))
+	return balanceShell(
+		e(react.Fragment, null,
+			legacyNotice(data) ? e("p", { className: "dss-bal-note", "data-code": "LEGACY_ACCOUNT_API" }, t("balance.legacy")) : null,
+			active.length < 2 ? null : e(BalanceKpis, { active: active, alerts: alerts, now: now, t: t }),
+			active.length ? e("section", { className: "dss-bal-list" },
+				e("div", { className: "dss-bal-cols", "aria-hidden": "true" },
+					e("span", null, t("balance.col.account")),
+					e("span", null, t("balance.col.value")),
+					e("span", null, "")),
+				e("ul", { className: "dss-bal-rows", "aria-label": t("balance.listLabel") },
+					sorted.map(function(account) {
+						return e(AccountRow, { key: account.id, account: account, alerts: alerts, now: now, t: t });
+					})
+				)
+			) : e("p", { className: "dss-empty" }, t("balance.noActive")),
+			e(IdleAccounts, {
+				idle: idle,
+				open: idleOpen || active.length === 0,
+				onToggle: function(event) { setIdleOpen(event.currentTarget.open); },
+				t: t
+			}),
+			e("p", { className: "dss-bal-foot" }, t("balance.foot"))
+		),
+		t
 	);
 }
 

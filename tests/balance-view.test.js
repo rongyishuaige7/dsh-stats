@@ -164,3 +164,13 @@ test('balance amounts always keep two decimals and thousands separators', () => 
 	expect(fmtBalanceAmount(15.5, 'EUR')).toBe('15.50 EUR');
 	expect(fmtBalanceAmount(null, 'CNY')).toBe('—');
 });
+
+test('meter label width and attention separators follow the language', () => {
+	const zhHtml = render();
+	expect(zhHtml).toContain('--dss-bal-mk:4.2em');
+	expect(zhHtml.replace(/<[^>]+>/g, '')).toContain('Kimi For Coding、MiniMax Coding Plan、Moonshot');
+	const enHtml = render({ lang: 'en' });
+	expect(enHtml).toContain('--dss-bal-mk:8em');
+	expect(enHtml.replace(/<[^>]+>/g, '')).toContain('Kimi For Coding, MiniMax Coding Plan, Moonshot');
+	expect(enHtml).not.toContain('、');
+});

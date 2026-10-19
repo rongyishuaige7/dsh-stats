@@ -204,7 +204,6 @@ try {
   });
   await once(socket, 'open');
   await command('Runtime.enable'); await command('Page.enable'); await command('Network.enable');
-  await command('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
   // Runs first, while the stored tab preference is still the default overview.
   await navigate('/?lang=zh');
   await until('document.querySelector(".dss-trigger")'); await delay(100);
@@ -372,6 +371,10 @@ try {
           return bad.slice(0, 10);
         })()`);
         assert.deepEqual(balanceSmallFonts, [], name + ' balance text floor: ' + JSON.stringify(balanceSmallFonts));
+        if (lang === 'en') {
+          const englishNames = await evaluate('document.querySelector(".dss-bal-kpi-names")?.textContent || ""');
+          assert(!englishNames.includes('、'), 'English attention names use commas: ' + englishNames);
+        }
       }
       await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && (['overview', 'trends'].includes(view) || (view === 'balance' && width === 390))) {
@@ -399,8 +402,14 @@ try {
       const minimaxMeter = await evaluate(`(() => { const bar = document.querySelector('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-bar'); return { now: bar.getAttribute('aria-valuenow'), cls: bar.className, width: bar.querySelector('i').style.width }; })()`);
       assert.deepEqual(minimaxMeter, { now: '18', cls: 'dss-bal-bar is-warn', width: '18%' }, 'minimax session meter shows remaining');
       assert.equal(await evaluate(`document.querySelector('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-reset').textContent`), '2 小时 10 分后重置');
-      await focus('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-reset');
-      const resetTip = await evaluate('document.querySelector("#dss-tooltip")?.textContent || ""');
+      await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+      let resetTip = '';
+      try {
+        await focus('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-reset');
+        resetTip = await evaluate('document.querySelector("#dss-tooltip")?.textContent || ""');
+      } finally {
+        await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+      }
       assert(resetTip.includes('北京时间 2026-09-08 12:10 重置'), 'reset tooltip shows Beijing time: ' + resetTip);
       assert.equal(await evaluate(`document.querySelector('[data-account-id="kimi-coding"] .dss-bal-reset').textContent`), '2 天 14 小时后重置');
       const kpis = await evaluate(`(() => { const cells = [...document.querySelectorAll('.dss-bal-kpi')]; return { count: cells.length, lead: cells[0]?.querySelector('.dss-bal-kpi-v')?.textContent, leadSub: cells[0]?.querySelector('.dss-bal-kpi-s')?.textContent, tight: cells[1]?.querySelector('.dss-bal-kpi-v')?.textContent, tightCls: cells[1]?.querySelector('.dss-bal-kpi-v')?.className, tightSub: cells[1]?.querySelector('.dss-bal-kpi-s')?.textContent, attention: cells[2]?.querySelector('.dss-bal-kpi-v')?.textContent, attentionSub: cells[2]?.querySelector('.dss-bal-kpi-s')?.textContent }; })()`);
