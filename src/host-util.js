@@ -21,7 +21,7 @@ const SESSION_PROJECTION_DOMAIN_VERSION = 3;
 function isSupportedProjectionDomainVersion(version) {
 	return version === undefined || SESSION_PROJECTION_DOMAIN_VERSIONS.has(version);
 }
-const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: Object.freeze([1, 2]), title: 1, sessionListMetadata: 1, statsRoute: 3 });
+const PROJECTION_ROW_VERSIONS = Object.freeze({ sessionStats: 1, tokenUsage: Object.freeze([1, 2]), title: 1, sessionListMetadata: 1, statsRoute: Object.freeze([1, 3]) });
 function isSupportedRowVersion(key, ver) {
 	const expected = PROJECTION_ROW_VERSIONS[key];
 	if (expected === undefined) return true;

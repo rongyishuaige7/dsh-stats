@@ -290,13 +290,19 @@ function routeProjectionValueFromEntry(entry, sessionId, header, warnings, domai
 		warnings.push({ code: "SESSION_CACHE_ROW_INVALID", sessionId, message: "projection row statsRoute had invalid ver/seq and was ignored" });
 		return null;
 	}
-	if (versioned && row.ver !== PROJECTION_ROW_VERSIONS.statsRoute) {
+	if (versioned && !isSupportedRowVersion("statsRoute", row.ver)) {
 		warnings.push({ code: "SESSION_CACHE_ROW_VERSION_UNSUPPORTED", sessionId, message: `projection row statsRoute version ${String(row.ver)} is not supported` });
 		return null;
 	}
 	const value = row.val;
 	try {
-		if (objectRecord(value?.routeTree)) routeProjectionStateSchema(value);
+		if (versioned && row.ver === 1) {
+			// v1 persisted the wire view: a routes map plus samples. Normalize it
+			// into the current route-row shape instead of discarding the cache.
+			routeProjectionSchema({ ...value, routes: routeData.routeRows(value).map((row) => ({
+				...row, contextTokens: row.contextTokens ?? row.uncached + row.cacheRead + row.cacheWrite, count: row.count ?? 1
+			})) });
+		} else if (objectRecord(value?.routeTree)) routeProjectionStateSchema(value);
 		else if (!versioned) routeProjectionSchema({ ...value, routes: routeData.routeRows(value).map((row) => ({
 			...row, contextTokens: row.contextTokens ?? row.uncached + row.cacheRead + row.cacheWrite, count: row.count ?? 1
 		})) });

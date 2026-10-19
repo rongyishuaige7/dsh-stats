@@ -30,10 +30,35 @@ function finalizeWarnings(warnings) {
 		seen.add(key);
 		unique.push(warning);
 	}
-	const truncated = unique.length > MAX_WARNINGS;
-	const output = truncated ? unique.slice(0, MAX_WARNINGS) : unique;
-	if (truncated) output.push({ code: "WARNINGS_TRUNCATED", message: `${unique.length - MAX_WARNINGS} additional warnings were omitted` });
-	return { warnings: output, unique };
+	// Official-source notices are informational, not data-quality warnings.
+	// Keep them for diagnostics, but do not let them consume the detail budget
+	// or hide the actionable cache/log problems behind a truncation notice.
+	const informational = [];
+	const actionable = [];
+	const grouped = new Map();
+	for (const warning of unique) {
+		if (/^OFFICIAL_.*_USED$/.test(warning.code)) { informational.push(warning); continue; }
+		const cacheRow = warning.code === "SESSION_CACHE_STALE" || warning.code === "SESSION_CACHE_AHEAD_OF_LOG" ||
+			warning.code === "SESSION_CACHE_ROW_VERSION_UNSUPPORTED" || warning.code === "SESSION_CACHE_ROW_INVALID";
+		if (!cacheRow) { actionable.push(warning); continue; }
+		const key = [warning.code, warning.sessionId || ""].join("\u0000");
+		const existing = grouped.get(key);
+		if (existing) { existing.count += 1; continue; }
+		const copy = { ...warning, count: 1 };
+		grouped.set(key, copy);
+		actionable.push(copy);
+	}
+	for (const warning of actionable) {
+		if (warning.count > 1) {
+			warning.message = `${warning.message} (${warning.count} occurrences)`;
+			delete warning.count;
+		}
+	}
+	const truncated = actionable.length > MAX_WARNINGS;
+	const output = truncated ? actionable.slice(0, MAX_WARNINGS) : actionable.slice();
+	if (truncated) output.push({ code: "WARNINGS_TRUNCATED", message: `${actionable.length - MAX_WARNINGS} additional warnings were omitted` });
+	output.push(...informational);
+	return { warnings: output, unique: actionable };
 }
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
 import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";

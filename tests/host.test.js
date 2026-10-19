@@ -1329,6 +1329,45 @@ test('route projection ignores a negative seedLength instead of poisoning the vi
 	expect(definition.view(state).seedLength).toBeNull();
 });
 
+
+test('versioned statsRoute v1 cache is normalized instead of rejected', async () => {
+	const now = Date.parse('2026-08-17T12:30:00+08:00');
+	const entry = versionedProjection(now, 1, { uncachedInputTokens: 100, outputTokens: 10 });
+	entry.rows.statsRoute = { ver: 1, seq: 1, val: {
+		origin: null, parentSession: null, seedLength: null,
+		current: { providerId: 'openai', model: 'gpt-5.6-sol', accountType: 'api', serviceTier: 'standard' },
+		routes: { r: { providerId: 'openai', model: 'gpt-5.6-sol', accountType: 'api', serviceTier: 'standard',
+			slot: Math.floor(now / (30 * 60 * 1000)), time: now + 100, uncached: 100, output: 10, cacheRead: 0, cacheWrite: 0, reasoning: 0 } },
+		samples: {}
+	} };
+	const home = fixture({ legacyRoute: entry });
+	writeLog(home, 'legacyRoute', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 100, outputTokens: 10 }, message: { source: { provider: 'openai', model: 'gpt-5.6-sol' } } } }
+	]);
+	const result = await aggregate();
+	const session = result.projects[0].sessions[0];
+	expect(result.meta.warnings.some(w => w.code === 'SESSION_CACHE_ROW_VERSION_UNSUPPORTED')).toBe(false);
+	expect(session.model).toBe('gpt-5.6-sol');
+	expect(session.stats).toMatchObject({ uncached: 100, output: 10 });
+});
+
+test('cache row warnings are grouped per session', async () => {
+	const now = Date.parse('2026-08-17T12:45:00+08:00');
+	const entry = versionedProjection(now, 99, { uncachedInputTokens: 10, outputTokens: 1 });
+	for (let index = 0; index < 12; index++) entry.rows['extra' + index] = { ver: 1, seq: 99, val: {} };
+	const home = fixture({ groupedStale: entry });
+	writeLog(home, 'groupedStale', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'assistant/message', seq: 1, time: now + 100, data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 1 } } }
+	]);
+	const result = await aggregate();
+	const stale = result.meta.warnings.filter(w => w.code === 'SESSION_CACHE_STALE');
+	expect(stale).toHaveLength(1);
+	expect(stale[0].message).toContain('occurrences');
+	expect(result.meta.warnings.some(w => w.code === 'WARNINGS_TRUNCATED')).toBe(false);
+});
+
 test('warning details are capped while degradation is preserved', async () => {
 	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-warnings-'));
 	createdHomes.push(home);
