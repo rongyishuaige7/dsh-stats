@@ -1,0 +1,907 @@
+<title>dsh-stats 时间线重做</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: intro + prototype controls → dimmed host stage holding the plugin panel (container queries on panel width) → problems / changes / data / decisions.
+   Panel tokens mirror the DSH --dsw-alias palette the plugin inherits; project colors are the plugin's --dss-p0..p8. */
+:root{
+  --page:#eef0f3; --stage:#5c626c; --panel:#ffffff; --layer:#f5f6f8; --hover:#eef1f5; --seg-on:#ffffff;
+  --line:#dce0e5; --line-soft:#eaedf1; --text:#20242b; --text-2:#565e6b; --text-3:#6a727e;
+  --accent:#2f6fe4; --accent-soft:rgba(47,111,228,.10); --accent-line:rgba(47,111,228,.38); --on-accent:#ffffff;
+  --cost:#c2510f; --hist-cost:#e07b39; --hist-tok:#5b8def; --ok:#15803d;
+  --grid-minor:#f0f2f5; --grid-major:#dfe3e8; --cell0:#e8ebf0;
+  --scrim:rgba(18,22,30,.22); --shadow:0 18px 50px rgba(16,22,34,.28); --pop-shadow:0 10px 30px rgba(16,22,34,.16);
+  --tip-bg:#20242b; --tip-text:#f3f5f8; --toast-bg:#20242b; --toast-text:#ffffff;
+  --p0:#4f8cff; --p1:#34d399; --p2:#fbbf24; --p3:#f472b6; --p4:#a78bfa; --p5:#22d3ee; --p6:#fb923c; --p7:#e879f9; --p8:#a3e635;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif;
+  --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:15px; --fs-xl:20px; --fs-2xl:28px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#232937; --seg-on:#2b3241;
+    --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+    --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --accent-line:rgba(79,140,255,.45); --on-accent:#0d1220;
+    --cost:#ff922b; --hist-cost:#f08a3c; --hist-tok:#4f8cff; --ok:#34d399;
+    --grid-minor:#1c212a; --grid-major:#272d38; --cell0:#232933;
+    --scrim:rgba(0,0,0,.4); --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+    --tip-bg:#2b3241; --tip-text:#e7eaf0; --toast-bg:#e7eaf0; --toast-text:#161a21;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#232937; --seg-on:#2b3241;
+  --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+  --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --accent-line:rgba(79,140,255,.45); --on-accent:#0d1220;
+  --cost:#ff922b; --hist-cost:#f08a3c; --hist-tok:#4f8cff; --ok:#34d399;
+  --grid-minor:#1c212a; --grid-major:#272d38; --cell0:#232933;
+  --scrim:rgba(0,0,0,.4); --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+  --tip-bg:#2b3241; --tip-text:#e7eaf0; --toast-bg:#e7eaf0; --toast-text:#161a21;
+}
+
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--text);font-family:var(--font-ui);font-size:var(--fs-md);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{display:block;flex:none}
+.page{max-width:1280px;margin:0 auto;padding-block:28px 56px;display:flex;flex-direction:column;gap:20px}
+
+/* ---------- intro & prototype controls ---------- */
+.intro{display:flex;flex-direction:column;gap:6px;max-width:76ch}
+.eyebrow{margin:0;font-size:var(--fs-xs);letter-spacing:.06em;color:var(--text-3)}
+.intro h1{margin:0;font-size:var(--fs-xl);font-weight:650;text-wrap:balance}
+.lede{margin:0;color:var(--text-2)}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin-top:6px}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctl-k{font-size:var(--fs-sm);color:var(--text-3);white-space:nowrap}
+.seg{display:inline-flex;background:var(--layer);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px}
+.seg button{border:0;background:none;padding:4px 11px;border-radius:7px;font-size:var(--fs-md);color:var(--text-2);white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg.sm{border-radius:8px}
+.seg.sm button{padding:2px 9px;font-size:var(--fs-sm);border-radius:6px}
+.switch{display:inline-flex;align-items:center;gap:8px;color:var(--text-2);cursor:pointer;position:relative}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch .sw{width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.switch .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch input:checked + .sw{background:var(--accent)}
+.switch input:checked + .sw::after{transform:translateX(12px)}
+.switch input:focus-visible + .sw{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- host stage ---------- */
+.stage{background:var(--stage);border-radius:16px;padding:28px;position:relative}
+.panel{container:panel / inline-size;position:relative;width:100%;max-width:1180px;margin-inline:auto;height:min(880px,calc(100vh - 60px));min-height:600px;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;color:var(--text)}
+.stage[data-w="tablet"] .panel{max-width:760px}
+.stage[data-w="phone"] .panel{max-width:390px;border-radius:20px}
+.toast{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-text);font-size:var(--fs-sm);
+  padding:8px 14px;border-radius:9px;box-shadow:var(--pop-shadow);z-index:60;max-width:calc(100% - 32px);text-align:center}
+.anno{display:none}
+.stage.annos .anno{display:grid;place-items:center;position:absolute;top:-9px;left:-9px;width:18px;height:18px;border-radius:50%;
+  background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;line-height:1;box-shadow:0 0 0 2px var(--panel);z-index:6;pointer-events:none;font-variant-numeric:tabular-nums}
+
+/* ---------- panel header (same as the shipped 0.5.0 header) ---------- */
+.p-head{display:flex;align-items:center;gap:16px;padding:12px 16px 12px 20px;border-bottom:1px solid var(--line);flex:none}
+.p-head h2{margin:0;font-size:var(--fs-lg);font-weight:650;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;color:var(--text-2);font-size:var(--fs-md);padding:6px 12px;border-radius:8px;white-space:nowrap}
+.tab:hover{color:var(--text);background:var(--hover)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--text);font-weight:600}
+.p-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.sync{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-sm);color:var(--text-3);padding:0 6px;white-space:nowrap}
+.sync .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.act-group{display:inline-flex;align-items:center;gap:2px;padding-left:6px;border-left:1px solid var(--line-soft)}
+.icon-btn{width:32px;height:32px;border-radius:8px;border:0;background:none;color:var(--text-2);display:inline-grid;place-items:center;flex:none}
+.icon-btn:hover{background:var(--hover);color:var(--text)}
+.icon-btn.sm{width:26px;height:26px}
+.text-btn{height:32px;padding:0 8px 0 9px;border-radius:8px;border:0;background:none;color:var(--text-2);display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-md)}
+.text-btn:hover{background:var(--hover);color:var(--text)}
+
+/* ---------- body: the only scroll area ---------- */
+.p-body{flex:1;min-height:0;overflow:auto;padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.datenav{display:inline-flex;align-items:center;gap:2px}
+.date-label{font-weight:600;min-width:150px;text-align:center;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.today{font-size:var(--fs-xs);font-weight:500;color:var(--accent);background:var(--accent-soft);padding:0 6px;border-radius:5px}
+.range-label{color:var(--text-2)}
+.pop-wrap{position:relative;display:inline-flex}
+.filter-wrap{margin-left:auto}
+.tool-btn{height:30px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text-2);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.tool-btn:hover,.tool-btn[aria-expanded="true"]{color:var(--text);border-color:var(--text-3)}
+.tool-btn:disabled{opacity:.4;cursor:default}
+.tool-btn.sm{height:26px;padding:0 8px;font-size:var(--fs-sm)}
+.count{background:var(--accent-soft);color:var(--text);border-radius:999px;padding:0 7px;font-size:var(--fs-xs);line-height:18px}
+.link-btn{border:0;background:none;color:var(--accent);padding:0;font-size:var(--fs-sm)}
+.link-btn:hover{text-decoration:underline}
+.muted{color:var(--text-3);font-size:var(--fs-sm)}
+.menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--pop-shadow);padding:6px;width:280px;max-height:360px;overflow:auto}
+.menu-head{display:flex;justify-content:space-between;align-items:center;padding:4px 8px 6px;font-size:var(--fs-sm);color:var(--text-3)}
+.menu-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;cursor:pointer}
+.menu-item:hover{background:var(--hover)}
+.menu-item input{accent-color:var(--accent);margin:0;width:14px;height:14px}
+.mi-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mi-val{color:var(--text-3);font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+.dot{width:9px;height:9px;border-radius:3px;background:var(--pc);flex:none;display:inline-block}
+
+/* ---------- timeline: summary + view controls ---------- */
+.tl-sum{display:flex;flex-wrap:wrap;gap:4px 22px;font-size:var(--fs-sm);color:var(--text-3);font-variant-numeric:tabular-nums;padding:0 2px;position:relative}
+.tl-sum b{color:var(--text);font-weight:600;margin-left:5px}
+.tl-sum b.c{color:var(--cost)}
+.tl-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.tl-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 24px}
+.ctl-inline{display:inline-flex;align-items:center;gap:8px;position:relative}
+.pager{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text-3);font-variant-numeric:tabular-nums}
+
+/* ---------- day view: shared axis, cost columns, project lanes ---------- */
+.tl{--lw:212px;--tw:72px;position:relative;display:flex;flex-direction:column}
+.tl-lines{position:absolute;top:22px;bottom:0;left:var(--lw);right:var(--tw);pointer-events:none}
+.tl-lines i{position:absolute;top:0;bottom:0;width:1px;background:var(--grid-minor)}
+.tl-lines i.major{background:var(--grid-major)}
+.tl-band{position:absolute;top:0;bottom:0;background:var(--accent-soft);box-shadow:inset 1px 0 var(--accent-line),inset -1px 0 var(--accent-line)}
+.tl-now{position:absolute;top:-22px;bottom:0;width:0;border-left:1.5px solid var(--accent);z-index:3}
+.tl-now span{position:absolute;top:3px;left:5px;font-size:var(--fs-xs);color:var(--accent);white-space:nowrap;font-weight:600;background:var(--panel);padding:0 3px;border-radius:3px;line-height:16px}
+.tl-row{display:grid;grid-template-columns:var(--lw) minmax(0,1fr) var(--tw);align-items:stretch;position:relative}
+.tl-track{position:relative;min-width:0}
+.tl-axis{height:22px}
+.tick{position:absolute;top:2px;transform:translateX(-50%);font-size:var(--fs-xs);color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tick.first{transform:none}
+.tick.last{transform:translateX(-100%)}
+.tl-hist{height:70px;border-bottom:1px solid var(--line)}
+.tl-hist .tl-track{margin-top:10px}
+.hist-lab{display:flex;flex-direction:column;justify-content:center;gap:1px;padding-right:12px;font-size:var(--fs-xs);color:var(--text-3);position:relative}
+.hist-lab b{font-size:var(--fs-lg);font-weight:650;color:var(--cost);font-variant-numeric:tabular-nums;line-height:1.3}
+.hist-lab b.tok{color:var(--text)}
+.hist-max{display:flex;flex-direction:column;align-items:flex-end;font-size:var(--fs-xs);line-height:1.4;color:var(--text-3);padding-top:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hist-max b{color:var(--text-2);font-weight:600}
+.hist-ref{position:absolute;left:0;right:0;top:0;border-top:1px dashed var(--grid-major);pointer-events:none}
+.col{position:absolute;bottom:0;border:0;padding:0;border-radius:2px 2px 0 0;background:var(--hist-cost);min-height:2px}
+.col.tok{background:var(--hist-tok)}
+.col:hover,.col:focus-visible{filter:brightness(1.12);outline:2px solid var(--text);outline-offset:1px;z-index:2}
+.lane{min-height:36px;border-bottom:1px solid var(--line-soft)}
+.lane.open{border-bottom-color:transparent}
+.tl-lab{display:flex;align-items:center;gap:7px;min-width:0;padding-right:12px;position:relative}
+.chev{width:22px;height:22px;border:0;background:none;border-radius:6px;color:var(--text-3);display:inline-grid;place-items:center;flex:none;margin-left:-4px}
+.chev:hover{background:var(--hover);color:var(--text)}
+.chev svg{transition:transform .15s}
+.chev[aria-expanded="true"] svg{transform:rotate(90deg)}
+.tl-lab .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tl-lab .sc{font-size:var(--fs-xs);color:var(--text-3);flex:none;font-variant-numeric:tabular-nums}
+.tl-tot{display:flex;align-items:center;justify-content:flex-end;font-size:var(--fs-sm);color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.run{position:absolute;top:50%;height:18px;transform:translateY(-50%);display:flex;border:0;padding:0;margin:0;border-radius:4px;overflow:hidden;min-width:4px;background:var(--panel);z-index:1}
+.run i{flex:1 1 0;background:var(--pc);opacity:var(--o)}
+.run:hover,.run:focus-visible{outline:2px solid var(--text);outline-offset:1px;z-index:2}
+.sess{min-height:26px}
+.sess.last{border-bottom:1px solid var(--line-soft);min-height:32px;padding-bottom:6px}
+.sess .tl-lab{padding-left:26px}
+.sess .run{height:8px;border-radius:3px}
+.sess-link{border:0;background:none;padding:2px 5px;margin-left:-5px;border-radius:5px;display:flex;align-items:center;gap:6px;min-width:0;color:var(--text-2);font-size:var(--fs-sm);text-align:left}
+.sess-link:hover{color:var(--text);background:var(--hover)}
+.sess-link .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.sess.sub .sess-link{padding-left:14px}
+.badge{font-size:var(--fs-xs);color:var(--text-3);border:1px solid var(--line);border-radius:4px;padding:0 4px;line-height:16px;flex:none}
+.sess .tl-tot{font-size:var(--fs-xs);color:var(--text-3)}
+.tl-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;font-size:var(--fs-xs);color:var(--text-3);padding-top:12px;position:relative}
+.scale{display:inline-flex;align-items:center;gap:3px}
+.scale i{width:16px;height:10px;border-radius:2px;background:var(--text-2);opacity:var(--o)}
+.scale span{margin:0 3px}
+.empty{padding:40px 0;text-align:center;color:var(--text-3)}
+
+/* ---------- slot detail popover ---------- */
+.pop{position:absolute;z-index:40;width:360px;max-width:calc(100% - 16px);background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--pop-shadow);padding:10px 12px;font-size:var(--fs-sm);left:-9999px;top:0}
+.pop-h{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.pop-h b{font-size:var(--fs-md);font-variant-numeric:tabular-nums}
+.pop-h .icon-btn{margin-left:auto}
+.pop-p{padding:6px 0 4px;border-top:1px solid var(--line-soft)}
+.pop-pr{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:0 4px}
+.pop-pr .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pop-s{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;width:100%;border:0;background:none;padding:3px 4px 3px 21px;border-radius:6px;text-align:left;color:var(--text-2);font-size:var(--fs-xs)}
+.pop-s:hover{background:var(--hover);color:var(--text)}
+.pop-s .nm{display:flex;align-items:center;gap:5px;min-width:0}
+.pop-s .nm span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.v.c{color:var(--cost)}
+.pop-f{border-top:1px solid var(--line);padding-top:7px;margin-top:2px;color:var(--text-3);font-size:var(--fs-xs);font-variant-numeric:tabular-nums}
+
+/* ---------- all view: hour profile, date × time matrix, daily bars ---------- */
+.mx{--dw:78px;--rw:176px;--n:48;display:flex;flex-direction:column;position:relative}
+.mx-row{display:grid;grid-template-columns:var(--dw) minmax(0,1fr) var(--rw);column-gap:12px;align-items:center;min-height:18px}
+.mx-k{font-size:var(--fs-xs);color:var(--text-3);align-self:end;padding-bottom:3px;position:relative;white-space:nowrap}
+.mx-side{font-size:var(--fs-xs);color:var(--text-3);align-self:end;padding-bottom:3px;position:relative;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mx-prof{height:48px;position:relative}
+.mx-prof i{position:absolute;bottom:0;background:var(--accent);opacity:.5;border-radius:2px 2px 0 0;min-height:1px}
+.mx-prof i.pk{opacity:.95}
+.mx-axis{position:relative;height:18px;border-top:1px solid var(--line-soft);margin-top:2px}
+.mx-axis .tick{top:2px}
+/* date rows: 12px cells in a 14px row, so rows sit 2px apart like the columns; a new Monday-based week adds 8px */
+.mx-row.d{min-height:14px;height:14px}
+.mx-row.wk{margin-top:8px}
+.mx-cells{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:2px;height:12px}
+.mx-cells i{border-radius:2px;background:var(--cell0);--cc:var(--accent)}
+.mx-cells i.l1{background:color-mix(in srgb,var(--cc) 26%,var(--cell0))}
+.mx-cells i.l2{background:color-mix(in srgb,var(--cc) 48%,var(--cell0))}
+.mx-cells i.l3{background:color-mix(in srgb,var(--cc) 72%,var(--cell0))}
+.mx-cells i.l4{background:var(--cc)}
+.mx-cells i:not(.l0){cursor:pointer}
+.mx-cells i:not(.l0):hover{outline:1.5px solid var(--text);outline-offset:0}
+.mx-cells .now{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.mx-date{border:0;background:none;padding:0 4px;margin-left:-4px;border-radius:4px;font-size:var(--fs-xs);color:var(--text-2);text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:14px;position:relative;justify-self:start}
+.mx-date:hover:not(:disabled){background:var(--hover);color:var(--text)}
+.mx-date.we{color:var(--text-3)}
+.mx-date.today{color:var(--accent);font-weight:600}
+.mx-date:disabled{cursor:default;color:var(--text-3);opacity:.6}
+.mx-tot{display:flex;align-items:center;gap:8px;min-width:0}
+.mx-bar{flex:1;min-width:0;height:8px}
+.mx-bar > span{display:flex;height:100%;gap:1px;border-radius:2px;overflow:hidden}
+.mx-bar i{background:var(--pc);min-width:2px}
+.mx-dur{width:52px;flex:none;text-align:right;font-size:var(--fs-xs);color:var(--text-2);font-variant-numeric:tabular-nums}
+.mx-row.idle .mx-dur{color:var(--text-3)}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text-2);cursor:pointer;white-space:nowrap;position:relative}
+.check input{accent-color:var(--accent);margin:0;width:14px;height:14px}
+.check:hover{color:var(--text)}
+.lg-proj{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+
+/* floating tooltip */
+.ftip{position:fixed;z-index:100;pointer-events:none;background:var(--tip-bg);color:var(--tip-text);font-size:var(--fs-xs);line-height:1.55;padding:6px 9px;border-radius:7px;box-shadow:var(--pop-shadow);max-width:300px;font-variant-numeric:tabular-nums}
+.ftip b{font-weight:600}
+
+/* ---------- notes ---------- */
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 36px;padding-top:4px}
+.notes section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.notes h2{margin:0;font-size:var(--fs-lg);font-weight:650}
+.note-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.note-list li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:var(--fs-sm);color:var(--text-2);max-width:68ch}
+.note-list li b{color:var(--text);font-weight:600}
+.num{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.num.p{background:var(--line);color:var(--text-2)}
+.note-list code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-xs);background:var(--hover);padding:1px 5px;border-radius:4px;color:var(--text)}
+.span-2{grid-column:1 / -1}
+
+/* ---------- container queries: panel width, not viewport ---------- */
+@container panel (max-width: 860px){
+  .p-head{flex-wrap:wrap;row-gap:6px;padding:10px 12px 8px 16px}
+  .tabs{order:3;flex-basis:100%;margin-left:-4px}
+  .tl{--lw:172px;--tw:60px}
+  .tl-lab .sc{display:none}
+  .mx{--rw:120px}
+}
+@container panel (max-width: 640px){
+  .p-body{padding:12px 14px 16px}
+  .date-label{min-width:0}
+  .filter-wrap{margin-left:0}
+  .sync-label,.export-label{display:none}
+  .tl{--lw:0px;--tw:0px}
+  .tl-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"lab tot" "trk trk"}
+  .tl-row > :first-child{grid-area:lab}
+  .tl-row > .tl-track{grid-area:trk}
+  .tl-row > :last-child{grid-area:tot}
+  .tl-lab,.tl-tot,.hist-lab,.hist-max{background:var(--panel);position:relative;z-index:1}
+  .tl-axis{height:auto}
+  .tl-axis .tl-track{height:20px}
+  .tl-hist{height:auto;padding-bottom:2px}
+  .tl-hist .tl-track{height:48px;margin-top:2px}
+  .hist-lab{flex-direction:row;align-items:baseline;gap:8px}
+  .hist-lab b{font-size:var(--fs-md)}
+  .hist-max{flex-direction:row;align-items:baseline;gap:6px;padding-top:2px}
+  .lane{min-height:0;padding-top:6px}
+  .lane .tl-track{height:24px}
+  .tl-lab{padding-right:8px;min-height:24px}
+  .sess{min-height:0}
+  .sess .tl-lab{padding-left:22px;min-height:22px}
+  .sess .tl-track{height:14px}
+  .sess.last{min-height:0}
+  .sess .tl-tot{min-height:22px}
+  .tick.odd{display:none}
+  .mx{--dw:40px;--rw:44px}
+  .mx-row{column-gap:8px}
+  .mx-date .wd{display:none}
+  .mx-bar{display:none}
+  .mx-dur{width:auto}
+  .pager{margin-left:0}
+}
+@media (max-width: 760px){
+  .notes{grid-template-columns:1fr}
+}
+@media (max-width: 600px){
+  .stage{padding:10px;border-radius:12px}
+  .panel{height:min(820px,calc(100vh - 40px))}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important}
+}
+</style>
+
+<main class="page">
+  <header class="intro">
+    <p class="eyebrow">DSH-STATS 0.5.x · 开发时间线 · 静态高保真原型</p>
+    <h1>开发时间线改版</h1>
+    <p class="lede">日视图改成按真实时间排开的项目泳道，可以展开到会话，上方加一条每半小时费用柱；全部模式改成"日期 × 时段"矩阵，30 天一屏放下。面板里的数据都是生成的示例，不是你的真实记录。可以直接点：切换按日/全部、翻日期、展开项目、点色条或费用柱看时段明细、点矩阵里的日期或格子进入当天。</p>
+    <div class="controls">
+      <div class="ctl"><span class="ctl-k">面板宽度</span><div class="seg" id="width-seg"><button type="button" data-w="desktop" aria-pressed="true">桌面 1180</button><button type="button" data-w="tablet" aria-pressed="false">平板 760</button><button type="button" data-w="phone" aria-pressed="false">手机 390</button></div></div>
+      <div class="ctl"><span class="ctl-k">示例</span><div class="seg" id="scene-seg"><button type="button" data-scene="busy" aria-pressed="true">忙碌的一天</button><button type="button" data-scene="tiny" aria-pressed="false">只有 2 分钟的一天</button><button type="button" data-scene="all" aria-pressed="false">最近 30 天</button></div></div>
+      <label class="switch"><input type="checkbox" id="anno-toggle" checked><span class="sw" aria-hidden="true"></span>显示改动编号</label>
+    </div>
+  </header>
+
+  <div class="stage annos" id="stage" data-w="desktop">
+    <div class="panel" id="panel" role="dialog" aria-labelledby="dlg-title"></div>
+  </div>
+
+  <div class="notes">
+    <section aria-labelledby="n-prob">
+      <h2 id="n-prob">现在的问题</h2>
+      <ol class="note-list">
+        <li><span class="num p">a</span><span><b>短活动看不见。</b>柱高等于"半小时内的活跃占比"，2 分钟的活动只有 2px。CI 日视图截图里两条泳道各只有一根细线。</span></li>
+        <li><span class="num p">b</span><span><b>空间大量空着。</b>日视图的泳道被拉高去填满视口，每条约 260px；全部模式每天一行约 310px，一屏只放 3 天，面板里还要再滚一层。</span></li>
+        <li><span class="num p">c</span><span><b>网格比数据还显眼。</b>每半小时一条竖线，一共 48 条，和色块一样重；浅色主题下最明显。</span></li>
+        <li><span class="num p">d</span><span><b>刻度对不上时间。</b>9 个刻度平分成 9 列，轨道却是 48 列，"3h"实际落在 16.7% 而不是 12.5%；窄屏下挤成"0h3h6h9h…"一串。</span></li>
+        <li><span class="num p">e</span><span><b>合并柱读不准。</b>全部模式把同一时段的多个项目叠成一根，柱高取最长那个项目的时长，高度和颜色比例都没法读。</span></li>
+        <li><span class="num p">f</span><span><b>顶部热度方块没有日期和刻度</b>，只能逐个悬停。</span></li>
+        <li><span class="num p">g</span><span><b>和会话、费用脱节。</b>时间线上没有 Token 和费用，也不能从这里打开会话；提示只响应鼠标，键盘碰不到。</span></li>
+        <li><span class="num p">h</span><span><b>项目对不上颜色。</b>全部模式左边最多列 5 个项目名，第 6 个起只剩"+N 项目"。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-chg">
+      <h2 id="n-chg">改动要点（对应面板里的编号）</h2>
+      <ol class="note-list">
+        <li><span class="num">1</span><span><b>当天摘要：</b>只留开发时长和活跃区间，和视图切换放在同一行。会话数在泳道里、费用在柱图左侧，不再重复。原来右侧的"时长 / 区间 / 项目数"小列取消。</span></li>
+        <li><span class="num">2</span><span><b>时间轴：</b>默认缩放到当天活跃时段（至少 6 小时），可切回全天。刻度按真实时间定位，整点画细线，每 3 小时一条主线；今天会画出"现在"线。</span></li>
+        <li><span class="num">3</span><span><b>费用柱：</b>每根柱是一个半小时的费用，和下面的泳道共用一条时间轴，可以切换成 Token。左侧写明"当天费用"和合计，右侧"峰值"标出最高那根的时间和金额，柱顶的虚线就是这根的高度。</span></li>
+        <li><span class="num">4</span><span><b>项目泳道：</b>每行 36px，按当天时长从长到短排序。连续活跃的时段连成一根条，每半小时一节，深浅表示这半小时里实际活跃的比例；最窄 4px，2 分钟也看得见。行尾是当天时长。</span></li>
+        <li><span class="num">5</span><span><b>展开看会话：</b>每个会话一行，子代理缩进并加标记；点标题打开会话，沿用总览的规则（面板关闭，焦点交给宿主）。</span></li>
+        <li><span class="num">6</span><span><b>时段明细：</b>点色条或费用柱，弹出这半小时内各项目、各会话的时长、Token 和费用，可以直接打开会话；Esc 先关这一层。</span></li>
+        <li><span class="num">7</span><span><b>全部模式摘要：</b>日期范围、活跃天数、累计时长、日均、费用、最长连续天数。</span></li>
+        <li><span class="num">8</span><span><b>时段分布：</b>把这一页 30 天按半小时累加，看出平时几点在写代码，最高的一列加深。</span></li>
+        <li><span class="num">9</span><span><b>日期 × 时段矩阵：</b>一天一行，行距和格距一样都是 2px，没活动的日期是一排同样间距的灰格，不会多出一道缝。周一到周日为一组，周与周之间留 8px。30 天一屏放下，不再有内部滚动。点日期进入当天，点格子进入当天并打开那半小时的明细。</span></li>
+        <li><span class="num">10</span><span><b>每日条：</b>长度是当天总时长，按项目颜色分段，替代左边最多 5 个项目名的列表。</span></li>
+        <li><span class="num">11</span><span><b>着色切换：</b>默认"强度"，用单一蓝色分 4 档；"项目"给每格涂上这半小时占比最高的项目颜色。</span></li>
+        <li><span class="num">12</span><span><b>图例常驻底部</b>，不再需要一行文字解释怎么读图。</span></li>
+        <li><span class="num">13</span><span><b>只看活跃日期：</b>默认不勾选，按日历每页 30 天；勾选后只列有活动的日期，每页 30 个活跃日，回到第 1 页。最长连续天数始终按日历计算。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-data">
+      <h2 id="n-data">数据从哪来（不改宿主接口）</h2>
+      <ul class="note-list">
+        <li><span class="num p">·</span><span>项目泳道和矩阵沿用 <code>timeline.days[].slotBlocks</code>（项目 × 半小时 × 毫秒），宿主已经合并了同一项目的并发会话。</span></li>
+        <li><span class="num p">·</span><span>会话行用 <code>projects[].sessions[].slots</code>（会话 × 半小时 × 毫秒），按北京时间切日，和 8b047ce 的口径一致。</span></li>
+        <li><span class="num p">·</span><span>费用和 Token 柱用 <code>sessions[].slotUsage</code>，走现有的 <code>usageCost</code> 计价，和总览的数字对得上。</span></li>
+        <li><span class="num p">·</span><span>子代理的时间不在项目泳道里重复计算（宿主已合并），但它的费用照常计入费用柱。</span></li>
+        <li><span class="num p">·</span><span>数据粒度是半小时，所以色条最细就是一节半小时；深浅表达"这半小时里活跃了多少"，不假装知道具体是哪几分钟。</span></li>
+      </ul>
+    </section>
+    <section aria-labelledby="n-ask">
+      <h2 id="n-ask">已确定</h2>
+      <ol class="note-list">
+        <li><span class="num p">1</span><span>日视图时间轴默认<b>活跃时段</b>（至少 6 小时），可切回全天。</span></li>
+        <li><span class="num p">2</span><span>全部模式按<b>日历</b>分页，保留没活动的日期；矩阵按<b>周一到周日</b>分组，周之间留一小段间隔；加<b>"只看活跃日期"</b>勾选框，默认不勾选。</span></li>
+        <li><span class="num p">3</span><span>泳道按<b>当天时长</b>排序。</span></li>
+        <li><span class="num p">4</span><span>矩阵默认按<b>强度</b>着色。</span></li>
+        <li><span class="num p">5</span><span>保留<b>费用柱</b>：左侧标"当天费用"合计，右侧标"峰值"。</span></li>
+        <li><span class="num p">6</span><span>日视图摘要去掉<b>会话、子代理、费用</b>；原来的"最忙"其实是费用最高的半小时，并入柱图的"峰值"。</span></li>
+      </ol>
+    </section>
+  </div>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var SLOT=30*60000, START="2026-08-20", NDAYS=60, TODAY="2026-10-18", TINY="2026-10-11", NOW=21*60+40, PAGE=30;
+  var WD=["日","一","二","三","四","五","六"];
+  var P=[
+    {id:"dsh-stats",c:0,rate:.07,w:function(i){return i<25?1:4;}},
+    {id:"api-gateway",c:1,rate:.045,w:function(){return 2.5;}},
+    {id:"client-dashboard",c:2,rate:.04,w:function(i){return i<40?2:1.4;}},
+    {id:"deepseek-harness",c:3,rate:.055,w:function(i){return i>=40?1.6:.5;}},
+    {id:"billing-service",c:4,rate:.036,w:function(i){return i>=10&&i<30?2.4:.7;}},
+    {id:"data-pipeline",c:5,rate:.032,w:function(i){return i<30?1.8:.5;}},
+    {id:"docs-site",c:6,rate:.014,w:function(){return .6;}},
+    {id:"mobile-app",c:7,rate:.05,w:function(i){return i<45?1:.3;}},
+    {id:"infra",c:8,rate:.022,w:function(i){return i>=20&&i<27?2.5:.3;}}
+  ];
+  var PM={}; P.forEach(function(p){PM[p.id]=p;});
+  var TITLES={
+    "dsh-stats":["修复时间线刻度与网格对齐","价格目录改为按需渲染","补充 zstd 读取预算测试","整理 0.5.0 发布说明","排查 projection 恢复回退","更新兼容性矩阵到 0.2.1"],
+    "api-gateway":["接入限流中间件","排查 502 偶发超时","补充鉴权单元测试","网关日志脱敏"],
+    "client-dashboard":["仪表盘图表懒加载","修复深色主题对比度","表格列宽自适应"],
+    "deepseek-harness":["阅读 session projection 源码","复现 projcache 迁移问题","对比 0.2.0 与 0.2.1 导出差异"],
+    "billing-service":["账单导出 CSV 注入防护","重试队列幂等处理","对账脚本迁移"],
+    "data-pipeline":["调整分区写入策略","修复时区偏移","回填九月数据"],
+    "docs-site":["更新安装文档","补充 FAQ"],
+    "mobile-app":["推送权限引导","修复 iOS 键盘遮挡"],
+    "infra":["整理 Terraform 模块","升级节点组"]
+  };
+  var SUB=["检索调用点","运行 UTC 时区测试","比对构建产物","汇总失败日志","查找相关提交"];
+  var I={
+    refresh:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>',
+    download:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M3 13.5h10"/></svg>',
+    caret:'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>',
+    gear:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.4"/><circle cx="8" cy="8" r="1.7"/><path d="M13 8h1.6M11.5 11.5l1.1 1.1M8 13v1.6M4.5 11.5l-1.1 1.1M3 8H1.4M4.5 4.5 3.4 3.4M8 3V1.4M11.5 4.5l1.1-1.1"/></svg>',
+    close:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+    chev:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>',
+    prev:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4 6 8l4 4"/></svg>',
+    next:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>',
+    filter:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"/></svg>'
+  };
+
+  /* ---------- helpers ---------- */
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+  function hash(s){var x=2166136261;for(var i=0;i<s.length;i++){x^=s.charCodeAt(i);x=Math.imul(x,16777619);}return x>>>0;}
+  function rng(seed){var a=seed||1;return function(){a=(a+0x6D2B79F5)|0;var t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return ((t^(t>>>14))>>>0)/4294967296;};}
+  function ri(r,a,b){return a+Math.floor(r()*(b-a+1));}
+  function wpick(r,list){var s=0,i;for(i=0;i<list.length;i++)s+=list[i].w;var t=r()*s;for(i=0;i<list.length;i++){t-=list[i].w;if(t<=0)return list[i];}return list[list.length-1];}
+  // Monday-based week number: epoch day 0 (1970-01-01) was a Thursday
+  function weekOf(d){return Math.floor((Date.parse(d+"T00:00:00Z")/864e5+3)/7);}
+  function addDays(d,n){return new Date(Date.parse(d+"T00:00:00Z")+n*864e5).toISOString().slice(0,10);}
+  function dow(d){return new Date(d+"T00:00:00Z").getUTCDay();}
+  function pad(n){return (n<10?"0":"")+n;}
+  function clock(m){m=Math.round(m);return pad(Math.floor(m/60))+":"+pad(m%60);}
+  function md(d){return d.slice(5);}
+  function fmtDur(ms){if(!(ms>0))return "—";var s=ms/1000;if(s<60)return (Math.round(s*10)/10)+"s";var w=Math.round(s),h=Math.floor(w/3600),m=Math.floor(w%3600/60),sec=w%60;return h>0?h+"h"+m+"m":m+"m"+sec+"s";}
+  function fmtCost(n){if(!(n>0))return "¥0";if(n>=1000)return "¥"+n.toFixed(0);if(n>=0.01)return "¥"+n.toFixed(2);return "¥"+n.toFixed(4);}
+  function fmtTok(n){if(!(n>0))return "0";var sc=function(v){return v>=100?String(Math.round(v)):String(Math.round(v*10)/10);};if(n<1e3)return String(Math.round(n));if(n<1e6)return sc(n/1e3)+"K";return sc(n/1e6)+"M";}
+  function anno(n){return '<span class="anno" aria-hidden="true">'+n+"</span>";}
+  function pc(pid){return "var(--p"+PM[pid].c+")";}
+
+  /* ---------- deterministic example data: 60 days of sessions ---------- */
+  var SID=0;
+  function addSession(day,r,p,title,s,e,sub,ps,occ){
+    var o={id:"s"+(++SID),pid:p.id,title:title,sub:sub,s:s,e:e,ps:ps,ms:new Float64Array(48),cost:new Float64Array(48),tok:new Float64Array(48)};
+    for(var k=Math.floor(s/30);k<48&&k*30<e;k++){
+      var ov=Math.min(e,(k+1)*30)-Math.max(s,k*30);if(ov<=0)continue;
+      var oc=occ!=null?occ:(sub?0.55:0.5)+r()*0.5,act=ov*oc;
+      o.ms[k]=act*60000;
+      o.cost[k]=act*p.rate*(0.6+r()*0.8)*(sub?0.55:1);
+      o.tok[k]=Math.round(act*(sub?5200:8600)*(0.6+r()*0.8));
+    }
+    day.sessions.push(o);return o;
+  }
+  function pickTitle(day,r,p){var list=TITLES[p.id],k=day.tc[p.id];k=k==null?ri(r,0,list.length-1):(k+1)%list.length;day.tc[p.id]=k;return list[k];}
+  function block(day,r,p,s,e){
+    function one(a,b){
+      if(b-a<4)return;
+      var main=addSession(day,r,p,pickTitle(day,r,p),a,b,false,a);
+      if(r()<0.32&&b-a>24){var sa=a+Math.round((b-a)*(0.15+r()*0.3)),sb=Math.min(b,sa+Math.round((b-a)*(0.25+r()*0.3)));addSession(day,r,p,SUB[ri(r,0,SUB.length-1)],sa,sb,true,main.s);}
+    }
+    if(e-s>85&&r()<0.6){var m=s+Math.round((e-s)*(0.4+r()*0.2));one(s,m);one(m+ri(r,1,4),e);}else one(s,e);
+  }
+  function genDay(date,idx){
+    var r=rng(hash("tl"+date)),wd=dow(date),day={date:date,sessions:[],tc:{}};
+    if(date===TINY){var t=addSession(day,r,PM["api-gateway"],"排查健康检查 504",602,604,false,602,1);t.cost[20]=0.23;t.tok[20]=88000;return day;}
+    var wins=[];
+    if(date===TODAY)wins=[[556,738],[852,1104],[1236,1290]];
+    else if(wd>=1&&wd<=5){
+      if(r()>0.93)return day;
+      wins.push([540+ri(r,-35,40),735+ri(r,-25,30)]);
+      wins.push([830+ri(r,-15,35),1100+ri(r,-40,45)]);
+      if(r()<0.5)wins.push([1240+ri(r,-30,30),Math.min(1436,1370+ri(r,-40,60))]);
+    }else{
+      if(r()>(wd===6?0.55:0.4))return day;
+      var s0=570+ri(r,0,260);wins.push([s0,s0+70+ri(r,0,150)]);
+      if(r()<0.45){var s2=1190+ri(r,0,70);wins.push([s2,Math.min(1435,s2+50+ri(r,0,110))]);}
+    }
+    var pool=P.map(function(p){return {p:p,w:p.w(idx)};}),dp=[],n=date===TODAY?5:1+ri(r,0,2)+(wd>=1&&wd<=5?1:0);
+    while(dp.length<n&&pool.length){var x=wpick(r,pool);dp.push(x);pool.splice(pool.indexOf(x),1);}
+    var last={};
+    wins.forEach(function(w){
+      var t=w[0];
+      while(t<w[1]-8){
+        var len=22+ri(r,0,88),x=wpick(r,dp),p=x.p,s=Math.max(t,last[p.id]||0),e=Math.min(s+len,w[1]);
+        if(e-s>=6){block(day,r,p,s,e);last[p.id]=e;}
+        if(dp.length>1&&r()<0.24){
+          var y=wpick(r,dp.filter(function(z){return z!==x;})),q=y.p,ps=t+ri(r,0,Math.floor(len/2));
+          if(ps>=(last[q.id]||0)&&ps<w[1]-8){var pe=Math.min(w[1],ps+18+ri(r,0,45));block(day,r,q,ps,pe);last[q.id]=pe;}
+        }
+        t=Math.max(e,t+6)+ri(r,2,22);
+      }
+    });
+    return day;
+  }
+  var DATES=[],DAYS={};
+  for(var di=0;di<NDAYS;di++){var dd=addDays(START,di);DATES.push(dd);DAYS[dd]=genDay(dd,di);}
+  var ACTIVE=DATES.filter(function(d){return DAYS[d].sessions.length>0;});
+
+  /* ---------- state ---------- */
+  var state={w:"desktop",mode:"day",date:TODAY,page:0,axis:"focus",metric:"cost",color:"level",activeOnly:false,hidden:{},open:{},pop:null,filter:false};
+  state.open[firstLanePid(TODAY)]=true;
+  function firstLanePid(date){var m=dayModel(date);return m.lanes.length?m.lanes[0].pid:null;}
+
+  /* ---------- day model ---------- */
+  function dayModel(date){
+    var d=DAYS[date],lanes={},order=[],cost=new Float64Array(48),tok=new Float64Array(48),ms=new Float64Array(48),minS=1e9,maxE=-1;
+    d.sessions.forEach(function(s){
+      if(state.hidden[s.pid])return;
+      var L=lanes[s.pid];
+      if(!L){L=lanes[s.pid]={pid:s.pid,ms:new Float64Array(48),sess:[],cost:0,tok:0,main:0,sub:0};order.push(L);}
+      L.sess.push(s);if(s.sub)L.sub++;else{L.main++;minS=Math.min(minS,s.s);maxE=Math.max(maxE,s.e);}
+      for(var k=0;k<48;k++){if(!s.sub&&s.ms[k])L.ms[k]=Math.min(SLOT,L.ms[k]+s.ms[k]);L.cost+=s.cost[k];L.tok+=s.tok[k];cost[k]+=s.cost[k];tok[k]+=s.tok[k];}
+    });
+    var first=48,last=-1;
+    order.forEach(function(L){
+      L.total=0;L.first=48;L.last=-1;
+      for(var k=0;k<48;k++)if(L.ms[k]){L.total+=L.ms[k];ms[k]+=L.ms[k];if(k<L.first)L.first=k;L.last=k;}
+      first=Math.min(first,L.first);last=Math.max(last,L.last);
+      L.sess.sort(function(a,b){return a.ps-b.ps||(a.sub?1:0)-(b.sub?1:0)||a.s-b.s;});
+    });
+    order.sort(function(a,b){return b.total-a.total||a.first-b.first;});
+    var m={lanes:order,cost:cost,tok:tok,ms:ms,first:first,last:last,minS:minS,maxE:maxE,total:0,ctot:0,ttot:0,main:0,sub:0,peak:-1};
+    order.forEach(function(L){m.total+=L.total;m.ctot+=L.cost;m.ttot+=L.tok;m.main+=L.main;m.sub+=L.sub;});
+    for(var k=0;k<48;k++)if(cost[k]>0&&(m.peak<0||cost[k]>cost[m.peak]))m.peak=k;
+    return m;
+  }
+  function windowFor(m){
+    if(state.axis==="full"||m.last<0)return [0,1440];
+    var a=Math.floor(m.first/2)*60,b=Math.ceil((m.last+1)/2)*60;
+    if(b-a<360){var mid=(a+b)/2;a=Math.max(0,Math.round((mid-180)/60)*60);b=Math.min(1440,a+360);a=Math.max(0,b-360);}
+    return [a,b];
+  }
+
+  /* ---------- range model ---------- */
+  function visibleActive(){return DATES.filter(function(d){return DAYS[d].sessions.some(function(s){return !s.sub&&!state.hidden[s.pid];});});}
+  function dayList(){return state.activeOnly?visibleActive():DATES;}
+  function pageCount(){return Math.max(1,Math.ceil(dayList().length/PAGE));}
+  function pageDates(){var list=dayList(),end=list.length-1-state.page*PAGE,out=[];for(var i=end;i>=Math.max(0,end-PAGE+1);i--)out.push(list[i]);return out;}
+  function allModel(){
+    var n=state.w==="phone"?24:48,per=48/n,dates=pageDates(),rows=[],prof=new Float64Array(n),maxDay=0,cost=0,total=0,activeDays=0,streak=0,best=0,prevDate=null,prevActive=false;
+    dates.forEach(function(date){
+      var d=DAYS[date],slotP=[];
+      for(var k=0;k<48;k++)slotP.push({});
+      var row={date:date,cells:[],total:0,cost:0,proj:{}};
+      d.sessions.forEach(function(s){
+        if(state.hidden[s.pid])return;
+        for(var k=0;k<48;k++){row.cost+=s.cost[k];if(!s.sub&&s.ms[k]){slotP[k][s.pid]=Math.min(SLOT,(slotP[k][s.pid]||0)+s.ms[k]);}}
+      });
+      for(var c=0;c<n;c++){
+        var sum=0,by={};
+        for(var j=c*per;j<(c+1)*per;j++){for(var pid in slotP[j]){by[pid]=(by[pid]||0)+slotP[j][pid];sum+=slotP[j][pid];}}
+        var dom=null,dv=0;for(var q in by){if(by[q]>dv){dv=by[q];dom=q;}row.proj[q]=(row.proj[q]||0);}
+        var occ=Math.min(1,sum/(SLOT*per)),lvl=sum<=0?0:occ<.25?1:occ<.5?2:occ<.75?3:4;
+        row.cells.push({lvl:lvl,dom:dom,by:by,sum:sum});
+        prof[c]+=sum;
+      }
+      for(var k2=0;k2<48;k2++)for(var p2 in slotP[k2]){row.proj[p2]+=slotP[k2][p2];row.total+=slotP[k2][p2];}
+      // streaks follow the calendar, so skipped days break them even when only active days are listed
+      if(row.total>0){activeDays++;streak=prevActive&&addDays(date,1)===prevDate?streak+1:1;best=Math.max(best,streak);prevActive=true;}else{streak=0;prevActive=false;}
+      prevDate=date;
+      maxDay=Math.max(maxDay,row.total);cost+=row.cost;total+=row.total;
+      rows.push(row);
+    });
+    var pk=0;for(var c2=1;c2<n;c2++)if(prof[c2]>prof[pk])pk=c2;
+    return {n:n,per:per,rows:rows,prof:prof,peak:pk,maxDay:maxDay,cost:cost,total:total,activeDays:activeDays,best:best,from:dates.length?dates[dates.length-1]:"",to:dates.length?dates[0]:""};
+  }
+  var lastAll=null;
+
+  /* ---------- panel chrome ---------- */
+  var TABS=[["overview","项目总览"],["timeline","开发时间线"],["trends","用量趋势"],["balance","账户余额"]];
+  function head(){
+    return '<header class="p-head"><h2 id="dlg-title">DSH 用量</h2>'+
+      '<div class="tabs" role="tablist" aria-label="统计视图">'+TABS.map(function(t){var on=t[0]==="timeline";
+        return '<button type="button" class="tab" role="tab" aria-selected="'+on+'" tabindex="'+(on?0:-1)+'" data-act="tab" data-k="tab-'+t[0]+'">'+t[1]+"</button>";}).join("")+"</div>"+
+      '<div class="p-actions"><span class="sync" title="宿主统计已同步"><i class="dot" aria-hidden="true"></i><span class="sync-label">已同步 · 21:40</span></span>'+
+        '<span class="act-group"><button type="button" class="icon-btn" data-act="chrome" aria-label="刷新" title="刷新">'+I.refresh+"</button>"+
+        '<button type="button" class="text-btn" data-act="chrome" aria-haspopup="menu" aria-expanded="false">'+I.download+'<span class="export-label">导出</span>'+I.caret+"</button>"+
+        '<button type="button" class="icon-btn" data-act="chrome" aria-label="价格设置" title="价格设置">'+I.gear+"</button></span>"+
+        '<button type="button" class="icon-btn" data-act="chrome" aria-label="关闭" title="关闭（Esc）">'+I.close+"</button></div></header>";
+  }
+  function seg(opts,cur,act,label){
+    return '<div class="seg sm" role="group" aria-label="'+label+'">'+opts.map(function(o){
+      return '<button type="button" aria-pressed="'+(o[0]===cur)+'" data-act="'+act+'" data-v="'+o[0]+'" data-k="'+act+"-"+o[0]+'">'+o[1]+"</button>";}).join("")+"</div>";
+  }
+  function tools(){
+    var idx=ACTIVE.indexOf(state.date),hiddenN=P.filter(function(p){return state.hidden[p.id];}).length;
+    var nav=state.mode==="day"?
+      '<div class="datenav"><button type="button" class="tool-btn sm" data-act="date-prev" data-k="date-prev" aria-label="前一个活跃日"'+(idx<=0?" disabled":"")+">"+I.prev+"</button>"+
+      '<span class="date-label" aria-live="polite">'+state.date+" 周"+WD[dow(state.date)]+(state.date===TODAY?'<span class="today">今天</span>':"")+"</span>"+
+      '<button type="button" class="tool-btn sm" data-act="date-next" data-k="date-next" aria-label="后一个活跃日"'+(idx>=ACTIVE.length-1?" disabled":"")+">"+I.next+"</button></div>"
+      :'<span class="range-label">全部历史 · 首日起</span>';
+    return '<div class="tools">'+
+      '<div class="seg" role="group" aria-label="范围"><button type="button" aria-pressed="'+(state.mode==="day")+'" data-act="mode" data-v="day" data-k="mode-day">按日</button><button type="button" aria-pressed="'+(state.mode==="all")+'" data-act="mode" data-v="all" data-k="mode-all">全部</button></div>'+
+      nav+
+      '<div class="pop-wrap filter-wrap"><button type="button" class="tool-btn" data-act="filter" data-k="filter" aria-haspopup="dialog" aria-expanded="'+state.filter+'">'+I.filter+"筛选项目"+(hiddenN?'<span class="count">'+(P.length-hiddenN)+"/"+P.length+"</span>":"")+"</button>"+(state.filter?filterMenu():"")+"</div>"+
+      "</div>";
+  }
+  function filterMenu(){
+    var totals={};
+    var dates=state.mode==="day"?[state.date]:pageDates();
+    dates.forEach(function(d){DAYS[d].sessions.forEach(function(s){if(!s.sub){var t=0;for(var k=0;k<48;k++)t+=s.ms[k];totals[s.pid]=(totals[s.pid]||0)+t;}});});
+    return '<div class="menu" role="dialog" aria-label="筛选项目"><div class="menu-head"><span>'+(state.mode==="day"?"当天时长":"本页时长")+'</span><button type="button" class="link-btn" data-act="show-all">全部显示</button></div>'+
+      P.map(function(p){return '<label class="menu-item"><input type="checkbox" data-act="toggle-proj" data-id="'+p.id+'"'+(state.hidden[p.id]?"":" checked")+'><span class="dot" style="--pc:'+pc(p.id)+'"></span><span class="mi-name">'+p.id+'</span><span class="mi-val">'+fmtDur(totals[p.id]||0)+"</span></label>";}).join("")+"</div>";
+  }
+
+  /* ---------- day view ---------- */
+  function dayView(){
+    var m=dayModel(state.date);
+    var sum='<div class="tl-sum">'+anno(1)+
+      "<span>开发时长<b>"+fmtDur(m.total)+"</b></span>"+
+      "<span>活跃<b>"+(m.maxE>=0?clock(m.minS)+"–"+clock(m.maxE):"—")+"</b></span></div>";
+    var ctl='<div class="tl-ctl"><div class="ctl-inline">'+anno(2)+'<span class="ctl-k">时间轴</span>'+seg([["focus","活跃时段"],["full","全天"]],state.axis,"axis","时间轴范围")+"</div>"+
+      '<div class="ctl-inline"><span class="ctl-k">柱图</span>'+seg([["cost","费用"],["tok","Token"]],state.metric,"metric","柱图指标")+"</div></div>";
+    if(!m.lanes.length)return sum+'<div class="empty">这一天没有可见项目的活动。<button type="button" class="link-btn" data-act="show-all">全部显示</button></div>';
+    var w=windowFor(m),span=w[1]-w[0];
+    function P_(min){return ((min-w[0])/span*100).toFixed(3)+"%";}
+    function W_(mins){return (mins/span*100).toFixed(3)+"%";}
+    // grid lines, selected band, now line
+    var lines="";
+    for(var h=Math.ceil(w[0]/60);h*60<=w[1];h++){if(h*60===w[0]||h*60===w[1])continue;lines+='<i class="'+(h%3===0?"major":"")+'" style="left:'+P_(h*60)+'"></i>';}
+    if(state.pop&&state.pop.date===state.date){var bs=state.pop.slot*30;if(bs>=w[0]&&bs<w[1])lines+='<span class="tl-band" style="left:'+P_(bs)+";width:"+W_(30)+'"></span>';}
+    if(state.date===TODAY&&NOW>w[0]&&NOW<w[1])lines+='<b class="tl-now" style="left:'+P_(NOW)+'"><span>现在 '+clock(NOW)+"</span></b>";
+    // ticks
+    var step=span<=360?60:span<=720?120:180,ticks="",ti=0;
+    for(var t=w[0];t<=w[1];t+=step,ti++){
+      var cls="tick"+(t===w[0]?" first":t===w[1]?" last":"")+(ti%2===1?" odd":"");
+      ticks+='<span class="'+cls+'" style="left:'+P_(t)+'">'+clock(t)+"</span>";
+    }
+    // cost / token columns
+    var isCost=state.metric==="cost",vals=isCost?m.cost:m.tok,max=0,kmax=-1,k;
+    // scale to the tallest visible column so the dashed top line and "峰值" name a bar on screen
+    for(k=0;k<48;k++)if(vals[k]>max&&k*30>=w[0]&&k*30<w[1]){max=vals[k];kmax=k;}
+    var cols='<i class="hist-ref" aria-hidden="true"></i>';
+    for(k=0;k<48;k++){
+      if(!(vals[k]>0)||k*30<w[0]||k*30>=w[1])continue;
+      var vlab=state.metric==="cost"?fmtCost(vals[k]):fmtTok(vals[k])+" Token";
+      cols+='<button type="button" class="col'+(state.metric==="tok"?" tok":"")+'" style="left:calc('+P_(k*30)+' + 1px);width:calc('+W_(30)+' - 2px);height:'+Math.max(3,vals[k]/max*100).toFixed(1)+'%" data-act="slot" data-slot="'+k+'" data-k="col-'+k+'" data-tip="'+esc("<b>"+clock(k*30)+"–"+clock(k*30+30)+"</b> · "+vlab)+'" aria-label="'+clock(k*30)+"–"+clock(k*30+30)+" "+esc(vlab)+'，查看明细"></button>';
+    }
+    var fv=isCost?fmtCost:fmtTok;
+    var peak=kmax>=0?'<div class="hist-max" title="最高的一根：'+clock(kmax*30)+"–"+clock(kmax*30+30)+" "+fv(max)+(isCost?"":" Token")+'"><span>峰值 '+clock(kmax*30)+"</span><b>"+fv(max)+"</b></div>":"<div></div>";
+    var hist='<div class="tl-row tl-hist"><div class="hist-lab">'+anno(3)+"<span>"+(isCost?"当天费用":"当天 Token")+"</span>"+
+      (isCost?'<b>'+fmtCost(m.ctot)+"</b>":'<b class="tok">'+fmtTok(m.ttot)+"</b>")+"</div>"+
+      '<div class="tl-track">'+cols+"</div>"+peak+"</div>";
+    // runs
+    function runs(ms,pid,label,cls){
+      var out="",k=0;
+      while(k<48){
+        if(!ms[k]){k++;continue;}
+        var j=k;while(j+1<48&&ms[j+1])j++;
+        var a=Math.max(k*30,w[0]),b=Math.min((j+1)*30,w[1]);
+        if(b>a){
+          var segs="",tot=0;
+          for(var i=k;i<=j;i++){tot+=ms[i];if(i*30>=w[0]&&i*30<w[1])segs+='<i style="--o:'+(0.3+0.7*Math.min(1,ms[i]/SLOT)).toFixed(2)+'"></i>';}
+          var range=clock(k*30)+"–"+clock((j+1)*30);
+          out+='<button type="button" class="run '+(cls||"")+'" style="left:'+P_(a)+";width:"+W_(b-a)+";--pc:"+pc(pid)+'" data-act="slot" data-k0="'+k+'" data-k1="'+j+'" data-k="run-'+label.key+"-"+k+'" data-tip="'+esc("<b>"+label.name+"</b><br>"+range+" · 活跃 "+fmtDur(tot))+'" aria-label="'+esc(label.name+" "+range+" 活跃 "+fmtDur(tot)+"，查看明细")+'">'+segs+"</button>";
+        }
+        k=j+1;
+      }
+      return out;
+    }
+    var lanes=m.lanes.map(function(L,li){
+      var open=!!state.open[L.pid];
+      var row='<div class="tl-row lane'+(open?" open":"")+'"><div class="tl-lab">'+(li===0?anno(4):"")+
+        '<button type="button" class="chev" data-act="lane" data-id="'+L.pid+'" data-k="lane-'+L.pid+'" aria-expanded="'+open+'" aria-label="'+(open?"收起":"展开")+" "+L.pid+' 的会话">'+I.chev+"</button>"+
+        '<span class="dot" style="--pc:'+pc(L.pid)+'"></span><span class="nm" title="'+L.pid+'">'+L.pid+'</span><span class="sc">'+L.main+" 会话</span></div>"+
+        '<div class="tl-track">'+runs(L.ms,L.pid,{key:L.pid,name:L.pid})+'</div><div class="tl-tot">'+fmtDur(L.total)+"</div></div>";
+      if(open){
+        row+=L.sess.map(function(s,si){
+          var tot=0;for(var k=0;k<48;k++)tot+=s.ms[k];
+          var isLast=si===L.sess.length-1;
+          return '<div class="tl-row sess'+(s.sub?" sub":"")+(isLast?" last":"")+'"><div class="tl-lab">'+(li===0&&si===0?anno(5):"")+
+            '<button type="button" class="sess-link" data-act="open-session" data-id="'+s.id+'" data-k="sess-'+s.id+'" title="打开会话：'+esc(s.title)+'">'+(s.sub?'<span class="badge">子代理</span>':"")+'<span class="nm">'+esc(s.title)+"</span></button></div>"+
+            '<div class="tl-track">'+runs(s.ms,s.pid,{key:s.id,name:(s.sub?"子代理 · ":"")+s.title},"thin")+'</div><div class="tl-tot">'+fmtDur(tot)+"</div></div>";
+        }).join("");
+      }
+      return row;
+    }).join("");
+    var legend='<div class="tl-legend">'+anno(6)+
+      '<span class="scale" aria-label="色条深浅表示这半小时里实际活跃的比例"><span>活跃比例</span><i style="--o:.3"></i><i style="--o:.53"></i><i style="--o:.77"></i><i style="--o:1"></i><span>满 30 分钟</span></span>'+
+      "<span>每节色条、每根柱 = 半小时</span><span>点色条或柱子查看这半小时的明细</span></div>";
+    return '<div class="tl-top">'+sum+ctl+'</div><div class="tl">'+'<div class="tl-lines" aria-hidden="true">'+lines+"</div>"+
+      '<div class="tl-row tl-axis" aria-hidden="true"><div></div><div class="tl-track">'+ticks+"</div><div></div></div>"+
+      hist+lanes+"</div>"+legend;
+  }
+
+  /* ---------- all view ---------- */
+  function allView(){
+    var m=allModel();lastAll=m;
+    var avg=m.activeDays?m.total/m.activeDays:0;
+    var sum='<div class="tl-sum">'+anno(7)+
+      "<span>范围<b>"+md(m.from)+" 至 "+md(m.to)+"</b></span>"+
+      (state.activeOnly?"<span>活跃日<b>"+m.activeDays+" 天</b></span>":"<span>活跃<b>"+m.activeDays+" / "+m.rows.length+" 天</b></span>")+
+      "<span>开发时长<b>"+fmtDur(m.total)+"</b></span>"+
+      "<span>日均<b>"+fmtDur(avg)+"</b></span>"+
+      '<span>费用<b class="c">'+fmtCost(m.cost)+"</b></span>"+
+      "<span>最长连续<b>"+m.best+" 天</b></span></div>";
+    var ctl='<div class="tl-ctl"><div class="ctl-inline">'+anno(11)+'<span class="ctl-k">着色</span>'+seg([["level","强度"],["proj","项目"]],state.color,"color","矩阵着色")+"</div>"+
+      '<label class="check">'+anno(13)+'<input type="checkbox" data-act="active-only" data-k="active-only"'+(state.activeOnly?" checked":"")+'>只看活跃日期</label>'+
+      '<div class="pager"><span aria-live="polite">第 '+(state.page+1)+"/"+pageCount()+' 页</span>'+
+      '<button type="button" class="tool-btn sm" data-act="page" data-v="-1" data-k="page-newer"'+(state.page===0?" disabled":"")+">"+I.prev+"更新</button>"+
+      '<button type="button" class="tool-btn sm" data-act="page" data-v="1" data-k="page-older"'+(state.page>=pageCount()-1?" disabled":"")+">更早"+I.next+"</button></div></div>";
+    var n=m.n,pmax=0,c;
+    for(c=0;c<n;c++)if(m.prof[c]>pmax)pmax=m.prof[c];
+    var prof="";
+    for(c=0;c<n;c++){if(!(m.prof[c]>0))continue;prof+='<i class="'+(c===m.peak?"pk":"")+'" style="left:calc('+c+' * (100% + 2px) / '+n+");width:calc((100% + 2px) / "+n+" - 2px);height:"+Math.max(2,m.prof[c]/pmax*100).toFixed(1)+'%"></i>';}
+    var pkStart=m.peak*m.per*30;
+    var ticks="";
+    [0,3,6,9,12,15,18,21,24].forEach(function(hh,i){var cls="tick"+(hh===0?" first":hh===24?" last":"")+(i%2===1?" odd":"");ticks+='<span class="'+cls+'" style="left:'+(hh===24?"100%":"calc("+hh+" * (100% + 2px) / 24)")+'">'+pad(hh)+"</span>";});
+    var head2='<div class="mx-row"><div class="mx-k">'+anno(8)+'时段分布</div><div class="mx-prof" aria-label="本页按时段累计的开发时长，高峰 '+clock(pkStart)+"–"+clock(pkStart+m.per*30)+'">'+prof+'</div><div class="mx-side">高峰 '+clock(pkStart)+"</div></div>"+
+      '<div class="mx-row" aria-hidden="true"><div></div><div class="mx-axis">'+ticks+'</div><div class="mx-side">'+anno(10)+"当日时长</div></div>";
+    var rows=m.rows.map(function(r,ri2){
+      var wd=dow(r.date),empty=r.total<=0,newWeek=ri2>0&&weekOf(r.date)!==weekOf(m.rows[ri2-1].date);
+      // "idle", not "empty": .empty is the day-view placeholder and carries 40px padding
+      var cls="mx-row d"+(empty?" idle":"")+(newWeek?" wk":"");
+      var cells=r.cells.map(function(x,ci){
+        var st=x.lvl&&state.color==="proj"&&x.dom?' style="--cc:'+pc(x.dom)+'"':"";
+        var now=r.date===TODAY&&ci===Math.floor(NOW/30/m.per)?" now":"";
+        return '<i class="l'+x.lvl+now+'"'+st+' data-r="'+ri2+'" data-c="'+ci+'"'+(x.lvl?' data-act="cell"':"")+"></i>";
+      }).join("");
+      var segs="";
+      P.forEach(function(p){var v=r.proj[p.id];if(v>0)segs+='<i style="flex:'+v.toFixed(0)+" 1 0;--pc:"+pc(p.id)+'"></i>';});
+      var bar='<span class="mx-bar"><span style="width:'+(m.maxDay?(r.total/m.maxDay*100).toFixed(1):0)+'%" data-tipf="bar" data-r="'+ri2+'">'+segs+"</span></span>";
+      var lab=md(r.date)+'<span class="wd"> '+WD[wd]+"</span>";
+      return '<div class="'+cls+'">'+
+        '<button type="button" class="mx-date'+(wd===0||wd===6?" we":"")+(r.date===TODAY?" today":"")+'" data-act="goto-day" data-date="'+r.date+'" data-k="d-'+r.date+'"'+(empty?" disabled":"")+' aria-label="'+r.date+" 周"+WD[wd]+(empty?"，没有活动":"，开发 "+fmtDur(r.total)+"，查看当天")+'">'+(ri2===0?anno(9):"")+lab+"</button>"+
+        '<div class="mx-cells" aria-hidden="true">'+cells+"</div>"+
+        '<div class="mx-tot">'+bar+'<span class="mx-dur">'+(empty?"—":fmtDur(r.total))+"</span></div></div>";
+    }).join("");
+    var seen={};m.rows.forEach(function(r){for(var p in r.proj)if(r.proj[p]>0)seen[p]=1;});
+    var legend='<div class="tl-legend">'+anno(12)+(state.color==="level"?
+      '<span class="scale"><span>少</span><i style="--o:1;background:color-mix(in srgb,var(--accent) 26%,var(--cell0))"></i><i style="--o:1;background:color-mix(in srgb,var(--accent) 48%,var(--cell0))"></i><i style="--o:1;background:color-mix(in srgb,var(--accent) 72%,var(--cell0))"></i><i style="--o:1;background:var(--accent)"></i><span>多</span></span><span>每格 = '+(m.per===1?"半小时":"1 小时")+"内的活跃时长，并行项目按满格计</span>"
+      :P.filter(function(p){return seen[p.id];}).map(function(p){return '<span class="lg-proj"><span class="dot" style="--pc:'+pc(p.id)+'"></span>'+p.id+"</span>";}).join("")+"<span>每格取占比最高的项目</span>")+
+      "<span>点日期或格子进入当天</span></div>";
+    return sum+ctl+'<div class="mx" style="--n:'+n+'">'+head2+rows+"</div>"+legend;
+  }
+
+  /* ---------- slot detail popover ---------- */
+  function popHTML(){
+    if(!state.pop)return "";
+    var d=DAYS[state.pop.date],k=state.pop.slot,by={},order=[];
+    d.sessions.forEach(function(s){
+      if(state.hidden[s.pid]||!(s.ms[k]>0||s.cost[k]>0))return;
+      var g=by[s.pid];if(!g){g=by[s.pid]={pid:s.pid,ms:0,cost:0,tok:0,list:[]};order.push(g);}
+      if(!s.sub)g.ms=Math.min(SLOT,g.ms+s.ms[k]);g.cost+=s.cost[k];g.tok+=s.tok[k];g.list.push(s);
+    });
+    order.sort(function(a,b){return b.ms-a.ms;});
+    var ms=0,cost=0,tok=0;order.forEach(function(g){ms+=g.ms;cost+=g.cost;tok+=g.tok;});
+    var title=clock(k*30)+"–"+clock(k*30+30);
+    return '<div class="pop" id="pop" role="dialog" aria-label="'+title+' 明细" tabindex="-1">'+
+      '<div class="pop-h"><b>'+title+'</b><span class="muted">'+md(state.pop.date)+" 周"+WD[dow(state.pop.date)]+'</span><button type="button" class="icon-btn sm" data-act="pop-close" aria-label="关闭明细">'+I.close+"</button></div>"+
+      order.map(function(g){
+        return '<div class="pop-p"><div class="pop-pr"><span class="dot" style="--pc:'+pc(g.pid)+'"></span><span class="nm">'+g.pid+'</span><span class="v">'+fmtDur(g.ms)+'</span><span class="v c">'+fmtCost(g.cost)+"</span></div>"+
+          g.list.map(function(s){return '<button type="button" class="pop-s" data-act="open-session" data-id="'+s.id+'" title="打开会话"><span class="nm">'+(s.sub?'<span class="badge">子代理</span>':"")+"<span>"+esc(s.title)+'</span></span><span class="v">'+fmtDur(s.ms[k])+'</span><span class="v">'+fmtTok(s.tok[k])+'</span><span class="v c">'+fmtCost(s.cost[k])+"</span></button>";}).join("")+"</div>";
+      }).join("")+
+      '<div class="pop-f">合计 '+fmtDur(ms)+" · "+fmtTok(tok)+" Token · "+fmtCost(cost)+(order.length>1?" · "+order.length+" 个项目并行":"")+"</div></div>";
+  }
+  function placePop(){
+    var pop=document.getElementById("pop");if(!pop||!state.pop)return;
+    var panel=document.getElementById("panel"),pr=panel.getBoundingClientRect(),x=state.pop.x,y=state.pop.y;
+    if(state.pop.band){var band=panel.querySelector(".tl-band");if(band){var br=band.getBoundingClientRect();x=br.left+br.width/2-pr.left;y=br.top-pr.top+70;}else{x=pr.width/2;y=200;}}
+    var w=pop.offsetWidth,h=pop.offsetHeight,left=Math.min(Math.max(8,x-w/2),pr.width-w-8),top=y+12;
+    if(top+h>pr.height-8)top=Math.max(8,y-h-12);
+    pop.style.left=left+"px";pop.style.top=top+"px";
+  }
+
+  /* ---------- render ---------- */
+  var panelEl=document.getElementById("panel"),stage=document.getElementById("stage");
+  function render(focusKey){
+    var body=document.getElementById("body"),scroll=body?body.scrollTop:0;
+    var ae=document.activeElement,key=focusKey||(ae&&panelEl.contains(ae)&&ae.getAttribute("data-k"));
+    panelEl.innerHTML=head()+'<div class="p-body" id="body" role="tabpanel">'+tools()+(state.mode==="day"?dayView():allView())+"</div>"+popHTML();
+    body=document.getElementById("body");body.scrollTop=scroll;body._st=body.scrollTop;
+    body.addEventListener("scroll",onBodyScroll,{passive:true});
+    placePop();
+    if(state.pop&&state.pop.focus){state.pop.focus=false;var pp=document.getElementById("pop");if(pp)pp.focus();}
+    else if(key){var el=panelEl.querySelector('[data-k="'+key+'"]');if(el)el.focus();}
+  }
+  function onBodyScroll(){if(this.scrollTop===this._st)return;this._st=this.scrollTop;hideTip();if(state.pop){state.pop=null;render();}}
+  var toastTimer=null;
+  function toast(msg){
+    var t=stage.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");stage.appendChild(t);}
+    t.textContent=msg;clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.remove();},2200);
+  }
+  function findSession(id){for(var i=0;i<DATES.length;i++){var ss=DAYS[DATES[i]].sessions;for(var j=0;j<ss.length;j++)if(ss[j].id===id)return ss[j];}return null;}
+
+  /* ---------- tooltip ---------- */
+  var tip=document.createElement("div");tip.className="ftip";tip.hidden=true;document.body.appendChild(tip);
+  function tipFor(el){
+    if(el.hasAttribute("data-tip"))return el.getAttribute("data-tip");
+    if(!lastAll)return null;
+    var r=lastAll.rows[+el.getAttribute("data-r")];if(!r)return null;
+    var head2=md(r.date)+" 周"+WD[dow(r.date)];
+    if(el.getAttribute("data-tipf")==="bar"){
+      var parts=P.filter(function(p){return r.proj[p.id]>0;}).sort(function(a,b){return r.proj[b.id]-r.proj[a.id];}).map(function(p){return p.id+" "+fmtDur(r.proj[p.id]);});
+      return "<b>"+head2+"</b> · "+fmtDur(r.total)+" · "+fmtCost(r.cost)+"<br>"+parts.join("<br>");
+    }
+    var c=+el.getAttribute("data-c"),x=r.cells[c];if(!x||!x.lvl)return "<b>"+head2+"</b> "+clock(c*lastAll.per*30)+" · 无活动";
+    var list=Object.keys(x.by).sort(function(a,b){return x.by[b]-x.by[a];}).map(function(p){return p+" "+fmtDur(x.by[p]);});
+    return "<b>"+head2+" "+clock(c*lastAll.per*30)+"–"+clock((c+1)*lastAll.per*30)+"</b><br>"+list.join("<br>");
+  }
+  function showTip(el,cx,cy){
+    var html=tipFor(el);if(!html){hideTip();return;}
+    tip.innerHTML=html;tip.hidden=false;
+    var r=tip.getBoundingClientRect(),x=cx+14,y=cy+14;
+    if(x+r.width>window.innerWidth-8)x=cx-r.width-14;
+    if(y+r.height>window.innerHeight-8)y=cy-r.height-14;
+    tip.style.left=Math.max(8,x)+"px";tip.style.top=Math.max(8,y)+"px";
+  }
+  function hideTip(){tip.hidden=true;}
+  panelEl.addEventListener("mousemove",function(e){
+    var el=e.target.closest("[data-tip],[data-c],[data-tipf]");
+    if(!el||!panelEl.contains(el)){hideTip();return;}
+    showTip(el,e.clientX,e.clientY);
+  });
+  panelEl.addEventListener("mouseleave",hideTip);
+  panelEl.addEventListener("focusin",function(e){var el=e.target.closest("[data-tip]");if(el){var r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom);}});
+  panelEl.addEventListener("focusout",hideTip);
+
+  /* ---------- interactions ---------- */
+  function openSlot(el,ev,slot){
+    var pr=panelEl.getBoundingClientRect(),r=el.getBoundingClientRect(),x,y;
+    if(ev.detail===0||!ev.clientX){x=r.left+r.width/2-pr.left;y=r.bottom-pr.top;}else{x=ev.clientX-pr.left;y=ev.clientY-pr.top;}
+    state.pop={date:state.date,slot:slot,x:x,y:y,k:el.getAttribute("data-k"),focus:ev.detail===0};
+    hideTip();render();
+  }
+  panelEl.addEventListener("click",function(e){
+    var t=e.target.closest("[data-act]");
+    var inPop=e.target.closest("#pop"),inMenu=e.target.closest(".menu");
+    if(state.pop&&!inPop&&!(t&&(t.getAttribute("data-act")==="slot"))){state.pop=null;if(!t){render();return;}}
+    if(state.filter&&!inMenu&&!(t&&t.getAttribute("data-act")==="filter")){state.filter=false;if(!t){render();return;}}
+    if(!t)return;
+    var act=t.getAttribute("data-act"),v=t.getAttribute("data-v");
+    switch(act){
+      case "tab":if(t.getAttribute("data-k")!=="tab-timeline")toast("原型只做了开发时间线");break;
+      case "chrome":toast("头部沿用 0.5.0 已上线的样式，原型里不做交互");break;
+      case "mode":state.mode=v;state.pop=null;render();syncScene();break;
+      case "date-prev":case "date-next":{var i=ACTIVE.indexOf(state.date)+(act==="date-prev"?-1:1);if(i>=0&&i<ACTIVE.length){state.date=ACTIVE[i];state.pop=null;render();syncScene();}break;}
+      case "filter":state.filter=!state.filter;render();break;
+      case "toggle-proj":return;
+      case "show-all":state.hidden={};state.filter=false;render();break;
+      case "axis":state.axis=v;state.pop=null;render();break;
+      case "metric":state.metric=v;render();break;
+      case "color":state.color=v;render();break;
+      case "page":state.page=Math.min(pageCount()-1,Math.max(0,state.page+(+v)));render();break;
+      case "active-only":return;
+      case "lane":{var id=t.getAttribute("data-id");state.open[id]=!state.open[id];render();break;}
+      case "slot":{
+        var slot;
+        if(t.hasAttribute("data-slot"))slot=+t.getAttribute("data-slot");
+        else{var k0=+t.getAttribute("data-k0"),k1=+t.getAttribute("data-k1");var rr=t.getBoundingClientRect();
+          slot=(e.detail===0||!e.clientX)?k0:Math.min(k1,Math.max(k0,k0+Math.floor((e.clientX-rr.left)/rr.width*(k1-k0+1))));}
+        openSlot(t,e,slot);break;
+      }
+      case "pop-close":{var back=state.pop&&state.pop.k;state.pop=null;render(back);break;}
+      case "open-session":{var s=findSession(t.getAttribute("data-id"));toast("打开会话「"+(s?s.title:"")+"」：面板关闭，焦点交给宿主");break;}
+      case "goto-day":{state.mode="day";state.date=t.getAttribute("data-date");state.pop=null;var fp=firstLanePid(state.date);state.open={};if(fp)state.open[fp]=true;render("date-prev");syncScene();break;}
+      case "cell":{
+        var row=lastAll.rows[+t.getAttribute("data-r")],ci=+t.getAttribute("data-c"),cell=row.cells[ci],sl=ci*lastAll.per;
+        if(lastAll.per===2){var a0=0,a1=0,d0=DAYS[row.date];d0.sessions.forEach(function(s){if(!s.sub&&!state.hidden[s.pid]){a0+=s.ms[sl];a1+=s.ms[sl+1];}});if(a1>a0)sl+=1;}
+        state.mode="day";state.date=row.date;state.open={};var fp2=firstLanePid(row.date);if(fp2)state.open[fp2]=true;
+        state.pop={date:row.date,slot:sl,band:true,x:0,y:0};render();syncScene();break;
+      }
+    }
+  });
+  panelEl.addEventListener("change",function(e){
+    var t=e.target;
+    if(t.getAttribute("data-act")==="active-only"){state.activeOnly=t.checked;state.page=0;render("active-only");return;}
+    if(t.getAttribute("data-act")!=="toggle-proj")return;
+    var id=t.getAttribute("data-id");if(t.checked)delete state.hidden[id];else state.hidden[id]=true;
+    if(!t.checked&&state.open[id])delete state.open[id];
+    state.page=Math.min(state.page,pageCount()-1);
+    state.pop=null;render("filter");
+    var box=panelEl.querySelector('[data-act="toggle-proj"][data-id="'+id+'"]');if(box)box.focus();
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key!=="Escape"||e.isComposing)return;
+    if(state.pop){var back=state.pop.k;state.pop=null;render(back);e.preventDefault();return;}
+    if(state.filter){state.filter=false;render("filter");e.preventDefault();return;}
+    if(panelEl.contains(document.activeElement))toast("再按一次 Esc 会关闭面板（原型里不关）");
+  });
+  window.addEventListener("resize",function(){if(state.pop)placePop();});
+
+  /* ---------- prototype controls ---------- */
+  function pressSeg(segEl,attr,val){Array.prototype.forEach.call(segEl.querySelectorAll("button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute(attr)===val));});}
+  document.getElementById("width-seg").addEventListener("click",function(e){
+    var b=e.target.closest("button");if(!b)return;state.w=b.getAttribute("data-w");stage.setAttribute("data-w",state.w);pressSeg(this,"data-w",state.w);state.pop=null;render();
+  });
+  var sceneSeg=document.getElementById("scene-seg");
+  function syncScene(){pressSeg(sceneSeg,"data-scene",state.mode==="all"?"all":state.date===TINY?"tiny":state.date===TODAY?"busy":"");}
+  sceneSeg.addEventListener("click",function(e){
+    var b=e.target.closest("button");if(!b)return;var sc=b.getAttribute("data-scene");
+    state.pop=null;state.filter=false;
+    if(sc==="all"){state.mode="all";state.page=0;}
+    else{state.mode="day";state.date=sc==="tiny"?TINY:TODAY;state.open={};var fp=firstLanePid(state.date);if(fp)state.open[fp]=true;}
+    render();syncScene();
+  });
+  document.getElementById("anno-toggle").addEventListener("change",function(){stage.classList.toggle("annos",this.checked);});
+
+  render();
+})();
+</script>
