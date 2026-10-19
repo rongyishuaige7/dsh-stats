@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101812,
-  "publishedAt": "2026-10-19T19:33:09.079Z",
+  "version": 2026101813,
+  "publishedAt": "2026-10-19T23:11:15.122Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -18806,7 +18806,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-19T19:33:09.079Z"
+      "effectiveFrom": "2026-10-19T19:33:09.079Z",
+      "effectiveTo": "2026-10-19T23:11:15.122Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-19T19:33:09.079Z",
@@ -18848,7 +18849,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-19T19:33:09.079Z"
+      "effectiveFrom": "2026-10-19T19:33:09.079Z",
+      "effectiveTo": "2026-10-19T23:11:15.122Z"
     },
     {
       "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-19T19:33:09.079Z",
@@ -18870,6 +18872,48 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-19T19:33:09.079Z"
+    },
+    {
+      "id": "openrouter/~deepseek/deepseek-v4-flash-latest@2026-10-19T23:11:15.122Z",
+      "family": "openrouter",
+      "canonical": "~deepseek/deepseek-v4-flash-latest",
+      "aliases": [
+        "~deepseek/deepseek-v4-flash-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-19",
+      "observedFrom": "2026-10-19T23:11:15.122Z",
+      "rates": {
+        "uncached": 0.006500000000000001,
+        "output": 0.44999999999999996,
+        "cacheRead": 0.006500000000000001,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-19T23:11:15.122Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-19T23:11:15.122Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek/deepseek-v4-pro"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-19",
+      "observedFrom": "2026-10-19T23:11:15.122Z",
+      "rates": {
+        "uncached": 0.36331199999999997,
+        "output": 0.7266239999999999,
+        "cacheRead": 0.030276,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-19T23:11:15.122Z"
     }
   ],
   "fx": [
