@@ -11,6 +11,15 @@ import { emptyRaw } from "./host-usage.js";
 
 // 定位会话 JSONL 文件（sessions/<encoded-workspace>/<id>/session.jsonl.zstd）
 let sessionsDirCache = { home: null, at: 0, dirs: [] };
+const ACTIVITY_EVENT_TYPES = new Set([
+	"turn/start", "turn/end", "step/start", "step/end",
+	"assistant/message", "assistant/attempt", "assistant/chunk",
+	"tool/call", "tool/result", "tool/ptc-dispatch-start", "tool/ptc-dispatch",
+	"command/run", "command/done",
+]);
+function isActivityEvent(event) {
+	return !!event && ACTIVITY_EVENT_TYPES.has(event.type);
+}
 // A decoded session cache is keyed by file path, but the lookup itself used to
 // rescan every workspace directory on each aggregate. Cache the validated path
 // (including misses) briefly so repeated refreshes stay O(1) per session.
@@ -466,6 +475,7 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 	const count = inheritedCount(header, quality.inheritedEventCount ?? seedMarker?.seq);
 	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength);
 	const times = [];
+	const activityTimes = [];
 	let currentModel = null;
 	let currentProvider = "unknown";
 	let currentAccountType = "api";
@@ -520,7 +530,10 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 		if (unknownSeed || (evSeq !== undefined && evSeq < firstOwnSeq)) continue;
 		const t = ev?.time;
 		if (Object.prototype.hasOwnProperty.call(ev || {}, "time") && (!Number.isFinite(t) || t < 0)) { malformedRecords++; continue; }
-		if (Number.isFinite(t)) times.push(t);
+		if (Number.isFinite(t)) {
+			times.push(t);
+			if (isActivityEvent(ev)) activityTimes.push(t);
+		}
 		if (!ev || typeof ev !== "object") continue;
 		const usage = routeProjectionUsage(ev);
 		const stepKey = Number.isSafeInteger(ev.data?.turn) && Number.isSafeInteger(ev.data?.step) ? ev.data.turn + ":" + ev.data.step : null;
@@ -581,6 +594,7 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 		} else if (ev.type === "turn/end") pendingCalls.clear();
 	}
 	times.sort((a, b) => a - b);
+	activityTimes.sort((a, b) => a - b);
 	const modelTokens = new Map();
 	for (const u of usageByStep.values()) {
 		if (++work % LOG_BATCH_SIZE === 0) yield;
@@ -597,7 +611,7 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 	}
 	if (primary === null) primary = rawIdentity(currentProvider, currentModel, currentAccountType, times[times.length - 1]);
 	return {
-		times, lastTime: times.length ? times[times.length - 1] : null,
+		times, activityTimes, lastTime: times.length ? times[times.length - 1] : null,
 		model: primary.modelRaw === "(unknown)" ? null : primary.modelRaw,
 		providerId: primary.providerId, accountType: primary.accountType,
 		usages: [...usageByStep.values()], origin, parentSession, seedLength, inheritedEventCount: count,
@@ -814,7 +828,7 @@ function infoFromProjectionValues(values, entry, warnings = null, sessionId = nu
 	// are displayed under the same model as the event-based path.
 	const current = routeData.primaryRoute(usages, objectRecord(routeProjection?.current) || {});
 	return {
-		times,
+		times, activityTimes: times,
 		lastTime: times.length ? times.at(-1) : null,
 		model: firstString(current.model, metadata.model, identity.model),
 		providerId: firstString(current.providerId, metadata.providerId, identity.providerId) || "unknown",

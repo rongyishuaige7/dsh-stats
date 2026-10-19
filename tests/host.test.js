@@ -835,11 +835,13 @@ test('timeline merges overlapping sessions within one project', async () => {
 	const home = fixture({ a: projection(now), b: projection(now + 120000) });
 	writeLog(home, 'a', [
 		{ type: 'session', seq: 0, time: now },
-		{ type: 'request/header', seq: 1, time: now + 300000, data: { header: { config: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'turn/start', seq: 1, time: now, data: { turn: 1 } },
+		{ type: 'turn/end', seq: 2, time: now + 300000, data: { turn: 1 } },
 	]);
 	writeLog(home, 'b', [
 		{ type: 'session', seq: 0, time: now + 120000 },
-		{ type: 'request/header', seq: 1, time: now + 420000, data: { header: { config: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'turn/start', seq: 1, time: now + 120000, data: { turn: 1 } },
+		{ type: 'turn/end', seq: 2, time: now + 420000, data: { turn: 1 } },
 	]);
 
 	const result = await aggregate();
@@ -1385,6 +1387,47 @@ test('legacy descriptor v2 host errors fall back to the legacy log', async () =>
 	expect(result.meta.warnings.map(w => w.code)).not.toContain('OFFICIAL_PERSISTENCE_FAILED');
 	expect(result.meta.warnings.map(w => w.code)).toContain('OFFICIAL_LEGACY_DESCRIPTOR');
 	expect(result.meta.degraded).toBe(false);
+});
+
+test('lifecycle-only sessions do not create timeline activity', async () => {
+	const now = Date.parse('2026-10-16T15:11:37+08:00');
+	const home = fixture({ lifecycle: projection(now) });
+	writeLog(home, 'lifecycle', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'permission/preset', seq: 1, time: now + 100, data: { preset: 'workspace-write' } },
+		{ type: 'sandbox/mode', seq: 2, time: now + 200, data: { mode: 'workspace-write' } },
+		{ type: 'approval/policy', seq: 3, time: now + 300, data: { policy: 'ask' } },
+		{ type: 'request/header', seq: 4, time: now + 400, data: { header: { config: { model: 'deepseek-v4-pro' } } } },
+		{ type: 'model/selection', seq: 5, time: now + 500, data: { provider: 'deepseek', model: 'deepseek-v4-pro' } },
+		{ type: 'workspace/changes', seq: 6, time: now + 600, data: { turn: 1 } },
+		{ type: 'session/end-seed', seq: 7, time: now + 600000, data: {} },
+	]);
+	const info = await sessionInfo(home, 'lifecycle');
+	expect(info.times).toHaveLength(8);
+	expect(info.activityTimes).toEqual([]);
+	const result = await aggregate();
+	expect(result.timeline.days).toEqual([]);
+	expect(result.projects[0].sessions[0].slots).toEqual([]);
+});
+
+test('tool-only sessions still create timeline activity', async () => {
+	const now = Date.parse('2026-08-17T10:00:00+08:00');
+	const home = fixture({ tools: projection(now) });
+	writeLog(home, 'tools', [
+		{ type: 'session', seq: 0, time: now },
+		{ type: 'turn/start', seq: 1, time: now + 1000, data: { turn: 1 } },
+		{ type: 'step/start', seq: 2, time: now + 2000, data: { turn: 1, step: 1 } },
+		{ type: 'tool/call', seq: 3, time: now + 3000, data: { turn: 1, step: 1, callId: 'call-1', name: 'bash', arguments: '{}' } },
+		{ type: 'tool/result', seq: 4, time: now + 65000, data: { turn: 1, step: 1, message: { source: { callId: 'call-1' } } } },
+		{ type: 'step/end', seq: 5, time: now + 66000, data: { turn: 1, step: 1 } },
+		{ type: 'turn/end', seq: 6, time: now + 67000, data: { turn: 1 } },
+	]);
+	const info = await sessionInfo(home, 'tools');
+	expect(info.activityTimes.length).toBeGreaterThan(0);
+	const result = await aggregate();
+	expect(result.timeline.days).toHaveLength(1);
+	expect(result.timeline.days[0].dayTotalMs).toBeGreaterThan(0);
+	expect(result.projects[0].sessions[0].slots.length).toBeGreaterThan(0);
 });
 
 test('prefers the larger legacy log over a compacted versioned log', async () => {

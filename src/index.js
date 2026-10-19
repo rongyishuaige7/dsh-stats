@@ -443,6 +443,7 @@ let StatsService = (() => {
 					info = {
 						times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [],
 						origin: firstString(entry?.identity?.origin) ?? (fallbackParent ? "subagent" : null),
+						activityTimes: [],
 						parentSession: fallbackParent, seedLength: fallbackSeed, inheritedEventCount: 0,
 						stats: null, partial: false, stale: false, missing: false, unavailable: true,
 						// A budget failure cannot provide a log watermark, but the
@@ -607,13 +608,13 @@ let StatsService = (() => {
 					calls: info.usages.reduce((sum, usage) => sum + (usage.count ?? 1), 0),
 					stats: raw,
 					durMs: raw.llmMs + raw.toolMs,
-					slots: slotDurations(info.times),
+					slots: slotDurations(info.activityTimes ?? info.times),
 					slotStats: info.slotStats || [],
 					slotUsage: perSlotUsage,
 						quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || info.cacheOnly || cacheOnly || usedProjectionUsage || projectionInvalid) ? "partial" : "exact",
 					cwd
 				};
-				Object.defineProperty(session, "_intervals", { value: activityIntervals(info.times), enumerable: false });
+				Object.defineProperty(session, "_intervals", { value: activityIntervals(info.activityTimes ?? info.times), enumerable: false });
 				return session;
 			};
 				const processSessions = async (sessionIds, cwdFallback, limit = 4) => {

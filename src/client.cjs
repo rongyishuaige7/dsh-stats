@@ -407,6 +407,7 @@ function StatsPanel(props) {
 	// 这些 memo 必须放在早退之前，保证面板关闭时 hooks 数量不变。
 	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
 	var visibleProjects = useMemo(function() { return statProjects.filter(function(project) { return !hidden[project.id]; }); }, [statProjects, hiddenKey]);
+	var activityOnly = !!effectiveDate && statProjects.length === 0 && dateProjects.length > 0;
 	var prevDate = previousActiveDate(dates, effectiveDate);
 	var previousSummary = useMemo(function() {
 		if (!prevDate) return null;
@@ -592,7 +593,15 @@ function StatsPanel(props) {
 								t
 							}) : null,
 							visibleProjects.length ? e(OverviewStrip, { totals, activeDays, spans, projects: visibleProjects, dayMode: effectiveDate != null, t }) : null,
-							e(ProjectTable, {
+							activityOnly ? e("div", { className: "dss-activity-only", role: "status" },
+								e("span", null, t("overview.activityOnly")),
+								e("button", {
+									type: "button",
+									className: "dss-link-btn",
+									"data-action": "overview-timeline",
+									onClick: function() { setTab("timeline"); }
+								}, t("overview.viewTimeline"))
+							) : e(ProjectTable, {
 								projects: visibleProjects,
 								totalCount: statProjects.length,
 								hiddenKey,
