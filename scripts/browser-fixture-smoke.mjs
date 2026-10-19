@@ -1221,6 +1221,8 @@ try {
   await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
   const showcaseLanes = await evaluate('document.querySelectorAll(".dss-tl-lane").length');
   assert(showcaseLanes >= 4, 'showcase 09-07 has at least four lanes: ' + showcaseLanes);
+  const subTagHeight = await evaluate('document.querySelector(".dss-tl-sess.is-sub .dss-tag").getBoundingClientRect().height');
+  assert(subTagHeight <= 20, 'subagent tag stays on one line at 1440: ' + subTagHeight);
   await layout('readme-timeline-day');
   await capture('readme-timeline-day');
   await click('[data-action=mode-all]');
@@ -1230,7 +1232,21 @@ try {
   assert(showcaseActive >= 15, 'showcase first matrix page has at least fifteen active days: ' + showcaseActive);
   await layout('readme-timeline-all');
   await capture('readme-timeline-all');
-  report.checks.push('showcase timeline: 09-07 lanes and first-page active days for README screenshots');
+  await click('[data-action=mode-day]');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  await click('[data-action=date-prev]');
+  await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: true });
+  await evaluate('window.dispatchEvent(new Event("resize"))');
+  await delay(200);
+  const subTagHeight320 = await evaluate('document.querySelector(".dss-tl-sess.is-sub .dss-tag").getBoundingClientRect().height');
+  assert(subTagHeight320 <= 20, 'subagent tag stays on one line at 320: ' + subTagHeight320);
+  await click('.dss-tl-sess.is-sub .dss-tl-run');
+  await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  const popTagHeight = await evaluate('document.querySelector(".dss-tl-pop-s .dss-tag").getBoundingClientRect().height');
+  assert(popTagHeight <= 20, 'popover subagent tag stays on one line at 320: ' + popTagHeight);
+  await press('Escape'); await press('Escape');
+  report.checks.push('showcase timeline: 09-07 lanes, first-page active days and one-line subagent tags');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
