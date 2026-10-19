@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101808,
-  "publishedAt": "2026-10-18T21:08:21.550Z",
+  "version": 2026101809,
+  "publishedAt": "2026-10-19T01:26:12.102Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -12706,7 +12706,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-08T06:00:58.244Z"
+      "effectiveFrom": "2026-10-08T06:00:58.244Z",
+      "effectiveTo": "2026-10-19T01:26:12.102Z"
     },
     {
       "id": "openrouter/z-ai/glm-4.6v@2026-10-08T06:00:58.244Z",
@@ -18500,6 +18501,27 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-18T21:08:21.550Z"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.5-27b@2026-10-19T01:26:12.102Z",
+      "family": "openrouter",
+      "canonical": "qwen/qwen3.5-27b",
+      "aliases": [
+        "qwen/qwen3.5-27b"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-19",
+      "observedFrom": "2026-10-19T01:26:12.102Z",
+      "rates": {
+        "uncached": 0.195,
+        "output": 1.56,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-19T01:26:12.102Z"
     }
   ],
   "fx": [
