@@ -288,7 +288,7 @@ function TimelineDay(props) {
 				const tip = tipProps(function() {
 					return tipRows(range + " · " + t("tl.halfHour"), [
 						[isCost ? t("tl.metricCost") : t("tl.metricToken"), valueText],
-						partial ? [t("tl.partial"), t("tl.partial")] : null
+						partial ? ["*", t("tl.partial")] : null
 					].filter(Boolean));
 				});
 				return e("button", {
@@ -307,7 +307,7 @@ function TimelineDay(props) {
 						width: "calc(" + widthPercent(1) + " - 2px)",
 						height: height
 					},
-					"aria-label": range + " " + valueText + "，" + t("tl.openDetail"),
+					"aria-label": t("tl.openDetail").replace("%s", range + " " + valueText),
 					onClick: function(ev) { openDetail(bar.slot, ev.currentTarget); },
 					onKeyDown: function(ev) { onBarKeyDown(ev, bar.slot); },
 					...tip,
@@ -360,7 +360,7 @@ function TimelineDay(props) {
 						"data-from": run.from,
 						"data-to": run.to,
 						style: { left: percent(run.from), width: widthPercent(run.to - run.from) },
-						"aria-label": lane.name + " " + range + " " + fmtDuration(run.total) + "，" + t("tl.openDetail"),
+						"aria-label": t("tl.openDetail").replace("%s", lane.name + " " + range + " " + fmtDuration(run.total)),
 						onClick: function(ev) {
 							const fraction = ev.detail === 0 || !ev.clientX ? 0 : (ev.clientX - ev.currentTarget.getBoundingClientRect().left) / ev.currentTarget.getBoundingClientRect().width;
 							openDetail(runSlotAt(run, fraction), ev.currentTarget);
@@ -399,7 +399,8 @@ function TimelineDay(props) {
 						type: "button",
 						className: "dss-tl-sess-link",
 						"data-action": "tl-open-session",
-						title: t("openSession") + "：" + title,
+						title: t("openSession") + ": " + title,
+						"aria-label": t("openSession") + ": " + title,
 						onClick: function() { props.onOpenSession(session.session); }
 					},
 						session.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null,
@@ -418,7 +419,7 @@ function TimelineDay(props) {
 							"data-from": run.from,
 							"data-to": run.to,
 							style: { left: percent(run.from), width: widthPercent(run.to - run.from) },
-							"aria-label": title + " " + range + " " + fmtDuration(run.total) + "，" + t("tl.openDetail"),
+							"aria-label": t("tl.openDetail").replace("%s", title + " " + range + " " + fmtDuration(run.total)),
 							onClick: function(ev) {
 								const fraction = ev.detail === 0 || !ev.clientX ? 0 : (ev.clientX - ev.currentTarget.getBoundingClientRect().left) / ev.currentTarget.getBoundingClientRect().width;
 								openDetail(runSlotAt(run, fraction), ev.currentTarget);
@@ -644,7 +645,9 @@ function SlotPopover(props) {
 						type: "button",
 						className: "dss-tl-pop-s",
 						"data-action": "tl-pop-session",
-						title: t("openSession") + "：" + name,
+						"data-session-id": row.id == null ? undefined : row.id,
+						title: t("openSession") + ": " + name,
+						"aria-label": t("openSession") + ": " + name,
 						onClick: function() { props.onClose(false); props.onOpenSession(row.session); }
 					},
 						e("span", { className: "dss-tl-name" },

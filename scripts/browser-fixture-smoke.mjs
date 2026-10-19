@@ -101,7 +101,7 @@ async function focus(selector) {
   assert(await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); if (!node) return false; node.focus(); return document.activeElement === node; })()`), 'focus ' + selector);
   await delay(50);
 }
-const KEY_CODES = { Tab: 9, Escape: 27, Enter: 13, ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, ' ': 32 };
+const KEY_CODES = { Tab: 9, Escape: 27, Enter: 13, ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, Home: 36, End: 35, ' ': 32 };
 async function press(key, modifiers = 0) {
   const vk = KEY_CODES[key];
   assert(vk, 'unsupported key ' + key);
@@ -936,6 +936,32 @@ try {
   assert.deepEqual(misalignedTicks, [], 'day timeline ticks align with hour grid lines: ' + JSON.stringify(misalignedTicks));
   const minRunWidth = await evaluate('Math.min(...[...document.querySelectorAll(".dss-tl-run")].map(node => node.getBoundingClientRect().width))');
   assert(minRunWidth >= 3.5, 'day timeline runs keep at least 4px: ' + minRunWidth);
+  const barState = () => evaluate(`(() => {
+    const bars = [...document.querySelectorAll('.dss-tl-bar')];
+    return { count: bars.length, activeIndex: bars.indexOf(document.activeElement), zero: bars.map(bar => bar.tabIndex) };
+  })()`);
+  assert.equal(await evaluate(`document.querySelectorAll('.dss-tl-bar[tabindex="0"]').length`), 1, 'exactly one bar is tabbable');
+  await focus('.dss-tl-bar[tabindex="0"]');
+  const barCount = (await barState()).count;
+  await press('End');
+  let state = await barState();
+  assert.equal(state.activeIndex, barCount - 1, 'End focuses the last bar');
+  assert.equal(state.zero.filter(value => value === 0).length, 1);
+  assert.equal(state.zero[barCount - 1], 0, 'End moves the roving tab stop');
+  await press('Home');
+  state = await barState();
+  assert.equal(state.activeIndex, 0, 'Home focuses the first bar');
+  assert.equal(state.zero[0], 0, 'Home moves the roving tab stop');
+  await press('ArrowRight');
+  state = await barState();
+  assert.equal(state.activeIndex, 1, 'ArrowRight focuses the second bar');
+  assert.equal(state.zero[1], 0, 'ArrowRight moves the roving tab stop');
+  await press('Enter');
+  await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  await press('Escape');
+  await until('!document.querySelector(".dss-tl-pop")');
+  state = await barState();
+  assert.equal(state.activeIndex, 1, 'bar detail Escape returns focus to the bar');
   await click('.dss-tl-run');
   await until('document.querySelector(".dss-tl-pop[role=dialog]")');
   assert(await evaluate('document.querySelector(".dss-tl-pop").contains(document.activeElement)'), 'slot detail receives focus');
@@ -947,9 +973,12 @@ try {
   await until('!document.querySelector(".dss-panel")');
   await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl[data-mode=day]")');
   await click('.dss-tl-run'); await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  const popSessionId = await evaluate('document.querySelector("[data-action=tl-pop-session]").dataset.sessionId');
+  assert(popSessionId, 'slot detail session rows expose data-session-id');
   await click('[data-action=tl-pop-session]');
   await until('!document.querySelector(".dss-panel")');
-  assert(await evaluate('!!window.__fixture.openedSession'), 'slot detail opens the selected session');
+  assert.equal(await evaluate('window.__fixture.openedSession'), popSessionId, 'slot detail opens the selected session');
+  assert(await evaluate('document.activeElement !== document.querySelector(".dss-trigger")'), 'opening a slot-detail session does not restore focus to the trigger');
   await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl[data-mode=day]")');
   const selectedDay = await evaluate('document.querySelector(".dss-date-label").textContent.slice(0, 10)');
   const slotProjectIds = await evaluate(`(() => {
@@ -978,7 +1007,7 @@ try {
   await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl")');
   assert(await evaluate('document.querySelector("[data-action=tl-axis-full]").getAttribute("aria-pressed") === "true"'), 'axis preference persists');
   assert(await evaluate('document.querySelector("[data-action=tl-metric-token]").getAttribute("aria-pressed") === "true"'), 'metric preference persists');
-  report.checks.push('day timeline: single scroll, >=11px text, overview cost parity, tick alignment, run width, slot detail Esc/focus and session opening');
+  report.checks.push('day timeline: single scroll, >=11px text, overview cost parity, tick alignment, run width, bar keyboard, slot detail Esc/focus and session opening');
   await evaluate('localStorage.removeItem("dsh-stats.hidden")');
   await navigate('/?stats=partial&lang=zh');
   await click('.dss-trigger'); await tab(1); await until('document.querySelector(".dss-data-status.partial")');
