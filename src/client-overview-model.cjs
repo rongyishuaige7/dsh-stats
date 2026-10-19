@@ -22,6 +22,21 @@ function overviewTotals(projects) {
 	return totals;
 }
 
+// Coalesce overlapping refresh requests into one in-flight promise. A slow
+// aggregate must not be cancelled and restarted by the next timer tick.
+function createSingleFlight() {
+	var active = null;
+	return function(run) {
+		if (active) return active;
+		var current;
+		current = Promise.resolve().then(run).finally(function() {
+			if (active === current) active = null;
+		});
+		active = current;
+		return current;
+	};
+}
+
 function previousActiveDate(dates, date) {
 	if (!Array.isArray(dates) || !date) return null;
 	var index = dates.indexOf(date);
@@ -153,5 +168,5 @@ function pendingFocus(projects) {
 module.exports = {
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares,
 	projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus,
-	compareProjectCost, missingModels
+	compareProjectCost, missingModels, createSingleFlight
 };

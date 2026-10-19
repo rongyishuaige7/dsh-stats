@@ -7,7 +7,7 @@ const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemo
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
-const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels } = require("./client-overview-model.cjs");
+const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
 
 var e = react.createElement;
@@ -466,6 +466,10 @@ function StatsPanel(props) {
 	if (!layerStackRef.current) layerStackRef.current = createLayerStack();
 	var layerStack = layerStackRef.current;
 	var [remoteData, setRemoteData] = useState(null);
+	var remoteDataRef = useRef(remoteData);
+	remoteDataRef.current = remoteData;
+	var aggregateFlightRef = useRef(null);
+	if (!aggregateFlightRef.current) aggregateFlightRef.current = createSingleFlight();
 	// Browser snapshots are only inputs to the local fallback. Once host data
 	// arrives, streaming session events must not wake the entire statistics UI.
 	var needsFallback = isOpen && !remoteData;
@@ -523,33 +527,46 @@ function StatsPanel(props) {
 		});
 	}, [isOpen]);
 
+	var requestAggregate = useCallback(function() {
+		if (!aggregateRemote) {
+			setSourceState({ kind: "fallback", error: remoteMountError || null, at: null });
+			return null;
+		}
+		return aggregateFlightRef.current(function() {
+			setSourceState(function(prev) { return { kind: remoteDataRef.current ? "refreshing" : "loading", error: null, at: prev.at }; });
+			return aggregateRemote().then((r) => {
+				setRemoteData(r);
+				setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code); }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
+			}).catch((err) => {
+				console.warn("[dsh-stats] aggregate 调用失败:", err);
+				setSourceState({ kind: remoteDataRef.current ? "stale" : "fallback", error: err?.message || String(err), at: remoteDataRef.current?.meta?.generatedAt || null });
+			});
+		});
+	}, [aggregateRemote, remoteMountError]);
+
 	useEffect(() => {
 		if (!open || !open.open) return;
 		if (!aggregateRemote) { setSourceState({ kind: "fallback", error: remoteMountError || null, at: null }); return; }
-		var cancelled = false;
-		setSourceState(function(prev) { return { kind: remoteData ? "refreshing" : "loading", error: null, at: prev.at }; });
-		aggregateRemote().then((r) => {
-			if (cancelled) return;
-			setRemoteData(r);
-			setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code); }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
-		})
-			.catch((err) => {
-				if (cancelled) return;
-				console.warn("[dsh-stats] aggregate 调用失败:", err);
-				setSourceState({ kind: remoteData ? "stale" : "fallback", error: err?.message || String(err), at: remoteData?.meta?.generatedAt || null });
-			});
-		return () => { cancelled = true; };
-	}, [open, aggregateRemote, remoteMountError, refreshTick]);
+		requestAggregate();
+	}, [open, aggregateRemote, remoteMountError, requestAggregate]);
+
+	// A manual refresh or pricing change advances refreshTick; the single-flight
+	// guard coalesces it with an already running aggregate instead of cancelling
+	// the pending result.
+	useEffect(() => {
+		if (!open || !open.open || !refreshTick) return;
+		requestAggregate();
+	}, [refreshTick, open, requestAggregate]);
 
 	// 面板打开期间每 60 秒自动刷新一次
 	useEffect(() => {
 		if (!open || !open.open || !aggregateRemote) return;
 		var id = setInterval(() => {
-			setRefreshTick((x) => x + 1);
+			requestAggregate();
 			setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: false }));
 		}, 60000);
 		return () => clearInterval(id);
-	}, [open, aggregateRemote]);
+	}, [open, aggregateRemote, requestAggregate]);
 
 	// Balance is a live snapshot shown only on its tab; other tabs do not query providers.
 	var balanceActive = isOpen && tab === "balance";

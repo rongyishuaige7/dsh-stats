@@ -43,13 +43,13 @@ this Harness release; clean installation should no longer report peer mismatches
 
 ## Verification
 
-- Full test suite: **360 tests** pass in the default timezone and `TZ=UTC`.
+- Full test suite: **361 tests** pass in the default timezone and `TZ=UTC`.
 - Browser fixture: **18 check groups / 37 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
-- Signed catalog `2026101806`: 837 rules, verified against the pinned public key.
+- Signed catalog `2026101809`: 846 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
 - Pricing auto-publish workflow run: success (16 provisional models signed).

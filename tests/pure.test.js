@@ -1,6 +1,7 @@
 // Phase E 纯函数测试：直接 require 真实 client 源码（通过 __test 钩子暴露），
 // 确保测试验证的是生产实现而非副本。
 const client = require('../src/client.cjs');
+const { createSingleFlight } = require('../src/client-overview-model.cjs');
 const {
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
@@ -915,4 +916,29 @@ test('fallback timeline clamps corrupt durations instead of walking unbounded sl
 	const timeline = buildTimeline([{ id: 'p', name: 'P', sessions: [{ id: 's', updatedAt: now, durMs: Number.MAX_SAFE_INTEGER }] }], 30);
 	expect(timeline.days.length).toBeGreaterThan(0);
 	expect(timeline.days.length).toBeLessThanOrEqual(8);
+});
+
+test('single-flight refresh coalesces overlapping aggregate requests', async () => {
+	let calls = 0;
+	let release;
+	const flight = createSingleFlight();
+	const first = flight(() => {
+		calls += 1;
+		return new Promise((resolve) => { release = resolve; });
+	});
+	const second = flight(() => {
+		calls += 1;
+		return Promise.resolve('second');
+	});
+	await Promise.resolve();
+	expect(second).toBe(first);
+	expect(calls).toBe(1);
+	release('first');
+	await expect(first).resolves.toBe('first');
+	const third = flight(() => {
+		calls += 1;
+		return Promise.resolve('third');
+	});
+	await expect(third).resolves.toBe('third');
+	expect(calls).toBe(2);
 });
