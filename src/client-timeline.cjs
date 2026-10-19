@@ -406,6 +406,7 @@ function TimelineDay(props) {
 						onClick: function() { props.onOpenSession(session.session); }
 					},
 						session.subagent ? e("span", { className: "dss-tag" }, t("w.subagentTag")) : null,
+						session.archived === true ? e("span", { className: "dss-tag is-archived" }, t("w.archivedTag")) : null,
 						e("span", { className: "dss-tl-name" }, title)
 					)
 				),

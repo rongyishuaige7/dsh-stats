@@ -70,6 +70,18 @@ test('TimelineDay omits the lane chevron when sessions have no activity slots', 
 	expect(html).toContain(fmtDuration(SLOT_MS));
 });
 
+test('TimelineDay marks archived sessions', () => {
+	const project = {
+		id: 'p', name: 'Project P', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: null,
+		stats: stats(),
+		sessions: [{ id: 's', title: 'Archived session', archived: true, subagent: false, slots: [{ slot: 10, ms: SLOT_MS }], stats: stats() }],
+	};
+	const html = render({ projects: [project] });
+	expect(html).toContain('dss-tag is-archived');
+	expect(html).toContain(zh['w.archivedTag']);
+	expect(html).toContain('Archived session');
+});
+
 test('TimelineDay renders the empty state and show-all action when every lane is hidden', () => {
 	const project = { id: 'p', name: 'Project P', path: '/p', sessionCount: 1, stats: stats(), sessions: [] };
 	const html = render({ projects: [project], hidden: { p: true } });

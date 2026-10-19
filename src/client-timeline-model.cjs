@@ -348,6 +348,7 @@ function timelineDayModel(input) {
 				id: session.id == null ? null : session.id,
 				title: session.title || null,
 				subagent: session.subagent === true,
+				archived: session.archived === true,
 				parentSession: session.parentSession == null ? null : session.parentSession,
 				session: session,
 				ms: daySlots.ms,
