@@ -294,31 +294,26 @@ try {
 
 	const accountClicked = (await page.clickText(["账户余额", "Account Balance"], ".dss-panel button"));
 	if (!accountClicked) throw new Error("账户余额/Account Balance tab not found");
-	await waitForPage(page, "Boolean(document.querySelector('.dss-balance, .dss-balance-state.error'))", deadline, "account balance view");
+	await waitForPage(page, "Boolean(document.querySelector('.dss-bal-row, .dss-bal-failed, .dss-bal .dss-empty'))", deadline, "account balance view");
 	result.accountTab = true;
 	result.accountText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 2_000) || "";
-	result.providers = await page.evaluate("[...document.querySelectorAll('.dss-provider-picker option')].map((option) => option.textContent.trim()).filter(Boolean)");
+	result.providers = await page.evaluate("[...document.querySelectorAll('.dss-bal-row .dss-bal-name, .dss-bal-idle-row b')].map((node) => node.textContent.trim()).filter(Boolean)");
 	result.yiApiPresent = result.providers.some((name) => name.toLowerCase() === "yi-api");
 	if (result.yiApiPresent) {
-		const selected = await page.evaluate(`(() => {
-			const select = document.querySelector('.dss-provider-picker select');
-			if (!select) return false;
-			const option = [...select.options].find((item) => item.value === 'yi-api' || item.textContent.trim().toLowerCase() === 'yi-api');
-			if (!option) return false;
-			select.value = option.value;
-			select.dispatchEvent(new Event('change', { bubbles: true }));
-			return true;
+		const yiRow = await page.evaluate(`(() => {
+			let row = document.querySelector('.dss-bal-row[data-account-id="yi-api"]');
+			if (!row) row = [...document.querySelectorAll('.dss-bal-row')].find((node) => (node.querySelector('.dss-bal-name')?.textContent || '').trim().toLowerCase() === 'yi-api');
+			if (!row) return null;
+			return { name: (row.querySelector('.dss-bal-name')?.textContent || '').trim(), tone: row.dataset.tone || '', amount: (row.querySelector('.dss-bal-amt')?.textContent || '').trim(), text: row.innerText };
 		})()`);
-		if (!selected) throw new Error("yi-api provider option could not be selected");
-		await waitForPage(page, "(document.querySelector('.dss-balance-name')?.textContent || '').trim().toLowerCase() === 'yi-api'", deadline, "yi-api account card");
-		result.yiApiText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 2_000) || "";
-		const yiApiLower = result.yiApiText.toLowerCase();
-		result.yiApiVisible = yiApiLower.includes("yi-api");
-		result.yiApiNotUnknown = !yiApiLower.includes("unknown");
-		result.yiApiHealthy = result.yiApiText.includes("正常") || yiApiLower.includes("ok") || yiApiLower.includes("healthy");
-		result.yiApiUsdBalance = yiApiLower.includes("usd") && /[0-9]/.test(result.yiApiText);
+		if (!yiRow) throw new Error("yi-api account row not found");
+		result.yiApiText = yiRow.text.slice(0, 2_000);
+		result.yiApiVisible = yiRow.name.toLowerCase() === 'yi-api';
+		result.yiApiNotUnknown = !yiRow.text.toLowerCase().includes("unknown");
+		result.yiApiHealthy = yiRow.tone === 'ok';
+		result.yiApiUsdBalance = yiRow.amount.startsWith('$') && /[0-9]/.test(yiRow.amount);
 		if (!result.yiApiVisible || !result.yiApiNotUnknown || !result.yiApiHealthy || !result.yiApiUsdBalance) {
-			throw new Error("yi-api account card did not show a healthy non-unknown USD balance");
+			throw new Error("yi-api account row did not show a healthy non-unknown USD balance");
 		}
 	} else {
 		result.note = "runtime 中未配置 yi-api，已完成账户页渲染检查";

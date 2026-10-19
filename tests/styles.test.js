@@ -147,3 +147,17 @@ test('type selectors never start with dss-', () => {
 	}
 	expect(offenders).toEqual([]);
 });
+
+test('legacy balance selectors and tokens are gone', () => {
+	for (const banned of ['dss-balance', 'dss-provider-picker', 'dss-quota', '--dss-hero-card', '--dss-hero-metric', '--dss-balance-']) {
+		expect(css).not.toContain(banned);
+	}
+});
+
+test('balance rules never create a second scroll container', () => {
+	const offenders = parsed
+		.filter(rule => rule.selector.includes('.dss-bal'))
+		.filter(rule => /(?:^|;)\s*overflow(?:-[xy])?\s*:\s*(?:auto|scroll)\b/.test(rule.declarations))
+		.map(rule => rule.selector);
+	expect(offenders).toEqual([]);
+});

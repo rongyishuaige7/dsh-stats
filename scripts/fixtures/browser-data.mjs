@@ -180,8 +180,29 @@ export async function browserData(home) {
       { ...base, id: 'deepseek-official', displayName: 'DeepSeek', balance: { currency: 'CNY', remaining: 123.45, used: null, total: null, toppedUp: 100, granted: 23.45, unlimited: false } },
       { ...base, id: 'minimax-coding', displayName: 'MiniMax Coding Plan', providerFamily: 'minimax', mode: 'subscription', adapter: 'minimax-token-plan', balance: null,
         actionUrl: 'https://platform.minimaxi.com/subscribe/token-plan', plan: 'Professional Coding Plan',
-        windows: [{ kind: 'weekly', usedPercent: 32, remainingPercent: 68, resetsAt: now + 86400000 }] }
-    ], warnings: [] };
+        windows: [
+          { kind: 'session', usedPercent: 82, remainingPercent: 18, resetsAt: now + 7800000 },
+          { kind: 'weekly', usedPercent: 32, remainingPercent: 68, resetsAt: now + 86400000 }
+        ] },
+      { ...base, id: 'openrouter', displayName: 'OpenRouter', providerFamily: 'openrouter', adapter: 'openrouter-balance',
+        balance: { currency: 'USD', remaining: 15.5, used: 4.5, total: 20, toppedUp: null, granted: null, unlimited: false },
+        actionUrl: 'https://openrouter.ai/credits' },
+      { ...base, id: 'kimi-coding', displayName: 'Kimi For Coding', providerFamily: 'moonshot', mode: 'subscription', adapter: 'kimi-token-plan', balance: null, plan: null,
+        actionUrl: 'https://www.kimi.com/code/console',
+        windows: [{ kind: 'weekly', usedPercent: 96, remainingPercent: 4, resetsAt: now + 223200000 }] },
+      { ...base, id: 'moonshotai-cn', displayName: 'Moonshot', providerFamily: 'moonshot', adapter: 'moonshot-balance',
+        status: 'unavailable', stale: true, errorCode: 'http-5xx', lastSuccessAt: now - 1560000,
+        balance: { currency: 'CNY', remaining: 36.2, used: null, total: null, toppedUp: 30, granted: 6.2, unlimited: false },
+        actionUrl: 'https://platform.moonshot.cn/console/account' },
+      { ...base, id: 'yi-api', displayName: 'yi-api', providerFamily: 'unknown', adapter: 'generic-usage',
+        balance: { currency: 'USD', remaining: 42.8, used: null, total: null, toppedUp: null, granted: null, unlimited: false },
+        actionUrl: null },
+      { ...base, id: 'zai-coding-cn', displayName: 'Z.ai Coding Plan', providerFamily: 'zai', mode: 'subscription', adapter: 'zai-token-plan',
+        status: 'not-configured', errorCode: 'not-configured', missingCredential: 'ZAI_API_KEY', lastSuccessAt: null, balance: null,
+        actionUrl: 'https://z.ai/manage-apikey/apikey-list' },
+      { ...base, id: 'anthropic', displayName: 'Anthropic', providerFamily: 'anthropic', mode: 'unsupported', adapter: null,
+        status: 'unsupported', errorCode: 'unsupported', lastSuccessAt: null, balance: null, actionUrl: null }
+    ], warnings: [{ providerId: 'moonshotai-cn', code: 'HTTP_5XX', message: 'provider account service is unavailable' }] };
     service.aggregate = engine => StatsService.prototype.aggregate.call(service, engine);
     // Start from a synced store, as a real host is after its startup refresh:
     // lastSuccessAt is then a millisecond timestamp the panel must display.

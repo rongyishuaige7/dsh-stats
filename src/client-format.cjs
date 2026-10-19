@@ -103,8 +103,11 @@ function fmtCostSummary(summary, t) {
 }
 function fmtBalanceAmount(value, currency) {
 	if (value == null || !Number.isFinite(value)) return "—";
-	var amount = value >= 1000 ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value.toFixed(2);
-	return currency === "CNY" ? "¥" + amount : amount + " " + currency;
+	// B13: always two decimals, with thousands separators, so 1234.5 reads 1,234.50.
+	var amount = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	if (currency === "CNY") return "¥" + amount;
+	if (currency === "USD") return "$" + amount;
+	return amount + " " + currency;
 }
 var SLOT_MS = 30 * 60 * 1000;
 function usageCostDetail(usage, fallbackModel, fallbackProvider, fallbackAccountType) {

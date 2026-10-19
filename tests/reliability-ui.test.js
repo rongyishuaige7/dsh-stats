@@ -4,6 +4,7 @@ import { TYPERT_REMOTE } from '../src/typert-remote-client.js';
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { StatusIndicator, StatusBanner, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate, STATS_REMOTE_CONTRIBUTION } = require('../src/client.cjs').__test;
+const { balanceHeaderState } = require('../src/client-balance-model.cjs');
 
 test('every strict codec serves both Harness 0.1.5 schema and 0.1.7 create() contracts', () => {
 	const faces = [TYPERT.invocations, TYPERT_REMOTE.descriptors, STATS_REMOTE_CONTRIBUTION.descriptors];
@@ -87,12 +88,17 @@ test('status band preserves data diagnostics without adding permanent price badg
 	expect(banner).not.toContain('pricing.unpriced');
 });
 
-test('account RPC refresh failure labels retained successful balances as stale', () => {
-	const html = renderToStaticMarkup(React.createElement(BalanceView, { data: result, state: { kind: 'stale', error: 'Connection lost' }, remote: true, t: key => key }));
-	expect(html).toContain('balance.status.stale');
-	expect(html).toContain('balance.lastSuccess');
-	expect(html).toContain('12.30');
-	expect(html).not.toContain('balance.status.ok');
+test('account RPC refresh failure keeps the last rows and moves the failure to the header', () => {
+	const state = { kind: 'stale', error: 'Connection lost' };
+	const html = renderToStaticMarkup(React.createElement(BalanceView, { data: result, state, remote: true, t: key => key }));
+	expect(html).toContain('data-account-id="deepseek-official"');
+	expect(html).toContain('¥12.30');
+	expect(html).not.toContain('balance.status.');
+	const header = balanceHeaderState(state, result, true);
+	expect(header).toEqual({ kind: 'stale', at: 1000, error: 'Connection lost' });
+	const banner = renderToStaticMarkup(React.createElement(StatusBanner, { state: header, remote: true, t: key => key, onRetry: () => {} }));
+	expect(banner).toContain('source.stale');
+	expect(banner).toContain('Connection lost');
 });
 
 test('client fallback counts duplicate workspace membership only once', () => {

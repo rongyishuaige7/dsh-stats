@@ -1,11 +1,13 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
-const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
+const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
+const { BalanceView } = require("./client-balance.cjs");
+const { balanceHeaderState } = require("./client-balance-model.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
 const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
@@ -134,88 +136,6 @@ function projectCsvTable(projects, t) {
 function exportCSV(projects, t) {
 	var lines = projectCsvTable(projects, t).map(function(row) { return row.map(csvField).join(","); });
 	download("dsh-stats.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
-}
-
-function providerPickerLabel(account) {
-	var family = account && typeof account.providerFamily === "string" ? account.providerFamily.trim() : "";
-	var displayName = account && typeof account.displayName === "string" ? account.displayName.trim() : "";
-	// Pricing keeps untrusted routes in the `unknown` family deliberately. The
-	// account selector should still use the configured route name (for example
-	// `yi-api`) instead of exposing that internal classification to users.
-	return !family || family === "unknown" ? (displayName || family || "unknown") : family;
-}
-
-function BalanceView(props) {
-	var data = props.data;
-	var state = props.state || { kind: "loading" };
-	var t = props.t;
-	var accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
-	var [selectedId, setSelectedId] = useState(accounts[0]?.id || "");
-	useEffect(function() {
-		if (!accounts.some(function(account) { return account.id === selectedId; })) setSelectedId(accounts[0]?.id || "");
-	}, [data, selectedId]);
-	if (state.kind === "loading" && !data) return e("div", { className: "dss-balance-state loading" }, t("balance.loading"));
-	if (!props.remote) return e("div", { className: "dss-balance-state error" }, t("balance.unavailable"));
-	var account = accounts.find(function(item) { return item.id === selectedId; }) || accounts[0] || null;
-	var stale = account?.stale || state.kind === "stale";
-	var visualStatus = stale ? "stale" : account?.status;
-	var ready = account && (account.status === "ok" || account.stale);
-	var metrics = account?.balance ? [
-		account.balance.toppedUp == null ? null : [t("balance.toppedUp"), fmtBalanceAmount(account.balance.toppedUp, account.balance.currency)],
-		account.balance.granted == null ? null : [t("balance.granted"), fmtBalanceAmount(account.balance.granted, account.balance.currency)],
-		account.balance.used == null ? null : [t("balance.used"), fmtBalanceAmount(account.balance.used, account.balance.currency)],
-		account.balance.total == null ? null : [t("balance.limit"), fmtBalanceAmount(account.balance.total, account.balance.currency)]
-	].filter(Boolean) : [];
-	var statusMessage = account?.status === "not-configured"
-		? t("balance.notConfigured") + (account.missingCredential ? " (" + account.missingCredential + ")" : "")
-		: t("balance.message." + (account?.status || "unavailable"));
-	return e("div", { className: "dss-balance" },
-		e("div", { className: "dss-balance-head" },
-			e("div", null,
-				e("div", { className: "dss-section-title" }, t("balance.title")),
-				e("div", { className: "dss-sec-hint" }, data?.generatedAt ? t("source.updated") + " " + fmtClock(data.generatedAt) : t("balance.hint"))
-			),
-			accounts.length > 1 ? e("label", { className: "dss-provider-picker" },
-				e("span", null, t("balance.provider")),
-				e("select", { value: account?.id || "", onChange: function(event) { setSelectedId(event.target.value); } },
-					accounts.map(function(item) { return e("option", { key: item.id, value: item.id }, providerPickerLabel(item)); })
-				)
-			) : null
-		),
-		state.error ? e("div", { className: "dss-balance-warning" }, state.error) : null,
-		!account ? e("div", { className: "dss-empty" }, t("balance.empty")) :
-			e("div", { className: "dss-balance-list" },
-				e("section", { className: "dss-balance-account provider-" + account.providerFamily, key: account.id },
-				e("div", { className: "dss-balance-account-head" },
-					e("div", null,
-						e("div", { className: "dss-balance-name" }, account.displayName),
-						e("div", { className: "dss-balance-currency" }, account.mode === "subscription" ? (account.plan || t("balance.subscription")) : (account.balance?.currency || providerPickerLabel(account)))
-					),
-					e("span", { className: "dss-balance-status " + visualStatus }, t("balance.status." + visualStatus))
-				),
-				ready && account.mode === "balance" && account.balance ? e(Fragment, null,
-					e("div", { className: "dss-balance-total-label" }, t("balance.total")),
-					e("div", { className: "dss-balance-total" }, fmtBalanceAmount(account.balance.remaining, account.balance.currency)),
-					metrics.length ? e("div", { className: "dss-balance-breakdown" }, metrics.map(function(metric) {
-						return e("div", { className: "dss-balance-metric", key: metric[0] }, e("span", null, metric[0]), e("b", null, metric[1]));
-					})) : null
-				) : ready && account.mode === "subscription" ? e(Fragment, null,
-					e("div", { className: "dss-balance-total-label" }, t("balance.plan")),
-					e("div", { className: "dss-balance-plan" }, account.plan || account.displayName),
-					e("div", { className: "dss-quota-list" }, (account.windows || []).map(function(window) {
-					return e("div", { className: "dss-quota", key: window.kind },
-						e("div", { className: "dss-quota-head" }, e("span", null, t("balance.window." + window.kind)), e("b", null, window.remainingPercent.toFixed(1) + "% " + t("balance.remaining"))),
-						e("div", { className: "dss-quota-track" }, e("i", { style: { width: window.usedPercent + "%" } })),
-						window.resetsAt ? e("div", { className: "dss-quota-reset" }, t("balance.reset") + " " + fmtClock(window.resetsAt)) : null
-					);
-				}))
-				) : e("div", { className: "dss-balance-message" }, statusMessage),
-				stale ? e("div", { className: "dss-balance-stale" }, t("balance.staleHint")) : null,
-				account.lastSuccessAt != null ? e("div", { className: "dss-quota-reset" }, t("balance.lastSuccess") + " " + fmtClock(account.lastSuccessAt)) : null,
-				account.actionUrl ? e("a", { className: "dss-balance-topup", href: account.actionUrl, target: "_blank", rel: "noreferrer" }, account.mode === "balance" ? t("balance.topUp") : t("balance.manage")) : null
-			)
-		)
-	);
 }
 
 function StatsPanel(props) {
@@ -348,9 +268,7 @@ function StatsPanel(props) {
 		balanceRemote(force).then(function(result) {
 			if (cancelled) return;
 			setBalanceData(result);
-			var first = result.accounts && result.accounts[0];
-			var warning = result.warnings && result.warnings.length ? result.warnings[0].message : null;
-			setBalanceState({ kind: first?.status || "error", error: warning });
+			setBalanceState({ kind: "exact", error: null });
 		}).catch(function(error) {
 			if (cancelled) return;
 			setBalanceState({ kind: balanceData ? "stale" : "error", error: error?.message || String(error) });
@@ -442,6 +360,7 @@ function StatsPanel(props) {
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
+	var balanceHeader = balanceHeaderState(balanceState, balanceData, !!balanceRemote);
 	var refreshCurrent = function() {
 		if (tab === "balance") setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: true }));
 		else setRefreshTick((x) => x + 1);
@@ -525,7 +444,9 @@ function StatsPanel(props) {
 						})
 					),
 					e("div", { className: "dss-head-actions" },
-						tab !== "balance" ? e(StatusIndicator, { state: sourceState, remote: data.remote, t }) : null,
+						tab === "balance"
+							? e(StatusIndicator, { state: balanceHeader, remote: !!balanceRemote, source: t("balance.source"), t })
+							: e(StatusIndicator, { state: sourceState, remote: data.remote, t }),
 						e("div", { className: "dss-act-group" },
 							e("button", {
 								type: "button",
@@ -564,14 +485,24 @@ function StatsPanel(props) {
 						}, e(IconCloseOutline16, { size: 16 }))
 					)
 				),
-				tab !== "balance" ? e(StatusBanner, { state: sourceState, remote: data.remote, t, onRetry: refreshCurrent }) : null,
+				tab === "balance"
+					? e(StatusBanner, { state: balanceHeader, remote: !!balanceRemote, t, onRetry: refreshCurrent })
+					: e(StatusBanner, { state: sourceState, remote: data.remote, t, onRetry: refreshCurrent }),
 				e("div", {
 					className: "dss-body",
 					id: "dss-tabpanel",
 					role: "tabpanel",
 					"aria-labelledby": "dss-tab-" + tab
 				},
-					tab === "balance" ? e(BalanceView, { data: balanceData, state: balanceState, remote: balanceRemote, t }) : e(Fragment, null,
+					tab === "balance" ? e(BalanceView, {
+						data: balanceData,
+						state: balanceState,
+						remote: !!balanceRemote,
+						providers: null,
+						alerts: {},
+						onRetry: refreshCurrent,
+						t
+					}) : e(Fragment, null,
 						e(OverviewTools, {
 							nav, setNav, dates, effectiveDate, t,
 							showMode: tab !== "trends",
@@ -1123,6 +1054,6 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
-	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
+	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows, escapeAction
 };

@@ -156,7 +156,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-strip','.dss-ptable','.dss-balance-head','.dss-balance-account','.dss-hero'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle','.dss-hero'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -204,6 +204,7 @@ try {
   });
   await once(socket, 'open');
   await command('Runtime.enable'); await command('Page.enable'); await command('Network.enable');
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
   // Runs first, while the stored tab preference is still the default overview.
   await navigate('/?lang=zh');
   await until('document.querySelector(".dss-trigger")'); await delay(100);
@@ -223,10 +224,10 @@ try {
   assert.equal(await evaluate('window.__fixture.panelRenders'), hostRenders, 'host data must not render on session/workspace updates');
   const accountCalls = () => evaluate('window.__fixture.calls.filter(row => row[0] === "account").map(row => row[1])');
   assert.deepEqual(await accountCalls(), [], 'balance must not be queried outside its tab');
-  await tab(4); await until('document.querySelector(".dss-balance-name")');
+  await tab(4); await until('document.querySelector(".dss-bal-row")');
   assert.deepEqual(await accountCalls(), [false]);
   await refresh(); await delay(300);
-  await tab(1); await tab(4); await until('document.querySelector(".dss-balance-name")'); await delay(300);
+  await tab(1); await tab(4); await until('document.querySelector(".dss-bal-row")'); await delay(300);
   assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
   await tab(1);
   report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
@@ -322,7 +323,11 @@ try {
     await click('.dss-trigger');
     await until('document.querySelector(".dss-data-status.' + (query.startsWith('stats=error') ? 'fallback' : 'exact') + '")');
     const texts = [];
-    for (const index of [1, 2, 3]) { await tab(index); texts.push(await evaluate('document.querySelector(".dss-body").innerText')); }
+    for (const index of [1, 2, 3, 4]) {
+      await tab(index);
+      if (index === 4) await until('document.querySelector(".dss-bal-row")');
+      texts.push(await evaluate('document.querySelector(".dss-body").innerText'));
+    }
     await tab(1);
     await click('.dss-prow [data-action=expand]');
     await until('document.querySelector(".dss-pdetail .dss-sess")');
@@ -347,18 +352,131 @@ try {
     for (const [index, view] of [[1,'overview'],[2,'timeline'],[3,'trends'],[4,'balance']]) {
       await tab(index);
       if (view === 'timeline') { await click('[data-action=mode-day]'); await until('document.querySelector(".dss-tl[data-mode=day]")'); }
+      if (view === 'balance') {
+        const balanceScrollables = await evaluate(`(() => {
+          const panel = document.querySelector('.dss-panel');
+          return [...panel.querySelectorAll('*')].filter(node => {
+            const style = getComputedStyle(node);
+            return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+          }).map(node => String(node.className || node.tagName));
+        })()`);
+        assert(balanceScrollables.every(selector => selector === 'dss-body'), name + ' balance only body scrolls: ' + JSON.stringify(balanceScrollables));
+        if (width < 600) assert.deepEqual(balanceScrollables, ['dss-body'], name + ' balance body scrolls when content overflows: ' + JSON.stringify(balanceScrollables));
+        const balanceSmallFonts = await evaluate(`(() => {
+          const bad = [];
+          for (const node of document.querySelectorAll('.dss-overlay *')) {
+            if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
+            const size = parseFloat(getComputedStyle(node).fontSize);
+            if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
+          }
+          return bad.slice(0, 10);
+        })()`);
+        assert.deepEqual(balanceSmallFonts, [], name + ' balance text floor: ' + JSON.stringify(balanceSmallFonts));
+      }
       await layout(name + '-' + view); await capture(name + '-' + view);
-      if (width < 600 && ['overview', 'trends'].includes(view)) {
+      if (width < 600 && (['overview', 'trends'].includes(view) || (view === 'balance' && width === 390))) {
         await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
         await capture(name + '-' + view + '-bottom');
         await evaluate('document.querySelector(".dss-body").scrollTop = 0');
       }
     }
-    await evaluate(`(() => { const select=document.querySelector('.dss-provider-picker select'); select.value='minimax-coding'; select.dispatchEvent(new Event('change',{bubbles:true})); })()`);
-    await until('document.querySelector(".dss-balance-plan")?.textContent === "Professional Coding Plan"');
-    await layout(name + '-subscription'); await capture(name + '-subscription');
-    report.checks.push(name + ': all four tabs, provider selection and layout');
+    if (name === 'desktop') {
+      await tab(4);
+      await until('document.querySelectorAll(".dss-bal-row").length === 6');
+      const rowIds = await evaluate('[...document.querySelectorAll(".dss-bal-row")].map(node => node.dataset.accountId)');
+      assert.deepEqual(rowIds, ['kimi-coding', 'minimax-coding', 'moonshotai-cn', 'deepseek-official', 'openrouter', 'yi-api'], 'balance rows follow B2 order');
+      assert(await evaluate('!document.querySelector(".dss-panel select")'), 'balance page has no provider select');
+      const chips = await evaluate(`[...document.querySelectorAll('.dss-bal-row')].slice(0, 3).map(node => { const chip = node.querySelector('.dss-bal-chip'); return { text: chip?.textContent || '', cls: chip?.className || '' }; })`);
+      assert.deepEqual(chips.map(row => row.text), ['额度将用完', '额度紧张', '已过期'], 'balance chips follow B7');
+      assert(chips[0].cls.includes('is-danger') && chips[1].cls.includes('is-warn') && chips[2].cls.includes('is-warn'), 'balance chip tones');
+      assert(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].slice(3).every(node => !node.querySelector('.dss-bal-chip') && node.querySelector('.dss-sr')?.textContent === '状态正常')`), 'ok rows expose only a screen-reader status');
+      const metas = await evaluate(`Object.fromEntries([...document.querySelectorAll('.dss-bal-row')].map(node => [node.dataset.accountId, node.querySelector('.dss-bal-meta')?.textContent || '']))`);
+      assert.equal(metas['kimi-coding'], '订阅 · kimi-coding');
+      assert.equal(metas['minimax-coding'], '订阅 · Professional Coding Plan');
+      assert.equal(metas['yi-api'], '余额 · 自定义路由');
+      const kimiMeter = await evaluate(`(() => { const bar = document.querySelector('[data-account-id="kimi-coding"] .dss-bal-bar'); return { now: bar.getAttribute('aria-valuenow'), cls: bar.className, width: bar.querySelector('i').style.width }; })()`);
+      assert.deepEqual(kimiMeter, { now: '4', cls: 'dss-bal-bar is-danger', width: '4%' }, 'kimi meter shows remaining');
+      const minimaxMeter = await evaluate(`(() => { const bar = document.querySelector('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-bar'); return { now: bar.getAttribute('aria-valuenow'), cls: bar.className, width: bar.querySelector('i').style.width }; })()`);
+      assert.deepEqual(minimaxMeter, { now: '18', cls: 'dss-bal-bar is-warn', width: '18%' }, 'minimax session meter shows remaining');
+      assert.equal(await evaluate(`document.querySelector('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-reset').textContent`), '2 小时 10 分后重置');
+      await focus('[data-account-id="minimax-coding"] .dss-bal-meter .dss-bal-reset');
+      const resetTip = await evaluate('document.querySelector("#dss-tooltip")?.textContent || ""');
+      assert(resetTip.includes('北京时间 2026-09-08 12:10 重置'), 'reset tooltip shows Beijing time: ' + resetTip);
+      assert.equal(await evaluate(`document.querySelector('[data-account-id="kimi-coding"] .dss-bal-reset').textContent`), '2 天 14 小时后重置');
+      const kpis = await evaluate(`(() => { const cells = [...document.querySelectorAll('.dss-bal-kpi')]; return { count: cells.length, lead: cells[0]?.querySelector('.dss-bal-kpi-v')?.textContent, leadSub: cells[0]?.querySelector('.dss-bal-kpi-s')?.textContent, tight: cells[1]?.querySelector('.dss-bal-kpi-v')?.textContent, tightCls: cells[1]?.querySelector('.dss-bal-kpi-v')?.className, tightSub: cells[1]?.querySelector('.dss-bal-kpi-s')?.textContent, attention: cells[2]?.querySelector('.dss-bal-kpi-v')?.textContent, attentionSub: cells[2]?.querySelector('.dss-bal-kpi-s')?.textContent }; })()`);
+      assert.equal(kpis.count, 3);
+      assert.equal(kpis.lead, '¥159.65');
+      assert(kpis.leadSub.includes('$58.30') && kpis.leadSub.includes('4 个余额账户') && kpis.leadSub.includes('1 个为过期快照'), 'balance summary subline: ' + kpis.leadSub);
+      assert.equal(kpis.tight, '剩余 4%');
+      assert(kpis.tightCls.includes('is-danger'));
+      assert(kpis.tightSub.includes('Kimi For Coding 本周'));
+      assert.equal(kpis.attention, '3');
+      assert.equal(kpis.attentionSub, 'Kimi For Coding、MiniMax Coding Plan、Moonshot');
+      assert.equal(await evaluate(`document.querySelector('[data-account-id="deepseek-official"] .dss-bal-amt-sub').textContent`), '充值 ¥100.00 · 赠送 ¥23.45');
+      const openrouter = await evaluate(`(() => { const row = document.querySelector('[data-account-id="openrouter"]'); const bar = row.querySelector('.dss-bal-meter[data-kind="credit"] .dss-bal-bar'); return { amount: row.querySelector('.dss-bal-amt').textContent, sub: row.querySelector('.dss-bal-amt-sub').textContent, now: bar.getAttribute('aria-valuenow'), cls: bar.className }; })()`);
+      assert.equal(openrouter.amount, '$15.50');
+      assert.equal(openrouter.sub, '已用 $4.50 / $20.00');
+      assert.equal(openrouter.now, '77');
+      assert(!openrouter.cls.includes('is-warn') && !openrouter.cls.includes('is-danger'));
+      const moonshot = await evaluate(`(() => { const row = document.querySelector('[data-account-id="moonshotai-cn"]'); return { amount: row.querySelector('.dss-bal-amt').textContent, cls: row.querySelector('.dss-bal-amt').className, reason: row.querySelector('.dss-bal-reason')?.textContent || '' }; })()`);
+      assert.equal(moonshot.amount, '¥36.20');
+      assert(moonshot.cls.includes('is-stale'));
+      assert.equal(moonshot.reason, '刷新失败，显示的是 2026-09-08 09:34 的结果');
+      const idle = await evaluate(`(() => { const details = document.querySelector('.dss-bal-idle'); return { open: details.open, summary: details.querySelector('summary').textContent }; })()`);
+      assert.equal(idle.open, false);
+      assert.equal(idle.summary, '未接入 2 个：Z.ai Coding Plan · Anthropic');
+      await click('.dss-bal-idle-sum');
+      await until('document.querySelector(".dss-bal-idle").open');
+      const idleRows = await evaluate(`[...document.querySelectorAll('.dss-bal-idle-row')].map(node => ({ id: node.dataset.accountId, code: node.querySelector('code')?.textContent || '', link: !!node.querySelector('.dss-bal-link') }))`);
+      assert.deepEqual(idleRows, [
+        { id: 'zai-coding-cn', code: 'ZAI_API_KEY', link: true },
+        { id: 'anthropic', code: '', link: false }
+      ]);
+      const links = await evaluate(`[...document.querySelectorAll('.dss-bal-link')].map(node => ({ href: node.getAttribute('href'), target: node.getAttribute('target'), rel: node.getAttribute('rel') }))`);
+      assert(links.length > 0 && links.every(link => link.href.startsWith('https:') && link.target === '_blank' && link.rel.includes('noreferrer')), 'balance links are safe external links');
+      assert(await evaluate(`!document.querySelector('[data-account-id="yi-api"] .dss-bal-link')`), 'yi-api has no link');
+      assert(!(await evaluate('document.querySelector(".dss-panel").innerText')).includes('provider account service is unavailable'), 'host warning text must not reach the body');
+      await refresh(); await delay(300);
+      await until('document.querySelectorAll(".dss-bal-row").length === 6');
+      assert(await evaluate('document.querySelector(".dss-bal-idle").open'), 'idle group stays open after refresh');
+      report.checks.push('balance: account order, chips, metadata, remaining meters, summary strip, idle group and safe links');
+    }
+    report.checks.push(name + ': all four tabs, account list order and layout');
   }
+  report.checks.push('balance: single scroll container and >=11px text at 1440/390/320');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?accountSet=single&lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 1');
+  assert(await evaluate('!document.querySelector(".dss-bal-kpis")'), 'single account has no summary strip');
+  await navigate('/?accountSet=attention&lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  const attentionRows = await evaluate(`[...document.querySelectorAll('.dss-bal-row')].slice(0, 3).map(node => ({ id: node.dataset.accountId, chip: node.querySelector('.dss-bal-chip')?.textContent || '', amount: node.querySelector('.dss-bal-amt')?.textContent || '', cls: node.querySelector('.dss-bal-amt')?.className || '', reason: node.querySelector('.dss-bal-reason')?.textContent || '' }))`);
+  assert.deepEqual(attentionRows.map(row => row.id), ['deepseek-official', 'openrouter', 'kimi-coding']);
+  assert.equal(attentionRows[0].chip, '余额已用完');
+  assert.equal(attentionRows[0].amount, '¥0.00');
+  assert(attentionRows[0].cls.includes('is-zero'));
+  assert.equal(attentionRows[0].reason, '余额为 0，充值后才能继续调用');
+  assert.equal(attentionRows[1].chip, '凭证无效');
+  assert.equal(attentionRows[1].amount, '—');
+  assert.equal(attentionRows[1].reason, '凭证无效或没有查询权限');
+  await layout('desktop-balance-attention'); await capture('desktop-balance-attention');
+  await navigate('/?lang=zh');
+  await evaluate('window.__fixture.accountMode = "error"');
+  await click('.dss-trigger');
+  await tab(4);
+  await until('document.querySelector(".dss-data-status.error")');
+  await until('document.querySelector(".dss-bal-failed [data-action=balance-retry]")');
+  assert(await evaluate('!document.querySelector(".dss-status-banner")'), 'first failure has no banner');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-failed").getAttribute("role")'), 'status');
+  await layout('balance-failed'); await capture('balance-failed');
+  await evaluate('window.__fixture.accountMode = "ok"');
+  await click('[data-action=balance-retry]');
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "account").at(-1)[1]'), true, 'balance retry forces a host refresh');
+  report.checks.push('balance: attention fixture and first-load failure retry');
+
   for (const width of [641, 700, 768, 1024, 1100, 1101]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
     await navigate('/?lang=en'); await click('.dss-trigger'); await tab(1);
@@ -378,16 +496,23 @@ try {
     for (const index of [1, 2, 3, 4]) { await tab(index); await layout('header-' + width + '-' + index); }
   }
   report.checks.push('English header boundaries 641/700/768/1024/1100/1101px: all controls visible and disjoint, tabs stay on one line, tablist drops below 860px');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
   await evaluate('window.__fixture.accountMode = "error"'); await refresh();
-  await until('document.querySelector(".dss-balance-status.stale")');
+  await until('document.querySelector(".dss-data-status.stale")');
+  assert(await evaluate('!!document.querySelector(".dss-status-banner.stale [data-action=retry]")'), 'stale banner exposes retry');
+  assert(await evaluate('!!document.querySelector(".dss-bal-row")'), 'stale query keeps the last rows');
   assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "current").length'), 0);
   assert(await evaluate('window.__fixture.calls.some(row => row[0] === "account" && row[1] === true)'));
   await evaluate('window.__fixture.accountMode = "legacy"'); await refresh();
-  await until('document.querySelector(".dss-balance-warning")?.textContent.includes("Legacy account service")');
-  assert(await evaluate('!document.querySelector(".dss-provider-picker select") && document.querySelector(".dss-balance-name").textContent === "DeepSeek"'));
+  await until('document.querySelector(".dss-bal-note[data-code=LEGACY_ACCOUNT_API]")');
+  assert(await evaluate('!document.querySelector(".dss-panel").innerText.includes("Legacy account service")'), 'legacy warning text stays out of the body');
+  assert(await evaluate('!document.querySelector(".dss-panel select") && document.querySelectorAll(".dss-bal-row").length === 1 && document.querySelector(".dss-bal-row").dataset.accountId === "deepseek-official" && document.querySelector(".dss-bal-name").textContent === "DeepSeek"'), 'legacy host shows the single DeepSeek row');
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();
-  await until('document.querySelector(".dss-balance-status.stale")');
-  assert(await evaluate('document.querySelector(".dss-balance-total")?.textContent.includes("123.45")'));
+  await until('document.querySelector("[data-account-id=deepseek-official] .dss-bal-chip.is-warn")');
+  assert.equal(await evaluate('document.querySelector(".dss-data-status").className'), 'dss-data-status exact', 'single stale account keeps the header exact');
+  assert.equal(await evaluate('document.querySelector("[data-account-id=deepseek-official] .dss-bal-chip").textContent'), 'Stale');
+  assert.equal(await evaluate('document.querySelector("[data-account-id=deepseek-official] .dss-bal-amt").textContent'), '¥123.45');
+  assert(await evaluate('document.querySelector("[data-account-id=deepseek-official] .dss-bal-amt").classList.contains("is-stale")'));
   await layout('stale-balance'); await capture('narrow-stale-balance');
   report.checks.push('forced refresh, account RPC error without fallback, explicit legacy fallback, stale balance retained');
   await tab(1);
@@ -561,11 +686,15 @@ try {
   await navigate('/?theme=dark&lang=en');
   await click('.dss-trigger'); await tab(4);
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();
-  await until('document.querySelector(".dss-balance-status.stale")');
+  await until('document.querySelector("[data-account-id=deepseek-official] .dss-bal-chip.is-warn")');
+  assert.equal(await evaluate('document.querySelector(".dss-data-status").className'), 'dss-data-status exact', 'single stale account keeps the header exact in dark mode');
   await layout('dark-stale-balance'); await capture('narrow-dark-stale-balance');
   report.checks.push('dark-theme stale account state');
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-  await navigate('/?theme=dark&lang=zh'); await click('.dss-trigger'); await tab(1);
+  await navigate('/?theme=dark&lang=zh'); await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  await layout('dark-balance'); await capture('dark-balance');
+  await tab(1);
   await until('document.querySelector(".dss-kpis")');
   await layout('dark-overview'); await capture('dark-overview');
   await navigate('/?stats=estimated&lang=zh');

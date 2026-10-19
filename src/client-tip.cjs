@@ -27,4 +27,27 @@ function hideTip() {
 	if (el) el.classList.remove("show");
 }
 
-module.exports = { tipRows, showTipRaw, hideTip };
+// Hover and focus both show the same structured tooltip. Focus anchors to the
+// element bottom so keyboard users see it next to the trigger.
+function tipProps(getHtml) {
+	const show = function(ev) {
+		if (!ev) return;
+		let x = ev.clientX;
+		let y = ev.clientY;
+		if ((ev.type === "focus" || ev.type === "focusin") && ev.currentTarget && typeof ev.currentTarget.getBoundingClientRect === "function") {
+			const rect = ev.currentTarget.getBoundingClientRect();
+			x = rect.left + rect.width / 2;
+			y = rect.bottom;
+		}
+		showTipRaw(getHtml(), { clientX: x, clientY: y });
+	};
+	return {
+		onMouseEnter: show,
+		onMouseMove: show,
+		onMouseLeave: hideTip,
+		onFocus: show,
+		onBlur: hideTip
+	};
+}
+
+module.exports = { tipRows, showTipRaw, hideTip, tipProps };

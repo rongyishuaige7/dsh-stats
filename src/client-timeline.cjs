@@ -22,7 +22,7 @@ const {
 } = require("./client-timeline-model.cjs");
 const { PageControls, pageRows } = require("./client-overview.cjs");
 const { useLayer } = require("./client-dialog.cjs");
-const { tipRows, showTipRaw, hideTip } = require("./client-tip.cjs");
+const { tipRows, tipProps, showTipRaw, hideTip } = require("./client-tip.cjs");
 const { IconChevronDown } = require("./client-icons.cjs");
 
 function clock(slot) {
@@ -46,26 +46,6 @@ function dayLabel(date, t) {
 	return date.slice(5) + " " + t("w.dayPrefix") + weekday;
 }
 
-function tipProps(getHtml) {
-	const show = function(ev) {
-		if (!ev) return;
-		let x = ev.clientX;
-		let y = ev.clientY;
-		if ((ev.type === "focus" || ev.type === "focusin") && ev.currentTarget && typeof ev.currentTarget.getBoundingClientRect === "function") {
-			const rect = ev.currentTarget.getBoundingClientRect();
-			x = rect.left + rect.width / 2;
-			y = rect.bottom;
-		}
-		showTipRaw(getHtml(), { clientX: x, clientY: y });
-	};
-	return {
-		onMouseEnter: show,
-		onMouseMove: show,
-		onMouseLeave: hideTip,
-		onFocus: show,
-		onBlur: hideTip
-	};
-}
 
 function TimelineView(props) {
 	const [jump, setJump] = useState(null);
@@ -988,4 +968,4 @@ function TimelineRange(props) {
 	);
 }
 
-module.exports = { TimelineView, TimelineDay, TimelineRange, SlotPopover, tipProps };
+module.exports = { TimelineView, TimelineDay, TimelineRange, SlotPopover };

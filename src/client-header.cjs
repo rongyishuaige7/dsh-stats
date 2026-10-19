@@ -20,12 +20,12 @@ function statusText(state, remote, t) {
 	return t("source." + state.kind);
 }
 
-function StatusIndicator({ state, remote, t }) {
+function StatusIndicator({ state, remote, t, source }) {
 	var text = statusText(state, remote, t);
 	return e("span", {
 		className: "dss-data-status " + state.kind,
 		"aria-live": "polite",
-		title: t(remote ? "source.host" : "source.local") + " · " + text
+		title: (source || t(remote ? "source.host" : "source.local")) + " · " + text
 	},
 		e("i", { className: "dss-status-dot", "aria-hidden": "true" }),
 		e("span", { className: "dss-status-text" }, text)

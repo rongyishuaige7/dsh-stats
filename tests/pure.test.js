@@ -8,7 +8,7 @@ const {
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct, fmtCostSummary,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage,
-	modelNameOnly, modelDisplayName, providerPickerLabel, modelListNeedsScroll, compareProjectCost, projectCsvTable,
+	modelNameOnly, modelDisplayName, modelListNeedsScroll, compareProjectCost, projectCsvTable,
 	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
@@ -41,13 +41,6 @@ test('client projection pricing preserves request context and qualifies legacy b
 // ---------------------------------------------------------------------------
 // localDayKey
 // ---------------------------------------------------------------------------
-test('providerPickerLabel uses the canonical provider family without status text', () => {
-	expect(providerPickerLabel({ providerFamily: 'deepseek', displayName: 'DeepSeek', status: 'ok' })).toBe('deepseek');
-	expect(providerPickerLabel({ providerFamily: 'minimax', displayName: 'MiniMax', status: 'stale' })).toBe('minimax');
-	expect(providerPickerLabel({ displayName: 'Custom Provider', status: 'ok' })).toBe('Custom Provider');
-	expect(providerPickerLabel({ providerFamily: 'unknown', displayName: 'yi-api', status: 'ok' })).toBe('yi-api');
-});
-
 test('modelListNeedsScroll limits the visible model list to three rows', () => {
 	expect(modelListNeedsScroll([])).toBe(false);
 	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
