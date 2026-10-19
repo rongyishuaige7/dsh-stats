@@ -57,6 +57,123 @@ export async function browserData(home) {
       sessionQuery: { listSessions: async () => Object.values(largeSessions).map(({ header }) => ({ header })), readSession: async id => largeSessions[id] },
     } });
     large.meta = { ...estimated.meta };
+    // Deterministic showcase data for README timeline screenshots. It goes
+    // through the real aggregate path, uses only /fixture/ paths, and keeps
+    // every usage row exactly priced.
+    const showcaseProjects = [
+      { id: 'api-service', title: 'api-service', path: '/fixture/api-service' },
+      { id: 'client-dashboard', title: 'client-dashboard', path: '/fixture/client-dashboard' },
+      { id: 'docs-site', title: 'docs-site', path: '/fixture/docs-site' },
+      { id: 'data-pipeline', title: 'data-pipeline', path: '/fixture/data-pipeline' },
+      { id: 'mobile-app', title: 'mobile-app', path: '/fixture/mobile-app' },
+      { id: 'infra', title: 'infra', path: '/fixture/infra' },
+    ];
+    const showcaseSessions = {};
+    const showcaseTitles = {};
+    const showcaseWorkspaces = showcaseProjects.map(project => ({ id: project.id, title: project.title, path: project.path, sessionIds: [] }));
+    const showcaseProjectById = new Map(showcaseProjects.map(project => [project.id, project]));
+    const showcaseWorkspaceById = new Map(showcaseWorkspaces.map(workspace => [workspace.id, workspace]));
+    const idleWeekdays = new Set(['2026-08-12', '2026-08-26', '2026-09-02']);
+    const weekendActive = new Set(['2026-08-09', '2026-08-23']);
+    let showcaseSeed = 0x5eed1234;
+    const showcaseRandom = () => {
+      showcaseSeed = (Math.imul(showcaseSeed, 1664525) + 1013904223) >>> 0;
+      return showcaseSeed / 4294967296;
+    };
+    const pick = (items) => items[Math.floor(showcaseRandom() * items.length)];
+    const shuffled = (items) => {
+      const copy = items.slice();
+      for (let index = copy.length - 1; index > 0; index--) {
+        const other = Math.floor(showcaseRandom() * (index + 1));
+        [copy[index], copy[other]] = [copy[other], copy[index]];
+      }
+      return copy;
+    };
+    const addShowcaseBlock = (projectId, date, startMinute, durationMinutes, parentId = null) => {
+      const project = showcaseProjectById.get(projectId);
+      const start = Date.parse(date + 'T00:00:00+08:00') + startMinute * 60000;
+      const end = start + durationMinutes * 60000;
+      const id = projectId + '-' + date + '-' + startMinute + (parentId ? '-sub' : '');
+      const header = { id, cwd: project.path, createdAt: start, version: 2, isSeeded: false };
+      if (parentId) {
+        header.origin = 'subagent';
+        header.parentSession = parentId;
+      }
+      const events = [];
+      let seq = 0;
+      events.push({ type: 'turn/start', seq: seq++, data: { turn: 1 }, time: start });
+      let step = 0;
+      for (let time = start; time < end - 60000; time += 10 * 60000) {
+        step += 1;
+        events.push({ type: 'step/start', seq: seq++, data: { turn: 1, step }, time });
+        events.push({
+          type: 'assistant/message',
+          seq: seq++,
+          data: {
+            turn: 1,
+            step,
+            usage: { inputTokens: 1200 + (step % 4) * 150, outputTokens: 120 + (step % 3) * 10, cacheReadTokens: 4000 },
+            message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } },
+          },
+          time: time + 1000,
+        });
+        events.push({ type: 'step/end', seq: seq++, data: { turn: 1, step }, time: time + 2000 });
+      }
+      events.push({ type: 'turn/end', seq: seq++, data: { turn: 1 }, time: end });
+      showcaseSessions[id] = { header, inheritedEventCount: 0, events };
+      showcaseWorkspaceById.get(projectId).sessionIds.push(id);
+      showcaseTitles[id] = parentId ? project.title + ' · subagent' : project.title + ' · ' + date.slice(5);
+      return id;
+    };
+    const activeWeekdays = [];
+    for (let offset = 0; offset <= 34; offset++) {
+      const date = new Date(Date.parse('2026-08-05T00:00:00Z') + offset * 864e5).toISOString().slice(0, 10);
+      const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+      if (weekday === 0 || weekday === 6) {
+        if (weekendActive.has(date)) addShowcaseBlock('docs-site', date, 600, 60);
+        continue;
+      }
+      if (idleWeekdays.has(date)) continue;
+      activeWeekdays.push(date);
+      if (date === '2026-09-07') {
+        const parent = addShowcaseBlock('api-service', date, 540, 90);
+        addShowcaseBlock('api-service', date, 570, 30, parent);
+        addShowcaseBlock('client-dashboard', date, 540, 90);
+        addShowcaseBlock('docs-site', date, 600, 90);
+        addShowcaseBlock('data-pipeline', date, 810, 90);
+        addShowcaseBlock('mobile-app', date, 1140, 60);
+        continue;
+      }
+      const order = shuffled(showcaseProjects.map(project => project.id));
+      const morningStart = 540 + pick([0, 15, 30]);
+      const morningDuration = pick([60, 75, 90, 105, 120]);
+      const secondStart = 540 + pick([0, 15, 30, 45]);
+      const secondDuration = pick([60, 75, 90, 105, 120]);
+      const thirdStart = 600 + pick([0, 15, 30]);
+      const thirdDuration = pick([45, 60, 75, 90]);
+      const afternoonStart = 810 + pick([0, 15, 30]);
+      const afternoonDuration = pick([60, 75, 90, 105, 120]);
+      addShowcaseBlock(order[0], date, morningStart, morningDuration);
+      addShowcaseBlock(order[1], date, secondStart, secondDuration);
+      addShowcaseBlock(order[2], date, thirdStart, thirdDuration);
+      addShowcaseBlock(order[3], date, afternoonStart, afternoonDuration);
+      const total = morningDuration + secondDuration + thirdDuration + afternoonDuration;
+      const eveningDuration = pick([45, 60, 75, 90]);
+      if (total + eveningDuration <= 480) addShowcaseBlock(order[4], date, 1140 + pick([0, 15, 30]), eveningDuration);
+      if (date === '2026-08-20') addShowcaseBlock('data-pipeline', date, 840, 30);
+      if (date === '2026-08-27') addShowcaseBlock('mobile-app', date, 1155, 30);
+    }
+    const showcase = await StatsService.prototype.aggregate.call({ ctx: {
+      workspaceRegistry: { list: () => showcaseWorkspaces },
+      sessionQuery: {
+        listSessions: async () => Object.values(showcaseSessions).map(({ header }) => ({ header })),
+        readSession: async id => showcaseSessions[id],
+      },
+    } });
+    showcase.meta = { schemaVersion: 2, source: 'host', generatedAt: now, degraded: false, warnings: [] };
+    for (const session of showcase.projects.flatMap(project => project.sessions)) {
+      if (showcaseTitles[session.id]) session.title = showcaseTitles[session.id];
+    }
     const base = { providerFamily: 'deepseek', mode: 'balance', adapter: 'deepseek-balance', status: 'ok', stale: false,
       fetchedAt: now, lastSuccessAt: now, errorCode: null, missingCredential: null, actionUrl: 'https://platform.deepseek.com/top_up', plan: null, windows: [] };
     const accounts = { generatedAt: now, accounts: [
@@ -78,7 +195,7 @@ export async function browserData(home) {
       try { return await StatsService.prototype.pricing.call(service, request); }
       finally { if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous; }
     };
-    return { estimated, partial, unsupported, large, accounts, pricingRequest };
+    return { estimated, partial, unsupported, large, showcase, accounts, pricingRequest };
   } finally {
     if (previousHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previousHome;

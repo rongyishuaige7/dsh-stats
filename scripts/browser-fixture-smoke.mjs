@@ -1210,6 +1210,27 @@ try {
   assert(await evaluate('document.activeElement === document.querySelector(".dss-tl-day")'), 'closing a jumped slot detail focuses the day');
   await press('Escape');
   report.checks.push('all-mode timeline: single scroll, >=11px text, legend/cell colors, cell and daily tooltips, now outline, calendar pages, idle rows and week gaps, active-only paging, project legend, 24/48 columns, cell jump');
+
+  // 4e: deterministic showcase screenshots for the README
+  await evaluate('localStorage.removeItem("dsh-stats.timeline"); localStorage.removeItem("dsh-stats.hidden"); localStorage.setItem("dsh-stats.nav", JSON.stringify({ mode: "day", date: null }))');
+  await navigate('/?stats=showcase&lang=zh');
+  await click('.dss-trigger'); await tab(2);
+  await until('document.querySelector(".dss-data-status.exact")');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  await click('[data-action=date-prev]');
+  await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
+  const showcaseLanes = await evaluate('document.querySelectorAll(".dss-tl-lane").length');
+  assert(showcaseLanes >= 4, 'showcase 09-07 has at least four lanes: ' + showcaseLanes);
+  await layout('readme-timeline-day');
+  await capture('readme-timeline-day');
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-mx")');
+  await click('[data-action=tl-color-level]');
+  const showcaseActive = await evaluate('document.querySelectorAll(".dss-mx-row.is-day:not(.is-idle)").length');
+  assert(showcaseActive >= 15, 'showcase first matrix page has at least fifteen active days: ' + showcaseActive);
+  await layout('readme-timeline-all');
+  await capture('readme-timeline-all');
+  report.checks.push('showcase timeline: 09-07 lanes and first-page active days for README screenshots');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
