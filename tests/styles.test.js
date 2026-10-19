@@ -113,3 +113,24 @@ test('client.cjs no longer contains CSS rule fragments', () => {
 	const source = fs.readFileSync(path.join(process.cwd(), 'src/client.cjs'), 'utf8');
 	expect([...source.matchAll(/\.dss-[a-z0-9-]+\s*\{/g)].map(match => match[0])).toEqual([]);
 });
+
+test('state modifiers are always compounded with a dss- class', () => {
+	const offenders = [];
+	for (const rule of parsed) {
+		const selector = rule.selector.split(' >> ').pop();
+		for (const part of selector.split(',')) {
+			const compound = part.trim();
+			if (!compound.includes('.is-')) continue;
+			for (const token of compound.split(/[\s>+~]+/)) {
+				const index = token.indexOf('.is-');
+				if (index < 0) continue;
+				if (!/\.dss-[a-z0-9-]+/.test(token.slice(0, index))) offenders.push(rule.selector);
+			}
+		}
+	}
+	expect(offenders).toEqual([]);
+});
+
+test('styles never use color-mix()', () => {
+	expect(css).not.toContain('color-mix(');
+});

@@ -260,7 +260,7 @@ try {
   assert.equal(await evaluate('document.querySelector("#dss-tab-overview").getAttribute("aria-selected")'), 'true', 'ArrowRight does not activate');
   assert.equal(await evaluate('document.querySelector("#dss-tab-timeline").getAttribute("aria-selected")'), 'false');
   await press('Enter');
-  await until('document.querySelector(".dss-timeline-viewport")');
+  await until('document.querySelector(".dss-tl")');
   assert.equal(await evaluate('document.querySelector("#dss-tab-timeline").getAttribute("aria-selected")'), 'true', 'Enter activates the focused tab');
   assert.equal(await evaluate('document.querySelector("#dss-tabpanel").getAttribute("aria-labelledby")'), 'dss-tab-timeline', 'tabpanel follows the active tab');
   assert.deepEqual(await accountCalls(), callsBeforeArrows, 'tab keyboard navigation must not query the balance account');
@@ -345,7 +345,9 @@ try {
     assert.equal(metrics.statusDisplay === 'none', width < 420, 'status text display at ' + width + 'px');
     assert.equal(metrics.exportDisplay === 'none', width < 420, 'export label display at ' + width + 'px');
     for (const [index, view] of [[1,'overview'],[2,'timeline'],[3,'trends'],[4,'balance']]) {
-      await tab(index); await layout(name + '-' + view); await capture(name + '-' + view);
+      await tab(index);
+      if (view === 'timeline') { await click('[data-action=mode-day]'); await until('document.querySelector(".dss-tl[data-mode=day]")'); }
+      await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && ['overview', 'trends'].includes(view)) {
         await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
         await capture(name + '-' + view + '-bottom');
@@ -882,18 +884,121 @@ try {
       assert.equal(dayPanelHeight, overviewPanelHeight, 'day and all overview panels end on the same line');
       await click('[data-action=mode-all]');
       await until('document.querySelector(".dss-kpis")');
-      await tab(2); await until('document.querySelector(".dss-timeline-viewport")');
+      await tab(2); await until('document.querySelector(".dss-tl[data-mode=all]")');
       const timelinePanelHeight = Math.round(await evaluate('document.querySelector(".dss-panel").getBoundingClientRect().height'));
       assert.equal(overviewPanelHeight, timelinePanelHeight, 'overview and timeline panels end on the same line');
-      const allTimelineHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
       await click('[data-action=mode-day]');
-      await until('document.querySelector(".dss-day.day-mode")');
-      const dayTimelineHeight = Math.round(await evaluate('document.querySelector(".dss-timeline-viewport").getBoundingClientRect().height'));
-      assert(Math.abs(dayTimelineHeight - allTimelineHeight) <= 1, 'day and all timeline viewports share the same height: ' + dayTimelineHeight + ' vs ' + allTimelineHeight);
+      await until('document.querySelector(".dss-tl[data-mode=day]")');
       await tab(1);
     }
   }
-  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, day/all timeline viewports share height, sort/date reset, recent reset, session navigation, three widths');
+  report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
+
+  // 4b: day timeline
+  await navigate('/?stats=estimated&lang=zh');
+  await click('.dss-trigger'); await tab(1); await until('document.querySelector(".dss-data-status.exact")');
+  const estimatedKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
+  await tab(2); await until('document.querySelector(".dss-tl")');
+  if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  assert.equal(await evaluate('document.querySelector(".dss-tl-hist-total").textContent'), estimatedKpi, 'day timeline cost matches the overview KPI');
+  const timelineScrollables = await evaluate(`(() => {
+    const panel = document.querySelector('.dss-panel');
+    return [...panel.querySelectorAll('*')].filter(node => {
+      const style = getComputedStyle(node);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    }).map(node => String(node.className || node.tagName));
+  })()`);
+  assert.deepEqual(timelineScrollables.filter(name => name !== 'dss-body'), [], 'day timeline keeps a single scroll container: ' + JSON.stringify(timelineScrollables));
+  const timelineSmallFonts = await evaluate(`(() => {
+    const bad = [];
+    for (const node of document.querySelectorAll('.dss-overlay *')) {
+      if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
+      const size = parseFloat(getComputedStyle(node).fontSize);
+      if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
+    }
+    return bad.slice(0, 10);
+  })()`);
+  assert.deepEqual(timelineSmallFonts, [], 'day timeline text must be >= 11px: ' + JSON.stringify(timelineSmallFonts));
+  const misalignedTicks = await evaluate(`(() => {
+    const lines = [...document.querySelectorAll('.dss-tl-lines i[data-hour]')];
+    return [...document.querySelectorAll('.dss-tl-tick')]
+      .filter(tick => !tick.classList.contains('is-first') && !tick.classList.contains('is-last'))
+      .map(tick => {
+        const slot = Number(tick.dataset.slot), hour = slot / 2;
+        const line = lines.find(node => Number(node.dataset.hour) === hour);
+        if (!line) return { slot: slot, missing: true };
+        const a = tick.getBoundingClientRect(), b = line.getBoundingClientRect();
+        return { slot: slot, diff: Math.abs(a.left + a.width / 2 - b.left) };
+      })
+      .filter(row => row.missing || row.diff > 1);
+  })()`);
+  assert.deepEqual(misalignedTicks, [], 'day timeline ticks align with hour grid lines: ' + JSON.stringify(misalignedTicks));
+  const minRunWidth = await evaluate('Math.min(...[...document.querySelectorAll(".dss-tl-run")].map(node => node.getBoundingClientRect().width))');
+  assert(minRunWidth >= 3.5, 'day timeline runs keep at least 4px: ' + minRunWidth);
+  await click('.dss-tl-run');
+  await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  assert(await evaluate('document.querySelector(".dss-tl-pop").contains(document.activeElement)'), 'slot detail receives focus');
+  await press('Escape');
+  await until('!document.querySelector(".dss-tl-pop")');
+  assert(await evaluate('!!document.querySelector(".dss-panel")'), 'first Escape only closes the slot detail');
+  assert(await evaluate('document.activeElement.classList.contains("dss-tl-run")'), 'slot detail Escape returns focus to the run');
+  await press('Escape');
+  await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl[data-mode=day]")');
+  await click('.dss-tl-run'); await until('document.querySelector(".dss-tl-pop[role=dialog]")');
+  await click('[data-action=tl-pop-session]');
+  await until('!document.querySelector(".dss-panel")');
+  assert(await evaluate('!!window.__fixture.openedSession'), 'slot detail opens the selected session');
+  await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl[data-mode=day]")');
+  const selectedDay = await evaluate('document.querySelector(".dss-date-label").textContent.slice(0, 10)');
+  const slotProjectIds = await evaluate(`(() => {
+    const day = window.__fixture.data.estimated.timeline.days.find(item => item.date === ${JSON.stringify(selectedDay)});
+    return [...new Set(((day && day.slotBlocks) || []).map(block => block.projectId))].sort();
+  })()`);
+  await click('[data-action=filter]'); await until('document.querySelector(".dss-filter-item")');
+  const filterProjectIds = await evaluate('[...document.querySelectorAll(".dss-filter-item")].map(node => node.dataset.projectId).sort()');
+  assert.deepEqual(filterProjectIds, slotProjectIds, 'timeline filter lists every active project: ' + JSON.stringify({ filterProjectIds, slotProjectIds }));
+  const filterValues = await evaluate('[...document.querySelectorAll(".dss-filter-item .dss-filter-val")].map(node => node.textContent)');
+  assert.equal(filterValues.length, filterProjectIds.length, 'timeline filter shows a duration for every project');
+  assert(filterValues.every(text => text === '—' || /[hms]/.test(text)), 'timeline filter values are durations: ' + JSON.stringify(filterValues));
+  assert.equal(await evaluate('document.querySelectorAll(".dss-filter-item .dss-filter-cost").length'), 0, 'timeline filter does not show costs');
+  const hiddenProject = filterProjectIds[0];
+  await evaluate(`document.querySelector('.dss-filter-item[data-project-id="${hiddenProject}"] input').click()`);
+  await until(`!document.querySelector('.dss-tl-lane[data-project-id="${hiddenProject}"]')`);
+  await press('Escape'); await until('!document.querySelector(".dss-filter-item")');
+  await tab(1); await until('document.querySelector(".dss-kpis")');
+  const hiddenKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
+  await tab(2); await until('document.querySelector(".dss-tl-hist-total")');
+  assert.equal(await evaluate('document.querySelector(".dss-tl-hist-total").textContent'), hiddenKpi, 'day timeline cost stays in sync after hiding a project');
+  await click('[data-action=tl-axis-full]'); await click('[data-action=tl-metric-token]');
+  assert(await evaluate('document.querySelector("[data-action=tl-axis-full]").getAttribute("aria-pressed") === "true"'));
+  assert(await evaluate('document.querySelector("[data-action=tl-metric-token]").getAttribute("aria-pressed") === "true"'));
+  await press('Escape'); await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl")');
+  assert(await evaluate('document.querySelector("[data-action=tl-axis-full]").getAttribute("aria-pressed") === "true"'), 'axis preference persists');
+  assert(await evaluate('document.querySelector("[data-action=tl-metric-token]").getAttribute("aria-pressed") === "true"'), 'metric preference persists');
+  report.checks.push('day timeline: single scroll, >=11px text, overview cost parity, tick alignment, run width, slot detail Esc/focus and session opening');
+  await evaluate('localStorage.removeItem("dsh-stats.hidden")');
+  await navigate('/?stats=partial&lang=zh');
+  await click('.dss-trigger'); await tab(1); await until('document.querySelector(".dss-data-status.partial")');
+  const partialKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
+  await tab(2); await until('document.querySelector(".dss-tl")');
+  if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  await click('[data-action=tl-metric-cost]');
+  const partialTotal = await evaluate('document.querySelector(".dss-tl-hist-total").textContent');
+  assert.equal(partialTotal, partialKpi, 'partial day timeline cost matches the overview KPI');
+  assert(partialTotal.includes('*'), 'partial day cost keeps the unpriced marker: ' + partialTotal);
+  report.checks.push('day timeline: filter project set and duration values, persisted axis/metric preferences, partial cost marker, lane pagination');
+  await navigate('/?stats=large&lang=zh');
+  await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-data-status.exact")');
+  await until('document.querySelector(".dss-tl")');
+  if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
+  await until('document.querySelector(".dss-tl[data-mode=day]")');
+  const laneIds = await collectPages('lanes', '.dss-tl-lane', 'node.dataset.projectId');
+  assert.equal(laneIds.length, 120, 'all large-day lanes reachable');
+  assert.equal(new Set(laneIds).size, 120, 'lane pages do not overlap');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

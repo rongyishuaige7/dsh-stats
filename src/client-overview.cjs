@@ -171,6 +171,7 @@ function OverviewTools(props) {
 			onShowAll: props.onShowAll,
 			colorIndexes: props.colorIndexes,
 			filterKey: props.filterKey,
+			valueOf: props.valueOf,
 			t: t
 		}) : null
 	);
@@ -213,7 +214,9 @@ function ProjectFilterMenu(props) {
 					e("input", { type: "checkbox", checked: !isHidden, onChange: function() { props.onToggle(project.id); } }),
 					e("i", { className: "dss-pdot", "data-color": String(colorIndex(project, props.colorIndexes)) }),
 					e("span", { className: "dss-filter-name" }, project.name),
-					e("span", { className: "dss-filter-cost" }, fmtCostSummary(projectCostSummary(project), t))
+					props.valueOf
+						? e("span", { className: "dss-filter-val" }, props.valueOf(project))
+						: e("span", { className: "dss-filter-cost" }, fmtCostSummary(projectCostSummary(project), t))
 				);
 			}) : e("div", { className: "dss-empty" }, t("empty"))
 		),

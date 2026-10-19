@@ -1,7 +1,7 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
-const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
+const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, MAX_VISIBLE_TIMELINE_DAYS, SLOT_MS, costOf, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
@@ -9,6 +9,9 @@ const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
 const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
+const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
+const { TimelineView } = require("./client-timeline.cjs");
+const { tipRows, showTipRaw, hideTip } = require("./client-tip.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -149,39 +152,27 @@ function showTimelineBlocksTip(date, slot, blocks, ev) {
 	showTipRaw(tipRows(date + " " + slotToClock(slot) + "–" + slotToClock(slot + 1), timelineTipRows(blocks)), ev);
 }
 
-function TimelineView(props) {
+function LegacyTimelineAll(props) {
 	var timeline = props.timeline;
 	var hidden = props.hidden;
 	var slotMinutes = 30;
 	var slotMs = slotMinutes * 60000;
 	var tt = props.tt;
-	var dayMode = props.dayMode === true;
 	var [page, setPage] = useState(0);
-	// Switching between all-history and a single day is a new view; go back to
-	// the newest page instead of restoring a page index from the other view.
-	useEffect(function() { setPage(function(page) { return page ? 0 : page; }); }, [props.filterKey]);
 
 	var days = timeline.days || [];
-	var allDays = (props.allTimeline && props.allTimeline.days) || days;
-	var allDisplayDays = timelineDisplayDays(days, dayMode);
+	var allDisplayDays = timelineDisplayDays(days, false);
 	var pageCount = Math.max(1, Math.ceil(allDisplayDays.length / TIMELINE_PAGE_DAYS));
 	var currentPage = Math.min(page, pageCount - 1);
 	var displayDays = timelinePageDays(allDisplayDays, currentPage, TIMELINE_PAGE_DAYS);
 	var maxDay = displayDays.reduce((m, d) => Math.max(m, d.dayTotalMs), 1);
-	// 按日使用项目泳道；全部模式保持一天一行，避免长周期高度失控。
-	var layout = timelineLayout(displayDays.length, dayMode);
+	var layout = timelineLayout(displayDays.length, false);
 	var maxBlockH = layout.maxBlockH;
 	var maxProjects = layout.maxProjects;
 	var rowMinH = layout.rowMinH;
-	// Day mode has one row of project lanes; all mode caps at three visible day
-	// rows. Give the day viewport the same height as the all-history viewport so
-	// switching modes does not leave a short card over a large blank body.
-	var allLayout = timelineLayout(allDays.length, false);
-	var allViewportH = Math.min(allDays.length * allLayout.rowMinH, allLayout.rowMinH * MAX_VISIBLE_TIMELINE_DAYS);
-	var dayViewportH = dayMode ? Math.max(rowMinH, allViewportH) : 0;
 
-	return e("div", null,
-		e("div", { className: "dss-hint" }, tt(dayMode ? "hint.timeline.day" : "hint.timeline.all")),
+	return e("div", { className: "dss-tl", "data-mode": "all" },
+		e("div", { className: "dss-hint" }, tt("hint.timeline.all")),
 		allDisplayDays.length > TIMELINE_PAGE_DAYS ? e("div", { className: "dss-timeline-limit" },
 			e("span", { "aria-live": "polite" }, tt("hint.timeline.page").replace("%d", String(currentPage + 1)).replace("%d", String(pageCount))),
 			e("button", {
@@ -203,7 +194,6 @@ function TimelineView(props) {
 				onClick: () => setPage(0)
 				}, tt("hint.timeline.showRecent"))
 		) : null,
-		// 单天模式下每日热条没有意义，隐藏以把空间让给时间线
 		displayDays.length > 1 ? e("div", { className: "dss-heat" },
 			displayDays.map((d) => {
 				var lvl = d.dayTotalMs / maxDay;
@@ -211,8 +201,8 @@ function TimelineView(props) {
 					key: d.date,
 					className: "dss-hm" + (d.dayTotalMs > 0 ? " has" : ""),
 					style: d.dayTotalMs > 0 ? { background: `rgba(79,140,255,${(0.18 + 0.82 * lvl).toFixed(2)})` } : null,
-					onMouseEnter: (ev) => showTip(tt, d.date, d.dayTotalMs, ev),
-					onMouseLeave: () => hideTip(tt),
+					onMouseEnter: (ev) => showTipRaw(tipRows(d.date, [[tt("w.duration"), fmtDuration(d.dayTotalMs)]]), ev),
+					onMouseLeave: hideTip,
 					onClick: () => { var el = document.getElementById("dss-day-" + d.date); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
 				});
 			})
@@ -225,8 +215,8 @@ function TimelineView(props) {
 				e("div", null)
 			),
 			e("div", {
-				className: "dss-timeline-viewport" + (!dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? " scrollable" : ""),
-				style: dayMode ? { minHeight: dayViewportH + "px" } : (!dayMode && displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null)
+				className: "dss-timeline-viewport" + (displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? " scrollable" : ""),
+				style: displayDays.length > MAX_VISIBLE_TIMELINE_DAYS ? { "--dss-timeline-max-height": rowMinH * MAX_VISIBLE_TIMELINE_DAYS + "px" } : null
 			}, displayDays.map((d) => {
 				var grouped = groupTimelineBlocks(d, hidden);
 				var projList = grouped.projects;
@@ -237,48 +227,15 @@ function TimelineView(props) {
 					maxSlot = Math.max(maxSlot, slot);
 				});
 				var wd = tt("w.weekdays").split(",")[new Date(d.date + "T00:00:00Z").getUTCDay()];
-				// 右侧信息列：总时长 + 活动时段 + 项目数，填充右侧空白
 				var spanText = maxSlot >= 0 ? slotToClock(minSlot) + "–" + slotToClock(maxSlot + 1) : "—";
-				// 总时长按可见项目重算（隐藏的项目不计入）
 				var visibleMs = grouped.slots.reduce(function(sum, blocks) {
 					return sum + blocks.reduce(function(slotSum, b) { return slotSum + b.ms; }, 0);
 				}, 0);
-				var dayLaneContentH = projList.length ? projList.length * layout.laneHeight + Math.max(0, projList.length - 1) * layout.laneGap + 16 : 56;
-				var dayRowMinH = dayMode ? Math.max(56, Math.min(rowMinH, dayLaneContentH), dayViewportH) : rowMinH;
 				var rightCol = e("div", { className: "dss-day-info" },
 					e("div", { className: "dur" }, fmtDuration(visibleMs)),
 					e("div", { className: "span" }, spanText),
 					e("div", { className: "cnt" }, projList.length + " " + tt("w.projects"))
 				);
-
-				if (dayMode) {
-					var lanes = projList.map(function(project) {
-						var laneCells = Array.from({ length: 48 }, function(_, slot) {
-							var ms = project.slots.get(slot) || 0;
-							var block = ms > 0 ? { projectId: project.projectId, name: project.name, colorIndex: project.colorIndex, ms: ms } : null;
-							var h = ms > 0 ? Math.min(layout.laneHeight, Math.max(2, Math.round((ms / slotMs) * layout.laneHeight))) : 0;
-							return e("div", { className: "dss-day-lane-cell", key: slot }, block ? e("div", {
-								className: "dss-blk",
-								"data-color": String((project.colorIndex || 0) % 16),
-								style: { height: h + "px" },
-								onMouseEnter: function(ev) { showTimelineBlocksTip(d.date, slot, [block], ev); },
-								onMouseLeave: hideTip
-							}) : null);
-						});
-						return e("div", { className: "dss-day-lane", key: project.projectId },
-							e("div", { className: "dss-day-lane-label" },
-								e("span", { className: "dss-day-dot", "data-color": String((project.colorIndex || 0) % 16) }),
-								e("span", { className: "dss-day-pname", title: project.name }, project.name)
-							),
-							e("div", { className: "dss-day-lane-track" }, laneCells)
-						);
-					});
-					return e("div", { className: "dss-day day-mode", id: "dss-day-" + d.date, key: d.date, style: { minHeight: dayRowMinH + "px" } },
-						e("div", { className: "dss-day-lanes", style: { maxHeight: dayMode ? Math.max(72, dayViewportH - 16) + "px" : layout.laneViewportH + "px" } }, lanes),
-						rightCol
-					);
-				}
-
 				var leftCol = e("div", { className: "dss-day-projs" },
 					e("div", { className: "dss-day-date" }, d.date + " " + tt("w.dayPrefix") + wd),
 					projList.slice(0, maxProjects).map(function(project) {
@@ -498,6 +455,13 @@ function StatsPanel(props) {
 	var navPair = usePref("nav", { mode: "day", date: null });
 	var storedNav = navPair[0] && typeof navPair[0] === "object" && !Array.isArray(navPair[0]) ? navPair[0] : {};
 	var setNav = navPair[1];
+	var timelinePair = usePref("timeline", TIMELINE_PREF_DEFAULTS);
+	var timelinePrefs = normalizeTimelinePrefs(timelinePair[0]);
+	var setTimelinePrefs = useCallback(function(patch) {
+		timelinePair[1](function(current) {
+			return normalizeTimelinePrefs(Object.assign({}, normalizeTimelinePrefs(current), patch));
+		});
+	}, [timelinePair[1]]);
 	// 旧版本曾保存 7/30/90 模式；这些模式已从界面移除，统一回退到按日。
 	var navMode = storedNav.mode === "all" ? "all" : "day";
 	var nav = { mode: navMode, date: storedNav.date || null };
@@ -628,11 +592,6 @@ function StatsPanel(props) {
 	var dateProjects = useMemo(() => effectiveDate ? applyDate(data.projects, effectiveDate) : data.projects,
 		[data.projects, effectiveDate]);
 
-	// 时间线视图：按日模式只保留选中日
-	var viewTimeline = useMemo(() => {
-		if (effectiveDate) return { days: (data.timeline.days || []).filter(function(d) { return d.date === effectiveDate; }) };
-		return data.timeline;
-	}, [data.timeline, effectiveDate]);
 	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
 	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
 
@@ -658,6 +617,17 @@ function StatsPanel(props) {
 	}, [data.timeline, effectiveDate]);
 	var activeDays = useMemo(function() { return activeDayCount(data.timeline, hidden); }, [data.timeline, hiddenKey]);
 	var totals = useMemo(function() { return overviewTotals(visibleProjects); }, [visibleProjects]);
+	var timelineDurations = useMemo(function() {
+		if (tab !== "timeline") return null;
+		if (effectiveDate) {
+			var day = (data.timeline.days || []).find(function(item) { return item.date === effectiveDate; });
+			return projectDurations(day ? [day] : []);
+		}
+		return projectDurations(data.timeline.days || []);
+	}, [tab, effectiveDate, data.timeline]);
+	var timelineValueOf = function(project) {
+		return fmtDuration(timelineDurations ? timelineDurations.get(project.id) || 0 : 0);
+	};
 	var shares = useMemo(function() { return costShares(visibleProjects); }, [visibleProjects]);
 	var pending = useMemo(function() { return pendingFocus(visibleProjects); }, [visibleProjects]);
 
@@ -802,7 +772,9 @@ function StatsPanel(props) {
 							nav, setNav, dates, effectiveDate, t,
 							showMode: tab !== "trends",
 							showFilter: tab !== "trends",
-							projects: statProjects, hidden, onToggle: toggle, onShowAll: showAll,
+							projects: tab === "timeline" ? dateProjects : statProjects,
+							valueOf: tab === "timeline" ? timelineValueOf : undefined,
+							hidden, onToggle: toggle, onShowAll: showAll,
 							colorIndexes, filterKey: effectiveDate
 						}),
 						tab === "overview" ? e(Fragment, null,
@@ -831,7 +803,25 @@ function StatsPanel(props) {
 								onShowAll: showAll,
 								t
 							})
-						) : tab === "timeline" ? e(TimelineView, { timeline: viewTimeline, allTimeline: data.timeline, hidden, filterKey: effectiveDate, dayMode: effectiveDate != null, tt: t })
+						) : tab === "timeline" ? e(TimelineView, {
+							timeline: data.timeline,
+							date: effectiveDate,
+							projects: dateProjects,
+							allProjects: data.projects,
+							hidden,
+							hiddenKey,
+							colorIndexes,
+							dayCost: totals.cost,
+							dayTokens: totals.input + totals.output,
+							prefs: timelinePrefs,
+							setPrefs: setTimelinePrefs,
+							onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
+							onOpenSession,
+							onShowAll: showAll,
+							remote: data.remote,
+							legacyAll: LegacyTimelineAll,
+							t
+						})
 						: e(TrendsView, {
 							globals,
 							dateGlobals,
@@ -856,22 +846,6 @@ function StatsPanel(props) {
 			)
 		)
 	);
-}
-
-function showTip(t, label, ms, ev) {
-	var el = document.getElementById("dss-tooltip");
-	if (!el) { el = document.createElement("div"); el.id = "dss-tooltip"; el.className = "dss-tt"; document.body.appendChild(el); }
-	el.innerHTML = `<div style="font-weight:650">${esc(label)}</div><div style="color:var(--dsw-alias-label-secondary,#a6adbb)">${t("w.duration")} <b>${fmtDuration(ms)}</b></div>`;
-	el.classList.add("show");
-	var pad = 14, x = ev.clientX + pad, y = ev.clientY + pad;
-	var r = el.getBoundingClientRect();
-	if (x + r.width > window.innerWidth) x = ev.clientX - r.width - pad;
-	if (y + r.height > window.innerHeight) y = ev.clientY - r.height - pad;
-	el.style.left = x + "px"; el.style.top = y + "px";
-}
-function hideTip() {
-	var el = document.getElementById("dss-tooltip");
-	if (el) el.classList.remove("show");
 }
 
 // ------------------------------------------------------------------
@@ -1049,27 +1023,6 @@ function CalendarHeatmap(props) {
 			e("span", null, t("trends.more"))
 		)
 	);
-}
-
-// 结构化 tooltip：标题 + 键值行（内容全部转义，杜绝注入）
-function tipRows(title, rows) {
-	var h = "<div class='dss-tip-title'>" + esc(title) + "</div>";
-	for (var i = 0; i < rows.length; i++) {
-		h += "<div class='dss-tip-row'><span>" + esc(String(rows[i][0])) + "</span><b>" + esc(String(rows[i][1])) + "</b></div>";
-	}
-	return h;
-}
-
-function showTipRaw(html, ev) {
-	var el = document.getElementById("dss-tooltip");
-	if (!el) { el = document.createElement("div"); el.id = "dss-tooltip"; el.className = "dss-tt"; document.body.appendChild(el); }
-	el.innerHTML = html.replace(/\n/g, "<br>");
-	el.classList.add("show");
-	var pad = 14, x = ev.clientX + pad, y = ev.clientY + pad;
-	var r = el.getBoundingClientRect();
-	if (x + r.width > window.innerWidth) x = ev.clientX - r.width - pad;
-	if (y + r.height > window.innerHeight) y = ev.clientY - r.height - pad;
-	el.style.left = x + "px"; el.style.top = y + "px";
 }
 
 // 向上取整到 1/2/5×10^n 的“好看”刻度值
