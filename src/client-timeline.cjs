@@ -226,6 +226,8 @@ function TimelineDay(props) {
 		return bj.getUTCHours() * 60 + bj.getUTCMinutes();
 	})();
 	const showNow = localDayKey(now) === date && nowMinutes >= win.start * 30 && nowMinutes < win.end * 30;
+	const nowRatio = (nowMinutes - win.start * 30) / (windowSlots * 30);
+	const nowFlip = showNow && nowRatio >= 0.8;
 
 	const dayWindow = pageRows(model.lanes, lanePage, TIMELINE_LANE_PAGE);
 	const hiddenActivity = ((day && day.slotBlocks) || []).some(function(block) {
@@ -245,7 +247,7 @@ function TimelineDay(props) {
 			className: "dss-tl-band",
 			style: { left: percent(pop.slot), width: widthPercent(1) }
 		}) : null,
-		showNow ? e("b", { className: "dss-tl-now", style: { left: percent(nowMinutes / 30) } },
+		showNow ? e("b", { className: "dss-tl-now" + (nowFlip ? " is-flip" : ""), style: { left: percent(nowMinutes / 30) } },
 			e("span", null, t("tl.now").replace("%s", clockMin(nowMinutes)))
 		) : null
 	);

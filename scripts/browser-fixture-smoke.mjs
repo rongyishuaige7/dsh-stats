@@ -999,6 +999,34 @@ try {
   const laneIds = await collectPages('lanes', '.dss-tl-lane', 'node.dataset.projectId');
   assert.equal(laneIds.length, 120, 'all large-day lanes reachable');
   assert.equal(new Set(laneIds).size, 120, 'lane pages do not overlap');
+
+  for (const width of [320, 390, 641]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    await navigate('/?stats=estimated&lang=zh');
+    await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-tl")');
+    if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
+    await until('document.querySelector(".dss-tl[data-mode=day]")');
+    await click('[data-action=tl-axis-focus]');
+    await until('document.querySelector(".dss-tl-now")');
+    const layering = await evaluate(`(() => {
+      const line = document.querySelector('.dss-tl-now');
+      if (!line) return { skip: true, bad: [] };
+      const x = line.getBoundingClientRect().left;
+      const lineZ = Number(getComputedStyle(line).zIndex) || 0;
+      const bad = [];
+      for (const lab of document.querySelectorAll('.dss-tl-lab')) {
+        const rect = lab.getBoundingClientRect();
+        if (x < rect.left || x > rect.right) continue;
+        const labZ = Number(getComputedStyle(lab).zIndex) || 0;
+        const hit = document.elementFromPoint(x, rect.top + rect.height / 2);
+        if (labZ < lineZ || !hit || !lab.contains(hit)) bad.push({ text: lab.textContent.slice(0, 40), labZ: labZ, lineZ: lineZ, hit: hit && (hit.className || hit.tagName) });
+      }
+      return { skip: false, bad: bad };
+    })()`);
+    assert(layering.skip || layering.bad.length === 0, 'now line stays behind labels at ' + width + ': ' + JSON.stringify(layering));
+    await capture('timeline-now-' + width);
+  }
+  report.checks.push('day timeline: now line stays behind labels at 320/390/641');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {

@@ -134,3 +134,16 @@ test('state modifiers are always compounded with a dss- class', () => {
 test('styles never use color-mix()', () => {
 	expect(css).not.toContain('color-mix(');
 });
+
+test('type selectors never start with dss-', () => {
+	const offenders = [];
+	for (const rule of parsed) {
+		const selector = rule.selector.split(' >> ').pop();
+		for (const part of selector.split(',')) {
+			for (const match of part.matchAll(/(^|[\s>+~,(])(dss-[a-z0-9-]+)/g)) {
+				offenders.push(rule.selector + ' -> ' + match[2]);
+			}
+		}
+	}
+	expect(offenders).toEqual([]);
+});

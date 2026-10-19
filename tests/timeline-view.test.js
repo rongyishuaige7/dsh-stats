@@ -84,3 +84,16 @@ test('TimelineDay has no missing zh/en timeline keys', () => {
 		expect(html).not.toMatch(/\btl\.[a-zA-Z]+/);
 	}
 });
+
+test('TimelineDay flips the now label near the end of the active window', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T23:00:00+08:00');
+	try {
+		const lateDay = { date: DATE, slotBlocks: [{ slot: 40, projectId: 'p', name: 'Project P', colorIndex: 0, ms: SLOT_MS }] };
+		const html = render({ timeline: { days: [lateDay] }, prefs: { ...PREFS, axis: 'focus' } });
+		expect(html).toContain('dss-tl-now is-flip');
+		expect(html).toContain('现在 23:00');
+	} finally {
+		Date.now = original;
+	}
+});
