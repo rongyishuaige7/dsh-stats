@@ -27,7 +27,7 @@ Pre-1.0 feature release, 2026-10-18.
   and pricing drawer stay in place. The pricing settings moved to
   a right-side drawer with focus-model locating, and Esc closes the top layer
   (filter, menu, drawer) before the panel.
-- **Timeline rework (0.5.x)**: the day view now uses project lanes above
+- **Timeline rework (0.5.0)**: the day view now uses project lanes above
   half-hour cost/token bars, a keyboard-reachable half-hour detail popover and
   expandable session rows. The all view is a calendar matrix, 30 days per page,
   with intensity/project coloring, idle rows, week gaps, a time-of-day profile

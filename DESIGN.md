@@ -126,7 +126,7 @@ interface TimelineBlock {
   ms: number;                    // 该槽内开发时长
 }
 interface TimelineDay {
-  date: string;                  // YYYY-MM-DD（本地时区）
+  date: string;                  // YYYY-MM-DD（北京时间）
   dayTotalMs: number;
   slotBlocks: TimelineBlock[];
 }
@@ -255,7 +255,7 @@ class StatsService extends Service {
 | `PricingDrawer` | 右侧价格设置抽屉，遮罩、焦点限制和 opener 恢复 |
 | `TimelineView` / `TimelineDay` / `TimelineRange` | 时间线入口、按日泳道与费用柱、全部日历矩阵 |
 | `SlotPopover` | 半小时明细弹层：按项目/会话展示时长、Token、费用，可打开会话 |
-| `Tooltip` | 色条、格子、每日条和日期按钮的悬停/聚焦提示 |
+| `tipRows` / `showTipRaw` / `tipProps` | `client-tip.cjs` 生成并定位 tooltip；`client-timeline.cjs` 把悬停/聚焦事件接到色条、格子和日期按钮 |
 
 状态：React `useState` + `localStorage`（`dsh-stats.tab` / `dsh-stats.hidden` / `dsh-stats.nav`），没有 zustand；面板和抽屉的 Esc 由 `LayerContext` 的 LIFO 栈统一处理。
 
@@ -292,8 +292,8 @@ dsh-stats-plugin/
 ## 8. 性能与边界
 
 - 大工作区：聚合放宿主端一次性完成，客户端只收响应；会话明细按需懒加载（可选折叠）。
-- 时间线跨时区：统一用**本地时区**切日期（与独立面板一致）。
-- 并发开发同一时段多项目：块纵向堆叠、行自适应增高（如实反映并行）。
+- 时间线跨时区：统一用**北京时间（UTC+8）**切日期，与当前实现和 README 一致。
+- 并发开发同一时段多项目：按日是每个项目一条泳道；全部模式中并行项目的时长相加，按满格封顶。
 - `session.list` 投影依赖 composition 挂了 `dsh-token-meter` + `dsh-session-stats`（web profile 已挂；自建 profile 需确认）。
 
 ---
