@@ -459,7 +459,7 @@ function TimelineDay(props) {
 		e("span", { className: "dss-tl-scale", "aria-label": t("tl.legendShare") + " / " + t("tl.legendFull") },
 			e("span", null, t("tl.legendShare")),
 			[0.3, 0.53, 0.77, 1].map(function(opacity) {
-				return e("i", { key: opacity, style: { "--o": opacity } });
+				return e("i", { key: opacity, className: "dss-tl-sw", style: { "--o": opacity } });
 			}),
 			e("span", null, t("tl.legendFull"))
 		),
@@ -757,16 +757,43 @@ function TimelineRange(props) {
 		return t("w.weekdays").split(",")[new Date(date + "T00:00:00Z").getUTCDay()];
 	};
 	const dailyTip = function(row) {
+		const projects = row.projects.slice().sort(function(a, b) {
+			return (b.ms - a.ms) || String(a.projectId).localeCompare(String(b.projectId));
+		});
 		const rows = [
 			[t("w.duration"), fmtDuration(row.total)],
 			[t("tl.cost"), fmtCostSummary(row.cost, t)]
 		];
-		row.projects.slice(0, 8).forEach(function(project) { rows.push([project.name, fmtDuration(project.ms)]); });
-		if (row.projects.length > 8) {
-			const rest = row.projects.slice(8).reduce(function(total, project) { return total + project.ms; }, 0);
-			rows.push([t("tl.moreProjects").replace("%d", String(row.projects.length - 8)), fmtDuration(rest)]);
+		projects.slice(0, 8).forEach(function(project) { rows.push([project.name, fmtDuration(project.ms)]); });
+		if (projects.length > 8) {
+			const rest = projects.slice(8).reduce(function(total, project) { return total + project.ms; }, 0);
+			rows.push([t("tl.moreProjects").replace("%d", String(projects.length - 8)), fmtDuration(rest)]);
 		}
 		return tipRows(row.date + " " + t("w.dayPrefix") + weekdayOf(row.date), rows);
+	};
+	const cellTip = function(row, cell, index) {
+		const start = index * per;
+		const end = start + per;
+		const title = row.date.slice(5) + " " + t("w.dayPrefix") + weekdayOf(row.date) + " " + clock(start) + "–" + clock(end);
+		if (!cell.level) return tipRows(title, [[t("tl.noActivity"), ""]]);
+		const by = Object.entries(cell.by || {}).sort(function(a, b) {
+			return (b[1] - a[1]) || String(a[0]).localeCompare(String(b[0]));
+		});
+		const names = new Map(row.projects.map(function(project) { return [project.projectId, project.name]; }));
+		const rows = by.slice(0, 8).map(function(entry) { return [names.get(entry[0]) || entry[0], fmtDuration(entry[1])]; });
+		if (by.length > 8) {
+			const rest = by.slice(8).reduce(function(total, entry) { return total + entry[1]; }, 0);
+			rows.push([t("tl.moreProjects").replace("%d", String(by.length - 8)), fmtDuration(rest)]);
+		}
+		return tipRows(title, rows);
+	};
+	const onCellsMove = function(ev, row) {
+		const target = ev.target && typeof ev.target.closest === "function" ? ev.target.closest("i.dss-mx-cell") : null;
+		if (!target) { hideTip(); return; }
+		const index = Number(target.dataset.col);
+		const cell = row.cells[index];
+		if (!cell) return;
+		showTipRaw(cellTip(row, cell, index), ev);
 	};
 	const onCellsClick = function(ev, row) {
 		const target = ev.target && typeof ev.target.closest === "function" ? ev.target.closest("i.dss-mx-cell") : null;
@@ -786,7 +813,7 @@ function TimelineRange(props) {
 			: dateText + " " + t("tl.openDay").replace("%s", fmtDuration(row.total));
 		const colors = new Map(row.projects.map(function(project) { return [project.projectId, project.colorIndex]; }));
 		const tip = tipProps(function() { return dailyTip(row); });
-		const barWidth = model.maxDay ? (row.total / model.maxDay * 100).toFixed(1) + "%" : "0%";
+		const barWidth = row.idle ? "0" : "max(3px, " + (model.maxDay ? (row.total / model.maxDay * 100).toFixed(1) : "0") + "%)";
 		return e("div", {
 			key: row.date,
 			className: "dss-mx-row is-day" + (row.idle ? " is-idle" : "") + (row.newWeek ? " is-week" : ""),
@@ -802,7 +829,13 @@ function TimelineRange(props) {
 				onClick: function() { props.onSelectDate(row.date); },
 				...tip
 			}, row.date.slice(5), e("span", { className: "dss-mx-wd" }, " " + weekday)),
-			e("div", { className: "dss-mx-cells", "aria-hidden": "true", onClick: function(ev) { onCellsClick(ev, row); } },
+			e("div", {
+				className: "dss-mx-cells",
+				"aria-hidden": "true",
+				onClick: function(ev) { onCellsClick(ev, row); },
+				onMouseMove: function(ev) { onCellsMove(ev, row); },
+				onMouseLeave: hideTip
+			},
 				row.cells.map(function(cell, index) {
 					const isNow = row.today && index === nowColumn;
 					const color = prefs.color === "project" && cell.dominant ? colors.get(cell.dominant) : null;
@@ -815,7 +848,7 @@ function TimelineRange(props) {
 					});
 				})
 			),
-			e("div", { className: "dss-mx-tot" },
+			e("div", { className: "dss-mx-tot", ...tip },
 				e("span", { className: "dss-mx-bar" },
 					e("span", { style: { width: barWidth } },
 						row.projects.map(function(project) {
@@ -892,8 +925,17 @@ function TimelineRange(props) {
 		),
 		pager
 	);
-	const seen = new Map();
-	model.rows.forEach(function(row) { row.projects.forEach(function(project) { seen.set(project.projectId, project); }); });
+	const projectTotals = new Map();
+	model.rows.forEach(function(row) {
+		row.projects.forEach(function(project) {
+			const current = projectTotals.get(project.projectId);
+			if (current) current.ms += project.ms;
+			else projectTotals.set(project.projectId, { projectId: project.projectId, name: project.name, colorIndex: project.colorIndex, ms: project.ms });
+		});
+	});
+	const legendProjects = Array.from(projectTotals.values()).sort(function(a, b) {
+		return (b.ms - a.ms) || String(a.projectId).localeCompare(String(b.projectId));
+	});
 	const legend = prefs.color === "level"
 		? e("div", { className: "dss-tl-legend" },
 			e("span", { className: "dss-tl-scale" },
@@ -905,19 +947,20 @@ function TimelineRange(props) {
 			e("span", null, t("tl.clickDate"))
 		)
 		: e("div", { className: "dss-tl-legend" },
-			Array.from(seen.values()).map(function(project) {
+			legendProjects.slice(0, 8).map(function(project) {
 				return e("span", { key: project.projectId, className: "dss-mx-proj" },
 					e("i", { className: "dss-pdot", "data-color": String(project.colorIndex) }),
 					project.name
 				);
 			}),
+			legendProjects.length > 8 ? e("span", null, t("tl.moreProjects").replace("%d", String(legendProjects.length - 8))) : null,
 			e("span", null, t("tl.cellDominant")),
 			e("span", null, t("tl.clickDate"))
 		);
 
 	const head = e("div", { className: "dss-mx-row is-head" },
 		e("div", { className: "dss-mx-k" }, t("tl.profile")),
-		e("div", { className: "dss-mx-prof", "aria-label": profileAria }, profileBars),
+		e("div", { className: "dss-mx-prof", role: "img", "aria-label": profileAria }, profileBars),
 		e("div", { className: "dss-mx-side" }, peakStart == null ? null : t("tl.profilePeak").replace("%s", peakStart))
 	);
 	const axis = e("div", { className: "dss-mx-row is-axis", "aria-hidden": "true" },

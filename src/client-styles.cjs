@@ -449,7 +449,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-tl-sess .dss-tl-tot{font-size:var(--dss-fs-xs);color:var(--dss-text-3)}
 .dss-tl-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);padding-top:12px;position:relative}
 .dss-tl-scale{display:inline-flex;align-items:center;gap:3px}
-.dss-tl-scale i{width:16px;height:10px;border-radius:2px;background:var(--dss-text-2);opacity:var(--o)}
+.dss-tl-scale .dss-tl-sw{width:16px;height:10px;border-radius:2px;background:var(--dss-text-2);opacity:var(--o)}
 .dss-tl-scale span{margin:0 3px}
 .dss-tl-pop{position:absolute;z-index:40;width:min(360px,calc(100% - 16px));background:var(--dss-panel);border:1px solid var(--dss-line);border-radius:12px;box-shadow:var(--dss-shadow-pop);padding:10px 12px;font-size:var(--dss-fs-sm);left:0;top:0;overflow-y:auto;overscroll-behavior:contain}
 .dss-tl-pop-h{display:flex;align-items:center;gap:8px;margin-bottom:4px}
@@ -520,7 +520,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-mx-cells i[data-level="2"]::after{opacity:.48}
 .dss-mx-cells i[data-level="3"]::after{opacity:.72}
 .dss-mx-cells i[data-level="4"]::after{opacity:1}
-.dss-mx-cells .dss-mx-cell.is-now{box-shadow:inset 0 0 0 1.5px var(--dss-accent)}
+.dss-mx-cells .dss-mx-cell.is-now::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1.5px var(--dss-text);z-index:1}
 .dss-mx-date{border:0;background:none;padding:0 4px;margin-left:-4px;border-radius:4px;font-size:var(--dss-fs-xs);color:var(--dss-text-2);text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:14px;position:relative;justify-self:start;cursor:pointer}
 .dss-mx-date:hover:not(:disabled){background:var(--dss-hover);color:var(--dss-text)}
 .dss-mx-date.is-weekend{color:var(--dss-text-3)}

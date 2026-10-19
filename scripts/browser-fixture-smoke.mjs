@@ -897,6 +897,13 @@ try {
     await until('document.querySelector(".dss-mx")');
     await layout('large-pages-' + width);
     await capture('large-pages-' + width);
+    if (width === 1440) {
+      await click('[data-action=tl-color-project]');
+      await until('document.querySelector(".dss-mx-proj")');
+      await layout('large-pages-1440-project');
+      await capture('large-pages-1440-project');
+      await click('[data-action=tl-color-level]');
+    }
   }
   report.checks.push('bounded pages: all 120 projects/filter items, 205 main/subagent sessions, 75 history days; timeline calendar pages, idle rows and week gaps, slot details; stable totals, day/all overview and timeline panels share a bottom line, sort/date reset, recent reset, session navigation, three widths');
 
@@ -906,7 +913,6 @@ try {
   await click('[data-action=mode-day]');
   const estimatedKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
   await tab(2); await until('document.querySelector(".dss-tl")');
-  if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
   await until('document.querySelector(".dss-tl[data-mode=day]")');
   assert.equal(await evaluate('document.querySelector(".dss-tl-hist-total").textContent'), estimatedKpi, 'day timeline cost matches the overview KPI');
   const timelineScrollables = await evaluate(`(() => {
@@ -1021,7 +1027,6 @@ try {
   await click('[data-action=mode-day]');
   const partialKpi = await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent');
   await tab(2); await until('document.querySelector(".dss-tl")');
-  if (await evaluate('!!document.querySelector("[data-action=mode-day]")')) await click('[data-action=mode-day]');
   await until('document.querySelector(".dss-tl[data-mode=day]")');
   await click('[data-action=tl-metric-cost]');
   const partialTotal = await evaluate('document.querySelector(".dss-tl-hist-total").textContent');
@@ -1089,6 +1094,50 @@ try {
     return bad.slice(0, 10);
   })()`);
   assert.deepEqual(allSmallFonts, [], 'all timeline text must be >= 11px: ' + JSON.stringify(allSmallFonts));
+  const barWidths = await evaluate(`[...document.querySelectorAll('.dss-mx-row.is-day:not(.is-idle) .dss-mx-bar > span')].map(node => node.getBoundingClientRect().width)`);
+  assert(barWidths.length > 0 && barWidths.every(width => width >= 2.5), 'non-empty daily bars keep at least 3px: ' + JSON.stringify(barWidths));
+  const legendMatch = await evaluate(`(() => {
+    const swatches = [...document.querySelectorAll('.dss-mx-lg')];
+    const cells = [...document.querySelectorAll('.dss-mx-cell')];
+    const host = document.querySelector('.dss-mx-cells');
+    const out = [];
+    for (const swatch of swatches) {
+      const level = swatch.dataset.level;
+      let cell = cells.find(node => node.dataset.level === level);
+      let temp = null;
+      if (!cell) {
+        temp = document.createElement('i');
+        temp.className = 'dss-mx-cell';
+        temp.dataset.level = level;
+        host.appendChild(temp);
+        cell = temp;
+      }
+      const swatchStyle = getComputedStyle(swatch), cellStyle = getComputedStyle(cell);
+      const swatchAfter = getComputedStyle(swatch, '::after'), cellAfter = getComputedStyle(cell, '::after');
+      out.push({ level: level, bg: [swatchStyle.backgroundColor, cellStyle.backgroundColor], after: [swatchAfter.backgroundColor, cellAfter.backgroundColor], opacity: [swatchAfter.opacity, cellAfter.opacity] });
+      if (temp) temp.remove();
+    }
+    return out;
+  })()`);
+  for (const row of legendMatch) {
+    assert.equal(row.bg[0], row.bg[1], 'legend level ' + row.level + ' base color matches cells: ' + JSON.stringify(row));
+    assert.equal(row.after[0], row.after[1], 'legend level ' + row.level + ' overlay color matches cells: ' + JSON.stringify(row));
+    assert.equal(row.opacity[0], row.opacity[1], 'legend level ' + row.level + ' overlay opacity matches cells: ' + JSON.stringify(row));
+  }
+  const nowMarker = await evaluate(`(() => {
+    const cell = document.querySelector('.dss-mx-cell.is-now');
+    return cell ? { exists: true, shadow: getComputedStyle(cell, '::before').boxShadow } : { exists: false, shadow: 'none' };
+  })()`);
+  assert(nowMarker.exists && nowMarker.shadow !== 'none', 'now cell keeps a visible outline: ' + JSON.stringify(nowMarker));
+  const hoveredCell = await evaluate(`(() => {
+    const cell = document.querySelector('.dss-mx-row.is-day:not(.is-idle) .dss-mx-cell:not([data-level="0"])');
+    const rect = cell.getBoundingClientRect();
+    cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+    return { level: cell.dataset.level };
+  })()`);
+  await until('document.querySelector(".dss-tt.show")');
+  const cellTip = await evaluate('document.querySelector(".dss-tt").textContent');
+  assert(cellTip.includes('–') && /Large project \d+/.test(cellTip), 'matrix cell tooltip names the time range and projects: ' + cellTip);
   await click('[data-action=filter]'); await until('document.querySelector(".dss-filter-item")');
   await evaluate('document.querySelector(\'.dss-filter-item[data-project-id="large-0"] input\').click()');
   await until('document.querySelectorAll(".dss-mx-row.is-day.is-idle").length === 29');
@@ -1111,8 +1160,18 @@ try {
   assert(idleGeometry.heights.every(height => Math.abs(height - idleGeometry.todayHeight) <= 0.5), 'idle rows match the active row height: ' + JSON.stringify(idleGeometry));
   assert(idleGeometry.disabled, 'idle date buttons are disabled');
   assert.equal(idleGeometry.gaps.length, 2, 'week gaps add one spacing value: ' + JSON.stringify(idleGeometry.gaps));
-  assert(idleGeometry.weekGaps.length === 1 && idleGeometry.gaps.includes(idleGeometry.weekGaps[0]), 'week rows carry the larger gap: ' + JSON.stringify(idleGeometry));
+  assert.equal(idleGeometry.weekGaps[0], Math.max(...idleGeometry.gaps), 'week rows carry the larger gap: ' + JSON.stringify(idleGeometry));
   assert(Math.abs(Math.max(...idleGeometry.gaps) - Math.min(...idleGeometry.gaps) - 8) <= 1, 'week gap is 8px: ' + JSON.stringify(idleGeometry.gaps));
+  await evaluate(`(() => { const tot = document.querySelector('.dss-mx-row.is-day:not(.is-idle) .dss-mx-tot'); const rect = tot.getBoundingClientRect(); tot.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 })); })()`);
+  await until('document.querySelector(".dss-tt.show")');
+  const totTip = await evaluate('document.querySelector(".dss-tt").textContent');
+  assert(totTip.includes('另有 111 个项目'), 'daily bar tooltip merges projects beyond eight: ' + totTip);
+  await click('[data-action=tl-color-project]');
+  await until('document.querySelector(".dss-mx-proj")');
+  const projectLegend = await evaluate(`({ count: document.querySelectorAll('.dss-mx-proj').length, text: document.querySelector('.dss-tl-legend').textContent })`);
+  assert(projectLegend.count <= 8, 'project legend lists at most eight projects: ' + JSON.stringify(projectLegend));
+  assert(projectLegend.text.includes('另有 111 个项目'), 'project legend merges the rest: ' + JSON.stringify(projectLegend));
+  await click('[data-action=tl-color-level]');
   await focus('.dss-mx-row.is-day:not(.is-idle) .dss-mx-date');
   await until('document.querySelector(".dss-tt.show")');
   const dailyTip = await evaluate(`({ text: document.querySelector('.dss-tt').textContent, rows: document.querySelectorAll('.dss-tt .dss-tip-row').length })`);
@@ -1147,7 +1206,7 @@ try {
   await until('!document.querySelector(".dss-tl-pop")');
   assert(await evaluate('document.activeElement === document.querySelector(".dss-tl-day")'), 'closing a jumped slot detail focuses the day');
   await press('Escape');
-  report.checks.push('all-mode timeline: single scroll, >=11px text, calendar pages, idle rows and week gaps, daily tooltip, active-only paging, 24/48 columns, cell jump');
+  report.checks.push('all-mode timeline: single scroll, >=11px text, legend/cell colors, cell and daily tooltips, now outline, calendar pages, idle rows and week gaps, active-only paging, project legend, 24/48 columns, cell jump');
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
