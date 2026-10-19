@@ -144,8 +144,14 @@ Token 口径和总览一致：`uncached + cacheRead + cacheWrite + output`（`ou
 - 今天的日期用强调色；"现在"所在的格子加描边。
 
 **T10 全部模式摘要与辅助图。**
-- 摘要依次是：范围（MM-DD 至 MM-DD，跨年时用完整日期）、活跃（"N / M 天"，勾选"只看活跃日期"后改为"活跃日 N 天"）、开发时长、日均（总时长 ÷ 活跃天数）、费用、最长连续天数。
-- 最长连续天数按日历相邻计算，只看活跃日期时被跳过的日子同样断开。
+- 摘要只统计本页的行，和下面的矩阵对应；全部历史的合计已经在总览的"全部"模式里，工具栏也写了"全部历史 · 首日起"。
+- 依次是：
+  - 范围：本页最早到最晚的日期，MM-DD 至 MM-DD，跨年时用完整日期；
+  - 活跃："N / M 天"，N 是本页有可见活动的天数，M 是范围内的日历天数（按日历分页时 M 等于行数，只看活跃日期时 M ≥ 行数，所以这个数不会恒等于 30）；
+  - 开发时长；
+  - 日均：开发时长 ÷ N；
+  - 费用；
+  - 最长连续天数：在本页内按日历相邻计算，只看活跃日期时被跳过的日子同样断开。
 - 矩阵上方是"时段分布"：把本页每列的时长累加，最高的一列加深，右侧写"高峰 HH:MM"。
 - 每行右侧是每日条：长度按本页最长的一天缩放，按项目颜色分段，后面是当天时长。
 
@@ -288,11 +294,11 @@ div.dss-tl[data-mode=all]
 | `timelineRuns(ms, win)` | 每槽毫秒数组 → `{from, to, total, segments[{slot, opacity}]}[]` | 连续非零槽合成一段，裁剪到窗口，完全在窗口外的丢弃；`opacity` 保留 2 位小数 |
 | `runSlotAt(run, fraction)` | 点击位置比例 → 槽 | `from + floor(fraction × (to − from))`，并夹在 `[from, to − 1]` 内 |
 | `sessionDaySlots(session, date)` | 会话 → `{ms[48], usage: Map<slot, {tokens, details[], summaries[]}>}` | `ms` 来自 `slots`；有 `slotUsage` 时逐行放入 `details`，没有时把 `sessionCostSummary(s)` 和会话 Token 放入 `updatedAt ?? createdAt` 所在的槽（不在当天则丢弃） |
-| `timelineDayModel({day, projects, hidden, date, colorIndexes})` | 某天 → `{lanes, total, first, last, slotCost[48], slotTokens[48], slotPartial[48], hasSessions}` | 泳道见 T4，会话见 T5。`projects` 是 `applyDate` 后的 `dateProjects`，模型内部按 `hidden` 过滤。每槽费用是 `mergeCostSummaries([summarizeCosts(details), ...summaries])`；柱的数值取其中 CNY 合计，`status` 为 `partial`、或有 `unpricedTokens` 时记为 partial |
+| `timelineDayModel({day, projects, hidden, date, colorIndexes})` | 某天 → `{lanes, total, first, last, slotCost[48], slotTokens[48], slotPartial[48], hasSessions}` | 泳道见 T4，会话见 T5。`colorIndex` 优先取 `colorIndexes`，否则取 `slotBlocks` 的值，输出前一律归一到 0–15（宿主和本地近似模式给的 `colorIndex` 是项目序号，可能 ≥16）。`projects` 是 `applyDate` 后的 `dateProjects`，模型内部按 `hidden` 过滤。每槽费用是 `mergeCostSummaries([summarizeCosts(details), ...summaries])`；柱的数值取其中 CNY 合计，`status` 为 `partial`、或有 `unpricedTokens` 时记为 partial |
 | `timelinePeak(values, win)` | → `{slot, value}` 或 `null` | 窗口内最大值，相同时取最早的槽 |
 | `timelineSlotDetail(model, slot)` | → `{projects[], moreProjects, total: {ms, tokens, cost}, parallel}` | 见 T6；`cost` 是 summary，用 `fmtCostSummary` 显示 |
 | `dayCostSummaries(projects, hidden)` | 全量项目 → `Map<date, summary>` | 对每个可见会话：有 `slotUsage` 时按 `localDayKey(u.slot * SLOT_MS)` 分天，每个"会话 × 天"先 `summarizeCosts`；没有时整段 `sessionCostSummary(s)` 归到 `updatedAt ?? createdAt` 那天。最后每天 `mergeCostSummaries`。只遍历一次，用 `useMemo` 缓存 |
-| `timelineRangeModel({days, hidden, today, page, activeOnly, columns, dayCosts})` | → `{rows, pageCount, currentPage, profile, peak, maxDay, summary}` | 见 T8–T10。`rows` 最新在上；行字段为 `date`、`idle`、`newWeek`、`weekend`、`today`、`cells[{level, dominant, by, ms}]`、`total`、`projects[]`、`cost`。`dominant` 取 `ms` 最大的项目，相同时按项目 id 排序取第一个。`page` 越界时夹到最后一页 |
+| `timelineRangeModel({days, hidden, today, page, activeOnly, columns, dayCosts, colorIndexes})` | → `{rows, pageCount, currentPage, profile, peak, maxDay, summary}` | 见 T8–T10。`rows` 最新在上；行字段为 `date`、`idle`、`newWeek`、`weekend`、`today`、`cells[{level, dominant, by, ms}]`、`total`、`projects[]`、`cost`。`dominant` 取 `ms` 最大的项目，相同时按项目 id 排序取第一个。`projects[].colorIndex` 与按日模型规则相同（取 `colorIndexes`，归一到 0–15）。`page` 越界时夹到最后一页。`peak` 在本页时段分布全为 0 时为 `null`。`summary = {from, to, rowCount, spanDays, activeDays, total, avg, cost, streak}`，只统计本页（T10） |
 | `timelineJumpSlot(day, hidden, col, per)` | → 当天槽号 | 见 T11 |
 
 ### 7.2 新增组件文件 `src/client-timeline.cjs`
@@ -362,7 +368,7 @@ div.dss-tl[data-mode=all]
 | `tl.total` / `tl.parallel` | 合计 / %d 个项目并行 | Total / %d projects in parallel |
 | `tl.moreProjects` / `tl.moreSessions` | 另有 %d 个项目 / 另有 %d 个会话 | %d more projects / %d more sessions |
 | `tl.range` / `tl.rangeValue` | 范围 / %s 至 %s | Range / %s to %s |
-| `tl.activeOf` / `tl.activeDays` / `tl.days` | 活跃 / 活跃日 / %d 天 | Active / Active days / %d days |
+| `tl.activeOf` / `tl.activeValue` / `tl.days` | 活跃 / %d / %d 天 / %d 天 | Active / %d of %d days / %d days |
 | `tl.avg` / `tl.cost` / `tl.streak` | 日均 / 费用 / 最长连续 | Daily avg / Cost / Longest streak |
 | `tl.color` / `tl.colorLevel` / `tl.colorProject` | 着色 / 强度 / 项目 | Color / Intensity / Project |
 | `tl.activeOnly` | 只看活跃日期 | Active dates only |
