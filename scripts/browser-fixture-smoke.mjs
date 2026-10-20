@@ -1250,6 +1250,19 @@ try {
   assert(previewRules.length === 1 && previewRules[0].providerId === 'fixture-compatible' && previewRules[0].canonical === 'fixture-unpriced', 'preview request carries the working rule');
   await capture('narrow-pricing-preview');
   await pricingSection('models');
+  assert(await evaluate('!!document.querySelector(".dss-price-preview")'), 'section switch keeps the preview');
+  await pricingSearch(usedModel.canonical);
+  assert(await evaluate('!!document.querySelector(".dss-price-preview")'), 'search keeps the preview');
+  await openPricingModel(usedModel.key);
+  assert(await evaluate('!!document.querySelector(".dss-price-preview")'), 'model detail keeps the preview');
+  await backPricingModel(usedModel.key);
+  assert(await evaluate('!!document.querySelector(".dss-price-preview")'), 'returning to the list keeps the preview');
+  await pricingSearch('');
+  await click('[data-action=price-scope-all]');
+  await until('document.querySelectorAll(".dss-price-model-row").length === 25');
+  await click('[data-action=price-next-page]');
+  await until('document.querySelector(".dss-price-pagination span").textContent.startsWith("2 /")');
+  assert(await evaluate('!!document.querySelector(".dss-price-preview")'), 'pagination keeps the preview');
   await until('document.querySelector("[data-action=price-refresh]")');
   assert(await evaluate('document.querySelector("[data-action=price-refresh]").disabled'), 'dirty settings disable the model-page check updates');
   await pricingSection('updates');
@@ -1428,6 +1441,24 @@ try {
   await until('!document.querySelector(".dss-price-custom-row")');
   report.checks.push('pricing lifecycle: save after drawer close still refreshes the parent and never reopens the drawer');
 
+  // A pending-model focus that arrives before status is cached and applied after load.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await evaluate('window.__fixture.holdPricing = "status"');
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "status")');
+  await evaluate('document.querySelector("[data-action=pricing-pending]").click()');
+  await delay(100);
+  await evaluate('window.__fixture.releasePricing && window.__fixture.releasePricing()');
+  await evaluate('window.__fixture.holdPricing = null');
+  await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'delayed pending focus opens a clean prefilled editor');
+  assert(await evaluate('document.querySelector("[data-action=price-section-custom]").getAttribute("aria-pressed") === "true"'), 'delayed pending focus switches to the custom section');
+  await click('[data-action=price-cancel-editor]');
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+  report.checks.push('pricing focus: pending model received before status is cached and prefilled after load');
+
   // Updates, offline refresh, focus and overlay reset.
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000');
@@ -1444,9 +1475,26 @@ try {
   await click('[data-action=price-auto]');
   await until('document.querySelector(".dss-price-commit")');
   assert(await evaluate('document.querySelector("[data-action=price-refresh]").disabled'), 'auto-update draft disables check updates');
-  await click('[data-action=price-discard]');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  const autoPreview = await pricingPayload('preview');
+  assert(autoPreview && autoPreview.action === 'preview' && JSON.parse(autoPreview.overridesJson).length === 0, 'auto-only preview sends the current empty overrides');
+  assert(!('autoUpdate' in autoPreview), 'preview still carries no auto-update field');
+  await click('[data-action=price-save]');
   await until('!document.querySelector(".dss-price-commit")');
-  assert(await evaluate('!document.querySelector("[data-action=price-refresh]").disabled'), 'discard restores check updates');
+  const autoSave = await pricingPayload('save');
+  assert(autoSave && autoSave.autoUpdate === false && JSON.parse(autoSave.overridesJson).length === 0, 'auto-only save sends the draft switch and current rules');
+  assert(typeof autoSave.fingerprint === 'string' && autoSave.fingerprint.length > 0 && Number.isSafeInteger(autoSave.revision), 'auto-only save carries fingerprint and revision');
+  assert(await evaluate('!document.querySelector("[data-action=price-auto]").checked'), 'saved auto-update draft is reflected in the switch');
+  assert(await evaluate('!document.querySelector("[data-action=price-refresh]").disabled'), 'saved auto-only change leaves refresh available');
+  await click('[data-action=price-auto]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  assert((await pricingPayload('save')).autoUpdate === true, 'auto-update can be restored through the same preview/save flow');
+  assert(await evaluate('document.querySelector("[data-action=price-auto]").checked'), 'restored auto-update is saved');
   await click('[data-action=price-refresh]');
   await until('document.querySelector(".dss-price-status-error")?.textContent.includes(window.__fixture.t("price.refreshFailed"))');
   await layout('pricing-failure'); await capture('narrow-pricing-failure');
