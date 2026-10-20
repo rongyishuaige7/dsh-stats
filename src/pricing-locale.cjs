@@ -12,7 +12,7 @@ const pairs = {
   provider: ['供应商 ID', 'Provider ID'], model: ['模型 ID', 'Model ID'], currency: ['币种', 'Currency'], uncached: ['非缓存输入', 'Uncached input'], cacheRead: ['缓存读取', 'Cache read'], cacheWrite: ['缓存写入', 'Cache write'], output: ['输出', 'Output'],
   conditions: ['更多条件', 'More conditions'], from: ['生效时间（北京时间）', 'Effective from (Beijing time)'], to: ['结束时间（不含）', 'Effective until (exclusive)'],
   threshold: ['长上下文阈值（输入 token）', 'Long context threshold (input tokens)'], long: ['长上下文', 'Long context'], multiplier: ['倍率', 'multiplier'], accountType: ['账户类型', 'Account type'],
-  add: ['加入草稿', 'Add to draft'], remove: ['移除', 'Remove'], preview: ['预览变化', 'Preview changes'], save: ['保存', 'Save'], cancel: ['撤销草稿', 'Discard draft'], affected: ['影响会话', 'Affected sessions'],
+  add: ['加入草稿', 'Add to draft'], remove: ['移除', 'Remove'], preview: ['预览影响', 'Preview impact'], save: ['保存', 'Save'], cancel: ['取消修改', 'Discard changes'], affected: ['影响会话', 'Affected sessions'],
   catalog: ['查看价格与来源', 'Prices and sources'], search: ['搜索模型或供应商', 'Search models or providers'],
   usedFirst: ['已使用模型优先置顶，搜索可快速查找', 'Used models listed first. Search to find more.'],
   builtinModels: ['官方内置与支持的模型定价', 'Built-in official model pricing'],
@@ -36,6 +36,17 @@ const pairs = {
   unknown: ['未知', 'Unknown'], accountUnspecified: ['未限定账户类型', 'Any account type'], catalogPrice: ['目录价格', 'Catalog price'], unitShort: ['每百万 token', 'per 1M tokens'],
   backToModels: ['返回模型列表', 'Back to models'], otherPeriodsTitle: ['其他时期价格', 'Other periods'], addCustomForModel: ['为此模型添加自定义规则', 'Add a custom rule for this model'],
   savedCustomRules: ['已保存自定义规则', 'Saved custom rules'], editSavedRule: ['编辑已保存规则', 'Edit saved rule'], modelGone: ['该模型已不在当前目录', 'This model is no longer in the catalog'],
-  emptyCatalog: ['当前目录暂无价格规则', 'No price rules in this catalog'], catalogSnapshots: ['历史目录快照', 'Catalog snapshots'], noSnapshots: ['暂无可恢复的目录快照', 'No restorable catalog snapshots'], noCustomRules: ['暂无自定义规则', 'No custom rules yet'], newRule: ['新增规则', 'New rule'], editRule: ['编辑规则', 'Edit rule']
+  emptyCatalog: ['当前目录暂无价格规则', 'No price rules in this catalog'], catalogSnapshots: ['历史目录快照', 'Catalog snapshots'],
+  addRule: ['添加规则', 'Add rule'], backToCustomList: ['返回规则列表', 'Back to rules'], cancelEditor: ['取消编辑', 'Cancel editing'],
+  unsaved: ['未保存', 'Unsaved'], pendingRemove: ['待移除', 'Pending removal'], undoRemove: ['撤销移除', 'Undo removal'], pendingRemoveHint: ['保存后将从生效列表移除。', 'Removed from active rules after saving.'],
+  conditionsSet: ['已设置条件', 'Conditions set'], unitsShort: ['每百万 Token；留空表示未知，0 表示免费。', 'Per 1M tokens; empty means unknown, 0 means free.'],
+  timeHint: ['未填生效时间时，历史用量按此价格估算。', 'Without a start time, historical usage is estimated at this price.'],
+  noConditions: ['无额外条件', 'No extra conditions'], typeRates: ['按 Token 费率', 'Per-token rates'], typeContext: ['上下文分档', 'Context tiers'],
+  typeTime: ['分时费率', 'Time-of-use rates'], typeLegacy: ['历史费率', 'Legacy rates'], typeService: ['服务档费率', 'Service tiers'],
+  ruleDetailsTitle: ['查看条件与费率', 'View conditions and rates'], editorDirtyHint: ['表单有未加入的修改，请先加入草稿或取消编辑。', 'The form has unadded changes. Add it to the draft or cancel editing first.'],
+  continueEditing: ['继续编辑', 'Continue editing'], unsavedClose: ['未保存；关闭计价设置将放弃修改', 'Unsaved. Closing pricing settings discards changes.'],
+  deferredFocusHint: ['已保留待定位模型 %s / %s，完成当前编辑后可再次定位。', 'Pending model %s / %s saved; locate it again after finishing this edit.'],
+  locateDeferred: ['定位待处理模型', 'Open pending model'],
+ noSnapshots: ['暂无可恢复的目录快照', 'No restorable catalog snapshots'], noCustomRules: ['暂无自定义规则', 'No custom rules yet'], newRule: ['新增规则', 'New rule'], editRule: ['编辑规则', 'Edit rule']
 };
 module.exports = { zh: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[0]])), en: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[1]])) };

@@ -22,6 +22,7 @@ const fmtBeijing = value => beijingInput(value).replace('T', ' ');
 function blankDraft(provider = '', model = '') {
   return { provider, model, currency: 'CNY', uncached: '', cacheRead: '', cacheWrite: '', output: '', from: '', to: '', threshold: '', longUncached: '', longCacheRead: '', longCacheWrite: '', longOutput: '', priority: '', batch: '', flex: '', accountType: 'api' };
 }
+const DRAFT_KEYS = Object.keys(blankDraft());
 function draftForFocus(focusModel) {
   if (!focusModel || typeof focusModel.provider !== 'string' || typeof focusModel.model !== 'string') return null;
   return blankDraft(focusModel.provider, focusModel.model);
@@ -57,6 +58,11 @@ function fill(t, key, ...values) {
   for (const value of values) text = text.replace('%d', String(value));
   return text;
 }
+function fillText(t, key, ...values) {
+  let text = t(key);
+  for (const value of values) text = text.replace('%s', String(value));
+  return text;
+}
 function formatQuickRates(t, inVal, outVal) {
   const tpl = t('price.quickRates');
   if (typeof tpl === 'string' && tpl.includes('%s')) return tpl.replace('%s', inVal).replace('%s', outVal);
@@ -64,6 +70,67 @@ function formatQuickRates(t, inVal, outVal) {
 }
 function rateText(value, currency, t) {
   return value == null ? t('price.unknown') : fmtRateValue(value, currency);
+}
+function draftEqual(a, b) {
+  return DRAFT_KEYS.every(key => String(a?.[key] ?? '') === String(b?.[key] ?? ''));
+}
+function rulesEqual(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const byId = new Map(b.map(rule => [rule.id, rule]));
+  return a.every(rule => {
+    const other = byId.get(rule.id);
+    return !!other && JSON.stringify(rule) === JSON.stringify(other);
+  });
+}
+function ruleHasConditions(rule) {
+  return !!(rule.contextTiers || rule.timeOfUse || rule.legacy || rule.serviceTiers
+    || rule.effectiveFrom || rule.effectiveTo || rule.contextThreshold != null
+    || rule.tierMultipliers && Object.values(rule.tierMultipliers).some(value => value !== 1)
+    || rule.accountType && rule.accountType !== 'api');
+}
+function draftHasConditions(draft) {
+  return !!(draft.from || draft.to || draft.threshold !== ''
+    || fields.some(key => draft['long' + key[0].toUpperCase() + key.slice(1)].trim() !== '')
+    || ['priority', 'batch', 'flex'].some(key => draft[key].trim() !== '')
+    || draft.accountType !== 'api');
+}
+function rateTypeLabel(rule, t) {
+  if (rule.contextTiers) return t('price.typeContext');
+  if (rule.serviceTiers) return t('price.typeService');
+  if (rule.timeOfUse) return t('price.typeTime');
+  if (rule.legacy) return t('price.typeLegacy');
+  return t('price.typeRates');
+}
+function thresholdLabel(value) {
+  return value >= 1000 ? (value / 1000) + 'k' : String(value);
+}
+function conditionSummary(rule, t) {
+  const parts = [];
+  if (rule.effectiveFrom) parts.push(t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom));
+  if (rule.effectiveTo) parts.push(t('price.to') + ': ' + fmtBeijing(rule.effectiveTo));
+  if (rule.contextThreshold != null) parts.push(t('price.threshold') + ': ' + thresholdLabel(rule.contextThreshold));
+  if (rule.tierMultipliers) {
+    const multipliers = Object.entries(rule.tierMultipliers).filter(([, value]) => value !== 1);
+    if (multipliers.length) parts.push(multipliers.map(([key, value]) => key + ' ×' + value).join(' · '));
+  }
+  if (rule.accountType && rule.accountType !== 'api') parts.push(t('price.accountType') + ': ' + rule.accountType);
+  if (rule.timeOfUse) parts.push(t('price.peak') + ' / ' + t('price.offPeak'));
+  if (rule.legacy) parts.push(t('price.legacy'));
+  return parts.length ? parts.join(' · ') : t('price.noConditions');
+}
+function customRuleRows(working, saved, removedIds) {
+  const savedIds = new Set(saved.map(rule => rule.id));
+  const workingIds = new Set(working.map(rule => rule.id));
+  const rows = working.map(rule => ({ rule, isSaved: savedIds.has(rule.id), pendingRemove: false }));
+  for (const rule of saved) if (removedIds.has(rule.id) && !workingIds.has(rule.id)) rows.push({ rule, isSaved: true, pendingRemove: true });
+  return rows;
+}
+function buildPreviewRequest(overrides) {
+  return { action: 'preview', overridesJson: JSON.stringify(overrides) };
+}
+function buildSaveRequest({ overrides, autoUpdate, fingerprint, revision }) {
+  return { action: 'save', overridesJson: JSON.stringify(overrides), autoUpdate, fingerprint, revision };
 }
 function isProvisional(rule) {
   return typeof rule.note === 'string' && rule.note.startsWith('[provisional]');
@@ -205,37 +272,73 @@ function ModelDetail({ group, savedOverrides, t, onBack, onAddCustom, onEditOver
       saved.map(rule => e('button', { key: rule.id, type: 'button', className: 'dss-price-saved-row', 'data-action': 'price-edit-saved', onClick: () => onEditOverride(rule) },
         e('span', null, t('price.editSavedRule')), e('span', { className: 'dss-price-rule-id' }, rule.id)))) : null);
 }
-function CustomSection({ overrides, draft, busy, editingId, t, formRef, onEdit, onRemove, onAdd, onChange, conditionsOpen, onConditionsToggle }) {
+function CustomRuleRow({ row, t, busy, expanded, onToggleExpand, onEdit, onRemove, onUndo }) {
+  const rule = row.rule;
+  return e('div', { className: 'dss-price-custom-row' + (row.pendingRemove ? ' is-pending-remove' : ''), 'data-rule-id': rule.id },
+    e('div', { className: 'dss-price-custom-main' },
+      e('div', { className: 'dss-price-custom-id' },
+        e('strong', null, rule.providerId + ' / ' + rule.canonical),
+        e('span', { className: 'dss-price-custom-meta' },
+          rule.currency + ' · ' + rateTypeLabel(rule, t),
+          !row.isSaved && !row.pendingRemove ? e('span', { className: 'dss-price-unsaved' }, t('price.unsaved')) : null,
+          row.pendingRemove ? e('span', { className: 'dss-price-pending-remove' }, t('price.pendingRemove')) : null)),
+      e('div', { className: 'dss-price-custom-actions' },
+        row.pendingRemove
+          ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-undo-remove', disabled: busy, onClick: () => onUndo(rule) }, t('price.undoRemove'))
+          : [
+            e('button', { key: 'edit', type: 'button', className: 'dss-export', 'data-action': 'price-edit-rule', disabled: busy, onClick: () => onEdit(rule) }, t('price.edit')),
+            e('button', { key: 'remove', type: 'button', className: 'dss-export', 'data-action': 'price-remove-rule', disabled: busy, onClick: () => onRemove(rule) }, t('price.remove')),
+          ])),
+    e('p', { className: 'dss-price-condition-summary' }, conditionSummary(rule, t)),
+    e('details', { open: expanded, onToggle: ev => onToggleExpand(rule.id, ev.currentTarget.open) },
+      e('summary', null, t('price.ruleDetailsTitle')),
+      ruleDetails(rule, t),
+      row.pendingRemove ? e('p', { className: 'dss-price-note' }, t('price.pendingRemoveHint')) : null));
+}
+function CustomList({ rows, t, busy, editorDirty, editorNotice, deferredFocus, expandedIds, headingRef, onAdd, onContinue, onEdit, onRemove, onUndo, onLocateDeferred, onToggleExpand }) {
+  return e(React.Fragment, null,
+    e('div', { className: 'dss-price-custom-head' },
+      e('h4', { ref: headingRef, tabIndex: -1 }, t('price.sectionCustom')),
+      e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-add-rule', disabled: busy, onClick: onAdd }, t('price.addRule'))),
+    editorDirty ? e('div', { className: 'dss-price-editor-notice', role: 'status' },
+      e('span', null, editorNotice || t('price.editorDirtyHint')),
+      e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-continue-editing', onClick: onContinue }, t('price.continueEditing'))) : null,
+    !editorDirty && deferredFocus ? e('div', { className: 'dss-price-editor-notice', role: 'status' },
+      e('span', null, fillText(t, 'price.deferredFocusHint', deferredFocus.provider, deferredFocus.model)),
+      e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-locate-deferred', onClick: onLocateDeferred }, t('price.locateDeferred'))) : null,
+    !editorDirty && !deferredFocus && editorNotice ? e('p', { className: 'dss-price-notice', role: 'status' }, editorNotice) : null,
+    rows.length ? e('div', { className: 'dss-price-custom-list' }, rows.map(row => e(CustomRuleRow, {
+      key: row.rule.id, row, t, busy, expanded: expandedIds.has(row.rule.id),
+      onToggleExpand, onEdit, onRemove, onUndo,
+    }))) : e('p', { className: 'dss-price-muted' }, t('price.noCustomRules')));
+}
+function CustomEditor({ draft, editingId, editorDirty, busy, conditionsOpen, t, formRef, onChange, onStage, onCancel, onBack, onConditionsToggle }) {
   const field = (key, label, type = 'number') => e('label', { key, className: 'dss-price-field' }, label,
     e('input', { type, min: type === 'number' ? '0' : undefined, step: type === 'number' ? 'any' : undefined,
       value: draft[key], disabled: busy, onChange: ev => onChange(key, ev.target.value), 'aria-label': label }));
+  const conditionsSet = draftHasConditions(draft);
   return e(React.Fragment, null,
-    e('h4', null, t('price.sectionCustom')),
-    overrides.length ? overrides.map(rule => e('div', { key: rule.id, className: 'dss-price-custom-row', 'data-rule-id': rule.id },
-      e('div', { className: 'dss-price-custom-id' },
-        e('strong', null, rule.providerId + ' / ' + rule.canonical),
-        e('span', null, rule.currency + ' · ' + (rule.accountType || t('price.accountUnspecified')))),
-      e('div', { className: 'dss-price-custom-actions' },
-        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-edit-rule', disabled: busy, onClick: () => onEdit(rule) }, t('price.edit')),
-        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-remove-rule', disabled: busy, onClick: () => onRemove(rule) }, t('price.remove'))),
-      e('details', null, e('summary', null, t('source.details')), ruleDetails(rule, t))))
-      : e('p', { className: 'dss-price-muted' }, t('price.noCustomRules')),
+    e('div', { className: 'dss-price-editor-head' },
+      e('button', { type: 'button', className: 'dss-price-back', 'data-action': 'price-back-custom-list', onClick: onBack }, '← ' + t('price.backToCustomList')),
+      e('h4', null, t(editingId ? 'price.editRule' : 'price.newRule'))),
     e('div', { className: 'dss-price-form', ref: formRef },
-      e('h5', null, t(editingId ? 'price.editRule' : 'price.newRule')),
-      e('p', { className: 'dss-price-muted' }, t('price.units')),
       e('div', { className: 'dss-price-grid' },
         field('provider', t('price.provider'), 'text'), field('model', t('price.model'), 'text'),
-        e('label', { className: 'dss-price-field' }, t('price.currency'), e('select', { value: draft.currency, disabled: busy, onChange: ev => onChange('currency', ev.target.value) }, ['CNY', 'USD'].map(v => e('option', { key: v }, v)))),
+        e('label', { className: 'dss-price-field' }, t('price.currency'), e('select', { value: draft.currency, disabled: busy, 'aria-label': t('price.currency'), onChange: ev => onChange('currency', ev.target.value) }, ['CNY', 'USD'].map(v => e('option', { key: v }, v)))),
         ...fields.map(k => field(k, t('price.' + k)))),
+      e('p', { className: 'dss-price-muted' }, t('price.unitsShort')),
       e('details', { open: conditionsOpen, onToggle: ev => onConditionsToggle(ev.currentTarget.open) },
-        e('summary', null, t('price.conditions')),
-        e('p', { className: 'dss-price-muted' }, t('price.timesBeijing')),
+        e('summary', { 'data-action': 'price-toggle-conditions' }, t('price.conditions'), conditionsSet ? e('span', { className: 'dss-price-conditions-set' }, t('price.conditionsSet')) : null),
+        e('p', { className: 'dss-price-muted' }, t('price.timesBeijing') + ' · ' + t('price.timeHint')),
         e('div', { className: 'dss-price-grid' }, field('from', t('price.from'), 'datetime-local'), field('to', t('price.to'), 'datetime-local'), field('threshold', t('price.threshold')),
           ...fields.map(k => field('long' + k[0].toUpperCase() + k.slice(1), t('price.long') + ' ' + t('price.' + k))),
           ...['priority', 'batch', 'flex'].map(k => field(k, k + ' ' + t('price.multiplier'))),
-          e('label', { className: 'dss-price-field' }, t('price.accountType'), e('select', { value: draft.accountType, disabled: busy, onChange: ev => onChange('accountType', ev.target.value) }, ['api', 'relay', 'local'].map(v => e('option', { key: v }, v)))))),
-      e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-stage-rule', disabled: busy, onClick: onAdd }, t(editingId ? 'price.replace' : 'price.add'))));
+          e('label', { className: 'dss-price-field' }, t('price.accountType'), e('select', { value: draft.accountType, disabled: busy, 'aria-label': t('price.accountType'), onChange: ev => onChange('accountType', ev.target.value) }, ['api', 'relay', 'local'].map(v => e('option', { key: v }, v)))))),
+      e('div', { className: 'dss-price-editor-actions' },
+        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-stage-rule', disabled: busy || (editingId && !editorDirty), onClick: onStage }, t(editingId ? 'price.replace' : 'price.add')),
+        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-cancel-editor', disabled: busy, onClick: onCancel }, t('price.cancelEditor')))));
 }
+
 function UpdatesSection({ status, autoUpdate, busy, dirty, t, onAuto, onRefresh, onRollback }) {
   const snapshots = catalogSnapshotRows(status, Number.MAX_SAFE_INTEGER);
   const last = status.lastSuccessAt ? fmtBeijing(status.lastSuccessAt) + ' ' + t('price.beijing') : t('price.builtin');
@@ -252,7 +355,7 @@ function UpdatesSection({ status, autoUpdate, busy, dirty, t, onAuto, onRefresh,
       e('p', { className: 'dss-price-muted' }, t('price.rollbackHint')),
       snapshots.versions.length ? snapshots.versions.map(version => e('div', { key: version, className: 'dss-price-snapshot-row', 'data-version': version },
         e('span', null, String(version)),
-        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-rollback', disabled: busy || dirty, onClick: () => onRollback(version) }, t('price.rollback'))))
+        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-rollback', disabled: busy || dirty, title: dirty ? t('price.saveFirst') : undefined, onClick: () => onRollback(version) }, t('price.rollback'))))
         : e('p', { className: 'dss-price-muted' }, t('price.noSnapshots'))));
 }
 class PricingErrorBoundary extends React.Component {
@@ -280,49 +383,65 @@ class PricingErrorBoundary extends React.Component {
 }
 function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
-  const [overrides, setOverrides] = React.useState([]), [savedOverrides, setSavedOverrides] = React.useState([]), [draft, setDraft] = React.useState(blankDraft), [search, setSearch] = React.useState('');
-  const [preview, setPreview] = React.useState(null), [autoUpdate, setAutoUpdate] = React.useState(true), [dirty, setDirty] = React.useState(false);
-  const [editingId, setEditingId] = React.useState(null);
+  const [workingOverrides, setWorkingOverrides] = React.useState([]), [savedOverrides, setSavedOverrides] = React.useState([]);
+  const [draft, setDraft] = React.useState(blankDraft), [editorBaseline, setEditorBaseline] = React.useState(blankDraft);
+  const [editingId, setEditingId] = React.useState(null), [editorOpen, setEditorOpen] = React.useState(false);
+  const [conditionsOpen, setConditionsOpen] = React.useState(false);
+  const [removedSavedIds, setRemovedSavedIds] = React.useState(() => new Set());
+  const [expandedRuleIds, setExpandedRuleIds] = React.useState(() => new Set());
+  const [editorNotice, setEditorNotice] = React.useState(''), [deferredFocus, setDeferredFocus] = React.useState(null);
+  const [preview, setPreview] = React.useState(null), [autoUpdateDraft, setAutoUpdateDraft] = React.useState(true);
+  const [search, setSearch] = React.useState('');
   const [section, setSection] = React.useState('models'), [scope, setScope] = React.useState(null);
   const [selectedKey, setSelectedKey] = React.useState(null), [modelNotice, setModelNotice] = React.useState('');
-  const [otherOpen, setOtherOpen] = React.useState(false), [conditionsOpen, setConditionsOpen] = React.useState(false);
+  const [otherOpen, setOtherOpen] = React.useState(false);
   const [page, setPage] = React.useState(0), [catalogAt, setCatalogAt] = React.useState(Date.now);
   const [statusTick, setStatusTick] = React.useState(0);
   const [focusTick, setFocusTick] = React.useState(0);
   const pendingFocusRef = React.useRef(null), focusAfterLocateRef = React.useRef(false), formRef = React.useRef(null);
-  const listRef = React.useRef(null), listTitleRef = React.useRef(null), detailTitleRef = React.useRef(null);
+  const listRef = React.useRef(null), listTitleRef = React.useRef(null), detailTitleRef = React.useRef(null), customHeadingRef = React.useRef(null);
   const restoreKeyRef = React.useRef(null), detailFocusRef = React.useRef(false), pageFocusRef = React.useRef(false);
-  const focusListRef = React.useRef(false), footerFocusRef = React.useRef(false), scopeInitRef = React.useRef(false);
-  const fail = err => setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed'));
-  function locateDraft(nextDraft) {
-    if (!nextDraft) return false;
-    setDraft(nextDraft);
-    setEditingId(null);
-    setSection('custom');
-    setFocusTick(n => n + 1);
-    focusAfterLocateRef.current = true;
-    return true;
+  const focusListRef = React.useRef(false), footerFocusRef = React.useRef(false), scopeInitRef = React.useRef(false), customFocusRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => () => { mountedRef.current = false; }, []);
+  const editorDirty = !draftEqual(draft, editorBaseline);
+  const settingsDirty = !!status && (autoUpdateDraft !== status.autoUpdate || removedSavedIds.size > 0 || !rulesEqual(workingOverrides, savedOverrides));
+  const anyDirty = editorDirty || settingsDirty;
+  const customRows = customRuleRows(workingOverrides, savedOverrides, removedSavedIds);
+  const fail = err => { setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed')); setPreview(null); };
+  function openEditor(nextDraft, nextEditingId, baseline, conditions) {
+    setDraft(nextDraft); setEditingId(nextEditingId); setEditorBaseline(baseline);
+    setEditorOpen(true); setConditionsOpen(conditions); setSection('custom'); setEditorNotice(''); setError('');
+    setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
   }
-  function locate(provider, model) {
-    return locateDraft(blankDraft(provider, model));
+  function closeEditor() {
+    setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft());
+    setEditorOpen(false); setConditionsOpen(false); setEditorNotice(''); focusAfterLocateRef.current = false;
   }
   function accept(result) {
     pricing.validateCatalog(JSON.parse(result.catalogJson));
     const rules = pricing.validateOverrides(JSON.parse(result.overridesJson));
     const pendingDraft = draftForFocus(pendingFocusRef.current);
     pendingFocusRef.current = null;
-    if (!locateDraft(pendingDraft)) setDraft(blankDraft());
-    setStatus(result); setOverrides(rules); setSavedOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setEditingId(null);
-    setCatalogAt(Date.now());
+    setStatus(result); setWorkingOverrides(rules); setSavedOverrides(rules);
+    setAutoUpdateDraft(result.autoUpdate); setRemovedSavedIds(new Set()); setExpandedRuleIds(new Set());
+    setPreview(null); setEditorNotice(''); setError(''); setDeferredFocus(null); setCatalogAt(Date.now());
+    focusAfterLocateRef.current = false; customFocusRef.current = false;
+    setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft()); setConditionsOpen(false);
+    if (pendingDraft) openEditor(pendingDraft, null, pendingDraft, false);
   }
-  async function call(request, mode = 'accept') {
+  async function call(request, mode = 'commit') {
     setBusy(true); setError('');
     try {
       const result = await remote(request);
+      if (!mountedRef.current) {
+        if (mode !== 'preview' && request.action !== 'status') onChanged();
+        return;
+      }
       if (mode === 'preview') setPreview({ ...JSON.parse(result.previewJson), fingerprint: result.fingerprint });
       else { accept(result); if (request.action !== 'status') onChanged(); }
-    } catch (err) { fail(err); }
-    finally { setBusy(false); }
+    } catch (err) { if (mountedRef.current) fail(err); }
+    finally { if (mountedRef.current) setBusy(false); }
   }
   React.useEffect(() => {
     let cancelled = false;
@@ -335,16 +454,22 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     const nextDraft = draftForFocus(focusModel);
     if (!nextDraft) { pendingFocusRef.current = null; return; }
     setSection('custom');
-    if (status) locateDraft(nextDraft);
-    else pendingFocusRef.current = focusModel;
+    if (!status) { pendingFocusRef.current = focusModel; return; }
+    requestFocusDraft(nextDraft, focusModel);
   }, [focusModel?.nonce]);
   React.useEffect(() => {
-    if (!focusAfterLocateRef.current || section !== 'custom' || !formRef.current) return;
+    if (!focusAfterLocateRef.current || !editorOpen || !formRef.current) return;
     focusAfterLocateRef.current = false;
     formRef.current.scrollIntoView({ block: 'nearest' });
     const input = formRef.current.querySelector('input');
     if (input) input.focus();
-  }, [section, draft.provider, draft.model, focusTick]);
+  }, [editorOpen, draft.provider, draft.model, focusTick]);
+  React.useEffect(() => {
+    if (editorDirty && preview) setPreview(null);
+  }, [editorDirty, preview]);
+  React.useEffect(() => {
+    if (!settingsDirty && preview) setPreview(null);
+  }, [settingsDirty, preview]);
   const catalog = React.useMemo(() => status ? pricing.validateCatalog(JSON.parse(status.catalogJson)) : null, [status?.catalogJson]);
   const used = React.useMemo(() => usedModelKeys(projects, catalog), [projects, catalog]);
   const groups = React.useMemo(() => catalogGroups(catalog, used, catalogAt), [catalog, used, catalogAt]);
@@ -393,45 +518,135 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     focusListRef.current = true;
   }, [groups, selectedKey, status]);
   React.useEffect(() => {
-    if (dirty || !footerFocusRef.current) return;
-    footerFocusRef.current = false;
-    const node = document.querySelector('[data-action="price-section-' + section + '"]');
+    if (!customFocusRef.current || editorOpen) return;
+    customFocusRef.current = false;
+    const node = document.querySelector('[data-action=price-add-rule]') || customHeadingRef.current;
     if (node) node.focus();
-  }, [dirty, section]);
-  function edit(key, value) { setDraft(old => ({ ...old, [key]: value })); setPreview(null); }
-  function add() {
+  }, [editorOpen, workingOverrides, removedSavedIds]);
+  React.useEffect(() => {
+    if (anyDirty || !footerFocusRef.current) return;
+    footerFocusRef.current = false;
+    const node = section === 'custom'
+      ? document.querySelector('[data-action=price-add-rule]')
+      : document.querySelector('[data-action="price-section-' + section + '"]');
+    if (node) node.focus();
+  }, [anyDirty, section]);
+  function requestFocusDraft(nextDraft, target) {
+    const sameModel = draft.provider.trim() === nextDraft.provider.trim() && draft.model.trim() === nextDraft.model.trim();
+    if (editorDirty) {
+      if (sameModel) {
+        setSection('custom'); setEditorOpen(true); setEditorNotice(''); setDeferredFocus(null);
+        setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
+        return;
+      }
+      setSection('custom'); setEditorNotice(t('price.editorDirtyHint')); setDeferredFocus(target);
+      return;
+    }
+    setDeferredFocus(null);
+    openEditor(nextDraft, null, nextDraft, false);
+  }
+  function requestFocus(provider, model) {
+    return requestFocusDraft(blankDraft(provider, model), { provider, model });
+  }
+  function requestEdit(rule) {
+    if (editorDirty) {
+      if (editingId === rule.id) {
+        setSection('custom'); setEditorOpen(true); setEditorNotice(''); setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
+        return;
+      }
+      setSection('custom'); setEditorNotice(t('price.editorDirtyHint'));
+      return;
+    }
+    const nextDraft = ruleDraft(rule);
+    openEditor(nextDraft, rule.id, nextDraft, ruleHasConditions(rule));
+  }
+  function requestNewRule() {
+    if (editorDirty) {
+      setSection('custom'); setEditorNotice(t('price.editorDirtyHint'));
+      if (editorOpen) { setFocusTick(n => n + 1); focusAfterLocateRef.current = true; }
+      return;
+    }
+    const nextDraft = blankDraft();
+    openEditor(nextDraft, null, nextDraft, false);
+  }
+  function locateDeferred() {
+    if (!deferredFocus || editorDirty) return;
+    requestFocusDraft(draftForFocus(deferredFocus), deferredFocus);
+  }
+  function cancelEditor() { closeEditor(); setError(''); customFocusRef.current = true; }
+  function backToCustomList() { setEditorOpen(false); setEditorNotice(''); customFocusRef.current = true; }
+  function continueEditing() { setEditorOpen(true); setEditorNotice(''); setFocusTick(n => n + 1); focusAfterLocateRef.current = true; }
+  function editField(key, value) {
+    setDraft(old => ({ ...old, [key]: value }));
+    setPreview(null); setError(''); setEditorNotice('');
+  }
+  function stageRule() {
     try {
-      const rule = draftRule(draft, overrides);
-      const next = [...overrides.filter(r => r.id !== editingId), rule]; pricing.validateOverrides(next);
-      setOverrides(next); setDraft(blankDraft()); setEditingId(null); setPreview(null); setDirty(true); setError('');
+      const rule = draftRule(draft, workingOverrides);
+      const index = workingOverrides.findIndex(item => item.id === editingId);
+      const next = index >= 0 ? workingOverrides.map((item, i) => i === index ? rule : item) : [...workingOverrides, rule];
+      pricing.validateOverrides(next);
+      setWorkingOverrides(next); setPreview(null); setError('');
+      setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft());
+      setConditionsOpen(false); setEditorNotice(''); customFocusRef.current = true;
     } catch { setError(t('price.invalid')); }
+  }
+  function removeRule(rule) {
+    if (editorDirty && editingId === rule.id) { setSection('custom'); setEditorNotice(t('price.editorDirtyHint')); return; }
+    setWorkingOverrides(workingOverrides.filter(item => item.id !== rule.id));
+    setPreview(null); setError(''); setEditorNotice('');
+    if (savedOverrides.some(item => item.id === rule.id)) {
+      setRemovedSavedIds(previous => { const next = new Set(previous); next.add(rule.id); return next; });
+    }
+    if (editingId === rule.id) closeEditor();
+    customFocusRef.current = true;
+  }
+  function undoRemove(rule) {
+    setWorkingOverrides(previous => previous.some(item => item.id === rule.id) ? previous : [...previous, rule]);
+    setRemovedSavedIds(previous => { const next = new Set(previous); next.delete(rule.id); return next; });
+    setPreview(null); setError(''); setEditorNotice(''); customFocusRef.current = true;
+  }
+  function toggleRuleExpanded(id, open) {
+    setExpandedRuleIds(previous => {
+      const next = new Set(previous);
+      if (open) next.add(id); else next.delete(id);
+      return next;
+    });
+  }
+  function changeAutoUpdate(value) { setAutoUpdateDraft(value); setPreview(null); setError(''); }
+  function discardAll() { footerFocusRef.current = true; if (status) accept(status); }
+  function previewSettings() {
+    if (!settingsDirty || editorDirty || busy) return;
+    call(buildPreviewRequest(workingOverrides), 'preview');
+  }
+  function saveSettings() {
+    if (!settingsDirty || editorDirty || !preview || busy) return;
+    footerFocusRef.current = true;
+    call(buildSaveRequest({ overrides: workingOverrides, autoUpdate: autoUpdateDraft, fingerprint: preview.fingerprint, revision: status.revision }), 'commit');
   }
   function openModel(key) { detailFocusRef.current = true; setModelNotice(''); setOtherOpen(false); setSelectedKey(key); }
   function backToModels() { if (!selectedKey) return; restoreKeyRef.current = selectedKey; setSelectedKey(null); }
   function changePage(next) { pageFocusRef.current = true; setPage(next); }
   function changeSearch(value) { setSearch(value); setPage(0); setModelNotice(''); }
   function changeScope(next) { setScope(next); setPage(0); setModelNotice(''); }
-  function openSavedRule(rule) {
-    setDraft(ruleDraft(rule)); setEditingId(rule.id); setPreview(null); setSection('custom');
-    setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
-  }
-  function removeRule(rule) { setOverrides(overrides.filter(r => r.id !== rule.id)); setDirty(true); setPreview(null); }
-  function discard() { footerFocusRef.current = true; accept(status); }
-  function save() { footerFocusRef.current = true; call({ action: 'save', fingerprint: preview.fingerprint, revision: status.revision, autoUpdate, overridesJson: JSON.stringify(overrides) }); }
-  const amount = summary => summary?.totals?.map(row => row.currency + ' ' + row.amount.toFixed(4)).join(' + ') || t('pricing.pending');
+  const amount = summary => summary?.totals?.length ? summary.totals.map(row => row.currency + ' ' + row.amount.toFixed(4)).join(' · ') : t('pricing.pending');
   const button = (label, onClick, disabled = false, action) => e('button', { type: 'button', className: 'dss-export', 'data-action': action, disabled: busy || disabled, onClick }, label);
   const sections = [['models', 'sectionModels'], ['custom', 'sectionCustom'], ['updates', 'sectionUpdates']];
   const sectionContent = section === 'models'
     ? (selectedGroup
-      ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, onBack: backToModels, onAddCustom: locate, onEditOverride: openSavedRule, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
+      ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, onBack: backToModels, onAddCustom: requestFocus, onEditOverride: requestEdit, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
       : e(React.Fragment, null,
-        e(SyncSummary, { status, busy, dirty, t, onRefresh: () => call({ action: 'refresh' }) }),
-        e(PendingPanel, { missing, t, onConfigure: locate }),
+        e(SyncSummary, { status, busy, dirty: anyDirty, t, onRefresh: () => call({ action: 'refresh' }) }),
+        e(PendingPanel, { missing, t, onConfigure: requestFocus }),
         e(ModelList, { selection, scope: effectiveScope, search, t, onScope: changeScope, onSearch: changeSearch, onPage: changePage,
           onOpen: openModel, onClearSearch: () => changeSearch(''), onShowAll: () => changeScope('all'), listRef, titleRef: listTitleRef, notice: modelNotice, hasUsed: used.size > 0, catalogEmpty: groups.length === 0 })))
     : section === 'custom'
-      ? e(CustomSection, { overrides, draft, busy, editingId, t, formRef, onEdit: openSavedRule, onRemove: removeRule, onAdd: add, onChange: edit, conditionsOpen, onConditionsToggle: setConditionsOpen })
-      : e(UpdatesSection, { status, autoUpdate, busy, dirty, t, onAuto: value => { setAutoUpdate(value); setDirty(true); setPreview(null); },
+      ? (editorOpen
+        ? e(CustomEditor, { draft, editingId, editorDirty, busy, conditionsOpen, t, formRef, onChange: editField, onStage: stageRule, onCancel: cancelEditor, onBack: backToCustomList, onConditionsToggle: setConditionsOpen })
+        : e(CustomList, { rows: customRows, t, busy, editorDirty, editorNotice, deferredFocus, expandedIds: expandedRuleIds,
+          headingRef: customHeadingRef, onAdd: requestNewRule, onContinue: continueEditing, onEdit: requestEdit, onRemove: removeRule, onUndo: undoRemove,
+          onLocateDeferred: locateDeferred, onToggleExpand: toggleRuleExpanded }))
+      : e(UpdatesSection, { status, autoUpdate: autoUpdateDraft, busy, dirty: anyDirty, t, onAuto: changeAutoUpdate,
         onRefresh: () => call({ action: 'refresh' }), onRollback: version => call({ action: 'rollback', version, revision: status.revision }) });
   const bodyContent = !status
     ? e('div', { className: 'dss-price-state' },
@@ -441,12 +656,16 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
       status.error ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
         e('details', null, e('summary', null, t('source.details')), status.error)) : null,
       sectionContent);
-  const commit = dirty ? e('div', { className: 'dss-price-commit' },
-    preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after)) : null,
+  const commit = anyDirty ? e('div', { className: 'dss-price-commit' },
+    e('p', { className: 'dss-price-commit-note' }, t('price.unsavedClose')),
+    editorDirty ? e('div', { className: 'dss-price-editor-block' },
+      e('span', null, editorNotice || t('price.editorDirtyHint')),
+      e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-continue-editing', onClick: continueEditing }, t('price.continueEditing'))) : null,
+    !editorDirty && preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after)) : null,
     e('div', { className: 'dss-price-actions' },
-      button(t('price.preview'), () => call({ action: 'preview', overridesJson: JSON.stringify(overrides) }, 'preview'), false, 'price-preview'),
-      button(t('price.save'), save, !preview, 'price-save'),
-      button(t('price.cancel'), discard, false, 'price-discard'))) : null;
+      button(t('price.preview'), previewSettings, editorDirty, 'price-preview'),
+      button(t('price.save'), saveSettings, editorDirty || !preview, 'price-save'),
+      button(t('price.cancel'), discardAll, false, 'price-discard'))) : null;
   return e('section', { className: 'dss-pricing', 'aria-label': t('price.title'), 'aria-busy': busy },
     e('div', { className: 'dss-price-nav', role: 'group', 'aria-label': t('price.sections') },
       sections.map(([name, key]) => e('button', { key: name, type: 'button', className: 'dss-price-nav-btn' + (section === name ? ' is-on' : ''),
@@ -454,4 +673,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     e('div', { className: 'dss-drawer-body' }, error ? e('p', { role: 'alert' }, error) : null, bodyContent),
     commit);
 }
-module.exports = { PricingPanel, PricingErrorBoundary, ModelList, ModelDetail, draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing };
+
+module.exports = { PricingPanel, PricingErrorBoundary, ModelList, ModelDetail, CustomList, CustomEditor, UpdatesSection,
+  draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing,
+  draftEqual, rulesEqual, ruleHasConditions, draftHasConditions, customRuleRows, buildPreviewRequest, buildSaveRequest };

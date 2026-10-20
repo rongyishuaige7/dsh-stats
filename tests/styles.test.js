@@ -209,3 +209,9 @@ test('pricing tags keep semantic colors and the xs size', () => {
 	expect(provisional.declarations).toContain('background:var(--dss-warn-soft)');
 	expect(provisional.declarations).toContain('border:1px solid var(--dss-warn-line)');
 });
+
+test('pricing footer stays in layout and never overlays the body', () => {
+	const commit = parsed.find(rule => rule.selector === '.dss-price-commit');
+	expect(commit.declarations).toContain('flex:none');
+	expect(commit.declarations).not.toContain('position:absolute');
+});

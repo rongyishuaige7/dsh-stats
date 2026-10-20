@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { ModelList, ModelDetail } = require('../src/pricing-panel.cjs');
+const { ModelList, ModelDetail, UpdatesSection } = require('../src/pricing-panel.cjs');
 const { catalogGroups, selectModelGroups } = require('../src/pricing-view.cjs');
 const { en } = require('../src/pricing-locale.cjs');
 const t = key => en[key] ?? key;
@@ -91,4 +91,15 @@ test('provisional detail keeps the note body and the review tag', () => {
   expect(html).toContain('Auto-added from the official model table; cache duration and service tiers are pending review.');
   expect(html).not.toContain('[provisional]');
   expect(html).toContain(en['price.provisional']);
+});
+
+
+test('updates section disables restore while settings are dirty', () => {
+  const status = { version: 5, history: [4], lastSuccessAt: Date.parse('2026-10-17T00:00:00Z') };
+  const render = dirty => renderToStaticMarkup(React.createElement(UpdatesSection, {
+    status, autoUpdate: true, busy: false, dirty, t, onAuto() {}, onRefresh() {}, onRollback() {},
+  }));
+  expect(render(false)).toContain('data-action="price-rollback"');
+  expect(render(false)).not.toContain('data-action="price-rollback" disabled=""');
+  expect(render(true)).toContain('data-action="price-rollback" disabled=""');
 });

@@ -154,13 +154,32 @@ async function pricingSearch(value) {
   })()`);
   await delay(150);
 }
-async function setPricingInput(key, value) {
+async function setPricingLabel(label, value) {
   return evaluate(`(() => {
-    const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t(${JSON.stringify(key)}));
+    const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === ${JSON.stringify(label)});
     if (!input) return false;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
     input.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
+  })()`);
+}
+async function setPricingInput(key, value) {
+  const label = await evaluate(`window.__fixture.t(${JSON.stringify(key)})`);
+  return setPricingLabel(label, value);
+}
+async function setPricingSelect(label, value) {
+  return evaluate(`(() => {
+    const select = [...document.querySelectorAll('.dss-pricing select')].find(node => node.getAttribute('aria-label') === ${JSON.stringify(label)});
+    if (!select) return false;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(value)});
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+}
+async function pricingPayload(action) {
+  return evaluate(`(() => {
+    const call = [...window.__fixture.calls].reverse().find(row => row[0] === 'pricing' && row[1] === ${JSON.stringify(action)});
+    return call ? call[2] : null;
   })()`);
 }
 async function tagStyle(modelKey, selector) {
@@ -1064,6 +1083,8 @@ try {
   await until('document.querySelector(".dss-price-model-row")');
   await click('[data-action=price-scope-all]');
   await pricingSection('custom');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  await click('[data-action=price-add-rule]');
   await until('document.querySelector(".dss-price-form")');
   for (const [key, value] of [['price.provider', tieredModel.provider], ['price.model', tieredModel.canonical], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
     assert(await setPricingInput(key, value), 'saved-rule field ' + key);
@@ -1166,42 +1187,270 @@ try {
   await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
   await until('document.querySelector(".dss-price-model-row")');
   await pricingSection('custom');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  assert(await evaluate('!document.querySelector(".dss-price-form")'), 'custom section opens on the rule list');
+  await click('[data-action=price-add-rule]');
   await until('document.querySelector(".dss-price-form")');
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'a clean new form does not show the footer');
   for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
     assert(await setPricingInput(key, value), 'custom field ' + key);
   }
-  await click('[data-action=price-stage-rule]');
   await until('document.querySelector(".dss-price-commit")');
-  await layout('pricing-custom'); await assertDrawerSingleScroll('pricing-custom'); await capture('narrow-pricing-custom');
+  assert(await evaluate('document.querySelector("[data-action=price-preview]").disabled && document.querySelector("[data-action=price-save]").disabled'), 'editor dirty blocks preview and save');
+  assert(await evaluate('!!document.querySelector("[data-action=price-continue-editing]")'), 'editor dirty offers continue editing');
+  await layout('pricing-custom'); await assertDrawerSingleScroll('pricing-custom'); await assertTextFloor('pricing-custom');
+  await capture('narrow-pricing-custom');
+  // Same model focus restores the unfinished form without overwriting it.
+  await evaluate('document.querySelector("[data-action=pricing-pending]").click()');
+  await delay(150);
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.uncached')).value`), '1', 'same-model focus keeps the dirty form');
+  // A different model is deferred instead of replacing the dirty form.
+  await setPricingInput('price.model', 'deepseek-v4-flash');
+  await evaluate('document.querySelector("[data-action=pricing-pending]").click()');
+  await delay(150);
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')).value`), 'deepseek-v4-flash', 'different-model focus does not replace the dirty form');
+  await click('[data-action=price-cancel-editor]');
+  await until('document.querySelector("[data-action=price-locate-deferred]")');
+  assert(await evaluate('document.querySelector(".dss-price-editor-notice").textContent.includes("fixture-unpriced")'), 'deferred model is kept for the user');
+  await click('[data-action=price-locate-deferred]');
+  await until('document.querySelector(".dss-price-form")');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')).value`), 'fixture-unpriced', 'deferred model opens after the dirty form is resolved');
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'deferred prefilled form is clean');
+  await click('[data-action=price-cancel-editor]');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  // Start the real draft rule again.
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
+    assert(await setPricingInput(key, value), 'draft field ' + key);
+  }
+  await until('document.querySelector(".dss-price-commit")');
+  await pricingSection('models'); await pricingSection('custom');
+  await until('document.querySelector(".dss-price-form")');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.uncached')).value`), '1', 'section switches keep the editor');
+  await click('[data-action=price-back-custom-list]');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  assert(await evaluate('!!document.querySelector(".dss-price-editor-notice") && !!document.querySelector("[data-action=price-continue-editing]")'), 'back to list keeps the dirty editor notice');
+  await click('[data-action=price-add-rule]');
+  assert(await evaluate('!document.querySelector(".dss-price-form")'), 'a dirty editor blocks starting another rule');
+  await click('[data-action=price-continue-editing]');
+  await until('document.querySelector(".dss-price-form")');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.uncached')).value`), '1', 'continue editing restores the fields');
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-custom-row")');
+  assert(await evaluate('!!document.querySelector(".dss-price-unsaved")'), 'staged rule is marked unsaved');
+  assert(await evaluate('!document.querySelector(".dss-price-form")'), 'staging returns to the rule list');
+  assert(await evaluate('document.activeElement.getAttribute("data-action") === "price-add-rule"'), 'staging focuses the add entry');
   await click('[data-action=price-preview]');
   await until('document.querySelector(".dss-price-preview")');
-  assert(await evaluate('!document.querySelector(".dss-price-preview").textContent.includes("Affected sessions 0")'));
-  await layout('pricing-preview'); await capture('narrow-pricing-preview');
-  await click('[data-action=price-save]');
-  await until('!document.querySelector(".dss-price-commit")');
-  assert(await evaluate('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "save")'), 'custom rule save reaches the host');
+  const previewCall = await pricingPayload('preview');
+  assert(previewCall && previewCall.action === 'preview', 'preview request reaches the host');
+  assert(!('autoUpdate' in previewCall) && !('fingerprint' in previewCall) && !('revision' in previewCall), 'preview request has no save-only fields');
+  const previewRules = JSON.parse(previewCall.overridesJson);
+  assert(previewRules.length === 1 && previewRules[0].providerId === 'fixture-compatible' && previewRules[0].canonical === 'fixture-unpriced', 'preview request carries the working rule');
+  await capture('narrow-pricing-preview');
+  await pricingSection('models');
+  await until('document.querySelector("[data-action=price-refresh]")');
+  assert(await evaluate('document.querySelector("[data-action=price-refresh]").disabled'), 'dirty settings disable the model-page check updates');
+  await pricingSection('updates');
+  await until('document.querySelector("[data-action=price-refresh]")');
+  assert(await evaluate('document.querySelector("[data-action=price-refresh]").disabled'), 'dirty settings disable check updates');
+  assert(await evaluate('document.querySelector("[data-action=price-refresh]").title === window.__fixture.t("price.saveFirst")'), 'disabled check updates explains why');
+  assert(await evaluate('!document.querySelector("[data-action=price-rollback]") || document.querySelector("[data-action=price-rollback]").disabled'), 'dirty settings disable version restore');
+  await click('[data-action=price-auto]');
+  await until('!document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-auto]');
+  await until('document.querySelector(".dss-price-commit")');
+  await pricingSection('custom');
+  assert(await evaluate('!document.querySelector(".dss-price-preview")'), 'auto-update change invalidates the preview');
   await click('[data-action=price-edit-rule]');
   await until('document.querySelector(".dss-price-form")');
-  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.uncached')).value`), '1', 'editing restores the saved draft');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.output')).value`), '2', 'editing restores the staged rule');
+  await setPricingInput('price.output', '3');
+  assert(await evaluate('!document.querySelector(".dss-price-preview") && document.querySelector("[data-action=price-save]").disabled'), 'field changes clear the preview and block save');
+  await click('[data-action=price-cancel-editor]');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  assert(await evaluate('!!document.querySelector(".dss-price-custom-row")'), 'cancel editing keeps other staged rules');
   await click('[data-action=price-remove-rule]');
+  await until('!document.querySelector(".dss-price-custom-row")');
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'removing the only unsaved rule clears the footer');
+  assert(await evaluate('!document.querySelector(".dss-price-pending-remove")'), 'unsaved rule removal is not a pending saved removal');
+
+  // Conditions, saved rule, discard-all and pending removal.
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'deepseek'], ['price.model', 'deepseek-v4-flash'], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
+    assert(await setPricingInput(key, value), 'conditions field ' + key);
+  }
+  await click('[data-action=price-toggle-conditions]');
+  await until('document.querySelector(".dss-price-form details").open');
+  await setPricingInput('price.threshold', '128000');
+  const longUncached = await evaluate('window.__fixture.t("price.long") + " " + window.__fixture.t("price.uncached")');
+  const longOutput = await evaluate('window.__fixture.t("price.long") + " " + window.__fixture.t("price.output")');
+  assert(await setPricingLabel(longUncached, '2'), 'long uncached rate');
+  assert(await setPricingLabel(longOutput, '4'), 'long output rate');
+  assert(await setPricingLabel(await evaluate('"priority " + window.__fixture.t("price.multiplier")'), '2'), 'priority multiplier');
+  assert(await setPricingSelect(await evaluate('window.__fixture.t("price.accountType")'), 'relay'), 'account type');
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-custom-row")');
+  const conditionsRow = await evaluate('document.querySelector(".dss-price-custom-row").textContent');
+  assert(conditionsRow.includes('128k') && conditionsRow.includes('priority ×2') && conditionsRow.includes('relay'), 'rule list summarizes conditions');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  const saveCall = await pricingPayload('save');
+  assert(saveCall && saveCall.action === 'save', 'save request reaches the host');
+  assert(saveCall.autoUpdate === true, 'save request carries the auto-update draft');
+  assert(typeof saveCall.fingerprint === 'string' && saveCall.fingerprint.length > 0, 'save request carries the preview fingerprint');
+  assert(Number.isSafeInteger(saveCall.revision), 'save request carries the baseline revision');
+  const savedRules = JSON.parse(saveCall.overridesJson);
+  assert(savedRules.length === 1 && savedRules[0].providerId === 'deepseek' && savedRules[0].canonical === 'deepseek-v4-flash', 'save request carries the working overrides');
+  const savedConditions = savedRules[0];
+  assert(savedConditions.contextThreshold === 128000, 'context threshold saved');
+  assert(savedConditions.contextTiers.short.uncached === 1 && savedConditions.contextTiers.long.uncached === 2 && savedConditions.contextTiers.long.output === 4, 'long context rates saved');
+  assert(savedConditions.tierMultipliers.priority === 2 && savedConditions.accountType === 'relay', 'tier multiplier and account type saved');
+  assert(await evaluate('!document.querySelector(".dss-price-unsaved")'), 'saved rule is no longer marked unsaved');
+  await click('[data-action=price-edit-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  assert(await evaluate('document.querySelector(".dss-price-form details").open'), 'conditions auto-open when editing a conditional rule');
+  assert(await evaluate('!!document.querySelector(".dss-price-conditions-set")'), 'conditions-set label is visible');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.threshold')).value`), '128000', 'threshold restored');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing select')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.accountType')).value`), 'relay', 'account type restored');
+  await click('[data-action=price-cancel-editor]');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  // Discard all restores the saved rule and the saved auto-update value.
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2']]) {
+    assert(await setPricingInput(key, value), 'discard field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await pricingSection('updates');
+  await click('[data-action=price-auto]');
   await until('document.querySelector(".dss-price-commit")');
   await click('[data-action=price-discard]');
   await until('!document.querySelector(".dss-price-commit")');
-  assert(await evaluate('!!document.querySelector("[data-action=price-edit-rule]")'), 'discard restores the saved custom rule');
+  await pricingSection('custom');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-custom-row").length'), 1, 'discard keeps the saved rule');
+  assert(await evaluate('!document.querySelector(".dss-price-unsaved") && !document.querySelector(".dss-price-pending-remove")'), 'discard keeps saved state clean');
+  await pricingSection('updates');
+  assert(await evaluate('document.querySelector("[data-action=price-auto]").checked'), 'discard restores the saved auto-update value');
+  await pricingSection('custom');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-pending-remove")');
+  assert(await evaluate('!!document.querySelector("[data-action=price-undo-remove]")'), 'pending removal exposes undo');
+  assert(await evaluate('document.querySelector("[data-action=price-save]").disabled && !document.querySelector("[data-action=price-preview]").disabled'), 'pending removal requires a fresh preview');
+  await capture('narrow-pricing-pending-remove');
+  await click('[data-action=price-undo-remove]');
+  await until('!document.querySelector(".dss-price-pending-remove")');
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'undoing removal restores the saved state');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-pending-remove")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-custom-row")');
+  assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'saved removal clears the footer');
+  report.checks.push('pricing custom: list/editor, conditions, dirty form protection, preview invalidation, payload, save/discard, pending removal and undo');
+
+  // Conflict and preview failure keep the drafts.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await pricingSection('custom');
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2']]) {
+    assert(await setPricingInput(key, value), 'conflict field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await evaluate('window.__fixture.pricingConflict = true');
+  await click('[data-action=price-save]');
+  await until(`document.querySelector(".dss-pricing [role=alert]")?.textContent.includes(${JSON.stringify(await evaluate('window.__fixture.t("price.conflict")'))})`);
+  assert(await evaluate('!document.querySelector(".dss-price-preview") && document.querySelector("[data-action=price-save]").disabled'), 'conflict clears the preview and blocks retry');
+  assert(await evaluate('!!document.querySelector(".dss-price-custom-row")'), 'conflict keeps the working rule');
+  await capture('narrow-pricing-conflict');
+  await evaluate('window.__fixture.pricingConflict = false');
+  await evaluate('window.__fixture.pricingFailAction = "preview"');
+  await click('[data-action=price-preview]');
+  await until(`document.querySelector(".dss-pricing [role=alert]")?.textContent.includes(${JSON.stringify(await evaluate('window.__fixture.t("price.failed")'))})`);
+  assert(await evaluate('!document.querySelector(".dss-price-preview") && !!document.querySelector(".dss-price-custom-row")'), 'preview failure keeps the working rule and clears the preview');
+  await evaluate('window.__fixture.pricingFailAction = null');
+  await click('[data-action=price-discard]');
+  await until('!document.querySelector(".dss-price-commit")');
+  assert(await evaluate('!document.querySelector(".dss-price-custom-row")'), 'discard after failure clears the working rule');
+  report.checks.push('pricing errors: conflict and preview failure keep drafts, clear preview and block stale save');
+
+  // Closing during a save does not write the unmounted page or reopen the drawer.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await pricingSection('custom');
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2']]) {
+    assert(await setPricingInput(key, value), 'close-during-save field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  const aggregatesBefore = await evaluate('window.__fixture.calls.filter(row => row[0] === "aggregate").length');
+  await evaluate('window.__fixture.holdPricing = "save"');
+  await click('[data-action=price-save]');
+  await until('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "save")');
+  await press('Escape');
+  await until('!document.querySelector(".dss-drawer")');
+  await evaluate('window.__fixture.releasePricing && window.__fixture.releasePricing()');
+  await evaluate('window.__fixture.holdPricing = null');
+  await until(`window.__fixture.calls.filter(row => row[0] === "aggregate").length > ${aggregatesBefore}`);
+  assert(await evaluate('!document.querySelector(".dss-drawer")'), 'closing during save does not reopen the drawer');
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await pricingSection('custom');
+  await until('document.querySelector(".dss-price-custom-row")');
+  assert(await evaluate('!document.querySelector(".dss-price-unsaved")'), 'completed save is visible after reopening');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-custom-row")');
+  report.checks.push('pricing lifecycle: save after drawer close still refreshes the parent and never reopens the drawer');
+
+  // Updates, offline refresh, focus and overlay reset.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
   await pricingSection('updates');
   await until('document.querySelector("[data-action=price-auto]")');
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-price-auto")).fontSize'), '12px', 'price auto label uses the sm size');
   assert(await evaluate(`document.querySelector(".dss-price-updates-current").textContent.includes(${JSON.stringify(String(signedCatalog.version))})`), 'updates section shows the current catalog version');
   assert(await evaluate('!!document.querySelector(".dss-price-history-section")'), 'updates section keeps the catalog snapshot region');
   assert(await evaluate('!!document.querySelector("[data-action=price-rollback]") || document.querySelector(".dss-price-history-section").textContent.includes(window.__fixture.t("price.noSnapshots"))'), 'snapshot region has a restore entry or an explicit empty state');
+  assert(await evaluate('!document.querySelector("[data-action=price-refresh]").disabled'), 'clean settings allow check updates');
   await click('[data-action=price-auto]');
   await until('document.querySelector(".dss-price-commit")');
+  assert(await evaluate('document.querySelector("[data-action=price-refresh]").disabled'), 'auto-update draft disables check updates');
   await click('[data-action=price-discard]');
   await until('!document.querySelector(".dss-price-commit")');
+  assert(await evaluate('!document.querySelector("[data-action=price-refresh]").disabled'), 'discard restores check updates');
   await click('[data-action=price-refresh]');
   await until('document.querySelector(".dss-price-status-error")?.textContent.includes(window.__fixture.t("price.refreshFailed"))');
   await layout('pricing-failure'); await capture('narrow-pricing-failure');
-  report.checks.push('price settings: custom draft preview/save/edit/remove/discard, updates auto/history/offline refresh, focus and close behavior');
+  report.checks.push('price settings: updates auto/history/offline refresh and dirty refresh guard');
   await press('Escape');
   await until('!document.querySelector(".dss-drawer")');
   assert(await evaluate('document.activeElement === document.querySelector("[data-action=pricing]")'), 'drawer Escape returns focus to the gear');

@@ -36,7 +36,14 @@ window.__ModuleLoader__ = { async load({ factory }) {
   const slots = [];
   const stats = {
     pricing: async request => {
-      fixture.calls.push(['pricing', request.action]);
+      fixture.calls.push(['pricing', request.action, clone(request)]);
+      if (fixture.pricingConflict && request.action === 'save') {
+        return { ok: false, error: { code: 'pricing-settings-conflict', message: 'pricing-settings-conflict' } };
+      }
+      if (fixture.pricingFailAction === request.action) {
+        return { ok: false, error: { code: 'fixture/pricing-failed', message: 'fixture pricing failed' } };
+      }
+      if (fixture.holdPricing === request.action) await new Promise(resolve => { fixture.releasePricing = resolve; });
       return (await fetch('/pricing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) })).json();
     },
     aggregate: async () => {
