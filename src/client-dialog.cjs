@@ -247,7 +247,7 @@ function MenuItem(props) {
 // open, so static rendering never reaches useLayoutEffect.
 function PopoverFlip(props) {
 	react.useLayoutEffect(function() {
-		var panel = props.panelRef.current;
+		var panel = props.panel;
 		if (!panel) return;
 		var body = panel.closest(".dss-body");
 		var anchor = panel.parentElement;
@@ -256,8 +256,8 @@ function PopoverFlip(props) {
 		var bodyRect = body.getBoundingClientRect();
 		var anchorRect = anchor.getBoundingClientRect();
 		var roomAbove = anchorRect.top - bodyRect.top - 6;
-		props.onChange(panelRect.bottom > bodyRect.bottom + 1 && roomAbove >= panelRect.height);
-	}, [props.panelRef, props.onChange]);
+		props.onChange(panelRect.bottom > bodyRect.bottom && roomAbove >= panelRect.height);
+	}, [props.panel, props.onChange]);
 	return null;
 }
 
@@ -278,8 +278,14 @@ function Popover(props) {
 	}, []);
 	var upState = react.useState(false);
 	var up = upState[0], setUp = upState[1];
-	react.useEffect(function() { if (!open) setUp(false); }, [open]);
+	var panelNodeState = react.useState(null);
+	var panelNode = panelNodeState[0], setPanelNode = panelNodeState[1];
+	react.useEffect(function() { if (!open) { setUp(false); setPanelNode(null); } }, [open]);
 	var onFlip = react.useCallback(function(value) { setUp(value); }, []);
+	var setPanelRef = react.useCallback(function(node) {
+		panelRef.current = node;
+		setPanelNode(node);
+	}, []);
 	useLayer(open, function() { closePopover(true); });
 	react.useEffect(function() {
 		if (!open) return undefined;
@@ -314,13 +320,13 @@ function Popover(props) {
 			onClick: function() { setOpen(!open); }
 		}, trigger),
 		open ? e("div", {
-			ref: panelRef,
+			ref: setPanelRef,
 			className: "dss-popover " + panelClassName + (up ? " is-up" : ""),
 			role: "dialog",
 			"aria-label": props.panelLabel || label,
 			tabIndex: -1
 		},
-			props.flip ? e(PopoverFlip, { panelRef: panelRef, onChange: onFlip }) : null,
+			props.flip && panelNode ? e(PopoverFlip, { panel: panelNode, onChange: onFlip }) : null,
 			content
 		) : null
 	);

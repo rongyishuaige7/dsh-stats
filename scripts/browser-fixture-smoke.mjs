@@ -592,17 +592,46 @@ try {
   await click('.dss-trigger'); await tab(4);
   await until('document.querySelectorAll(".dss-bal-row").length === 6');
   await evaluate('document.querySelector(".dss-body").scrollTop = 10000'); await delay(100);
-  await evaluate(`(() => { const bells = [...document.querySelectorAll('[data-action=balance-alert]')]; bells[bells.length - 1].click(); return true; })()`);
+  await evaluate(`document.querySelector('[data-account-id=yi-api] [data-action=balance-alert]').click()`);
   await until('document.querySelector(".dss-bal-alert")');
   const alertBox = await evaluate(`(() => {
+    const panel = document.querySelector('.dss-bal-alert').getBoundingClientRect();
+    const body = document.querySelector('.dss-body').getBoundingClientRect();
+    return { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right,
+      bodyTop: body.top, bodyBottom: body.bottom, bodyLeft: body.left, bodyRight: body.right };
+  })()`);
+  assert(alertBox.top >= alertBox.bodyTop - 1 && alertBox.bottom <= alertBox.bodyBottom + 1 && alertBox.left >= alertBox.bodyLeft - 1 && alertBox.right <= alertBox.bodyRight + 1, 'alert popover stays inside the body: ' + JSON.stringify(alertBox));
+  await evaluate(`document.querySelector('[data-account-id=yi-api] [data-action=balance-alert]').click()`);
+  await until('!document.querySelector(".dss-bal-alert")');
+
+  // Removing the idle group leaves no room below the last row, so the popover
+  // must flip above the bell. This is the screenshot state.
+  await navigate('/?lang=zh');
+  await evaluate('window.__fixture.omit = ["zai-coding-cn", "anthropic"]');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  assert(await evaluate('!document.querySelector(".dss-bal-idle")'), 'idle group is gone for the flip fixture');
+  // The footer leaves ~200px below the last row at the bottom, enough for this
+  // short popover to fit without flipping. Hide it while opening so the last
+  // bell really sits at the edge, then restore it for the screenshot.
+  await evaluate('document.querySelector(".dss-bal-foot").style.display = "none"');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 10000'); await delay(100);
+  await evaluate(`document.querySelector('[data-account-id=yi-api] [data-action=balance-alert]').click()`);
+  await until('document.querySelector(".dss-bal-alert.is-up")');
+  await evaluate('document.querySelector(".dss-bal-foot").style.display = ""');
+  const flippedBox = await evaluate(`(() => {
     const panel = document.querySelector('.dss-bal-alert').getBoundingClientRect();
     const body = document.querySelector('.dss-body').getBoundingClientRect();
     return { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right,
       bodyTop: body.top, bodyBottom: body.bottom, bodyLeft: body.left, bodyRight: body.right,
       up: document.querySelector('.dss-bal-alert').classList.contains('is-up') };
   })()`);
-  assert(alertBox.top >= alertBox.bodyTop - 1 && alertBox.bottom <= alertBox.bodyBottom + 1 && alertBox.left >= alertBox.bodyLeft - 1 && alertBox.right <= alertBox.bodyRight + 1, 'alert popover stays inside the body: ' + JSON.stringify(alertBox));
+  assert(flippedBox.up, 'popover flips above the last bell');
+  assert(flippedBox.top >= flippedBox.bodyTop - 1 && flippedBox.bottom <= flippedBox.bodyBottom + 1 && flippedBox.left >= flippedBox.bodyLeft - 1 && flippedBox.right <= flippedBox.bodyRight + 1, 'flipped popover stays inside the body: ' + JSON.stringify(flippedBox));
   await layout('mobile-balance-alert'); await capture('mobile-balance-alert');
+  await evaluate(`document.querySelector('[data-account-id=yi-api] [data-action=balance-alert]').click()`);
+  await until('!document.querySelector(".dss-bal-alert")');
+  await evaluate('window.__fixture.omit = []');
 
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await navigate('/?lang=zh');
