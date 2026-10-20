@@ -20,7 +20,7 @@
 - **安装**：只用 `dsh plugin --profile web add -w <包或 tarball>`，不要用 npm/pnpm 直接改 profile。
 - **兼容**：Harness `0.1.3-alpha.2` 至 `0.2.1-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
 - **计价**：签名价格目录、自定义费率与复核流程见 [动态价格](docs/pricing-updates.md)。
-- **验证**：CI 跑 **445 个单元测试**（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（**28 个检查组、50 张截图**、1440/390/320 三种宽度；数字取自 run `39364467883`）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
+- **验证**：CI 跑 **445 个单元测试**（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（**28 个检查组、50 张截图**、1440/390/320 三种宽度；数字取自 run `39366926311`）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
 
 ---
 

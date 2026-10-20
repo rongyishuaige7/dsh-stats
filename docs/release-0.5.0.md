@@ -60,7 +60,7 @@ this Harness release; clean installation should no longer report peer mismatches
 - Full test suite: **445 tests** pass in the default timezone and `TZ=UTC`.
 - Browser fixture: **28 check groups / 50 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px (run
-  `39364467883`).
+  `39366926311`).
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
