@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   blankDraft, draftRule, draftEqual, rulesEqual, ruleHasConditions, draftHasConditions,
-  customRuleRows, buildPreviewRequest, buildSaveRequest,
+  workingForSaved, customRuleRows, buildPreviewRequest, buildSaveRequest,
 } = require('../src/pricing-panel.cjs');
 
 const rule = (id, extra = {}) => ({
@@ -47,10 +47,30 @@ test('removal markers come only from explicit saved-rule removals', () => {
   const saved = rule('saved');
   const newRule = rule('new');
   const edited = rule('edited', { id: 'edited-new' });
-  expect(customRuleRows([newRule], [saved], new Set())).toEqual([{ rule: newRule, isSaved: false, pendingRemove: false }]);
-  expect(customRuleRows([saved], [saved], new Set())).toEqual([{ rule: saved, isSaved: true, pendingRemove: false }]);
-  expect(customRuleRows([], [saved], new Set(['saved']))).toEqual([{ rule: saved, isSaved: true, pendingRemove: true }]);
-  expect(customRuleRows([edited], [saved], new Set())).toEqual([{ rule: edited, isSaved: false, pendingRemove: false }]);
+  expect(customRuleRows([newRule], [saved], new Map(), new Map())).toEqual([{ rule: newRule, isSaved: false, pendingRemove: false, savedId: null }]);
+  expect(customRuleRows([saved], [saved], new Map(), new Map())).toEqual([{ rule: saved, isSaved: true, pendingRemove: false, savedId: 'saved' }]);
+  expect(customRuleRows([], [saved], new Map(), new Map([['saved', saved]]))).toEqual([{ rule: saved, isSaved: true, pendingRemove: true, savedId: 'saved' }]);
+  expect(customRuleRows([edited], [saved], new Map(), new Map())).toEqual([{ rule: edited, isSaved: false, pendingRemove: false, savedId: null }]);
+});
+
+test('an edited saved rule keeps one working association through repeated edits', () => {
+  const saved = rule('saved');
+  const first = rule('first', { id: 'first', rates: { uncached: 2, cacheRead: null, cacheWrite: null, output: 3 } });
+  const second = rule('second', { id: 'second', rates: { uncached: 2, cacheRead: null, cacheWrite: null, output: 4 } });
+  const origins = new Map([['first', 'saved']]);
+  expect(workingForSaved([first], origins, 'saved')).toBe(first);
+  expect(customRuleRows([first], [saved], origins, new Map())).toEqual([{ rule: first, isSaved: false, pendingRemove: false, savedId: 'saved' }]);
+  const nextOrigins = new Map([['second', 'saved']]);
+  expect(workingForSaved([second], nextOrigins, 'saved')).toBe(second);
+  expect(customRuleRows([second], [saved], nextOrigins, new Map())).toEqual([{ rule: second, isSaved: false, pendingRemove: false, savedId: 'saved' }]);
+});
+
+test('pending removal keeps the edited working rule for undo', () => {
+  const saved = rule('saved');
+  const edited = rule('edited', { id: 'edited', rates: { uncached: 2, cacheRead: null, cacheWrite: null, output: 3 } });
+  const pending = customRuleRows([], [saved], new Map(), new Map([['saved', edited]]));
+  expect(pending).toEqual([{ rule: edited, isSaved: true, pendingRemove: true, savedId: 'saved' }]);
+  expect(pending[0].rule.rates.output).toBe(3);
 });
 
 test('preview and save requests carry only the documented fields', () => {

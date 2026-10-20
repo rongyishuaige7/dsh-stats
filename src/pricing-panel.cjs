@@ -119,11 +119,21 @@ function conditionSummary(rule, t) {
   if (rule.legacy) parts.push(t('price.legacy'));
   return parts.length ? parts.join(' · ') : t('price.noConditions');
 }
-function customRuleRows(working, saved, removedIds) {
+function workingForSaved(working, origins, savedId) {
+  const direct = working.find(rule => rule.id === savedId);
+  if (direct) return direct;
+  for (const [workingId, origin] of origins) if (origin === savedId) return working.find(rule => rule.id === workingId) || null;
+  return null;
+}
+function customRuleRows(working, saved, origins, removed) {
   const savedIds = new Set(saved.map(rule => rule.id));
-  const workingIds = new Set(working.map(rule => rule.id));
-  const rows = working.map(rule => ({ rule, isSaved: savedIds.has(rule.id), pendingRemove: false }));
-  for (const rule of saved) if (removedIds.has(rule.id) && !workingIds.has(rule.id)) rows.push({ rule, isSaved: true, pendingRemove: true });
+  const rows = working.map(rule => ({
+    rule,
+    isSaved: savedIds.has(rule.id),
+    pendingRemove: false,
+    savedId: origins.get(rule.id) || (savedIds.has(rule.id) ? rule.id : null),
+  }));
+  for (const [savedId, rule] of removed) rows.push({ rule, isSaved: true, pendingRemove: true, savedId });
   return rows;
 }
 function buildPreviewRequest(overrides) {
@@ -274,7 +284,8 @@ function ModelDetail({ group, savedOverrides, t, onBack, onAddCustom, onEditOver
 }
 function CustomRuleRow({ row, t, busy, expanded, onToggleExpand, onEdit, onRemove, onUndo }) {
   const rule = row.rule;
-  return e('div', { className: 'dss-price-custom-row' + (row.pendingRemove ? ' is-pending-remove' : ''), 'data-rule-id': rule.id },
+  const ruleId = row.pendingRemove ? row.savedId : rule.id;
+  return e('div', { className: 'dss-price-custom-row' + (row.pendingRemove ? ' is-pending-remove' : ''), 'data-rule-id': ruleId, 'data-saved-id': row.savedId || undefined },
     e('div', { className: 'dss-price-custom-main' },
       e('div', { className: 'dss-price-custom-id' },
         e('strong', null, rule.providerId + ' / ' + rule.canonical),
@@ -284,10 +295,10 @@ function CustomRuleRow({ row, t, busy, expanded, onToggleExpand, onEdit, onRemov
           row.pendingRemove ? e('span', { className: 'dss-price-pending-remove' }, t('price.pendingRemove')) : null)),
       e('div', { className: 'dss-price-custom-actions' },
         row.pendingRemove
-          ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-undo-remove', disabled: busy, onClick: () => onUndo(rule) }, t('price.undoRemove'))
+          ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-undo-remove', disabled: busy, onClick: () => onUndo(row.savedId) }, t('price.undoRemove'))
           : [
-            e('button', { key: 'edit', type: 'button', className: 'dss-export', 'data-action': 'price-edit-rule', disabled: busy, onClick: () => onEdit(rule) }, t('price.edit')),
-            e('button', { key: 'remove', type: 'button', className: 'dss-export', 'data-action': 'price-remove-rule', disabled: busy, onClick: () => onRemove(rule) }, t('price.remove')),
+            e('button', { key: 'edit', type: 'button', className: 'dss-export', 'data-action': 'price-edit-rule', disabled: busy, onClick: () => onEdit(rule, row.savedId) }, t('price.edit')),
+            e('button', { key: 'remove', type: 'button', className: 'dss-export', 'data-action': 'price-remove-rule', disabled: busy, onClick: () => onRemove(rule, row.savedId) }, t('price.remove')),
           ])),
     e('p', { className: 'dss-price-condition-summary' }, conditionSummary(rule, t)),
     e('details', { open: expanded, onToggle: ev => onToggleExpand(rule.id, ev.currentTarget.open) },
@@ -308,7 +319,7 @@ function CustomList({ rows, t, busy, editorDirty, editorNotice, deferredFocus, e
       e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-locate-deferred', onClick: onLocateDeferred }, t('price.locateDeferred'))) : null,
     !editorDirty && !deferredFocus && editorNotice ? e('p', { className: 'dss-price-notice', role: 'status' }, editorNotice) : null,
     rows.length ? e('div', { className: 'dss-price-custom-list' }, rows.map(row => e(CustomRuleRow, {
-      key: row.rule.id, row, t, busy, expanded: expandedIds.has(row.rule.id),
+      key: row.pendingRemove ? 'removed:' + row.savedId : row.rule.id, row, t, busy, expanded: expandedIds.has(row.rule.id),
       onToggleExpand, onEdit, onRemove, onUndo,
     }))) : e('p', { className: 'dss-price-muted' }, t('price.noCustomRules')));
 }
@@ -385,9 +396,10 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
   const [workingOverrides, setWorkingOverrides] = React.useState([]), [savedOverrides, setSavedOverrides] = React.useState([]);
   const [draft, setDraft] = React.useState(blankDraft), [editorBaseline, setEditorBaseline] = React.useState(blankDraft);
-  const [editingId, setEditingId] = React.useState(null), [editorOpen, setEditorOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState(null), [editingSavedId, setEditingSavedId] = React.useState(null), [editorOpen, setEditorOpen] = React.useState(false);
   const [conditionsOpen, setConditionsOpen] = React.useState(false);
-  const [removedSavedIds, setRemovedSavedIds] = React.useState(() => new Set());
+  const [workingOrigins, setWorkingOrigins] = React.useState(() => new Map());
+  const [removedRules, setRemovedRules] = React.useState(() => new Map());
   const [expandedRuleIds, setExpandedRuleIds] = React.useState(() => new Set());
   const [editorNotice, setEditorNotice] = React.useState(''), [deferredFocus, setDeferredFocus] = React.useState(null);
   const [preview, setPreview] = React.useState(null), [autoUpdateDraft, setAutoUpdateDraft] = React.useState(true);
@@ -405,17 +417,17 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const mountedRef = React.useRef(true);
   React.useEffect(() => () => { mountedRef.current = false; }, []);
   const editorDirty = !draftEqual(draft, editorBaseline);
-  const settingsDirty = !!status && (autoUpdateDraft !== status.autoUpdate || removedSavedIds.size > 0 || !rulesEqual(workingOverrides, savedOverrides));
+  const settingsDirty = !!status && (autoUpdateDraft !== status.autoUpdate || removedRules.size > 0 || !rulesEqual(workingOverrides, savedOverrides));
   const anyDirty = editorDirty || settingsDirty;
-  const customRows = customRuleRows(workingOverrides, savedOverrides, removedSavedIds);
+  const customRows = customRuleRows(workingOverrides, savedOverrides, workingOrigins, removedRules);
   const fail = err => { setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed')); setPreview(null); };
-  function openEditor(nextDraft, nextEditingId, baseline, conditions) {
-    setDraft(nextDraft); setEditingId(nextEditingId); setEditorBaseline(baseline);
+  function openEditor(nextDraft, nextEditingId, baseline, conditions, nextSavedId = null) {
+    setDraft(nextDraft); setEditingId(nextEditingId); setEditingSavedId(nextSavedId); setEditorBaseline(baseline);
     setEditorOpen(true); setConditionsOpen(conditions); setSection('custom'); setEditorNotice(''); setError('');
     setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
   }
   function closeEditor() {
-    setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft());
+    setDraft(blankDraft()); setEditingId(null); setEditingSavedId(null); setEditorBaseline(blankDraft());
     setEditorOpen(false); setConditionsOpen(false); setEditorNotice(''); focusAfterLocateRef.current = false;
   }
   function accept(result) {
@@ -424,7 +436,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     const pendingDraft = draftForFocus(pendingFocusRef.current);
     pendingFocusRef.current = null;
     setStatus(result); setWorkingOverrides(rules); setSavedOverrides(rules);
-    setAutoUpdateDraft(result.autoUpdate); setRemovedSavedIds(new Set()); setExpandedRuleIds(new Set());
+    setAutoUpdateDraft(result.autoUpdate); setWorkingOrigins(new Map()); setRemovedRules(new Map()); setEditingSavedId(null); setExpandedRuleIds(new Set());
     setPreview(null); setEditorNotice(''); setError(''); setDeferredFocus(null); setCatalogAt(Date.now());
     focusAfterLocateRef.current = false; customFocusRef.current = false;
     setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft()); setConditionsOpen(false);
@@ -522,7 +534,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     customFocusRef.current = false;
     const node = document.querySelector('[data-action=price-add-rule]') || customHeadingRef.current;
     if (node) node.focus();
-  }, [editorOpen, workingOverrides, removedSavedIds]);
+  }, [editorOpen, workingOverrides, removedRules]);
   React.useEffect(() => {
     if (anyDirty || !footerFocusRef.current) return;
     footerFocusRef.current = false;
@@ -548,7 +560,10 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   function requestFocus(provider, model) {
     return requestFocusDraft(blankDraft(provider, model), { provider, model });
   }
-  function requestEdit(rule) {
+  function originOf(rule) {
+    return workingOrigins.get(rule.id) || (savedOverrides.some(item => item.id === rule.id) ? rule.id : null);
+  }
+  function requestEdit(rule, savedId = originOf(rule)) {
     if (editorDirty) {
       if (editingId === rule.id) {
         setSection('custom'); setEditorOpen(true); setEditorNotice(''); setFocusTick(n => n + 1); focusAfterLocateRef.current = true;
@@ -558,7 +573,22 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
       return;
     }
     const nextDraft = ruleDraft(rule);
-    openEditor(nextDraft, rule.id, nextDraft, ruleHasConditions(rule));
+    openEditor(nextDraft, rule.id, nextDraft, ruleHasConditions(rule), savedId);
+  }
+  function requestSavedEdit(savedRule) {
+    if (editorDirty) { setSection('custom'); setEditorNotice(t('price.editorDirtyHint')); return; }
+    const pending = removedRules.get(savedRule.id);
+    if (pending) {
+      const nextDraft = ruleDraft(pending);
+      setWorkingOrigins(previous => { const next = new Map(previous); next.set(pending.id, savedRule.id); return next; });
+      setWorkingOverrides(previous => previous.some(item => item.id === pending.id) ? previous : [...previous, pending]);
+      setRemovedRules(previous => { const next = new Map(previous); next.delete(savedRule.id); return next; });
+      setPreview(null); setError('');
+      openEditor(nextDraft, pending.id, nextDraft, ruleHasConditions(pending), savedRule.id);
+      return;
+    }
+    const working = workingForSaved(workingOverrides, workingOrigins, savedRule.id);
+    requestEdit(working || savedRule, savedRule.id);
   }
   function requestNewRule() {
     if (editorDirty) {
@@ -575,7 +605,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   }
   function cancelEditor() { closeEditor(); setError(''); customFocusRef.current = true; }
   function backToCustomList() { setEditorOpen(false); setEditorNotice(''); customFocusRef.current = true; }
-  function continueEditing() { setEditorOpen(true); setEditorNotice(''); setFocusTick(n => n + 1); focusAfterLocateRef.current = true; }
+  function continueEditing() { setSection('custom'); setEditorOpen(true); setEditorNotice(''); setFocusTick(n => n + 1); focusAfterLocateRef.current = true; }
   function editField(key, value) {
     setDraft(old => ({ ...old, [key]: value }));
     setPreview(null); setError(''); setEditorNotice('');
@@ -586,24 +616,32 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
       const index = workingOverrides.findIndex(item => item.id === editingId);
       const next = index >= 0 ? workingOverrides.map((item, i) => i === index ? rule : item) : [...workingOverrides, rule];
       pricing.validateOverrides(next);
-      setWorkingOverrides(next); setPreview(null); setError('');
-      setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft());
+      const nextOrigins = new Map(workingOrigins);
+      if (editingId) nextOrigins.delete(editingId);
+      if (editingSavedId) {
+        for (const [workingId, origin] of nextOrigins) if (origin === editingSavedId) nextOrigins.delete(workingId);
+        nextOrigins.set(rule.id, editingSavedId);
+      }
+      setWorkingOverrides(next); setWorkingOrigins(nextOrigins); setPreview(null); setError('');
+      setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditingSavedId(null); setEditorBaseline(blankDraft());
       setConditionsOpen(false); setEditorNotice(''); customFocusRef.current = true;
     } catch { setError(t('price.invalid')); }
   }
-  function removeRule(rule) {
+  function removeRule(rule, savedId = originOf(rule)) {
     if (editorDirty && editingId === rule.id) { setSection('custom'); setEditorNotice(t('price.editorDirtyHint')); return; }
     setWorkingOverrides(workingOverrides.filter(item => item.id !== rule.id));
     setPreview(null); setError(''); setEditorNotice('');
-    if (savedOverrides.some(item => item.id === rule.id)) {
-      setRemovedSavedIds(previous => { const next = new Set(previous); next.add(rule.id); return next; });
-    }
+    if (savedId) setRemovedRules(previous => { const next = new Map(previous); next.set(savedId, rule); return next; });
+    setWorkingOrigins(previous => { const next = new Map(previous); next.delete(rule.id); return next; });
     if (editingId === rule.id) closeEditor();
     customFocusRef.current = true;
   }
-  function undoRemove(rule) {
+  function undoRemove(savedId) {
+    const rule = removedRules.get(savedId);
+    if (!rule) return;
     setWorkingOverrides(previous => previous.some(item => item.id === rule.id) ? previous : [...previous, rule]);
-    setRemovedSavedIds(previous => { const next = new Set(previous); next.delete(rule.id); return next; });
+    setWorkingOrigins(previous => { const next = new Map(previous); next.set(rule.id, savedId); return next; });
+    setRemovedRules(previous => { const next = new Map(previous); next.delete(savedId); return next; });
     setPreview(null); setError(''); setEditorNotice(''); customFocusRef.current = true;
   }
   function toggleRuleExpanded(id, open) {
@@ -634,7 +672,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const sections = [['models', 'sectionModels'], ['custom', 'sectionCustom'], ['updates', 'sectionUpdates']];
   const sectionContent = section === 'models'
     ? (selectedGroup
-      ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, onBack: backToModels, onAddCustom: requestFocus, onEditOverride: requestEdit, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
+      ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, onBack: backToModels, onAddCustom: requestFocus, onEditOverride: requestSavedEdit, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
       : e(React.Fragment, null,
         e(SyncSummary, { status, busy, dirty: anyDirty, t, onRefresh: () => call({ action: 'refresh' }) }),
         e(PendingPanel, { missing, t, onConfigure: requestFocus }),
@@ -676,4 +714,4 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
 
 module.exports = { PricingPanel, PricingErrorBoundary, ModelList, ModelDetail, CustomList, CustomEditor, UpdatesSection,
   draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing,
-  draftEqual, rulesEqual, ruleHasConditions, draftHasConditions, customRuleRows, buildPreviewRequest, buildSaveRequest };
+  draftEqual, rulesEqual, ruleHasConditions, draftHasConditions, workingForSaved, customRuleRows, buildPreviewRequest, buildSaveRequest };
