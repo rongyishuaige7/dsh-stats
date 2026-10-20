@@ -243,10 +243,10 @@
 - 地图：
   - 月份行 `div.dss-tr-heat-months`，和网格同为 26 列。哪一周里有某月 1 日，就在那一列写月份（`tr.months`）。第一列总是写它所在的月份，但下一个月份标签离它不到 3 列时，第一列不写。夹具上第一列是 3 月，4 月 1 日在第 3 列，所以第一个标签是 4 月；某月 1 日晚于今天时不写，因为那一天的格子还没画出来；
   - 星期列 `div.dss-tr-heat-dow`：第 1、3、5 行写"一 / 三 / 五"，英文写"Mon / Wed / Fri"，取自 `w.weekdays` 的第 1、3、5 项，其余行留空；
-  - 网格 `div.dss-tr-heat-grid[role=group][aria-label=活动热力图，近 26 周]`：`grid-template-columns: repeat(26, minmax(0,1fr))`，7 行。每格用行内 `gridColumn`、`gridRow` 显式定位，不靠自动流动，所以最后一周缺格时不会错位。格子 `aspect-ratio: 1`，地图最大宽 640px。
+  - 网格 `div.dss-tr-heat-grid[role=group]`：`aria-label` 由 `tr.groupAria` 拼 `tr.heat` 和 `tr.heatNote`，例如"活动热力图，近 26 周 · 按费用"；`grid-template-columns: repeat(26, minmax(0,1fr))`，7 行。每格用行内 `gridColumn`、`gridRow` 显式定位，不靠自动流动，所以最后一周缺格时不会错位。格子 `aspect-ratio: 1`，地图最大宽 640px。
 - 格子：
   - 活跃日是 `button.dss-tr-cell[data-date][data-level][data-action=tr-heat-day]`，带 `tipProps`，键盘规则见 U6；
-  - 不活跃的过去日是 `i.dss-tr-cell[data-level=0][aria-hidden]`，没有 tooltip；
+  - 不活跃的过去日是 `i.dss-tr-cell[data-date][data-level=0][aria-hidden]`，没有 tooltip；
   - 今天加 `.is-today`。
 - 分级：
   - 取窗口内所有活跃日在当前指标下的值，排序后取 25 / 50 / 75 分位，规则同现有 `CalendarHeatmap`：`v[floor(f × n)]`。大于第 75 分位是 4 级，大于第 50 分位是 3 级，大于第 25 分位是 2 级，其余是 1 级；
@@ -395,7 +395,7 @@ div.dss-tr
         div.dss-tr-heat-dow[aria-hidden] > span × 7
         div.dss-tr-heat-grid[role=group]
           button.dss-tr-cell[data-date][data-level][data-action=tr-heat-day](.is-today)   活跃日
-          i.dss-tr-cell[data-level=0][aria-hidden](.is-today)                              其余过去日
+          i.dss-tr-cell[data-date][data-level=0][aria-hidden](.is-today)                   其余过去日
       dl.dss-tr-heat-stats > div.dss-tr-stat × 3 > dt · dd(span.dss-tr-stat-sub)    U8
     div.dss-tr-legend
   section.dss-tr-sec.dss-tr-models                          U10、U11

@@ -156,7 +156,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-tr-mtable','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -398,7 +398,7 @@ try {
         await assertTextFloor(name + ' trends');
       }
       await layout(name + '-' + view); await capture(name + '-' + view);
-      if (width < 600 && (['overview', 'trends'].includes(view) || (view === 'balance' && width === 390))) {
+      if ((width < 600 && (['overview', 'trends'].includes(view) || (view === 'balance' && width === 390))) || (name === 'desktop' && view === 'trends')) {
         await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
         await capture(name + '-' + view + '-bottom');
         await evaluate('document.querySelector(".dss-body").scrollTop = 0');
@@ -931,6 +931,9 @@ try {
   await tab(3);
   await until('document.querySelector(".dss-tr-kpis")');
   await layout('dark-trends'); await capture('dark-trends');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
+  await layout('dark-trends-bottom'); await capture('dark-trends-bottom');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 0');
   await navigate('/?stats=estimated&lang=zh');
   await click('.dss-trigger'); await tab(1);
   await until('document.querySelector(".dss-kpis")');
@@ -1775,6 +1778,9 @@ try {
   assert(await evaluate('document.querySelectorAll(".dss-tr-bar.is-partial").length > 0'), 'partial days use the striped bar');
   assert((await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent')).endsWith('*'), 'partial cost ends with *');
   await layout('desktop-trends-partial'); await capture('desktop-trends-partial');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
+  await layout('desktop-trends-partial-bottom'); await capture('desktop-trends-partial-bottom');
+  await evaluate('document.querySelector(".dss-body").scrollTop = 0');
   await click('.dss-tr-kpis [data-action=pricing-pending]');
   await until('document.querySelector(".dss-drawer")');
   await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
@@ -1839,6 +1845,74 @@ try {
     await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
   }
   report.checks.push('trends heatmap: 177 cells and two-cell last column, April–September labels, Mon/Wed/Fri column, streak stats, roving keyboard and day jump, empty range keeps the heatmap');
+
+  // §9.3 第 18–22 条：模型区。
+  await tab(3);
+  await until('document.querySelector(".dss-tr-models")');
+  await click('[data-action=tr-range-30]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+  await until('document.querySelectorAll(".dss-tr-mrow").length === 2');
+  // 18. 行与排序
+  assert.equal(await evaluate('document.querySelector(".dss-tr-mtable th.c-cost").getAttribute("aria-sort")'), 'descending', 'cost column sorts descending by default');
+  const costAmounts = await evaluate('[...document.querySelectorAll(".dss-tr-mrow .c-cost .dss-cost-amt")].map(node => parseFloat(node.textContent.replace(/[^0-9.]/g, "")))');
+  assert(costAmounts.length === 2 && costAmounts[0] >= costAmounts[1], 'cost rows descend: ' + JSON.stringify(costAmounts));
+  await click('[data-action=tr-metric-token]');
+  await until('document.querySelector(".dss-tr-mtable th.c-tokens").getAttribute("aria-sort") === "descending"');
+  await click('.dss-tr-mtable th.c-model .dss-sort-btn');
+  await until('document.querySelector(".dss-tr-mtable th.c-model").getAttribute("aria-sort") === "ascending"');
+  const modelNames = await evaluate('[...document.querySelectorAll(".dss-tr-mrow .dss-tr-mname span")].map(node => node.textContent)');
+  assert.deepEqual(modelNames, [...modelNames].sort(), 'model rows ascend by name: ' + JSON.stringify(modelNames));
+  // 19. 占比
+  const shareSum = () => evaluate('[...document.querySelectorAll(".dss-tr-mrow .dss-share-pct")].reduce((sum, node) => sum + parseFloat(node.textContent), 0)');
+  const tokenShare = await shareSum();
+  assert(tokenShare >= 99.8 && tokenShare <= 100.2, 'token shares add up: ' + tokenShare);
+  await click('[data-action=tr-metric-cost]');
+  await until('document.querySelector(".dss-tr-mtable th.c-cost").getAttribute("aria-sort") === "descending"');
+  const costShare = await shareSum();
+  assert(costShare >= 99.8 && costShare <= 100.2, 'cost shares add up: ' + costShare);
+  // 20. 环
+  const ringAria = await evaluate('document.querySelector(".dss-tr-ring[role=img]").getAttribute("aria-label")');
+  assert(ringAria.includes('deepseek-v4-flash') && ringAria.includes('MiniMax-M3'), 'ring aria-label names both models: ' + ringAria);
+  assert(await evaluate('!document.querySelector(".dss-model-list-viewport")'), 'the old scrolling model list is gone');
+  // 21. 颜色稳定
+  const dotColor = () => evaluate(`(() => { const row = [...document.querySelectorAll('.dss-tr-mrow')].find(node => node.dataset.modelKey.includes('deepseek-v4-flash')); return row?.querySelector('.dss-pdot')?.getAttribute('data-color') || null; })()`);
+  const baseColor = await dotColor();
+  assert(baseColor !== null, 'deepseek-v4-flash has a palette color');
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 7');
+  assert.equal(await dotColor(), baseColor, 'color survives the 7-day range');
+  await click('[data-action=tr-range-90]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 90');
+  assert.equal(await dotColor(), baseColor, 'color survives the 90-day range');
+  await click('[data-action=tr-metric-token]');
+  await until('document.querySelector(".dss-tr-mtable th.c-tokens").getAttribute("aria-sort") === "descending"');
+  assert.equal(await dotColor(), baseColor, 'color survives the token metric');
+  await openFilter();
+  await click('.dss-filter-item[data-project-id="client-dashboard"] input');
+  await closeFilter();
+  assert.equal(await dotColor(), baseColor, 'color survives hiding another project');
+  await openFilter();
+  await click('[data-action=filter-show-all]');
+  await closeFilter();
+  await click('[data-action=tr-range-30]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+  await click('[data-action=tr-metric-cost]');
+  // 22. 模型待计价
+  await navigate('/?stats=partial&lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-models")');
+  const unpricedRow = await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.dss-tr-mrow')].find(node => node.dataset.modelKey.includes('fixture-unpriced'));
+    if (!row) return null;
+    return { chip: !!row.querySelector('[data-action=pricing-pending]'), cost: row.querySelector('.c-cost .dss-cost-amt')?.textContent || '' };
+  })()`);
+  assert(unpricedRow && unpricedRow.chip, 'unpriced model row carries a compact pending chip: ' + JSON.stringify(unpricedRow));
+  assert(unpricedRow.cost.includes('待计价'), 'unpriced model row reads as pending: ' + unpricedRow.cost);
+  await click('.dss-tr-mrow .c-cost [data-action=pricing-pending]');
+  await until('document.querySelector(".dss-drawer")');
+  await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+  report.checks.push('trends models: two sortable rows and cost-descending default, metric switch resets the sort, shares add up, ring aria-label, stable colors across range/metric/hidden, partial model pending chip opens the pricing drawer');
 
   assert.deepEqual(report.errors, []);
   report.status = 'passed';

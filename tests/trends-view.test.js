@@ -3,8 +3,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { TrendsView } = require('../src/client-trends.cjs');
-const { applyRange, buildGlobals, dayStartMs } = require('../src/client-data.cjs');
+const { TrendsView, ModelSection } = require('../src/client-trends.cjs');
+const { applyRange, dayStartMs } = require('../src/client-data.cjs');
 const { zh, en } = require('../src/client-locale.cjs');
 
 const SLOT_MS = 1800000;
@@ -55,7 +55,6 @@ function render(props = {}) {
 	const today = props.today || TODAY;
 	const projects = props.projects || projectFixture();
 	const prefs = props.prefs || { range: 30, metric: 'cost' };
-	const globals = buildGlobals(projects);
 	return renderToStaticMarkup(React.createElement(TrendsView, {
 		projects,
 		rangeProjects: props.rangeProjects || applyRange(projects, today, prefs.range),
@@ -71,7 +70,6 @@ function render(props = {}) {
 		onOpenDay: () => {},
 		onOpenPricing: () => {},
 		t: makeT(lang),
-		legacy: { globals, dateGlobals: globals },
 	}));
 }
 
@@ -148,6 +146,48 @@ test('partial pricing marks the cost and offers the pending chip', () => {
 	expect(cost).not.toBeNull();
 	expect(cost[1].endsWith('*')).toBe(true);
 	expect(html).toContain('data-action="pricing-pending"');
+	// 模型表里未计价的模型也有自己的紧凑 chip。
+	expect(html.slice(html.indexOf('<tbody>'))).toContain('data-action="pricing-pending"');
+});
+
+test('renders the model ring and a sortable table', () => {
+	const html = render();
+	expect((html.match(/class="dss-tr-mrow"/g) || []).length).toBe(2);
+	expect(html).toMatch(/<th [^>]*class="c-cost"[^>]*aria-sort="descending"/);
+	expect(html).toContain('class="dss-tr-ring"');
+	expect(html).toContain('role="img"');
+	expect(html).toContain('模型费用占比');
+	expect(html).toContain('LLM 时长按 Token 占比从会话分摊');
+	expect(html).not.toContain('dss-model-');
+	expect(html).not.toContain('dss-section');
+	expect(html).not.toContain('dss-ring');
+});
+
+test('a partially priced model row shows a starred cost and a pending chip', () => {
+	const key = 'deepseek\u0000deepseek-v4-pro\u0000api';
+	const row = {
+		key, model: 'deepseek-v4-pro', modelRaw: 'deepseek-v4-pro', providerId: 'deepseek', accountType: 'api',
+		sessions: 2, input: 1000, output: 100, cacheRead: 0, llmMs: 1000, displayName: 'deepseek · deepseek-v4-pro',
+		costSummary: { status: 'partial', totals: [{ currency: 'CNY', amount: 1.5, exactAmount: 1, estimatedAmount: 0 }], unpricedTokens: 200, unknownRows: 0 },
+	};
+	const html = renderToStaticMarkup(React.createElement(ModelSection, {
+		models: [row],
+		modelColors: new Map([[key, 0]]),
+		metric: 'cost',
+		range: 30,
+		totals: { tokens: 1100, cost: row.costSummary },
+		sort: { key: 'cost', dir: -1 },
+		onSort: () => {},
+		onSortNarrow: () => {},
+		onOpenPricing: () => {},
+		t: makeT('zh'),
+	}));
+	const cost = html.match(/<span class="dss-cost-amt">([^<]*)<\/span>/);
+	expect(cost).not.toBeNull();
+	expect(cost[1].endsWith('*')).toBe(true);
+	expect(html).toContain('data-action="pricing-pending"');
+	expect(html).toContain('待计价');
+	expect(html).toContain('data-model-key="deepseek|deepseek-v4-pro|api"');
 });
 
 test('both locales render every key and expose the same tr.* key set', () => {

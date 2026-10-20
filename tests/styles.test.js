@@ -148,8 +148,10 @@ test('type selectors never start with dss-', () => {
 	expect(offenders).toEqual([]);
 });
 
-test('legacy balance selectors and tokens are gone', () => {
-	for (const banned of ['dss-balance', 'dss-provider-picker', 'dss-quota', '--dss-hero-card', '--dss-hero-metric', '--dss-balance-']) {
+test('legacy balance and trends selectors and tokens are gone', () => {
+	for (const banned of ['dss-balance', 'dss-provider-picker', 'dss-quota', '--dss-hero-', '--dss-balance-',
+		'dss-hero', 'dss-metric', 'dss-section', 'dss-sec-', 'dss-trend', 'dss-duo-', 'dss-cal', 'dss-hm-',
+		'dss-mchart', 'dss-ring', 'dss-model-', 'dss-ml-', '--dss-heat-', '--dss-chart-reasoning']) {
 		expect(css).not.toContain(banned);
 	}
 });
@@ -157,6 +159,14 @@ test('legacy balance selectors and tokens are gone', () => {
 test('balance rules never create a second scroll container', () => {
 	const offenders = parsed
 		.filter(rule => rule.selector.includes('.dss-bal'))
+		.filter(rule => /(?:^|;)\s*overflow(?:-[xy])?\s*:\s*(?:auto|scroll)\b/.test(rule.declarations))
+		.map(rule => rule.selector);
+	expect(offenders).toEqual([]);
+});
+
+test('trends rules never create a second scroll container', () => {
+	const offenders = parsed
+		.filter(rule => rule.selector.includes('.dss-tr-'))
 		.filter(rule => /(?:^|;)\s*overflow(?:-[xy])?\s*:\s*(?:auto|scroll)\b/.test(rule.declarations))
 		.map(rule => rule.selector);
 	expect(offenders).toEqual([]);

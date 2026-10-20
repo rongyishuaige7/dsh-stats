@@ -8,7 +8,7 @@ const {
 	costOf, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct, fmtCostSummary,
 	applyDate, activityDates, fmtDateCN,
 	applyRange, buildTimeline, parseAggregateResult, hasTokenUsage,
-	modelNameOnly, modelDisplayName, modelListNeedsScroll, compareProjectCost, projectCsvTable,
+	modelNameOnly, modelDisplayName, compareProjectCost, projectCsvTable,
 	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows,
 	aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection,
 } = client.__test;
@@ -30,12 +30,6 @@ test('client projection pricing preserves request context and qualifies legacy b
 // ---------------------------------------------------------------------------
 // localDayKey
 // ---------------------------------------------------------------------------
-test('modelListNeedsScroll limits the visible model list to three rows', () => {
-	expect(modelListNeedsScroll([])).toBe(false);
-	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }])).toBe(false);
-	expect(modelListNeedsScroll([{ model: 'a' }, { model: 'b' }, { model: 'c' }, { model: 'd' }])).toBe(true);
-});
-
 test('client fallback restores the weighted primary model from statsRoute projection', () => {
 	const at = Date.parse('2026-08-17T10:00:00+08:00');
 	const session = {

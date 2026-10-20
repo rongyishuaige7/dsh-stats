@@ -2,7 +2,6 @@
 let pricing = require("./pricing.cjs");
 var BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 var MAX_VISIBLE_PROJECTS = 7;
-var MAX_VISIBLE_MODELS = 3;
 // Stable placeholder while the panel is closed and no host data has arrived.
 var EMPTY_VIEW = { projects: [], timeline: { days: [] }, remote: false };
 
@@ -172,4 +171,4 @@ function sessionExportUsages(session) {
 	return [usage];
 }
 
-module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };
+module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };

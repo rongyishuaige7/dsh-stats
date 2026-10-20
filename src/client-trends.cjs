@@ -1,19 +1,19 @@
-// 趋势页组件：工具栏、摘要条、每日柱图和 26 周热力图（5g、5h）。
-// 过渡期仍然渲染旧的模型区；5i 删除 ModelRing/ModelList。
+// 趋势页组件：工具栏、摘要条、每日柱图、26 周热力图和模型区（5g–5i）。
 const react = require("react");
 const { PendingChip, InfoTip, ProjectFilterMenu } = require("./client-overview.cjs");
-const { MAX_VISIBLE_MODELS, fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
+const { fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
 const { hasTokenUsage, modelAgg, modelDisplayName, modelNameOnly, sessionDayTokens } = require("./client-data.cjs");
-const { costDelta, pendingFocus } = require("./client-overview-model.cjs");
+const { costDelta, defaultSortDir, pendingFocus } = require("./client-overview-model.cjs");
 const { dayCostSummaries } = require("./client-timeline-model.cjs");
 const {
-	HEAT_WEEKS, RANGES, amountOf, dayPoints, fmtAxisCost, heatCells, heatMonths, heatWindow,
-	metricValue, niceMax, previousDates, rangeDates, rangeTotals, streaks, topModel, modelShares, xLabels
+	HEAT_WEEKS, RANGES, amountOf, dayPoints, defaultModelSort, fmtAxisCost, heatCells, heatMonths, heatWindow,
+	metricValue, modelColorIndexes, modelShares, niceMax, previousDates, rangeDates, rangeTotals,
+	ringStops, sortModels, streaks, topModel, xLabels
 } = require("./client-trends-model.cjs");
-const { hideTip, showTipRaw, tipProps, tipRows } = require("./client-tip.cjs");
+const { tipProps, tipRows } = require("./client-tip.cjs");
 
 const e = react.createElement;
-const { useMemo, useRef, useState } = react;
+const { useEffect, useMemo, useRef, useState } = react;
 
 function weekdayName(date, t) {
 	const names = t("w.weekdays").split(",");
@@ -436,6 +436,155 @@ function Heatmap(props) {
 	);
 }
 
+function ModelSection(props) {
+	const { models, modelColors, metric, range, totals, sort, onSort, onSortNarrow, onOpenPricing, t } = props;
+	if (!models || !models.length) return null;
+	const isToken = metric === "token";
+	const shares = useMemo(function() { return modelShares(models, metric); }, [models, metric]);
+	const rows = useMemo(function() { return sortModels(models, sort.key, sort.dir, metric); }, [models, sort.key, sort.dir, metric]);
+	const stops = useMemo(function() { return ringStops(models, shares, modelColors); }, [models, shares, modelColors]);
+	const byKey = useMemo(function() {
+		const map = new Map();
+		models.forEach(function(row) { map.set(row.key, row); });
+		return map;
+	}, [models]);
+
+	const total = isToken ? totals.tokens : amountOf(totals.cost);
+	const center = total > 0 ? (isToken ? fmtTokens(totals.tokens) : fmtCostSummary(totals.cost, t)) : "—";
+	const gradient = total > 0 && stops.length
+		? "conic-gradient(" + stops.map(function(stop) {
+			const color = stop.colorIndex == null ? "var(--dss-text-3)" : "var(--dss-p" + stop.colorIndex + ")";
+			return color + " " + stop.from + "deg " + stop.to + "deg";
+		}).join(", ") + ")"
+		: "var(--dss-track)";
+	const ringParts = stops.map(function(stop) {
+		if (stop.colorIndex == null) return t("tr.other") + " " + fmtSharePct(stop.share * 100);
+		const row = byKey.get(stop.keys[0]);
+		return modelNameOnly(row) + " " + fmtSharePct(stop.share * 100);
+	});
+	const ringAria = t("tr.ringAria").replace("%s", t(isToken ? "tr.ringToken" : "tr.ringCost")).replace("%s", ringParts.join(t("tr.listSep")));
+	const others = stops.filter(function(stop) { return stop.colorIndex == null; });
+	const rangeText = t("tr.recent").replace("%d", String(range));
+
+	const columns = [
+		{ key: "name", label: t("tr.col.model"), cls: "c-model" },
+		{ key: "sessions", label: t("th.sessions"), cls: "c-sessions" },
+		{ key: "tokens", label: t("kpi.tokens"), cls: "c-tokens" },
+		{ key: "hit", label: t("th.cacheHit"), cls: "c-hit" },
+		{ key: "llm", label: t("th.llm"), cls: "c-llm" },
+		{ key: "cost", label: t("th.cost"), cls: "c-cost" },
+		{ key: "share", label: t("tr.col.share"), cls: "c-share", sortable: false }
+	];
+	const head = e("thead", null, e("tr", null, columns.map(function(column) {
+		const active = column.sortable !== false && sort.key === column.key;
+		return e("th", {
+			key: column.key,
+			scope: "col",
+			className: column.cls || "",
+			"aria-sort": active ? (sort.dir < 0 ? "descending" : "ascending") : undefined
+		}, column.sortable === false ? column.label : e("button", {
+			type: "button",
+			className: "dss-sort-btn" + (active ? " on" : ""),
+			"data-action": "tr-sort",
+			"data-key": column.key,
+			onClick: function() { onSort(column.key); }
+		}, column.label, active ? e("span", { className: "dss-sort-arr", "aria-hidden": "true" }, sort.dir < 0 ? "↓" : "↑") : null));
+	})));
+
+	const body = e("tbody", null, rows.map(function(row) {
+		const color = modelColors.get(row.key);
+		const dotColor = Number.isInteger(color) ? color : null;
+		const tokens = (row.input || 0) + (row.output || 0);
+		const hit = row.input > 0 ? Math.round((row.cacheRead || 0) / row.input * 100) + "%" : "—";
+		const share = shares.get(row.key) || 0;
+		const providerText = row.providerId && row.providerId !== "unknown" ? row.providerId : t("tr.providerUnknown");
+		const accountSuffix = row.accountType && row.accountType !== "api" ? " · " + row.accountType : "";
+		const unpriced = row.costSummary && row.costSummary.unpricedTokens > 0 ? row.costSummary.unpricedTokens : 0;
+		const meta = providerText + " · " + t("th.sessions") + " " + fmtN(row.sessions || 0) + " · " + fmtTokens(tokens) + " · " + t("kpi.hit") + " " + hit;
+		const dot = dotColor == null
+			? e("i", { className: "dss-pdot is-other" })
+			: e("i", { className: "dss-pdot", "data-color": String(dotColor) });
+		return e("tr", {
+			key: row.key,
+			className: "dss-tr-mrow",
+			"data-model-key": String(row.key).replace(/\u0000/g, "|")
+		},
+			e("td", { className: "c-model" },
+				e("div", { className: "dss-tr-mname" }, dot, e("span", { title: row.displayName || modelDisplayName(row) }, modelNameOnly(row))),
+				e("div", { className: "dss-cell-sub" }, providerText + accountSuffix)
+			),
+			e("td", { className: "c-meta" }, meta),
+			e("td", { className: "c-sessions" }, fmtN(row.sessions || 0)),
+			e("td", { className: "c-tokens" },
+				fmtTokens(tokens),
+				e("div", { className: "dss-cell-sub" }, t("w.input") + " " + fmtTokens(row.input || 0) + " · " + t("w.output") + " " + fmtTokens(row.output || 0))
+			),
+			e("td", { className: "c-hit" }, hit),
+			e("td", { className: "c-llm" }, fmtDuration(row.llmMs || 0)),
+			e("td", { className: "c-cost" },
+				e("div", { className: "dss-cost-line" },
+					unpriced > 0 ? e(PendingChip, {
+						key: "pending",
+						compact: true,
+						label: t("tr.pendingShort"),
+						focus: { provider: row.providerId, model: row.modelRaw, tokens: unpriced },
+						onOpen: onOpenPricing
+					}) : null,
+					e("span", { className: "dss-cost-amt" }, fmtCostSummary(row.costSummary, t))
+				)
+			),
+			e("td", { className: "c-share" },
+				e("div", { className: "dss-share" },
+					e("span", {
+						className: "dss-share-bar dss-tr-share" + (dotColor == null ? " is-other" : ""),
+						"data-color": dotColor == null ? undefined : String(dotColor)
+					}, e("i", { style: { width: Math.max(2, share * 100).toFixed(1) + "%" } })),
+					e("span", { className: "dss-share-pct" }, fmtSharePct(share * 100))
+				)
+			)
+		);
+	}));
+
+	return e("section", { className: "dss-tr-sec dss-tr-models" },
+		e("div", { className: "dss-tr-sec-head" },
+			e("h3", null, t("tr.models")),
+			e("span", { className: "dss-tr-sec-note" },
+				rangeText + " · " + t("tr.modelCount").replace("%d", String(models.length)) + " · " + t(isToken ? "tr.shareByToken" : "tr.shareByCost"))
+		),
+		e("div", { className: "dss-tr-models-body" },
+			e("div", { className: "dss-tr-ring-wrap" },
+				e("div", { className: "dss-tr-ring", role: "img", "aria-label": ringAria, style: { background: gradient } },
+					e("div", { className: "dss-tr-ring-hole" },
+						e("b", null, center),
+						e("span", null, rangeText)
+					)
+				),
+				others.length ? e("p", { className: "dss-tr-ring-note" },
+					e("i", { className: "dss-pdot is-other" }),
+					t("tr.ringOther").replace("%d", String(others[0].keys.length))
+				) : null
+			),
+			e("div", { className: "dss-tr-mtable-wrap" },
+				e("select", {
+					className: "dss-sort-narrow",
+					"data-action": "tr-sort-narrow",
+					"aria-label": t("table.sort"),
+					value: sort.key,
+					onChange: function(ev) { onSortNarrow(ev.target.value); }
+				}, columns.filter(function(column) { return column.sortable !== false; }).map(function(column) {
+					return e("option", { key: column.key, value: column.key }, column.label);
+				})),
+				e("table", { className: "dss-tr-mtable" },
+					e("caption", { className: "dss-sr" }, t("tr.tableLabel").replace("%s", rangeText)),
+					head,
+					body
+				),
+				e("p", { className: "dss-tr-foot" }, t("tr.llmNote"))
+			)
+		)
+	);
+}
+
 function TrendsView(props) {
 	const t = props.t;
 	const today = props.today;
@@ -446,9 +595,29 @@ function TrendsView(props) {
 	const rangeProjects = props.rangeProjects || [];
 	const hidden = props.hidden || {};
 	const hiddenKey = props.hiddenKey || "";
-	const legacy = props.legacy || {};
 	const [barDate, setBarDate] = useState(null);
 	const [cellDate, setCellDate] = useState(null);
+	const [sortState, setSortState] = useState(function() {
+		const initial = defaultModelSort(metric);
+		return { key: initial.key, dir: initial.dir, metric: metric };
+	});
+	// 切换指标后回到新指标的默认排序。
+	useEffect(function() {
+		setSortState(function(current) {
+			if (current.metric === metric) return current;
+			const next = defaultModelSort(metric);
+			return { key: next.key, dir: next.dir, metric: metric };
+		});
+	}, [metric]);
+	const sort = sortState;
+	const changeSort = function(key) {
+		setSortState(function(current) {
+			return { key: key, dir: current.key === key ? -current.dir : defaultSortDir(key), metric: metric };
+		});
+	};
+	const changeSortNarrow = function(key) {
+		setSortState({ key: key, dir: defaultSortDir(key), metric: metric });
+	};
 
 	const visibleSessions = useMemo(function() {
 		const sessions = [];
@@ -473,6 +642,16 @@ function TrendsView(props) {
 		return sessions;
 	}, [rangeProjects, hiddenKey]);
 	const models = useMemo(function() { return modelAgg(rangeSessions); }, [rangeSessions]);
+	// 颜色只按全部历史排序，不看筛选和范围：同一个模型换视图不换色。
+	const allModels = useMemo(function() {
+		const sessions = [];
+		projects.forEach(function(project) {
+			if (!project) return;
+			(project.sessions || []).forEach(function(session) { sessions.push(session); });
+		});
+		return modelAgg(sessions);
+	}, [projects]);
+	const modelColors = useMemo(function() { return modelColorIndexes(allModels); }, [allModels]);
 	const rangeWithToken = useMemo(function() { return rangeProjects.filter(hasTokenUsage); }, [rangeProjects]);
 	const visibleRange = useMemo(function() { return rangeWithToken.filter(function(project) { return !hidden[project.id]; }); }, [rangeWithToken, hiddenKey]);
 	const pending = useMemo(function() { return pendingFocus(visibleRange); }, [visibleRange]);
@@ -498,13 +677,6 @@ function TrendsView(props) {
 			stats: streaks(activeSet, win, today)
 		};
 	}, [byDay, dayCosts, today, metric]);
-
-	const modelsSection = legacy.globals ? e(Section, { title: t("trends.modelDist"), hint: t("trends.modelHint") },
-		e("div", { className: "dss-model-split" },
-			e(ModelRing, { models: (legacy.dateGlobals || legacy.globals).models || [], t }),
-			e(ModelList, { models: (legacy.dateGlobals || legacy.globals).models || [], t })
-		)
-	) : null;
 
 	if (!anyHistory) return e("div", { className: "dss-tr" }, e("p", { className: "dss-empty" }, t("empty")));
 
@@ -552,145 +724,12 @@ function TrendsView(props) {
 			onOpenDay: props.onOpenDay, canOpen, t
 		}),
 		e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t }),
-		modelsSection
+		e(ModelSection, {
+			models, modelColors, metric, range, totals, sort,
+			onSort: changeSort, onSortNarrow: changeSortNarrow,
+			onOpenPricing: props.onOpenPricing, t
+		})
 	);
 }
 
-// ------------------------------------------------------------------
-// 以下为过渡期沿用的旧组件，行为不变；5i 删除。
-// ------------------------------------------------------------------
-function Section(props) {
-	return e("div", { className: "dss-section" },
-		e("div", { className: "dss-sec-head" },
-			e("div", { className: "dss-sec-title" }, props.title),
-			props.hint ? e("div", { className: "dss-sec-hint" }, props.hint) : null
-		),
-		props.children
-	);
-}
-
-// 5i 删除：旧模型环。
-function ModelRing(props) {
-	var models = props.models;
-	var t = props.t;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
-	if (!total) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var cum = 0;
-	var stops = models.map(function(m) {
-		var v = ((m.input || 0) + (m.output || 0)) / total;
-		var from = (cum * 360).toFixed(1);
-		cum += v;
-		var to = (cum * 360).toFixed(1);
-		return { color: modelColor(m.key || m.displayName || m.model || "(unknown)"), from: from, to: to, label: m.displayName || modelDisplayName(m), pct: v * 100, model: m };
-	});
-
-	var gradient = stops.map(function(s) { return s.color + " " + s.from + "deg " + s.to + "deg"; }).join(", ");
-
-	return e("div", { className: "dss-ring-wrap" },
-		e("div", { className: "dss-ring", style: { background: "conic-gradient(" + gradient + ")" } },
-			e("div", { className: "dss-ring-center" },
-				e("div", { className: "dss-ring-total" }, fmtTokens(total)),
-				e("div", { className: "dss-ring-label" }, t("trends.inputOutput"))
-			)
-		),
-		e("div", { className: "dss-ring-legend" + (modelListNeedsScroll(models) ? " scrollable" : "") },
-			stops.map(function(s, i) {
-				return e("div", {
-					key: i,
-					className: "dss-ring-item",
-					onMouseEnter: function(ev) { showModelTip(s.model, t, ev); },
-					onMouseLeave: hideTip
-				},
-					e("span", { className: "dss-ring-swatch", style: { background: s.color } }),
-					e("span", { className: "dss-ring-name", title: s.label }, s.label),
-					e("span", { className: "dss-ring-pct" }, fmtSharePct(s.pct))
-				);
-			})
-		)
-	);
-}
-
-// 5i 删除：旧模型 tooltip。
-function showModelTip(model, t, ev) {
-	showTipRaw(tipRows(model.displayName || modelDisplayName(model), [
-		[t("th.cost"), fmtCostSummary(model.costSummary, t)],
-		[t("w.input"), fmtTokens(model.input || 0)],
-		[t("w.output"), fmtTokens(model.output || 0)]
-	]), ev);
-}
-
-// 5i 删除：旧模型列表的滚动判断。
-function modelListNeedsScroll(models) {
-	return Array.isArray(models) && models.length > MAX_VISIBLE_MODELS;
-}
-
-// 5i 删除：旧模型列表。
-function ModelList(props) {
-	var models = props.models;
-	var t = props.t;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
-
-	return e("div", { className: "dss-model-list-viewport" + (modelListNeedsScroll(models) ? " scrollable" : "") },
-		e("div", { className: "dss-model-list" },
-			models.map(function(m, i) {
-				var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
-				var pct = share * 100;
-				var color = modelColor(m.key || m.displayName || m.model || "(unknown)");
-				return e("div", {
-					key: i,
-					className: "dss-model-item",
-					onMouseEnter: function(ev) { showModelTip(m, t, ev); },
-					onMouseLeave: hideTip
-				},
-					e("div", { className: "dss-model-head" },
-						e("span", { className: "dss-model-dot", style: { background: color } }),
-						e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
-						e("span", { className: "dss-model-pct" }, fmtSharePct(pct))
-					),
-					e("div", { className: "dss-model-track" },
-						e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
-					),
-					e("div", { className: "dss-model-meta" },
-						t("w.input") + " " + fmtTokens(m.input || 0) +
-							" · " + t("w.output") + " " + fmtTokens(m.output || 0) +
-							" · " + t("trends.totalReasoning") + " " + fmtTokens(m.reasoning || 0) +
-							" · " + t("card.sessions") + " " + fmtN(m.sessions || 0) +
-							" · LLM " + fmtDuration(m.llmMs || 0) +
-							" · " + t("w.tool") + " " + fmtDuration(m.toolMs || 0)
-					)
-				);
-			})
-		)
-	);
-}
-
-// 5i 删除：旧模型配色。
-var _modelColorCache = new Map();
-var _modelFallbackIdx = 0;
-var MODEL_COLOR_MAP = {
-	"deepseek-v4-pro": "#4f8cff",
-	"deepseek-v4-flash": "#74c0fc",
-	"deepseek-chat": "#5c7cfa",
-	"deepseek-reasoner": "#a78bfa"
-};
-var MODEL_PALETTE = ["#74c0fc","#22d3ee","#91a7ff","#5c7cfa","#748ffc","#4dabf7","#66d9e8","#9775fa","#b197fc","#a5d8ff","#3bc9db","#845ef7","#e3fafc","#d0bfff"];
-function modelColor(model) {
-	if (_modelColorCache.has(model)) return _modelColorCache.get(model);
-	var name = model || "(unknown)";
-	var c;
-	if (MODEL_COLOR_MAP[name]) {
-		c = MODEL_COLOR_MAP[name];
-	} else {
-		c = MODEL_PALETTE[_modelFallbackIdx % MODEL_PALETTE.length];
-		_modelFallbackIdx++;
-	}
-	_modelColorCache.set(model, c);
-	return c;
-}
-
-module.exports = { TrendsView, TrendsTools, TrendsKpis, DailyChart, Heatmap, modelListNeedsScroll };
+module.exports = { TrendsView, TrendsTools, TrendsKpis, DailyChart, Heatmap, ModelSection };

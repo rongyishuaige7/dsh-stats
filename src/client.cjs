@@ -2,7 +2,7 @@ let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
 const { EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
-const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
+const { activityDates, addBucket, aggregate, applyDate, applyRange, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, readProvidersRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
@@ -14,7 +14,7 @@ const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = r
 const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
 const { TRENDS_PREF_DEFAULTS, normalizeTrendsPrefs } = require("./client-trends-model.cjs");
 const { TimelineView } = require("./client-timeline.cjs");
-const { TrendsView, modelListNeedsScroll } = require("./client-trends.cjs");
+const { TrendsView } = require("./client-trends.cjs");
 const { hideTip } = require("./client-tip.cjs");
 
 var e = react.createElement;
@@ -337,14 +337,8 @@ function StatsPanel(props) {
 	var dateProjects = useMemo(() => effectiveDate ? applyDate(data.projects, effectiveDate) : data.projects,
 		[data.projects, effectiveDate]);
 
-	// 全局聚合：全量（热力图 / 7 天趋势 / 连续天数指标卡始终用全量）
-	var globals = useMemo(() => buildGlobals(data.projects), [data.projects]);
-
 	// 按日时，项目卡片与趋势只统计有 token 消耗的项目；时间线仍使用完整活动项目。
 	var statProjects = useMemo(() => effectiveDate ? dateProjects.filter(hasTokenUsage) : dateProjects, [effectiveDate, dateProjects]);
-
-	// 按日聚合：hero 总览 / 模型分布随选中日期变化（全部模式复用 globals，避免重复计算）
-	var dateGlobals = useMemo(() => (effectiveDate ? buildGlobals(statProjects) : globals), [effectiveDate, statProjects, globals]);
 
 	// 这些 memo 必须放在早退之前，保证面板关闭时 hooks 数量不变。
 	var hiddenKey = Object.keys(hidden && typeof hidden === "object" ? hidden : {}).filter(function(id) { return hidden[id]; }).sort().join("\u0000");
@@ -634,11 +628,7 @@ function StatsPanel(props) {
 							onShowAll: showAll,
 							onOpenDay: openDay,
 							onOpenPricing: openPricing,
-							t,
-							legacy: {
-								globals,
-								dateGlobals
-							}
+							t
 						})
 					)
 				),
@@ -746,6 +736,6 @@ module.exports.__test = {
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
-	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
+	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, projectCsvTable, csvField, sessionExportUsages,
 	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction
 };
