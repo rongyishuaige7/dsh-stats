@@ -79,7 +79,7 @@ dsh --profile web --dump-config
 | --- | --- |
 | 📊 项目用量 | 每个项目用了多少 Token、花了多少时间和费用。 |
 | ⏱️ 开发时间 | 按日查看项目泳道、费用/Token 柱和半小时明细；全部模式用日历矩阵按 30 天分页。 |
-| 📈 趋势与模型 | 查看近 7 天变化，找出最常用的模型和项目。 |
+| 📈 趋势与模型 | 查看近 7 / 30 / 90 天变化，找出最常用的模型和项目。 |
 | 💳 费用估算 | 按公开模型价格换算成人民币；无法确认的部分不会乱算。 |
 | 👤 余额与额度 | 查看已配置平台的余额和套餐额度。 |
 | 🔒 安全与导出 | 密钥只在本机使用，统计数据可导出为 CSV/JSON。 |
@@ -113,7 +113,7 @@ dsh --profile web --dump-config
 
 ### 用量趋势
 
-输入与输出使用不同颜色；活动热力图可按日期查看，模型分布会同时呈现 Token、占比和消费金额。
+范围可选近 7 / 30 / 90 天，指标可在费用和 Token 之间切换。上方摘要条给出区间合计、日均和最常用模型，中间是每日柱图，下面是固定 26 周的活动热力图，末尾按当前指标列出模型占比。点柱子或热力格会跳到那天的总览。趋势页和总览、时间线共用"筛选项目"，隐藏的项目不计入；热力图的"当前连续"指一直连到今天或昨天的连续天数。
 
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="用量趋势、活动热力图和模型分布界面" width="100%"></a>

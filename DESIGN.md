@@ -14,13 +14,14 @@
 - **Typert 描述符**：手写在 `src/typert-host.js`、`src/typert-remote-client.js` 和客户端内联描述符中，共用 `src/rpc-schemas.cjs` 的 zod schema。每个严格 codec 同时提供 `schema`（Harness 0.1.5）和 `create()`（0.1.7）。
 - **模块**：宿主 `index.js`（StatsService）+ `host-util` / `host-balance` / `host-sessions` / `host-usage`；客户端 `client.cjs`（React 视图与 `apply()`）+ `client-overview.cjs` / `client-overview-model.cjs` / `client-balance.cjs` / `client-balance-model.cjs` / `client-format` / `client-data` / `client-remote` / `client-dialog.cjs` / `client-header.cjs` / `client-icons.cjs` / `client-tip.cjs` / `client-locale` / `client-styles`；计价 `pricing.cjs`、`pricing-store.js`、`pricing-panel.cjs`；账户 `accounts.js`。
 - **总览与交互**：`.dss-panel` 固定高度，正文以 `.dss-body` 为唯一滚动容器；费用优先 KPI、Token 图例、活跃时段指标条、7 列项目表和行内展开会话；筛选弹层、表头排序、展开按钮和分层 Esc 都走面板的 `layerStack`；价格设置是右侧抽屉，支持待计价模型定位。
+- **趋势页**：范围近 7 / 30 / 90 天，指标在费用和 Token 之间切换（偏好键 `dsh-stats.trends`）。自上而下是摘要条（合计、涨跌、日均、最常用模型）、每日柱图、固定 26 周的活动热力图（活跃天数与连续统计，"当前连续"连到今天或昨天），以及模型环图加可排序表格。点柱子或热力格跳到那天的总览；筛选项目与总览、时间线共用同一份隐藏状态。派生计算放在 `src/client-trends-model.cjs`，不依赖 React、DOM 和 `Date.now()`。
 - **余额页**：一屏列出所有已接入账户，按紧急程度排序（danger → warn → ok，同色调保持宿主顺序）；顶部摘要条按币种合计可用余额，并给出最紧的额度和需要关注的账户；每行显示余额构成或每个订阅窗口的剩余额度条，支持逐账户提醒线（只保存在当前浏览器）。首次加载用 `stats/providers` 骨架（每次挂载最多一次）；单个账户刷新失败只影响该行，整次失败由头部状态点和横幅提示，并支持重试。
 - **时间**：时间线、峰谷时段、日期范围和价格设置统一按北京时间（UTC+8），不随宿主或浏览器时区变化。
 - **状态**：React `useState` + `localStorage` 偏好（`usePref`），没有 zustand；总览派生数据用 `useMemo`，`pageRows` 负责 50/100 条分页。
 - **安装**：只用 `dsh plugin --profile web add -w <包或 tarball>`，不要用 npm/pnpm 直接改 profile。
 - **兼容**：Harness `0.1.3-alpha.2` 至 `0.2.1-rc.2`，已验证版本列在 `scripts/harness-versions.json`，peer 范围由单元测试核对；见 [兼容性矩阵](docs/compatibility.md)。
 - **计价**：签名价格目录、自定义费率与复核流程见 [动态价格](docs/pricing-updates.md)。
-- **验证**：CI 跑 **445 个单元测试**（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（**28 个检查组、50 张截图**、1440/390/320 三种宽度；数字取自 run `39366926311`）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
+- **验证**：CI 跑 **476 个单元测试**（默认时区与 UTC）、各 Harness 版本的真实模块契约（含该版本的 `validateTypertManifest`）和浏览器 fixture（**33 个检查组、58 张截图**、1440/390/320 三种宽度；数字取自 run `39425611670`）；每日 Harness watch 检查 npm latest/next/alpha。真实 Web 的生成 Esc 与审批 Esc 已验证，记录见 [compatibility](docs/compatibility.md)。
 
 ---
 

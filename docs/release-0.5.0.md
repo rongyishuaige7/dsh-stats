@@ -44,6 +44,27 @@ Pre-1.0 feature release, 2026-10-18.
 - **Responsive detail**: 320/390/640 layouts keep session time, turns/steps,
   LLM and tool time, cache hit, input/output and model in a non-truncated meta
   line; wide rows keep every column unclipped.
+- **Trends rework (0.5.0)**: the trends tab now offers 7/30/90-day ranges and a
+  cost/token switch, with a summary strip, daily bars, a fixed 26-week heatmap
+  and a model ring plus sortable table. Clicking a bar or a heat cell opens that
+  day in the overview, and the page follows the project filter.
+
+## Trends page (0.5.0)
+
+- **Ranges**: the last 7, 30 or 90 days, always ending today. The range drives
+  the summary strip, the daily bars and the model section; the heatmap is fixed
+  at 26 weeks and says so in its own heading.
+- **Metrics**: cost or tokens. Switching changes the bars, the heatmap shading,
+  the model shares and the ring.
+- **26-week heatmap**: one cell per day, shaded by quartiles of active days, with
+  active days, current streak and longest streak beside it.
+- **Day jump**: clicking a bar or a heat cell opens that day in the overview and
+  moves focus to the overview tab.
+- **Project filter**: hidden projects are excluded here exactly as in the
+  overview and timeline, and the hidden state is shared across the three pages.
+- **Current streak**: it now means a run that reaches today or yesterday, so a
+  streak that ended last month no longer reads as current. The previous
+  "current streak" counted back from the most recent active day.
 
 ## Compatibility
 

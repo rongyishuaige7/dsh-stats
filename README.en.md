@@ -77,7 +77,7 @@ If a newer pnpm reports `ERR_PNPM_ADDING_TO_ROOT`, use `dsh plugin --profile web
 | --- | --- |
 | 📊 Usage by project | Tokens, time, and spend for every project. |
 | ⏱️ Development time | Day lanes with cost/token bars and half-hour details; a 30-day calendar matrix for all history. |
-| 📈 Trends and models | Seven-day changes plus the models and projects you use most. |
+| 📈 Trends and models | Seven, 30 and 90-day changes plus the models and projects you use most. |
 | 💳 Cost estimates | Public model prices converted to RMB; unknown amounts are never guessed. |
 | 👤 Balances and quotas | Balances and plan quotas for configured providers. |
 | 🔒 Privacy and export | Keys stay on the host, and statistics export to CSV/JSON. |
@@ -111,7 +111,7 @@ The day view arranges projects as lanes above half-hour cost or token bars; clic
 
 ### Usage trends
 
-Input and output use separate colors. The activity heatmap is date-selectable, while model distribution combines tokens, share, and cost.
+The range switches between the last 7, 30 and 90 days, and the metric between cost and tokens. A summary strip shows the range total, the daily average and the top model; daily bars follow, then a fixed 26-week activity heatmap, and a model table ranked by the current metric. Clicking a bar or a heat cell opens that day in the overview. The page shares the project filter with the overview and timeline, so hidden projects are excluded, and the heatmap's current streak counts back from today or yesterday.
 
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap, and model distribution" width="100%"></a>
