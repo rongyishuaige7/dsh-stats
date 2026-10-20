@@ -1631,7 +1631,30 @@ try {
   const popTagHeight = await evaluate('document.querySelector(".dss-tl-pop-s .dss-tag").getBoundingClientRect().height');
   assert(popTagHeight <= 20, 'popover subagent tag stays on one line at 320: ' + popTagHeight);
   await press('Escape'); await press('Escape');
-  report.checks.push('showcase timeline: 09-07 lanes, first-page active days and one-line subagent tags');
+  report.checks.push('showcase timeline: 09-07 lanes, first-page active days and one-line subagent tags (unchanged with 26 weeks of history)');
+
+  // §9.3 第 23 条：展示夹具的趋势页，用作 README 截图。
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await evaluate('window.dispatchEvent(new Event("resize"))');
+  await evaluate('localStorage.removeItem("dsh-stats.trends"); localStorage.removeItem("dsh-stats.hidden")');
+  await navigate('/?stats=showcase&lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+  const showcaseBars = await evaluate('document.querySelectorAll("button.dss-tr-bar").length');
+  assert(showcaseBars >= 20, 'showcase 30 days has at least twenty active bars: ' + showcaseBars);
+  const showcaseModelRows = await evaluate('document.querySelectorAll(".dss-tr-mrow").length');
+  assert(showcaseModelRows >= 4, 'showcase model table has at least four rows: ' + showcaseModelRows);
+  const showcaseRingColors = await evaluate('new Set([...document.querySelectorAll(".dss-tr-mrow .dss-pdot[data-color]")].map(node => node.dataset.color)).size');
+  assert(showcaseRingColors >= 4, 'showcase ring carries four model colors: ' + showcaseRingColors);
+  const showcaseCells = await evaluate('document.querySelectorAll("button.dss-tr-cell").length');
+  assert(showcaseCells >= 100, 'showcase heatmap has at least a hundred active cells: ' + showcaseCells);
+  const showcaseKpis = await evaluate('document.querySelector(".dss-tr-kpis").innerText');
+  assert(!showcaseKpis.includes('*'), 'showcase summary carries no partial marker: ' + showcaseKpis.slice(0, 120));
+  assert(!(await evaluate('!!document.querySelector(".dss-tr .is-partial")')), 'showcase has no partial bars or cells');
+  await layout('readme-trends');
+  await capture('readme-trends');
+  report.checks.push('showcase trends: 30-day cost mode with ' + showcaseBars + ' bars, ' + showcaseModelRows + ' models, ' + showcaseCells + ' heat cells, no partial marker');
 
   // §9.3 第 1–12 条：趋势页工具栏、摘要条、每日柱图和跳转。
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -1920,6 +1943,7 @@ try {
   await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
   await press('Escape'); await until('!document.querySelector(".dss-drawer")');
   report.checks.push('trends models: two sortable rows and cost-descending default, metric switch resets the sort, shares add up, ring aria-label, stable colors across range/metric/hidden, partial model pending chip opens the pricing drawer, fully unpriced row says pending once');
+  report.checks.push('slice 5j: the showcase fixture now spans 26 weeks and four models, and feeds the README trends, timeline and overview shots');
 
   assert.deepEqual(report.errors, []);
   report.status = 'passed';

@@ -75,6 +75,17 @@ export async function browserData(home) {
     const showcaseWorkspaceById = new Map(showcaseWorkspaces.map(workspace => [workspace.id, workspace]));
     const idleWeekdays = new Set(['2026-08-12', '2026-08-26', '2026-09-02']);
     const weekendActive = new Set(['2026-08-09', '2026-08-23']);
+    // The trends page needs several models in one range, so each project uses
+    // one of four models that the bundled catalog prices exactly.
+    const showcaseModels = {
+      'api-service': { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      'data-pipeline': { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      'client-dashboard': { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      'docs-site': { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      'mobile-app': { provider: 'minimax', model: 'MiniMax-M3' },
+      'infra': { provider: 'moonshot', model: 'kimi-k2.7-code' },
+    };
+    const showcaseSubagentModel = { provider: 'deepseek', model: 'deepseek-v4-flash' };
     let showcaseSeed = 0x5eed1234;
     const showcaseRandom = () => {
       showcaseSeed = (Math.imul(showcaseSeed, 1664525) + 1013904223) >>> 0;
@@ -91,6 +102,9 @@ export async function browserData(home) {
     };
     const addShowcaseBlock = (projectId, date, startMinute, durationMinutes, parentId = null) => {
       const project = showcaseProjectById.get(projectId);
+      // Models follow the project so the trends page has a real spread; subagent
+      // sessions keep the cheaper flash model.
+      const identity = parentId ? showcaseSubagentModel : (showcaseModels[projectId] || showcaseSubagentModel);
       const start = Date.parse(date + 'T00:00:00+08:00') + startMinute * 60000;
       const end = start + durationMinutes * 60000;
       const id = projectId + '-' + date + '-' + startMinute + (parentId ? '-sub' : '');
@@ -113,7 +127,7 @@ export async function browserData(home) {
             turn: 1,
             step,
             usage: { inputTokens: 1200 + (step % 4) * 150, outputTokens: 120 + (step % 3) * 10, cacheReadTokens: 4000 },
-            message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } },
+            message: { source: { provider: identity.provider, model: identity.model } },
           },
           time: time + 1000,
         });
@@ -162,6 +176,24 @@ export async function browserData(home) {
       if (total + eveningDuration <= 480) addShowcaseBlock(order[4], date, 1140 + pick([0, 15, 30]), eveningDuration);
       if (date === '2026-08-20') addShowcaseBlock('data-pipeline', date, 840, 30);
       if (date === '2026-08-27') addShowcaseBlock('mobile-app', date, 1155, 30);
+    }
+    // Trends page history for the 26-week heatmap. It runs after the loop above
+    // and resets the seed first, so the original 35 days keep their exact sequence.
+    showcaseSeed = 0x7e4d5eed;
+    const offDays = new Set(['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05', '2026-06-19',
+      '2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17']);
+    for (let time = Date.parse('2026-03-16T00:00:00Z'); time < Date.parse('2026-08-05T00:00:00Z'); time += 864e5) {
+      const date = new Date(time).toISOString().slice(0, 10);
+      const weekday = new Date(time).getUTCDay();
+      if (offDays.has(date) || weekday === 0) continue;
+      if (weekday === 6) {
+        if (Math.floor((time / 864e5 + 3) / 7) % 3 === 0) addShowcaseBlock('docs-site', date, 600, 60);
+        continue;
+      }
+      const blocks = date < '2026-05-01' ? 2 : date < '2026-07-01' ? 3 : 4;
+      const order = shuffled(showcaseProjects.map(project => project.id));
+      const starts = [540, 600, 810, 900];
+      for (let index = 0; index < blocks; index++) addShowcaseBlock(order[index], date, starts[index] + pick([0, 15, 30]), pick([45, 60, 75, 90, 105]));
     }
     const showcase = await StatsService.prototype.aggregate.call({ ctx: {
       workspaceRegistry: { list: () => showcaseWorkspaces },
