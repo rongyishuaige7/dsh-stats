@@ -601,6 +601,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-bal-reason{font-size:var(--dss-fs-sm);color:var(--dss-text-2);line-height:1.45}
 .dss-bal-reason code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--dss-fs-xs);background:var(--dss-hover);padding:0 4px;border-radius:4px;color:var(--dss-text)}
 .dss-bal-act{grid-area:act;display:grid;grid-template-columns:26px 52px;justify-content:end;align-items:start;column-gap:4px}
+.dss-bal-act > .dss-bal-link{grid-column:2;justify-self:end}
 .dss-bal-link{display:inline-flex;align-items:center;gap:3px;color:var(--dss-accent);font-size:var(--dss-fs-sm);text-decoration:none;white-space:nowrap;padding:1px 2px;border-radius:5px}
 .dss-bal-link:hover{text-decoration:underline}
 .dss-bal-idle{border:1px solid var(--dss-line-soft);border-radius:10px}

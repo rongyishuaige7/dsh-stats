@@ -501,6 +501,9 @@ try {
   assert.deepEqual([...bellIds].sort(), ['deepseek-official', 'moonshotai-cn', 'openrouter', 'yi-api'], 'bells only on readable balance rows');
   const desktopBellRights = await evaluate(`[...document.querySelectorAll('[data-action=balance-alert]')].map(node => node.getBoundingClientRect().right)`);
   assert(Math.max(...desktopBellRights) - Math.min(...desktopBellRights) <= 1, 'desktop bells share a right edge: ' + JSON.stringify(desktopBellRights));
+  const desktopLinkRights = await evaluate(`[...document.querySelectorAll('.dss-bal-act [data-action=balance-link]')].map(node => node.getBoundingClientRect().right)`);
+  assert(Math.max(...desktopLinkRights) - Math.min(...desktopLinkRights) <= 1, 'desktop action links share a right edge: ' + JSON.stringify(desktopLinkRights));
+  assert(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].every(row => { const bell = row.querySelector('[data-action=balance-alert]'); const link = row.querySelector('.dss-bal-act [data-action=balance-link]'); return !bell || !link || link.getBoundingClientRect().left > bell.getBoundingClientRect().right; })`), 'desktop action links start after the bell');
   assert(await evaluate(`[...document.querySelectorAll('[data-action=balance-alert]')].every(node => !node.classList.contains('is-on'))`), 'no bell starts enabled');
   assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').getAttribute('aria-label')`), 'DeepSeek 余额提醒：未设置');
   assert.equal(await evaluate(`document.querySelector('[data-account-id=deepseek-official] [data-action=balance-alert]').getAttribute('aria-expanded')`), 'false');
@@ -600,6 +603,9 @@ try {
   await until('document.querySelectorAll(".dss-bal-row").length === 6');
   const mobileBellRights = await evaluate(`[...document.querySelectorAll('[data-action=balance-alert]')].map(node => node.getBoundingClientRect().right)`);
   assert(Math.max(...mobileBellRights) - Math.min(...mobileBellRights) <= 1, 'mobile bells share a right edge: ' + JSON.stringify(mobileBellRights));
+  const mobileLinkRights = await evaluate(`[...document.querySelectorAll('.dss-bal-act [data-action=balance-link]')].map(node => node.getBoundingClientRect().right)`);
+  assert(Math.max(...mobileLinkRights) - Math.min(...mobileLinkRights) <= 1, 'mobile action links share a right edge: ' + JSON.stringify(mobileLinkRights));
+  assert(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].every(row => { const bell = row.querySelector('[data-action=balance-alert]'); const link = row.querySelector('.dss-bal-act [data-action=balance-link]'); return !bell || !link || link.getBoundingClientRect().left > bell.getBoundingClientRect().right; })`), 'mobile action links start after the bell');
   await evaluate('document.querySelector(".dss-body").scrollTop = 10000'); await delay(100);
   await evaluate(`document.querySelector('[data-account-id=yi-api] [data-action=balance-alert]').click()`);
   await until('document.querySelector(".dss-bal-alert")');
