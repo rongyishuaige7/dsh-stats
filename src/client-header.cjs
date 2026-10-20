@@ -127,10 +127,8 @@ function PricingDrawer({ open, focusModel, opener, gear, rootRef, onClose, remot
 					onClick: dismiss
 				}, e(IconCloseOutline16, { size: 16 }))
 			),
-			e("div", { className: "dss-drawer-body" },
-				e(PricingErrorBoundary, { t },
-					e(PricingPanel, { remote, projects, focusModel, t, onChanged })
-				)
+			e(PricingErrorBoundary, { t },
+				e(PricingPanel, { remote, projects, focusModel, t, onChanged })
 			)
 		)
 	);

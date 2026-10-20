@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import WebSocket from 'ws';
 import { browserData } from './fixtures/browser-data.mjs';
+import view from '../src/pricing-view.cjs';
+import pricing from '../src/pricing.cjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -19,6 +21,25 @@ const output = process.env.DSH_SMOKE_OUTPUT ? resolve(process.env.DSH_SMOKE_OUTP
 mkdirSync(output, { recursive: true });
 const report = { status: 'running', screenshots: [], checks: [], errors: [] };
 const data = await browserData(join(scratch, 'home'));
+const smokeAt = Date.parse('2026-10-17T12:00:00Z');
+const signedCatalog = pricing.validateCatalog(JSON.parse(readFileSync(join(root, 'data/pricing/catalog.json'), 'utf8')));
+const expectedRuleIds = new Set(signedCatalog.rules.map(rule => rule.id));
+const catalogGroups = view.catalogGroups(signedCatalog, new Set(), smokeAt);
+const canonicalCounts = new Map();
+const summariesByKey = new Map();
+for (const group of catalogGroups) {
+  canonicalCounts.set(group.canonical, (canonicalCounts.get(group.canonical) || 0) + 1);
+  summariesByKey.set(group.key, view.modelPriceSummary(group));
+}
+const uniqueModel = group => canonicalCounts.get(group.canonical) === 1;
+const flatModel = catalogGroups.find(group => summariesByKey.get(group.key).kind === 'flat' && uniqueModel(group));
+const tieredModel = catalogGroups.find(group => summariesByKey.get(group.key).kind === 'tiered' && uniqueModel(group) && group.rules.length > 1)
+  || catalogGroups.find(group => summariesByKey.get(group.key).kind === 'tiered' && uniqueModel(group));
+const fixtureUsed = view.usedModelKeys(data.partial.projects, signedCatalog);
+const fixtureGroups = view.catalogGroups(signedCatalog, fixtureUsed, smokeAt);
+const fixtureUsedSelection = view.selectModelGroups(fixtureGroups, { scope: 'used', page: 0, pageSize: 25 });
+const fixtureAllSelection = view.selectModelGroups(fixtureGroups, { scope: 'all', page: 0, pageSize: 25 });
+const fillTemplate = (template, ...values) => values.reduce((text, value) => text.replace('%d', String(value)), template);
 const runtime = await build({ entryPoints: [join(root, 'scripts/fixtures/browser-entry.js')], bundle: true, write: false,
   format: 'iife', platform: 'browser', minify: true, define: { 'process.env.NODE_ENV': '"production"' },
   // Only the two official icons are used; their barrel also imports KaTeX CSS.
@@ -102,6 +123,48 @@ async function focus(selector) {
   await delay(50);
 }
 const KEY_CODES = { Tab: 9, Escape: 27, Enter: 13, ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, Home: 36, End: 35, ' ': 32 };
+async function drawerScrollables() {
+  return evaluate(`(() => {
+    const drawer = document.querySelector('.dss-drawer');
+    if (!drawer) return [];
+    return [...drawer.querySelectorAll('*')].filter(node => {
+      const style = getComputedStyle(node);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    }).map(node => String(node.className || node.tagName));
+  })()`);
+}
+async function assertDrawerSingleScroll(name) {
+  const scrollables = await drawerScrollables();
+  assert(scrollables.every(selector => selector === 'dss-drawer-body'), name + ' only drawer body scrolls: ' + JSON.stringify(scrollables));
+}
+async function pricingSection(name) {
+  await click('[data-action=price-section-' + name + ']');
+  await delay(120);
+}
+async function pricingSearch(value) {
+  await evaluate(`(() => {
+    const input = document.querySelector('.dss-price-search-input');
+    if (!input) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await delay(150);
+}
+async function openPricingModel(key) {
+  assert(await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.dss-price-model-row')].find(node => node.dataset.modelKey === ${JSON.stringify(key)});
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`), 'open model ' + key);
+  await until('document.querySelector(".dss-price-detail-title")');
+}
+async function backPricingModel(key) {
+  await click('[data-action=price-back-models]');
+  await until('document.querySelector(".dss-price-model-list")');
+  await until(`document.activeElement && document.activeElement.dataset && document.activeElement.dataset.modelKey === ${JSON.stringify(key)}`, 'focus returns to model row');
+}
 async function press(key, modifiers = 0) {
   const vk = KEY_CODES[key];
   assert(vk, 'unsupported key ' + key);
@@ -156,7 +219,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-tr-mtable','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-tr-mtable','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle','.dss-price-nav','.dss-price-sync','.dss-price-pending','.dss-price-model-row','.dss-price-detail-head','.dss-price-rule-detail','.dss-price-commit'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -177,15 +240,20 @@ async function layout(name) {
       if (r.width < 1 || r.left < bounds.left || r.right > bounds.right + 1) issues.push('header clipped: ' + node.className);
       for (const other of controls.slice(i + 1)) if (overlaps(r, rect(other))) issues.push('header overlap');
     }
-    for (const card of document.querySelectorAll('.dss-price-rule')) {
-      const summary = card.querySelector('summary'), boundary = rect(summary);
-      for (const selector of ['.dss-price-rule-lead','.dss-price-rule-trail']) {
-        const group = card.querySelector(selector), r = rect(group), children = [...group.children];
-        if (r.right > boundary.right + 1 || group.scrollWidth > group.clientWidth + 2) issues.push('card clipped: ' + card.textContent.slice(0, 80));
-        for (const [i, child] of children.entries()) for (const other of children.slice(i + 1)) if (overlaps(rect(child), rect(other))) issues.push('card text overlap');
+    for (const row of document.querySelectorAll('.dss-price-model-row')) {
+      const boundary = rect(row), identity = row.querySelector('.dss-price-model-identity'), summary = row.querySelector('.dss-price-model-summary');
+      for (const group of [identity, summary]) {
+        if (!group) continue;
+        const r = rect(group);
+        if (r.right > boundary.right + 1 || group.scrollWidth > group.clientWidth + 2) issues.push('model row clipped: ' + row.textContent.slice(0, 80));
       }
-      if (overlaps(rect(card.querySelector('.dss-price-rule-lead')), rect(card.querySelector('.dss-price-rule-trail')))) issues.push('model/rate overlap');
-      for (const value of card.querySelectorAll('.dss-price-rate-v')) if (value.scrollWidth > value.clientWidth + 2) issues.push('rate clipped');
+      if (identity && summary && overlaps(rect(identity), rect(summary))) issues.push('model identity/summary overlap');
+      for (const value of row.querySelectorAll('.dss-price-model-price,.dss-price-model-meta')) if (value.scrollWidth > value.clientWidth + 2) issues.push('model summary clipped');
+    }
+    for (const detail of document.querySelectorAll('.dss-price-rule-detail')) {
+      const boundary = rect(detail), head = detail.querySelector('.dss-price-rule-detail-head');
+      if (head && (head.scrollWidth > head.clientWidth + 2 || rect(head).right > boundary.right + 1)) issues.push('rule head clipped');
+      for (const value of detail.querySelectorAll('.dss-price-rate-v')) if (value.scrollWidth > value.clientWidth + 2) issues.push('rate clipped');
     }
     return issues.slice(0, 10);
   })()`);
@@ -798,76 +866,145 @@ try {
   report.checks.push('estimated/partial/unsupported pricing, diagnostics, stale host data, local fallback, pending-chip focusModel/fallback and row actions');
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000'); // Catalog phases as of 2026-10-17; usage fixtures remain in September.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await click('.dss-trigger'); await tab(1);
-  const priceButton = key => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(n => n.textContent === window.__fixture.t(${JSON.stringify(key)})); if (!button || button.disabled) throw new Error('Missing enabled button ' + ${JSON.stringify(key)}); button.click(); })()`);
   await click('[data-action=pricing]');
-  await until('document.querySelector(".dss-pricing")?.textContent.includes("fixture-unpriced")');
   await until('document.querySelector(".dss-drawer")');
+  await until('document.querySelector(".dss-price-model-row")');
   assert.equal(await evaluate('document.querySelector(".dss-drawer").getAttribute("role")'), 'dialog', 'pricing drawer uses dialog semantics');
   assert.equal(await evaluate('document.querySelector(".dss-drawer").getAttribute("aria-modal")'), 'true', 'pricing drawer is modal');
   assert.equal(await evaluate('document.querySelector("[data-action=pricing]").getAttribute("aria-haspopup")'), 'dialog', 'gear exposes its dialog popup');
-  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-price-actions label")).fontSize'), '13px', 'price auto label uses the md size');
+  assert.equal(await evaluate('document.querySelector("#dss-drawer-title").textContent'), await evaluate('window.__fixture.t("price.title")'), 'drawer title is localized');
   assert.equal(await evaluate('document.activeElement.getAttribute("data-action")'), 'drawer-close', 'drawer focuses its close button');
-  assert(await evaluate('!!document.querySelector("[data-action=drawer-close]")'), 'drawer exposes its close action');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-nav-btn").length'), 3, 'drawer exposes three sections');
+  assert(await evaluate('document.querySelector("[data-action=price-section-models]").getAttribute("aria-pressed") === "true"'), 'models section is the default');
+  assert(await evaluate('document.querySelector("[data-action=price-scope-used]").getAttribute("aria-pressed") === "true"'), 'used scope is the default when usage matches the catalog');
+  const usedCountText = fillTemplate(await evaluate('window.__fixture.t("price.modelCount")'), fixtureUsedSelection.modelCount) + ' · '
+    + fillTemplate(await evaluate('window.__fixture.t("price.pricingRuleCount")'), fixtureUsedSelection.ruleCount);
+  await until(`document.querySelector('.dss-price-count')?.textContent === ${JSON.stringify(usedCountText)}`);
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row").length'), fixtureUsedSelection.rows.length, 'used model page is bounded by group pagination');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-detail").length'), 0, 'model list keeps rule details lazy');
+  await layout('pricing-models'); await assertDrawerSingleScroll('pricing-models'); await assertTextFloor('pricing-models');
+  await capture('desktop-pricing-models');
   await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; if (!nodes.length) return false; nodes[nodes.length - 1].focus(); return true; })()`);
   await press('Tab');
   assert(await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[0]; })()`), 'drawer Tab wraps to its first control');
   await press('Tab', 8);
   assert(await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; return nodes.length > 0 && document.activeElement === nodes[nodes.length - 1]; })()`), 'drawer Shift+Tab wraps to its last control');
-  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule").length'), 0, 'collapsed catalog mounts no cards');
-  const catalogSummary = await evaluate(`(() => {
-    const summary = [...document.querySelectorAll('summary')].find(s => s.textContent.includes(window.__fixture.t('price.catalog')));
-    if (!summary) return 'missing summary';
-    summary.click();
-    return 'clicked summary';
-  })()`);
-  if (catalogSummary !== 'clicked summary') throw new Error('Failed to expand price catalog');
-  await until('document.querySelectorAll(".dss-price-rule").length > 0');
-  const rulesCount = await evaluate(`document.querySelectorAll('.dss-price-rule').length`);
-  assert(rulesCount > 0 && rulesCount <= 25, 'catalog pages are bounded');
-  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-body").length'), 0);
-  await click('.dss-price-rule summary');
-  await until('document.querySelector(".dss-price-rule-body")');
-  await priceButton('price.next');
+  await click('[data-action=price-scope-all]');
+  const allCountText = fillTemplate(await evaluate('window.__fixture.t("price.modelCount")'), fixtureAllSelection.modelCount) + ' · '
+    + fillTemplate(await evaluate('window.__fixture.t("price.pricingRuleCount")'), fixtureAllSelection.ruleCount);
+  await until(`document.querySelector('.dss-price-count')?.textContent === ${JSON.stringify(allCountText)}`);
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row").length'), 25, 'all-model page holds 25 groups');
+  assert.equal(await evaluate('document.querySelector(".dss-price-pagination span").textContent'), '1 / ' + fixtureAllSelection.pageCount, 'group pagination starts at page one');
+  await pricingSearch(flatModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(flatModel.key)})`);
+  const flatRowText = await evaluate(`[...document.querySelectorAll('.dss-price-model-row')].find(node => node.dataset.modelKey === ${JSON.stringify(flatModel.key)}).textContent`);
+  const flatSummary = summariesByKey.get(flatModel.key);
+  assert(flatRowText.includes((await evaluate('window.__fixture.t("price.quickRates")')).split('%s')[0]), 'flat model shows input/output summary');
+  assert(flatRowText.includes(flatModel.provider) && flatRowText.includes(flatSummary.rule.currency), 'flat model keeps provider and currency');
+  assert(!flatRowText.includes((await evaluate('window.__fixture.t("price.tieredPrice")')).split('%d')[0]), 'flat model is not promoted to tiered');
+  await pricingSearch('');
+  await until('document.querySelectorAll(".dss-price-model-row").length === 25');
+  await click('[data-action=price-next-page]');
   await until('document.querySelector(".dss-price-pagination span").textContent.startsWith("2 /")');
-  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-body").length'), 0);
-  const search = value => evaluate(`(() => { const input = document.querySelector('.dss-price-search-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  await search('deepseek');
-  await until('(!document.querySelector(".dss-price-pagination") || document.querySelector(".dss-price-pagination span").textContent.startsWith("1 /")) && [...document.querySelectorAll(".dss-price-rule")].every(n => n.textContent.toLowerCase().includes("deepseek"))');
-  assert(await evaluate('[...document.querySelectorAll(".dss-price-rule")].every(n => n.dataset.phase === "current")'));
-  await click('.dss-price-history-filter input');
-  await until('document.querySelector(".dss-price-rule[data-phase=historical]")');
-  assert(await evaluate('document.querySelector(".dss-price-badge").textContent.includes("rules")'));
-  await search('');
-  await until('document.querySelectorAll(".dss-price-rule").length === 25');
-  // Inspect every rule, including historical periods, at the narrowest width.
+  assert(await evaluate('document.activeElement && document.activeElement.dataset && document.activeElement.dataset.modelKey === document.querySelector(".dss-price-model-row").dataset.modelKey'), 'pagination focuses the first new row');
+  await pricingSearch(flatModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(flatModel.key)}) && (!document.querySelector('.dss-price-pagination') || document.querySelector('.dss-price-pagination span').textContent.startsWith('1 /'))`);
+  await pricingSearch('no-such-model-zzz');
+  await until('document.querySelector(".dss-price-empty-state")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row").length'), 0, 'empty search mounts no model rows');
+  assert(await evaluate('document.querySelector(".dss-price-empty-state").textContent.includes(window.__fixture.t("price.noMatch"))'), 'empty search explains no match');
+  assert(await evaluate('!!document.querySelector("[data-action=price-clear-search]")'), 'empty search offers a clear action');
+  await click('[data-action=price-clear-search]');
+  await until('document.querySelectorAll(".dss-price-model-row").length === 25');
+  await pricingSearch(tieredModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)})`);
+  const tieredRowText = await evaluate(`[...document.querySelectorAll('.dss-price-model-row')].find(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)}).textContent`);
+  assert(tieredRowText.includes((await evaluate('window.__fixture.t("price.tieredPrice")')).split('%d')[0]), 'complex model shows tiered summary');
+  await openPricingModel(tieredModel.key);
+  assert(await evaluate('document.activeElement === document.querySelector(".dss-price-detail-title")'), 'detail focuses its title');
+  const tieredSummary = summariesByKey.get(tieredModel.key);
+  assert.equal(await evaluate('document.querySelector(".dss-price-detail-title").textContent'), tieredModel.provider + ' / ' + tieredModel.canonical, 'detail shows the complete identity');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-detail[data-phase=current]").length'), tieredSummary.currentCount, 'detail shows every current rule');
+  assert.equal(await evaluate('document.querySelectorAll("[data-action=price-rollback]").length'), 0, 'model detail never exposes catalog rollback');
+  const otherCount = tieredModel.rules.length - tieredSummary.currentCount;
+  if (otherCount > 0) {
+    assert(await evaluate('!!document.querySelector("[data-action=price-other-periods]")'), 'detail exposes other periods');
+    await click('[data-action=price-other-periods]');
+    await until(`document.querySelectorAll('.dss-price-rule-detail').length === ${tieredModel.rules.length}`);
+    const phases = await evaluate('[...document.querySelectorAll(".dss-price-rule-detail")].map(node => node.dataset.phase)');
+    assert(phases.every(phase => ['current', 'historical', 'upcoming'].includes(phase)), 'detail labels every phase');
+  } else {
+    assert(await evaluate('!document.querySelector("[data-action=price-other-periods]")'), 'single-period detail hides the empty other-periods section');
+  }
+  await layout('pricing-detail'); await assertDrawerSingleScroll('pricing-detail'); await assertTextFloor('pricing-detail');
+  await capture('desktop-pricing-detail');
+  await backPricingModel(tieredModel.key);
+  assert.equal(await evaluate('document.querySelector(".dss-price-search-input").value'), tieredModel.canonical, 'back restores the search');
+  await pricingSearch('');
+  await until('document.querySelectorAll(".dss-price-model-row").length === 25');
+  await click('[data-action=price-scope-all]');
+  await until(`document.querySelector('.dss-price-count')?.textContent === ${JSON.stringify(allCountText)}`);
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
-  let inspected = 0;
+  const expectedByKey = new Map(fixtureGroups.map(group => [group.key, group]));
+  const visited = new Set(), collected = new Set();
   while (true) {
-    await layout('narrow-price-page'); inspected += await evaluate('document.querySelectorAll(".dss-price-rule").length');
-    if (await evaluate('document.querySelector(".dss-price-pagination button:last-child").disabled')) break;
+    await layout('narrow-price-page');
+    const keys = await evaluate('[...document.querySelectorAll(".dss-price-model-row")].map(node => node.dataset.modelKey)');
+    for (const key of keys) {
+      const expected = expectedByKey.get(key);
+      const summary = summariesByKey.get(key);
+      assert(expected && summary, 'model page contains a known group');
+      await openPricingModel(key);
+      visited.add(key);
+      assert.equal(await evaluate('document.querySelector(".dss-price-detail-title").textContent'), expected.provider + ' / ' + expected.canonical, 'detail identity at 320px');
+      const currentIds = await evaluate('[...document.querySelectorAll(".dss-price-rule-detail[data-phase=current]")].map(node => node.dataset.ruleId)');
+      assert.equal(currentIds.length, summary.currentCount, 'current rule count at 320px');
+      for (const id of currentIds) collected.add(id);
+      const expectedOther = expected.rules.length - summary.currentCount;
+      if (expectedOther > 0) {
+        assert(await evaluate('!!document.querySelector("[data-action=price-other-periods]")'), 'other periods are present at 320px');
+        await click('[data-action=price-other-periods]');
+        await until(`document.querySelectorAll('.dss-price-rule-detail').length === ${expected.rules.length}`);
+        const ids = await evaluate('[...document.querySelectorAll(".dss-price-rule-detail")].map(node => node.dataset.ruleId)');
+        assert.equal(new Set(ids).size, expected.rules.length, 'other periods add every rule once');
+        for (const id of ids) collected.add(id);
+      } else {
+        assert(await evaluate('!document.querySelector("[data-action=price-other-periods]")'), 'no empty other-periods section at 320px');
+      }
+      if (visited.size === 1) await assertDrawerSingleScroll('pricing-detail-320');
+      await backPricingModel(key);
+    }
+    if (await evaluate('document.querySelector("[data-action=price-next-page]").disabled')) break;
     const previous = await evaluate('document.querySelector(".dss-price-pagination span").textContent');
-    await priceButton('price.next');
+    await click('[data-action=price-next-page]');
     await until('document.querySelector(".dss-price-pagination span").textContent !== ' + JSON.stringify(previous));
   }
-  assert.equal(inspected, JSON.parse(readFileSync(join(root, 'data/pricing/catalog.json'), 'utf8')).rules.length, 'all signed catalog periods inspected');
-  await priceButton('price.previous');
-  await search('deepseek');
-  await until('document.querySelector(".dss-price-pagination span").textContent.startsWith("1 /")');
-  await click('.dss-price-rule summary'); await until('document.querySelector(".dss-price-rule-body")');
+  assert.equal(visited.size, fixtureGroups.length, 'every model group is reachable');
+  assert.equal(collected.size, expectedRuleIds.size, 'every signed catalog rule is reachable exactly once');
+  for (const id of expectedRuleIds) assert(collected.has(id), 'catalog rule is reachable: ' + id);
+  await pricingSearch('deepseek');
+  await until('document.querySelectorAll(".dss-price-model-row").length > 0');
+  await layout('narrow-price-page');
+  await pricingSearch('');
+  await click('[data-action=price-scope-used]');
+  await until(`document.querySelectorAll('.dss-price-model-row').length === ${fixtureUsedSelection.rows.length}`);
   for (const width of [320, 390, 641, 700, 768, 1024, 1440]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await layout('pricing-' + width);
+    await assertDrawerSingleScroll('pricing-' + width);
+    await assertTextFloor('pricing-' + width);
     const drawerBox = await evaluate(`(() => {
       const drawer = document.querySelector('.dss-drawer').getBoundingClientRect();
       const panelNode = document.querySelector('.dss-panel');
       const panel = panelNode.getBoundingClientRect();
       return { width: drawer.width, right: drawer.right, panelWidth: panelNode.clientWidth, panelRight: panel.right };
     })()`);
-    assert.equal(Math.round(drawerBox.width), Math.round(Math.min(460, drawerBox.panelWidth)), 'drawer width at ' + width + 'px');
+    assert.equal(Math.round(drawerBox.width), Math.round(Math.min(560, drawerBox.panelWidth)), 'drawer width at ' + width + 'px');
     assert(Math.abs(drawerBox.right - drawerBox.panelRight) <= 1, 'drawer is flush with the panel right edge at ' + width + 'px');
     if (width === 320 || width === 641) {
-      await evaluate('document.querySelector(".dss-pricing").scrollIntoView(); document.querySelector(".dss-body").scrollTop = 0');
+      await evaluate('document.querySelector(".dss-body").scrollTop = 0; document.querySelector(".dss-drawer-body").scrollTop = 0');
       await capture('prices-' + width);
     }
     if (width === 1440) {
@@ -875,26 +1012,79 @@ try {
       await capture('desktop-pricing-drawer');
     }
   }
-  await click('.dss-price-catalog-section > summary');
-  await until('!document.querySelector(".dss-price-rule")');
-  report.checks.push('catalog: lazy cards and bodies, 25-row pages, search reset, history labels/counts, all ' + inspected + ' rules at 320px, expanded cards at seven widths inside the pricing drawer');
+  report.checks.push('pricing models: used/all scope, 25-group pages, search reset and empty state, flat/tiered summaries, complete detail with other periods, all ' + visited.size + ' groups and ' + collected.size + ' rules at 320px, seven widths, 560px drawer and one drawer scroll');
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
-  await priceButton('price.configure');
-  for (const [field, value] of [['uncached','1'],['output','2'],['cacheRead','0']]) {
-    await evaluate(`(() => { const input = document.querySelector('[aria-label="' + window.__fixture.t('price.${field}') + '"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelectorAll(".dss-price-nav-btn").length === 3');
+  await until('document.querySelector(".dss-price-model-row")');
+  await layout('pricing-en-320'); await assertTextFloor('pricing-en-320');
+  const navText = await evaluate('[...document.querySelectorAll(".dss-price-nav-btn")].map(node => node.textContent)');
+  assert.deepEqual(navText, ['Models', 'Custom', 'Updates'], 'English section labels stay short');
+  const navFits = () => evaluate('(() => { const nav = document.querySelector(".dss-price-nav"); return nav.scrollWidth <= nav.clientWidth + 1 && [...nav.querySelectorAll("button")].every(node => node.getClientRects().length && node.getBoundingClientRect().right <= nav.getBoundingClientRect().right + 1 && node.scrollWidth <= node.clientWidth + 1); })()');
+  assert(await navFits(), 'English sections are all visible at 320px');
+  for (const name of ['custom', 'updates', 'models']) {
+    await pricingSection(name);
+    assert(await navFits(), 'English ' + name + ' active section stays unclipped at 320px');
   }
-  await priceButton('price.add'); await priceButton('price.preview');
+  await capture('narrow-pricing-nav-en');
+  await navigate('/?stats=partial&theme=dark&lang=zh');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await layout('pricing-dark'); await capture('dark-pricing-models');
+  report.checks.push('pricing language and theme: English three-section nav fits at 320px; dark model page keeps the same structure');
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await pricingSection('custom');
+  await until('document.querySelector(".dss-price-form")');
+  const setPricingInput = (key, value) => evaluate(`(() => {
+    const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t(${JSON.stringify(key)}));
+    if (!input) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
+    assert(await setPricingInput(key, value), 'custom field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await layout('pricing-custom'); await assertDrawerSingleScroll('pricing-custom'); await capture('narrow-pricing-custom');
+  await click('[data-action=price-preview]');
   await until('document.querySelector(".dss-price-preview")');
   assert(await evaluate('!document.querySelector(".dss-price-preview").textContent.includes("Affected sessions 0")'));
   await layout('pricing-preview'); await capture('narrow-pricing-preview');
-  await priceButton('price.save');
-  await until('!document.querySelector(".dss-price-preview")');
-  assert(await evaluate('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "save")'));
-  await priceButton('price.edit');
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Uncached input"]').value`), '1');
-  await priceButton('price.refresh');
-  await until('document.querySelector(".dss-pricing").textContent.includes(window.__fixture.t("price.refreshFailed"))');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  assert(await evaluate('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "save")'), 'custom rule save reaches the host');
+  await click('[data-action=price-edit-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.uncached')).value`), '1', 'editing restores the saved draft');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-discard]');
+  await until('!document.querySelector(".dss-price-commit")');
+  assert(await evaluate('!!document.querySelector("[data-action=price-edit-rule]")'), 'discard restores the saved custom rule');
+  await pricingSection('updates');
+  await until('document.querySelector("[data-action=price-auto]")');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-price-auto")).fontSize'), '12px', 'price auto label uses the sm size');
+  assert(await evaluate(`document.querySelector(".dss-price-updates-current").textContent.includes(${JSON.stringify(String(signedCatalog.version))})`), 'updates section shows the current catalog version');
+  assert(await evaluate('!!document.querySelector(".dss-price-history-section")'), 'updates section keeps the catalog snapshot region');
+  assert(await evaluate('!!document.querySelector("[data-action=price-rollback]") || document.querySelector(".dss-price-history-section").textContent.includes(window.__fixture.t("price.noSnapshots"))'), 'snapshot region has a restore entry or an explicit empty state');
+  await click('[data-action=price-auto]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-discard]');
+  await until('!document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-refresh]');
+  await until('document.querySelector(".dss-price-status-error")?.textContent.includes(window.__fixture.t("price.refreshFailed"))');
   await layout('pricing-failure'); await capture('narrow-pricing-failure');
+  report.checks.push('price settings: custom draft preview/save/edit/remove/discard, updates auto/history/offline refresh, focus and close behavior');
   await press('Escape');
   await until('!document.querySelector(".dss-drawer")');
   assert(await evaluate('document.activeElement === document.querySelector("[data-action=pricing]")'), 'drawer Escape returns focus to the gear');
@@ -913,7 +1103,7 @@ try {
   await until('document.querySelector(".dss-panel")');
   assert(await evaluate('!document.querySelector(".dss-drawer")'), 'closed panel resets the pricing drawer');
   assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'reopened panel focuses the current tab');
-  report.checks.push('price settings: missing models, custom price preview/save/edit, offline refresh, drawer Escape order and overlay-close drawer reset');
+
   await navigate('/?theme=dark&lang=en');
   await click('.dss-trigger'); await tab(4);
   await evaluate('window.__fixture.accountMode = "stale"'); await refresh();

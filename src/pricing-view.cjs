@@ -65,20 +65,6 @@ function catalogGroups(catalog, used, at) {
     || Number(b.provider === 'deepseek') - Number(a.provider === 'deepseek')
     || a.provider.localeCompare(b.provider) || a.canonical.localeCompare(b.canonical));
 }
-function selectCatalog(groups, search, includeHistory) {
-  const query = search.trim().toLowerCase(), rows = [];
-  let modelCount = 0;
-  for (const group of groups) {
-    if (query && !group.search.includes(query)) continue;
-    const selected = group.rules.filter(row => includeHistory || row.phase === 'current');
-    if (!selected.length) continue;
-    modelCount++;
-    selected.sort((a, b) => Number(b.phase === 'current') - Number(a.phase === 'current')
-      || Date.parse(b.rule.effectiveFrom || b.rule.observedFrom || '1970-01-01') - Date.parse(a.rule.effectiveFrom || a.rule.observedFrom || '1970-01-01'));
-    for (const row of selected) rows.push({ ...row, isUsed: group.isUsed });
-  }
-  return { rows, modelCount };
-}
 // A simple price is only safe to summarize when one current rule carries plain
 // per-token rates and no other rate mode or service tier changes the amount.
 // Context, time-of-use, legacy and multi-rule prices keep every condition in
@@ -131,5 +117,5 @@ function catalogSnapshotRows(status, limit = 5) {
   candidates.sort((a, b) => b - a);
   return { versions: candidates.slice(0, max), total: candidates.length, hasMore: candidates.length > max };
 }
-module.exports = { fmtRateValue, rulePhase, usedModelKeys, catalogGroups, selectCatalog,
+module.exports = { fmtRateValue, rulePhase, usedModelKeys, catalogGroups,
   modelPriceSummary, selectModelGroups, catalogSnapshotRows };

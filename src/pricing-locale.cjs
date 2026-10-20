@@ -1,9 +1,9 @@
 const pairs = {
   beijing: ['北京时间', 'Beijing time'], timesBeijing: ['生效时间按北京时间（UTC+8）填写', 'Times are Beijing time (UTC+8)'],
-  edit: ['编辑', 'Edit'], replace: ['更新草稿', 'Update draft'], conflict: ['价格设置已在其他页面更新，请重新打开后再保存', 'Prices changed in another window. Reopen settings before saving.'],
+  edit: ['编辑', 'Edit'], replace: ['更新草稿', 'Update draft'], conflict: ['计价设置已在其他页面更新，请重新打开后再保存', 'Pricing settings changed in another window. Reopen before saving.'],
   standard: ['标准上下文', 'Standard context'], legacy: ['历史费率', 'Historical rates'], peak: ['高峰', 'Peak'], offPeak: ['非高峰', 'Off-peak'], observed: ['核验时间（此前为估算）', 'Observed at (earlier usage is estimated)'],
-  title: ['价格设置', 'Price settings'], failed: ['操作失败，请重试', 'Operation failed. Please retry.'],
-  unavailable: ['价格设置暂不可用，请确认插件版本', 'Price settings unavailable. Check the plugin version.'], loading: ['加载中…', 'Loading…'],
+  title: ['计价设置', 'Pricing settings'], failed: ['操作失败，请重试', 'Operation failed. Please retry.'],
+  unavailable: ['计价设置暂不可用，请确认插件版本', 'Pricing settings unavailable. Check the plugin version.'], loading: ['加载中…', 'Loading…'],
   auto: ['自动更新价格', 'Update prices automatically'], refresh: ['立即更新', 'Update now'], updated: ['上次同步', 'Last synced'], builtin: ['内置价格', 'Bundled prices'],
   refreshFailed: ['价格更新失败，继续使用上次有效版本', 'Price update failed. Previous valid prices are retained.'],
   missing: ['待计价模型', 'Models awaiting prices'], provisional: ['自动接入，待复核', 'Auto-added, pending review'], configure: ['设置价格', 'Set price'], custom: ['自定义价格', 'Custom prices'],
@@ -24,8 +24,18 @@ const pairs = {
   pages: ['价格目录分页', 'Price catalog pages'], previous: ['上一页', 'Previous'], next: ['下一页', 'Next'],
   noMatch: ['未找到匹配的模型', 'No matching models found'],
   quickRates: ['输入 %s / 输出 %s', 'In %s / Out %s'],
-  renderError: ['价格设置渲染异常', 'Price settings render error'],
+  renderError: ['计价设置渲染异常', 'Pricing settings render error'],
   retry: ['重试', 'Retry'],
-  source: ['官网定价', 'Official pricing'], history: ['历史版本', 'History'], rollbackHint: ['恢复旧版本会暂停自动更新，重新勾选自动更新后保存即可恢复', 'Restoring a version pauses updates. Enable automatic updates and save to resume.'], rollback: ['恢复此版本', 'Restore version']
+  source: ['官网定价', 'Official pricing'], history: ['历史版本', 'History'], rollbackHint: ['恢复旧版本会暂停自动更新，重新勾选自动更新后保存即可恢复', 'Restoring a version pauses updates. Enable automatic updates and save to resume.'], rollback: ['恢复此版本', 'Restore version'],
+  sections: ['计价设置分区', 'Pricing settings sections'], sectionModels: ['模型价格', 'Models'], sectionCustom: ['自定义规则', 'Custom'], sectionUpdates: ['更新与版本', 'Updates'],
+  checkUpdates: ['检查更新', 'Check updates'], currentCatalog: ['当前目录', 'Current catalog'], currentVersion: ['当前生效目录', 'Current catalog'], saveFirst: ['请先保存或取消修改', 'Save or discard changes first'],
+  pendingCount: ['%d 个模型待计价', '%d model(s) awaiting prices'], showMorePending: ['展开其余 %d 个', 'Show %d more'], showLess: ['收起', 'Show less'],
+  usedModels: ['已用模型', 'Used models'], allModels: ['全部模型', 'All models'], modelCount: ['%d 个模型', '%d model(s)'], pricingRuleCount: ['%d 条价格规则', '%d price rule(s)'],
+  noUsedModels: ['暂无已用模型记录，可浏览全部价格', 'No used models yet. Browse all prices.'], clearSearch: ['清空搜索', 'Clear search'], showAllModels: ['查看全部模型', 'Show all models'],
+  tieredPrice: ['分档价格 · %d 条当前规则', 'Tiered pricing · %d current rule(s)'], noCurrentPrice: ['暂无当前价格', 'No current price'], otherPeriodsCount: ['%d 条历史 · %d 条尚未生效', '%d historical · %d upcoming'],
+  unknown: ['未知', 'Unknown'], accountUnspecified: ['未限定账户类型', 'Any account type'], catalogPrice: ['目录价格', 'Catalog price'], unitShort: ['每百万 token', 'per 1M tokens'],
+  backToModels: ['返回模型列表', 'Back to models'], otherPeriodsTitle: ['其他时期价格', 'Other periods'], addCustomForModel: ['为此模型添加自定义规则', 'Add a custom rule for this model'],
+  savedCustomRules: ['已保存自定义规则', 'Saved custom rules'], editSavedRule: ['编辑已保存规则', 'Edit saved rule'], modelGone: ['该模型已不在当前目录', 'This model is no longer in the catalog'],
+  emptyCatalog: ['当前目录暂无价格规则', 'No price rules in this catalog'], catalogSnapshots: ['历史目录快照', 'Catalog snapshots'], noSnapshots: ['暂无可恢复的目录快照', 'No restorable catalog snapshots'], noCustomRules: ['暂无自定义规则', 'No custom rules yet'], newRule: ['新增规则', 'New rule'], editRule: ['编辑规则', 'Edit rule']
 };
 module.exports = { zh: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[0]])), en: Object.fromEntries(Object.entries(pairs).map(([k, v]) => ['price.' + k, v[1]])) };

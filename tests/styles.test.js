@@ -171,3 +171,28 @@ test('trends rules never create a second scroll container', () => {
 		.map(rule => rule.selector);
 	expect(offenders).toEqual([]);
 });
+
+test('pricing drawer is 560px wide with one body scroll container', () => {
+	const drawer = parsed.find(rule => rule.selector === '.dss-drawer');
+	expect(drawer.declarations).toContain('width:min(560px,100%)');
+	const body = parsed.find(rule => rule.selector === '.dss-drawer-body');
+	expect(body.declarations).toMatch(/(?:^|;)\s*overflow-y\s*:\s*auto/);
+});
+
+test('pricing lists and details never create a second scroll container', () => {
+	const offenders = parsed
+		.filter(rule => rule.selector.includes('.dss-price'))
+		.filter(rule => !rule.selector.includes('.dss-pricing-error'))
+		.filter(rule => /(?:^|;)\s*overflow(?:-[xy])?\s*:\s*(?:auto|scroll)\b/.test(rule.declarations))
+		.map(rule => rule.selector);
+	expect(offenders).toEqual([]);
+});
+
+test('model rows keep a 48px hit area, thin separators and a three-column section nav', () => {
+	const row = parsed.find(rule => rule.selector === '.dss-price-model-row');
+	expect(row.declarations).toContain('min-height:48px');
+	expect(row.declarations).toContain('border-bottom:1px solid var(--dss-line-soft)');
+	const nav = parsed.find(rule => rule.selector === '.dss-price-nav');
+	expect(nav.declarations).toContain('grid-template-columns:repeat(3,minmax(0,1fr))');
+	expect(nav.declarations).not.toMatch(/overflow(?:-[xy])?\s*:\s*(?:auto|scroll)/);
+});
