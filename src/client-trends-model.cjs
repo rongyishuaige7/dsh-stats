@@ -283,22 +283,19 @@ function heatCells(window, values, today) {
 	return cells;
 }
 
-function heatMonths(window, monthsOf) {
-	const start = window && window.start;
-	if (!isDateKey(start)) return [];
-	const monthOf = typeof monthsOf === "function" ? monthsOf : function(date) { return Number(date.slice(5, 7)); };
+function heatMonths(window) {
+	const dates = window && Array.isArray(window.dates) ? window.dates.filter(isDateKey) : [];
+	const start = window && isDateKey(window.start) ? window.start : dates.length ? dates[0] : null;
+	if (!start) return [];
+	// 只看已经画出来的日期（截止到今天）：某月 1 日晚于今天时那一格还不存在。
 	const marks = [];
-	for (let column = 0; column < HEAT_WEEKS; column++) {
-		for (let row = 0; row < 7; row++) {
-			const date = addDays(start, column * 7 + row);
-			if (date.slice(8) === "01") {
-				marks.push({ column: column + 1, month: monthOf(date) });
-				break;
-			}
-		}
-	}
+	dates.forEach(function(date, index) {
+		if (date.slice(8) !== "01") return;
+		marks.push({ column: Math.floor(index / 7) + 1, month: Number(date.slice(5, 7)) });
+	});
 	// 第一列总是写它所在的月份；下一个标签离它不到 3 列时让位。
-	if (!marks.length || marks[0].column >= 4) marks.unshift({ column: 1, month: monthOf(start) });
+	const next = marks.length ? marks[0].column : Infinity;
+	if (next !== 1 && next >= 4) marks.unshift({ column: 1, month: Number(start.slice(5, 7)) });
 	return marks;
 }
 

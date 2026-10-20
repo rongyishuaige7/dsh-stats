@@ -241,7 +241,7 @@
 - 标题行：`h3` 写"活动热力图"，说明写"近 26 周 · 按费用"或"按 Token"（`tr.heatNote` 配合 `tr.byCost` / `tr.byToken`）。
 - 主体 `div.dss-tr-heat-body`，左边是地图 `div.dss-tr-heat-map`，右边是统计 `dl.dss-tr-heat-stats`（U8）。面板 ≤860px 时统计移到地图下方，三项排成一行。
 - 地图：
-  - 月份行 `div.dss-tr-heat-months`，和网格同为 26 列。哪一周里有某月 1 日，就在那一列写月份（`tr.months`）。第一列总是写它所在的月份，但下一个月份标签离它不到 3 列时，第一列不写。夹具上第一列是 3 月，4 月 1 日在第 3 列，所以第一个标签是 4 月；
+  - 月份行 `div.dss-tr-heat-months`，和网格同为 26 列。哪一周里有某月 1 日，就在那一列写月份（`tr.months`）。第一列总是写它所在的月份，但下一个月份标签离它不到 3 列时，第一列不写。夹具上第一列是 3 月，4 月 1 日在第 3 列，所以第一个标签是 4 月；某月 1 日晚于今天时不写，因为那一天的格子还没画出来；
   - 星期列 `div.dss-tr-heat-dow`：第 1、3、5 行写"一 / 三 / 五"，英文写"Mon / Wed / Fri"，取自 `w.weekdays` 的第 1、3、5 项，其余行留空；
   - 网格 `div.dss-tr-heat-grid[role=group][aria-label=活动热力图，近 26 周]`：`grid-template-columns: repeat(26, minmax(0,1fr))`，7 行。每格用行内 `gridColumn`、`gridRow` 显式定位，不靠自动流动，所以最后一周缺格时不会错位。格子 `aspect-ratio: 1`，地图最大宽 640px。
 - 格子：
@@ -517,13 +517,13 @@ div.dss-tr
 | `heatWindow(today)` | → `{start, dates[]}` | U7；`start` 是周一 |
 | `heatCells(window, values, today)` | `values: Map<日期, {value, active}>` → `[{date, column, row, level, active, today}]` | `column` 是 1–26，`row` 是 1–7（周一为 1）；不含未来日期 |
 | `heatLevel(value, sortedActiveValues)` | → 0–4 | U7 的分级 |
-| `heatMonths(window, monthsOf)` | → `[{column, month}]` | U7 的月份规则；`month` 是 1–12 |
+| `heatMonths(window)` | → `[{column, month}]` | U7 的月份规则；只看 `window.dates`（不晚于今天）里的 1 日；`month` 是 1–12，文字由组件用 `tr.months` 拼 |
 | `streaks(activeSet, window, today)` | → `{active, total, current, currentEnd, longest, longestStart, longestEnd}` | U8；`currentEnd` 是 `"today" \| "yesterday" \| null` |
 | `modelColorIndexes(models)` | → `Map<key, 0..7>` | U9 |
 | `modelValue(row, metric)` | → 数字 | `cost` 取 `amountOf(row.costSummary)`，`token` 取 `input + output` |
 | `modelShares(rows, metric)` | → `Map<key, 0..1>` | 合计为 0 时全部为 0 |
 | `topModel(rows, metric)` | → `{row, metric}` 或 `null` | U4 第四格，含"费用为 0 时改用 Token"的规则 |
-| `ringStops(rows, shares, colorIndexes)` | → `[{colorIndex \| null, from, to, share, keys[]}]` | U10；角度保留一位小数，最后一段的 `to` 固定为 360 |
+| `ringStops(rows, shares, colorIndexes)` | → `[{colorIndex \| null, from, to, share, keys[]}]` | U10；角度保留一位小数，最后一段的 `to` 固定为 360；占比为 0 的模型不进环，仍留在表里 |
 | `defaultModelSort(metric)` | → `{key, dir}` | U11 |
 | `sortModels(rows, key, dir, metric)` | → 新数组 | U11 的排序和并列规则；不修改输入 |
 

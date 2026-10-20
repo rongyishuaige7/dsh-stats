@@ -267,9 +267,24 @@ test('heatMonths labels the week holding the 1st and drops the first column when
 		{ column: 20, month: 8 },
 		{ column: 25, month: 9 },
 	]);
-	expect(heatMonths({ start: '2026-03-16', dates: heatWindow(TODAY).dates }, date => Number(date.slice(5, 7))))
-		.toEqual(heatMonths(heatWindow(TODAY)));
 	expect(heatMonths({ start: null, dates: [] })).toEqual([]);
+});
+
+test('heatMonths never labels a month whose 1st is still in the future', () => {
+	const window = heatWindow('2026-09-29');
+	expect(window.start).toBe('2026-04-06');
+	expect(heatMonths(window)).toEqual([
+		{ column: 1, month: 4 },
+		{ column: 4, month: 5 },
+		{ column: 9, month: 6 },
+		{ column: 13, month: 7 },
+		{ column: 17, month: 8 },
+		{ column: 22, month: 9 },
+	]);
+	// 10 月 1 日晚于今天，最后一列只有 09-28、09-29 两格，不写 10 月。
+	expect(heatMonths(window).some(mark => mark.month === 10)).toBe(false);
+	// 到了 10 月 1 日，最后一列才补上 10 月。
+	expect(heatMonths(heatWindow('2026-10-01')).pop()).toEqual({ column: 26, month: 10 });
 });
 
 test('streaks counts the current run from today or yesterday and prefers the later longest run', () => {
