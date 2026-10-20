@@ -79,4 +79,57 @@ function selectCatalog(groups, search, includeHistory) {
   }
   return { rows, modelCount };
 }
-module.exports = { fmtRateValue, rulePhase, usedModelKeys, catalogGroups, selectCatalog };
+// A simple price is only safe to summarize when one current rule carries plain
+// per-token rates and no other rate mode or service tier changes the amount.
+// Context, time-of-use, legacy and multi-rule prices keep every condition in
+// the detail view instead of promoting one tier to a general price.
+function hasComplexPrice(rule) {
+  if (rule.contextTiers != null || rule.serviceTiers != null || rule.timeOfUse != null || rule.legacy != null) return true;
+  return rule.tierMultipliers != null && Object.values(rule.tierMultipliers).some(value => value !== 1);
+}
+function modelPriceSummary(group) {
+  let currentCount = 0, historicalCount = 0, upcomingCount = 0, currentRule = null;
+  for (const row of group?.rules || []) {
+    if (row.phase === 'current') { currentCount++; currentRule = row.rule; }
+    else if (row.phase === 'historical') historicalCount++;
+    else if (row.phase === 'upcoming') upcomingCount++;
+  }
+  const flat = currentCount === 1 && currentRule.rates != null && !hasComplexPrice(currentRule);
+  return { kind: currentCount === 0 ? 'none' : flat ? 'flat' : 'tiered',
+    currentCount, historicalCount, upcomingCount, ...(flat ? { rule: currentRule } : {}) };
+}
+function positiveInteger(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+// Pagination is by provider/model group: all periods of one model stay on the
+// same page, while ruleCount still reports every period in the matched groups.
+function selectModelGroups(groups, options = {}) {
+  const list = Array.isArray(groups) ? groups : [];
+  const search = typeof options.search === 'string' ? options.search.trim().toLowerCase() : '';
+  const scope = options.scope === 'used' ? 'used' : 'all';
+  const pageSize = positiveInteger(options.pageSize) || 25;
+  const requestedPage = Number.isSafeInteger(options.page) && options.page >= 0 ? options.page : 0;
+  const matched = list.filter(group => (scope === 'all' || group.isUsed)
+    && (!search || group.search.includes(search)));
+  const modelCount = matched.length;
+  const ruleCount = matched.reduce((total, group) => total + group.rules.length, 0);
+  if (modelCount === 0) return { rows: [], modelCount: 0, ruleCount: 0, page: 0, pageCount: 1 };
+  const pageCount = Math.ceil(modelCount / pageSize);
+  const page = Math.min(requestedPage, pageCount - 1);
+  return { rows: matched.slice(page * pageSize, (page + 1) * pageSize), modelCount, ruleCount, page, pageCount };
+}
+// Snapshot history is only a version list. Never infer dates or change counts,
+// and keep the current version in its own summary instead of the restore list.
+function catalogSnapshotRows(status, limit = 5) {
+  const max = positiveInteger(limit) || 5;
+  const current = Number.isSafeInteger(status?.version) ? status.version : null;
+  const seen = new Set(), candidates = [];
+  for (const value of Array.isArray(status?.history) ? status.history : []) {
+    if (!Number.isSafeInteger(value) || value <= 0 || value === current || seen.has(value)) continue;
+    seen.add(value); candidates.push(value);
+  }
+  candidates.sort((a, b) => b - a);
+  return { versions: candidates.slice(0, max), total: candidates.length, hasMore: candidates.length > max };
+}
+module.exports = { fmtRateValue, rulePhase, usedModelKeys, catalogGroups, selectCatalog,
+  modelPriceSummary, selectModelGroups, catalogSnapshotRows };
