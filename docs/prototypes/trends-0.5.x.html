@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dsh-stats 用量趋势改版</title>
+<style>
+/* Layout: intro + prototype controls → dimmed host stage holding the plugin panel (container queries on panel width) → problems / changes / data / decisions.
+   Panel tokens mirror the plugin's --dss-* values (dark is the plugin's fallback palette, light is its body:not([data-ds-dark-theme]) override). */
+:root{
+  --page:#eef0f3; --stage:#5c626c; --panel:#ffffff; --layer:#f8f9fa; --hover:#f1f3f6; --seg-on:#ffffff;
+  --line:#e5e7eb; --line-soft:#eef0f3; --text:#111827; --text-2:#4b5563; --text-3:#6b7280;
+  --accent:#2563eb; --accent-soft:rgba(37,99,235,.08); --on-accent:#ffffff; --cost:#c2510f;
+  --ok:#047857; --warn:#92400e; --warn-soft:#fdf4e3; --warn-line:#efd3a0;
+  --track:rgba(148,163,184,.2); --cell:#e8ebf0;
+  --bar-cost:#e07b39; --c-cache:#bfd1f8; --c-input:#4f8cff; --c-output:#ffd43b;
+  --p0:#4f8cff; --p1:#34d399; --p2:#fbbf24; --p3:#f472b6; --p4:#a78bfa; --p5:#22d3ee; --p6:#fb923c; --p7:#e879f9;
+  --shadow:0 18px 50px rgba(16,22,34,.28); --pop-shadow:0 10px 30px rgba(16,22,34,.16);
+  --tip-bg:#20242b; --tip-text:#f3f5f8; --tip-dim:#aab2bf; --toast-bg:#20242b; --toast-text:#ffffff;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif;
+  --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:15px; --fs-xl:20px; --fs-2xl:28px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#20262f; --seg-on:#2b3241;
+    --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+    --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --on-accent:#0d1220; --cost:#f59e5b;
+    --ok:#34d399; --warn:#fbbf24; --warn-soft:rgba(251,191,36,.10); --warn-line:rgba(251,191,36,.26);
+    --track:rgba(148,163,184,.2); --cell:#232933;
+    --bar-cost:#f08a3c; --c-cache:#2e4a7e; --c-input:#4f8cff; --c-output:#ffd43b;
+    --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+    --tip-bg:#2b3241; --tip-text:#e7eaf0; --tip-dim:#a6adbb; --toast-bg:#e7eaf0; --toast-text:#161a21;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0f13; --stage:#05070a; --panel:#161a21; --layer:#1d222c; --hover:#20262f; --seg-on:#2b3241;
+  --line:#2a303c; --line-soft:#222833; --text:#e7eaf0; --text-2:#a6adbb; --text-3:#858d9b;
+  --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14); --on-accent:#0d1220; --cost:#f59e5b;
+  --ok:#34d399; --warn:#fbbf24; --warn-soft:rgba(251,191,36,.10); --warn-line:rgba(251,191,36,.26);
+  --track:rgba(148,163,184,.2); --cell:#232933;
+  --bar-cost:#f08a3c; --c-cache:#2e4a7e; --c-input:#4f8cff; --c-output:#ffd43b;
+  --shadow:0 20px 60px rgba(0,0,0,.6); --pop-shadow:0 12px 32px rgba(0,0,0,.5);
+  --tip-bg:#2b3241; --tip-text:#e7eaf0; --tip-dim:#a6adbb; --toast-bg:#e7eaf0; --toast-text:#161a21;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font-family:var(--font-ui);font-size:var(--fs-md);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{display:block;flex:none}
+.page{max-width:1280px;margin:0 auto;padding-block:28px 56px;display:flex;flex-direction:column;gap:20px}
+
+/* ---------- intro & prototype controls ---------- */
+.intro{display:flex;flex-direction:column;gap:6px;max-width:84ch}
+.eyebrow{margin:0;font-size:var(--fs-xs);letter-spacing:.06em;color:var(--text-3)}
+.intro h1{margin:0;font-size:var(--fs-xl);font-weight:650}
+.lede{margin:0;color:var(--text-2)}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin-top:6px}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctl-k{font-size:var(--fs-sm);color:var(--text-3);white-space:nowrap}
+.seg{display:inline-flex;background:var(--layer);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px}
+.seg button{border:0;background:none;padding:4px 11px;border-radius:7px;font-size:var(--fs-md);color:var(--text-2);white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.switch{display:inline-flex;align-items:center;gap:8px;color:var(--text-2);cursor:pointer;position:relative}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch .sw{width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.switch .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch input:checked + .sw{background:var(--accent)}
+.switch input:checked + .sw::after{transform:translateX(12px)}
+.switch input:focus-visible + .sw{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- host stage ---------- */
+.stage{background:var(--stage);border-radius:16px;padding:28px;position:relative}
+.panel{container:panel / inline-size;position:relative;width:100%;max-width:1180px;margin-inline:auto;height:min(860px,calc(100vh - 60px));min-height:600px;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;color:var(--text)}
+.stage.full .panel{height:auto}
+.stage.full .p-body{overflow:visible}
+.stage[data-w="tablet"] .panel{max-width:760px}
+.stage[data-w="phone"] .panel{max-width:390px;border-radius:20px}
+.toast{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-text);font-size:var(--fs-sm);
+  padding:8px 14px;border-radius:9px;box-shadow:var(--pop-shadow);z-index:60;max-width:calc(100% - 32px);text-align:center}
+.anno{display:none}
+.stage.annos .anno{display:grid;place-items:center;position:absolute;top:-9px;left:-9px;width:18px;height:18px;border-radius:50%;
+  background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;line-height:1;box-shadow:0 0 0 2px var(--panel);z-index:6;pointer-events:none;font-variant-numeric:tabular-nums}
+.stage.annos .anno.r{left:auto;right:-9px}
+.stage.annos .hstats>.anno{left:-24px;top:-1px}
+.stage.annos .mt-wrap>.anno{left:-22px;top:-1px}
+
+/* ---------- panel header (same as the shipped 0.5.0 header) ---------- */
+.p-head{display:flex;align-items:center;gap:16px;padding:12px 16px 12px 20px;border-bottom:1px solid var(--line);flex:none}
+.p-head h2{margin:0;font-size:var(--fs-lg);font-weight:650;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;color:var(--text-2);font-size:var(--fs-md);padding:6px 12px;border-radius:8px;white-space:nowrap}
+.tab:hover{color:var(--text);background:var(--hover)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--text);font-weight:600}
+.p-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.sync{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-sm);color:var(--text-3);padding:0 6px;white-space:nowrap}
+.sync .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.act-group{display:inline-flex;align-items:center;gap:2px;padding-left:6px;border-left:1px solid var(--line-soft)}
+.icon-btn{height:32px;min-width:32px;border-radius:8px;border:0;background:none;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:none;font-size:var(--fs-sm)}
+.icon-btn.lbl{padding:0 8px}
+.icon-btn:hover{background:var(--hover);color:var(--text)}
+
+/* ---------- body: the only scroll area ---------- */
+.p-body{flex:1;min-height:0;overflow:auto;padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
+
+/* ---------- toolbar (U2) ---------- */
+.tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:30px;position:relative}
+.pseg{display:inline-flex;background:var(--layer);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.pseg button{border:0;background:none;color:var(--text-2);font-size:var(--fs-md);padding:4px 11px;border-radius:6px;white-space:nowrap}
+.pseg button:hover{color:var(--text)}
+.pseg button[aria-pressed="true"]{background:var(--panel);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.range-label{font-size:var(--fs-md);color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ctl-k2{font-size:var(--fs-sm);color:var(--text-3);white-space:nowrap}
+.pgroup{display:inline-flex;align-items:center;gap:8px}
+.filter-wrap{margin-left:auto;position:relative}
+.tool-btn{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text-2);font-size:var(--fs-md);white-space:nowrap}
+.tool-btn:hover{color:var(--text);border-color:var(--text-3)}
+.badge{font-size:var(--fs-xs);background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:0 6px;font-weight:600}
+.pop{position:absolute;right:0;top:calc(100% + 6px);width:290px;max-width:calc(100cqw - 28px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--pop-shadow);padding:10px;z-index:30;display:flex;flex-direction:column;gap:6px}
+.pop-head{display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-sm);font-weight:600}
+.link-btn{border:0;background:none;color:var(--accent);font-size:var(--fs-sm);padding:0}
+.fitem{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;font-size:var(--fs-md);cursor:pointer}
+.fitem:hover{background:var(--hover)}
+.fitem.off .fname,.fitem.off .fval{color:var(--text-3)}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fval{font-size:var(--fs-sm);color:var(--text-2);font-variant-numeric:tabular-nums}
+.pop-note{margin:2px 0 0;font-size:var(--fs-xs);color:var(--text-3)}
+
+/* ---------- summary strip (U4: same frame as the overview KPIs) ---------- */
+.kpis{display:grid;grid-template-columns:1.45fr repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:14px;font-variant-numeric:tabular-nums;position:relative}
+.kpi{padding:10px 16px 11px;display:flex;flex-direction:column;gap:4px;min-width:0;position:relative}
+.kpi+.kpi{border-left:1px solid var(--line-soft)}
+.kpi.cost{background:var(--layer);border-radius:13px 0 0 13px}
+.kpi-k{font-size:var(--fs-sm);color:var(--text-2);display:flex;align-items:center;gap:4px;white-space:nowrap}
+.kpi-v{font-size:var(--fs-xl);font-weight:650;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi.cost .kpi-v{font-size:var(--fs-2xl);color:var(--cost)}
+.kpi-v.model{font-size:var(--fs-lg);line-height:24px;letter-spacing:0}
+.kpi-s{font-size:var(--fs-sm);color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.kpi-s .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.delta{background:var(--hover);color:var(--text-2);border-radius:6px;padding:1px 7px;font-size:var(--fs-xs);white-space:nowrap}
+.info{width:16px;height:16px;border-radius:50%;border:1px solid var(--line);display:inline-grid;place-items:center;font-size:var(--fs-xs);color:var(--text-3);line-height:1;cursor:help}
+.pending{border:1px dashed var(--warn-line);background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:0 7px;font-size:var(--fs-xs);line-height:18px;white-space:nowrap}
+.pending:hover{border-style:solid}
+.tokbar{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:2px;background:var(--line-soft);margin-top:2px}
+.tokbar i{flex-basis:0;min-width:2px}
+.c-cache{background:var(--c-cache)} .c-unc{background:var(--c-input)} .c-out{background:var(--c-output)}
+.tok-legend{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:var(--fs-xs);color:var(--text-3)}
+.tok-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.tok-legend i{width:7px;height:7px;border-radius:2px;display:inline-block}
+
+/* ---------- sections ---------- */
+.sec{border-top:1px solid var(--line-soft);padding-top:14px;margin-top:8px;position:relative;min-width:0}
+.sec-head{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;margin-bottom:12px}
+.sec-head h3{margin:0;font-size:var(--fs-lg);font-weight:650}
+.sec-note{font-size:var(--fs-sm);color:var(--text-3);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:var(--fs-xs);color:var(--text-3);margin-top:10px}
+.legend .grp{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.legend .hint{margin-left:auto}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
+.sw.dash{width:16px;height:0;border-top:1.5px dashed var(--text-3);border-radius:0}
+.sw.cost{background:var(--bar-cost)}
+.sw.part{background:var(--bar-cost);background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.4) 0 2px,transparent 2px 4px)}
+
+/* ---------- daily chart (U5) ---------- */
+.chart{display:grid;grid-template-columns:44px minmax(0,1fr);grid-template-rows:168px 18px;column-gap:8px}
+.yaxis{position:relative;font-size:var(--fs-xs);color:var(--text-3);font-variant-numeric:tabular-nums}
+.yaxis span{position:absolute;right:0;transform:translateY(50%);line-height:1;white-space:nowrap}
+.yaxis span.top{transform:translateY(40%)}
+.yaxis span.zero{transform:none;bottom:0 !important}
+.plot{position:relative;min-width:0}
+.gline{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--line);pointer-events:none}
+.gline.base{border-top-style:solid}
+.avg{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--text-3);pointer-events:none;z-index:2}
+.bars{position:absolute;inset:0;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));column-gap:2px}
+.bars.dense,.xaxis.dense{column-gap:1px}
+.col{display:flex;align-items:flex-end;justify-content:center;min-width:0}
+.bar{width:100%;max-width:40px;min-height:2px;border:0;padding:0;border-radius:2px 2px 0 0;background:var(--bar-cost);display:flex;flex-direction:column-reverse;overflow:hidden;position:relative;z-index:1}
+.bar.partial{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.35) 0 3px,transparent 3px 6px)}
+.bar.token{background:none}
+.bar.token i{display:block;flex-basis:0;min-height:0}
+.bar:hover,.bar:focus-visible{filter:brightness(1.12);outline:2px solid var(--text);outline-offset:1px;z-index:3}
+.bar[aria-disabled="true"]{cursor:default}
+.xaxis{grid-column:2;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));column-gap:2px;font-size:var(--fs-xs);color:var(--text-3);align-items:end;font-variant-numeric:tabular-nums;min-width:0}
+.xaxis span{grid-row:1;justify-self:center;white-space:nowrap;line-height:1}
+.xaxis span.start{justify-self:start}
+.xaxis span.end{justify-self:end}
+.xaxis span.today{color:var(--text);font-weight:600}
+
+/* ---------- heatmap (U7, U8) ---------- */
+.heat-body{display:grid;grid-template-columns:minmax(0,640px) minmax(180px,1fr);column-gap:28px;row-gap:14px;align-items:start}
+.hm{display:grid;grid-template-columns:2.4em repeat(26,minmax(0,1fr));gap:3px;font-size:var(--fs-xs);min-width:0}
+.hm .mon{grid-row:1;color:var(--text-3);white-space:nowrap;line-height:16px}
+.hm .dw{grid-column:1;color:var(--text-3);line-height:1;align-self:center;white-space:nowrap}
+.cell{aspect-ratio:1;border-radius:3px;position:relative;background:var(--cell);border:0;padding:0;display:block;min-width:0;width:100%}
+.cell::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--accent);opacity:0}
+.cell[data-level="1"]::after,.lg[data-level="1"]::after{opacity:.26}
+.cell[data-level="2"]::after,.lg[data-level="2"]::after{opacity:.48}
+.cell[data-level="3"]::after,.lg[data-level="3"]::after{opacity:.72}
+.cell[data-level="4"]::after,.lg[data-level="4"]::after{opacity:1}
+.cell.today::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1.5px var(--text);z-index:1}
+button.cell:hover,button.cell:focus-visible{outline:2px solid var(--text);outline-offset:1px;z-index:2}
+.lg{width:10px;height:10px;border-radius:2px;display:inline-block;position:relative;background:var(--cell)}
+.lg::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--accent);opacity:0}
+.hstats{margin:0;display:flex;flex-direction:column;gap:14px;position:relative;font-variant-numeric:tabular-nums}
+.hstat dt{font-size:var(--fs-sm);color:var(--text-2)}
+.hstat dd{margin:0;font-size:var(--fs-xl);font-weight:650;line-height:1.25}
+.hstat .sub{display:block;font-size:var(--fs-xs);color:var(--text-3);font-weight:400;line-height:1.5}
+
+/* ---------- models (U10, U11) ---------- */
+.models-body{display:grid;grid-template-columns:160px minmax(0,1fr);gap:24px;align-items:start}
+.ring-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:4px;position:relative}
+.ring{width:132px;height:132px;border-radius:50%;position:relative;flex:none}
+.ring .hole{position:absolute;inset:18px;border-radius:50%;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.25}
+.ring .hole b{font-size:var(--fs-lg);font-weight:650;font-variant-numeric:tabular-nums}
+.ring .hole span{font-size:var(--fs-xs);color:var(--text-3)}
+.ring-note{margin:0;font-size:var(--fs-xs);color:var(--text-3);text-align:center;display:inline-flex;align-items:center;gap:5px}
+.mt-wrap{min-width:0;position:relative}
+.sort-narrow{display:none;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--text-3);margin-bottom:6px}
+.sort-narrow select{height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:0 6px;font-size:var(--fs-sm)}
+table.mt{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--fs-md);font-variant-numeric:tabular-nums}
+.mt caption{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.mt th{font-size:var(--fs-xs);color:var(--text-3);font-weight:500;text-align:right;padding:0 8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.mt th.c-model{text-align:left;padding-left:4px}
+.mt td{padding:9px 8px;border-bottom:1px solid var(--line-soft);text-align:right;vertical-align:top;white-space:nowrap}
+.mt td.c-model{text-align:left;padding-left:4px;white-space:normal;max-width:0;width:100%}
+.mt tbody tr:hover td{background:var(--hover)}
+.mt .c-sessions{width:64px}.mt .c-tokens{width:128px}.mt .c-hit{width:72px}.mt .c-llm{width:76px}.mt .c-cost{width:116px}.mt .c-share{width:120px}
+.mt td.c-meta{display:none}
+.sort-btn{border:0;background:none;padding:0;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.sort-btn:hover{color:var(--text)}
+th[aria-sort] .sort-btn{color:var(--text);font-weight:600}
+.arr{font-size:var(--fs-xs);opacity:.8}
+.mname{display:flex;align-items:center;gap:7px;min-width:0}
+.mname span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.pdot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none;display:inline-block}
+.cell-sub{font-size:var(--fs-xs);color:var(--text-3);margin-top:2px;white-space:nowrap}
+.mname + .cell-sub{padding-left:16px;overflow:hidden;text-overflow:ellipsis}
+.cost-line{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end}
+.share{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.share-bar{width:64px;height:4px;border-radius:2px;background:var(--line-soft);overflow:hidden;display:block}
+.share-bar i{display:block;height:100%;background:var(--c);border-radius:2px}
+.share-pct{font-size:var(--fs-xs);color:var(--text-3);min-width:38px;text-align:right}
+.foot{margin:8px 0 0;font-size:var(--fs-xs);color:var(--text-3)}
+[data-color="0"]{--c:var(--p0)}[data-color="1"]{--c:var(--p1)}[data-color="2"]{--c:var(--p2)}[data-color="3"]{--c:var(--p3)}
+[data-color="4"]{--c:var(--p4)}[data-color="5"]{--c:var(--p5)}[data-color="6"]{--c:var(--p6)}[data-color="7"]{--c:var(--p7)}
+.is-other{--c:var(--text-3)}
+
+/* ---------- empty states (U13) ---------- */
+.tr-empty{border:1px dashed var(--line);border-radius:12px;padding:26px 16px;text-align:center;color:var(--text-2);display:flex;flex-direction:column;align-items:center;gap:10px}
+.tr-empty p{margin:0}
+.btn{height:30px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:var(--fs-md)}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* floating tooltip */
+.ftip{position:fixed;z-index:100;pointer-events:none;background:var(--tip-bg);color:var(--tip-text);font-size:var(--fs-xs);line-height:1.6;padding:7px 10px;border-radius:7px;box-shadow:var(--pop-shadow);max-width:260px;font-variant-numeric:tabular-nums}
+.ftip b{display:block;font-size:var(--fs-sm);margin-bottom:2px}
+.ftip .tr{display:flex;justify-content:space-between;gap:16px}
+.ftip .tr span:first-child{color:var(--tip-dim)}
+
+/* ---------- notes ---------- */
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 36px;padding-top:4px}
+.notes section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.notes h2{margin:0;font-size:var(--fs-lg);font-weight:650}
+.note-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.note-list li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:var(--fs-sm);color:var(--text-2);max-width:68ch}
+.note-list li b{color:var(--text);font-weight:600}
+.num{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:var(--fs-xs);font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.num.p{background:var(--line);color:var(--text-2)}
+.note-list code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-xs);background:var(--hover);padding:1px 5px;border-radius:4px;color:var(--text)}
+
+/* ---------- container queries: panel width, not viewport ---------- */
+@container panel (max-width: 860px){
+  .p-head{flex-wrap:wrap;row-gap:6px;padding:10px 12px 8px 16px}
+  .tabs{order:3;flex-basis:100%;margin-left:-4px}
+  .heat-body{grid-template-columns:minmax(0,640px)}
+  .hstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+  .hstat{padding:0 12px}
+  .hstat:first-child{padding-left:0}
+  .hstat+.hstat{border-left:1px solid var(--line-soft)}
+  .models-body{grid-template-columns:minmax(0,1fr);gap:14px}
+  .ring-wrap{flex-direction:row;justify-content:flex-start;gap:16px;padding-top:0}
+  .mt .c-llm{display:none}
+  .stage.annos .hstats>.anno,.stage.annos .mt-wrap>.anno{left:-9px;top:-17px}
+}
+@container panel (max-width: 640px){
+  .p-body{padding:12px 14px 16px}
+  .sync-label,.icon-btn.lbl span{display:none}
+  .icon-btn.lbl{padding:0}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi.cost{grid-column:1/-1;border-radius:13px 13px 0 0;border-bottom:1px solid var(--line-soft)}
+  .kpi+.kpi{border-left:0}
+  .kpi:nth-child(3),.kpi:nth-child(4){border-top:1px solid var(--line-soft)}
+  .kpi:nth-child(3){border-left:1px solid var(--line-soft)}
+  .kpi:nth-child(4){grid-column:1/-1}
+  .sec{margin-top:4px}
+  .chart{grid-template-rows:132px 18px;grid-template-columns:38px minmax(0,1fr);column-gap:6px}
+  .hm{gap:2px}
+  .hstat dd{font-size:var(--fs-lg)}
+  .cell,.lg{border-radius:2px}
+  .ring{width:112px;height:112px}
+  .ring .hole{inset:16px}
+  .ring-wrap{flex-direction:column;align-items:center}
+  .legend .hint{margin-left:0}
+  .sort-narrow{display:flex}
+  .mt thead{display:none}
+  .mt,.mt tbody{display:block}
+  .mt tr{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:4px;padding:9px 2px;border-bottom:1px solid var(--line-soft)}
+  .mt td{display:block;padding:0;border:0;width:auto !important}
+  .mt tbody tr:hover td{background:none}
+  .mt td.c-sessions,.mt td.c-tokens,.mt td.c-hit,.mt td.c-llm{display:none}
+  .mt td.c-model{grid-column:1;grid-row:1;max-width:none}
+  .mt td.c-model .cell-sub{display:none}
+  .mt td.c-cost{grid-column:2;grid-row:1}
+  .mt td.c-meta{display:block;grid-column:1;grid-row:2;text-align:left;font-size:var(--fs-xs);color:var(--text-3);white-space:normal;padding-left:16px}
+  .mt td.c-share{grid-column:2;grid-row:2;align-self:center}
+}
+@container panel (max-width: 420px){
+  .kpi{padding:10px 12px}
+  .kpi.cost .kpi-v{font-size:var(--fs-xl)}
+}
+@media (max-width: 760px){ .notes{grid-template-columns:1fr} }
+@media (max-width: 600px){ .stage{padding:10px;border-radius:12px} }
+@media (prefers-reduced-motion: reduce){ *{animation:none !important;transition:none !important} }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="intro">
+    <p class="eyebrow">DSH-STATS 0.5.x · 用量趋势 · 静态高保真原型</p>
+    <h1>用量趋势改版</h1>
+    <p class="lede">趋势页改成按范围看：近 7 / 30 / 90 天（默认 30 天、按费用），摘要条、每日柱图和模型区都跟随范围；热力图固定看近 26 周。页面和总览、时间线用同一套摘要条、表格和分区标题，受“筛选项目”影响。面板里的项目、模型和金额都是虚构示例，“今天”是 2026-10-20（周二）。可以直接操作：切换范围和指标；悬停或用键盘聚焦柱子、热力格看当天明细（柱区和热力图各占一个 Tab 停靠点，用方向键、Home、End 移动）；点柱子或格子模拟“跳到当天总览”；点模型表头排序；打开“筛选项目”隐藏项目。</p>
+    <div class="controls">
+      <div class="ctl"><span class="ctl-k">面板宽度</span><div class="seg" id="width-seg"><button type="button" data-v="desktop" aria-pressed="true">桌面 1180</button><button type="button" data-v="tablet" aria-pressed="false">平板 760</button><button type="button" data-v="phone" aria-pressed="false">手机 390</button></div></div>
+      <div class="ctl"><span class="ctl-k">示例</span><div class="seg" id="scene-seg"><button type="button" data-v="normal" aria-pressed="true">正常</button><button type="button" data-v="newbie" aria-pressed="false">新用户只有 7 天</button><button type="button" data-v="empty" aria-pressed="false">空范围</button><button type="button" data-v="partial" aria-pressed="false">部分待计价</button></div></div>
+      <div class="ctl"><span class="ctl-k">主题</span><div class="seg" id="theme-seg"><button type="button" data-v="auto" aria-pressed="true">跟随系统</button><button type="button" data-v="light" aria-pressed="false">浅色</button><button type="button" data-v="dark" aria-pressed="false">深色</button></div></div>
+      <label class="switch"><input type="checkbox" id="anno-toggle" checked><span class="sw" aria-hidden="true"></span>显示改动编号</label>
+    </div>
+  </header>
+
+  <div class="stage annos" id="stage" data-w="desktop">
+    <div class="panel" id="panel" role="dialog" aria-labelledby="dlg-title"></div>
+  </div>
+  <div class="notes">
+    <section aria-labelledby="n-prob">
+      <h2 id="n-prob">现在的问题</h2>
+      <ol class="note-list">
+        <li><span class="num p">a</span><span><b>同一屏的数字范围不同。</b>大卡和模型分布跟随总览留下的日期（某一天或全部），热力图、7 天柱图和指标卡又是全部历史，页面上没有标出来。</span></li>
+        <li><span class="num p">b</span><span><b>不受“筛选项目”影响。</b>总览里隐藏的项目在趋势页照样计入。</span></li>
+        <li><span class="num p">c</span><span><b>隐形的日期依赖。</b>“按日 / 全部”被藏起来，日期导航却还在，并且决定大卡显示哪一天。</span></li>
+        <li><span class="num p">d</span><span><b>只能看 Token，而且只有 7 天。</b>全页只有一格显示费用。</span></li>
+        <li><span class="num p">e</span><span><b>热力图只有当月。</b>月初只有几格；点格子只改隐形的日期，页面不动。</span></li>
+        <li><span class="num p">f</span><span><b>模型列表超过 3 行就变成内部滚动框；</b>占比只按 Token；颜色由一个随渲染顺序递增的计数器分配，同一个模型可能换颜色。</span></li>
+        <li><span class="num p">g</span><span><b>和另外三页不是一套外观：</b>渐变大卡、四张带说明的指标卡、带底色的分区卡片。</span></li>
+        <li><span class="num p">h</span><span><b>tooltip 只响应鼠标</b>，键盘用户看不到。</span></li>
+        <li><span class="num p">i</span><span><b>“当前连续”不连到今天：</b>一个月前断掉的连续天数也显示为“当前”。</span></li>
+        <li><span class="num p">j</span><span><b>深色主题下总览的 Token 构成条有两段同色</b>（缓存命中和未命中都是 <code>#4f8cff</code>）。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-chg">
+      <h2 id="n-chg">改动要点（对应面板里的编号）</h2>
+      <ol class="note-list">
+        <li><span class="num">1</span><span><b>工具栏：</b>范围 7 / 30 / 90 天和起止日期、指标“费用 / Token”、筛选项目。不再显示“按日 / 全部”和日期导航；范围和指标存在 <code>dsh-stats.trends</code>，筛选与总览、时间线共用。</span></li>
+        <li><span class="num">2</span><span><b>摘要条和总览同一套：</b>预估费用带“较前 30 天”涨跌和待计价，Token 构成条，日均费用（按活跃日）和活跃天数，最常用模型（按当前指标，副行写占比）。</span></li>
+        <li><span class="num">3</span><span><b>每日柱图：</b>费用或 Token（Token 模式三段堆叠），y 轴三条刻度，虚线是活跃日的日均；部分待计价的日子画斜纹。点柱子跳到那天的总览。</span></li>
+        <li><span class="num">4</span><span><b>热力图改为近 26 周</b>，固定窗口，跟随筛选和指标；颜色按活跃日的分位数分四级，今天描边；点格子跳到那天的总览。</span></li>
+        <li><span class="num">5</span><span><b>活跃与连续：</b>“当前连续”必须连到今天或昨天，副行写明截止到哪天；“最长连续”写出起止日期。</span></li>
+        <li><span class="num">6</span><span><b>模型环：</b>前 8 个模型各占一段，其余合成灰色“其他”；中心写合计。图例由下面的表格代替。</span></li>
+        <li><span class="num">7</span><span><b>模型表和项目表同一套：</b>会话、Token、缓存命中、LLM、预估费用、占比，表头可排序，默认按当前指标；没有内部滚动框。窄屏每个模型两行。</span></li>
+        <li><span class="num">8</span><span><b>颜色：</b>模型颜色按全部历史的用量固定，切换范围、指标、筛选都不变；Token 构成条的“缓存命中”改用新的 <code>--dss-chart-cache</code>，深色下三段终于能分清（总览一并修正）。</span></li>
+      </ol>
+    </section>
+    <section aria-labelledby="n-data">
+      <h2 id="n-data">数据从哪来（不改宿主接口）</h2>
+      <ul class="note-list">
+        <li><span class="num p">·</span><span>每日 Token 用现有的 <code>sessionDayTokens</code>，每日费用用时间线已经在用的 <code>dayCostSummaries</code>；摘要条的合计就是各天之和，和柱子对得上。</span></li>
+        <li><span class="num p">·</span><span>模型行用现有的 <code>modelAgg</code>，先用 <code>applyRange</code> 把会话裁到范围内。费用在计价层已经统一换算成人民币。</span></li>
+        <li><span class="num p">·</span><span>“今天”和所有日期都按北京时间算，和其他三页一致；趋势页不发起任何 RPC。</span></li>
+        <li><span class="num p">·</span><span>新的纯函数放在 <code>client-trends-model.cjs</code>，组件放在 <code>client-trends.cjs</code>；旧的 hero、指标卡、当月日历、7 天柱图和模型列表全部删除。</span></li>
+      </ul>
+    </section>
+    <section aria-labelledby="n-ask">
+      <h2 id="n-ask">已确定</h2>
+      <ol class="note-list">
+        <li><span class="num p">✓</span><span><b>默认按费用看</b>，可以切到 Token。</span></li>
+        <li><span class="num p">✓</span><span><b>范围 7 / 30 / 90 天</b>，默认 30 天，不做“全部”。</span></li>
+        <li><span class="num p">✓</span><span><b>趋势页受“筛选项目”影响</b>，和总览、时间线共用同一份隐藏设置。</span></li>
+        <li><span class="num p">✓</span><span><b>点某一天跳到那天的总览</b>，焦点落在“项目总览”标签上。</span></li>
+        <li><span class="num p">✓</span><span><b>部分待计价</b>的日子画斜纹，金额带“*”，摘要条和模型行有“待计价”入口（看“部分待计价”示例）。</span></li>
+      </ol>
+    </section>
+  </div>
+</main>
+<script>
+(function(){
+  "use strict";
+  var TODAY="2026-10-20";
+  var WD="日一二三四五六";
+  var I={
+    refresh:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>',
+    gear:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.4"/><circle cx="8" cy="8" r="1.7"/><path d="M13 8h1.6M11.5 11.5l1.1 1.1M8 13v1.6M4.5 11.5l-1.1 1.1M3 8H1.4M4.5 4.5 3.4 3.4M8 3V1.4M11.5 4.5l1.1-1.1"/></svg>',
+    close:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+    exp:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v7.5M5 7l3 3 3-3"/><path d="M3 11.5v1.5h10v-1.5"/></svg>',
+    filter:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11l-4.2 5v4l-2.6 1.2V8.5z"/></svg>'
+  };
+  var TABS=[["overview","项目总览"],["timeline","开发时间线"],["trends","用量趋势"],["balance","账户余额"]];
+
+  /* ---------- dates (all Beijing date keys; UTC math only) ---------- */
+  function addDays(d,n){return new Date(Date.parse(d+"T00:00:00Z")+n*864e5).toISOString().slice(0,10);}
+  function dow(d){return new Date(d+"T00:00:00Z").getUTCDay();}
+  function mondayOf(d){return addDays(d,-((dow(d)+6)%7));}
+  function dayLabel(d,full){return (full?d:d.slice(5))+" 周"+WD[dow(d)];}
+  function rangeDates(n){var a=[];for(var i=n-1;i>=0;i--)a.push(addDays(TODAY,-i));return a;}
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
+  /* ---------- formatting (same rules as the plugin helpers) ---------- */
+  function fmtTokens(n){
+    if(!isFinite(n))return "—";
+    var sc=function(v){return v>=100?String(Math.round(v)):String(Math.round(v*10)/10);};
+    if(n<1e3)return String(Math.round(n));if(n<1e6)return sc(n/1e3)+"K";return sc(n/1e6)+"M";
+  }
+  function money(v){if(v==null||!isFinite(v))return "—";if(v<=0)return "¥0";if(v>=1000)return "¥"+v.toFixed(0);if(v>=.01)return "¥"+v.toFixed(2);return "¥"+v.toFixed(4);}
+  function costText(c){if(c.priced===0&&c.unpriced>0)return "待计价";return money(c.priced)+(c.unpriced>0?"*":"");}
+  function pct1(p){if(!(p>0))return "0%";return p<.1?"<0.1%":p.toFixed(1)+"%";}
+  function trim(x,d){return String(+x.toFixed(d));}
+  function fmtAxisCost(v){if(v<=0)return "¥0";if(v<1)return "¥"+trim(v,2);if(v<100)return "¥"+trim(v,1);if(v<1000)return "¥"+Math.round(v);return "¥"+trim(v/1000,1)+"k";}
+  function niceMax(peak){
+    if(!(peak>0))return 1;
+    var e=Math.pow(10,Math.floor(Math.log10(peak))),f=peak/e,S=[1,1.2,1.5,2,2.5,3,4,5,6,8,10];
+    for(var i=0;i<S.length;i++)if(f<=S[i]+1e-9)return S[i]*e;return 10*e;
+  }
+  function dur(ms){if(!(ms>0))return "—";var s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h>0?h+"h"+m+"m":m+"m"+(s%60)+"s";}
+
+  /* ---------- fictional data ---------- */
+  // Models: price in ¥ per million tokens (uncached input / output); cached input is billed at 10% of input.
+  var MODELS=[
+    {name:"deepseek-v4-flash",prov:"deepseek",pin:1,pout:2,think:.1},
+    {name:"deepseek-v4-pro",prov:"deepseek",pin:3,pout:6,think:.35},
+    {name:"kimi-k2.7-code",prov:"moonshot",pin:4,pout:16,think:.3},
+    {name:"MiniMax-M3",prov:"minimax",pin:2.1,pout:8.4,think:0},
+    {name:"glm-5.1",prov:"zai",pin:3,pout:12,think:.2},
+    {name:"qwen3.5-coder",prov:"bailian",pin:2.5,pout:10,think:0},
+    {name:"doubao-seed-2",prov:"volcengine",pin:.8,pout:2,think:0},
+    {name:"gemini-3-flash",prov:"openrouter",pin:2.2,pout:9,think:0},
+    {name:"mistral-small-4",prov:"openrouter",pin:1,pout:3,think:0},
+    {name:"llama-4-scout",prov:"groq",pin:.6,pout:1.2,think:0},
+    {name:"local-coder",prov:"unknown",pin:null,pout:null,think:0}
+  ];
+  var PROJECTS=[
+    {id:"api-gateway",w:1,prob:.9,mix:[[1,.7],[0,.3]]},
+    {id:"web-console",w:.8,prob:.8,mix:[[0,.8],[6,.2]]},
+    {id:"docs-site",w:.45,prob:.4,mix:[[0,.6],[5,.4]]},
+    {id:"etl-jobs",w:.7,prob:.6,mix:[[1,.5],[4,.5]]},
+    {id:"ios-app",w:.6,prob:.55,mix:[[3,.7],[7,.3]]},
+    {id:"ops-scripts",w:.35,prob:.4,mix:[[2,.82],[8,.11],[9,.07]]}
+  ];
+  var OFF={};
+  ["2026-05-01","2026-05-02","2026-05-03","2026-05-04","2026-05-05","2026-06-19","2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05","2026-10-06","2026-10-07"].forEach(function(d){OFF[d]=1;});
+  function rng(seed){var s=seed>>>0;return function(){s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};}
+  function makeRow(date,p,m,t,cacheShare,sessions){
+    var M=MODELS[m],input=t*.945,output=t-input,cache=input*cacheShare,unc=input-cache;
+    var cost=M.pin==null?null:(unc*M.pin+cache*M.pin*.1+output*M.pout)/1e6;
+    return {date:date,p:p,m:m,t:t,input:input,output:output,cache:cache,reason:output*M.think,cost:cost,sessions:sessions,llm:t/1e6*9*60000};
+  }
+  function genBase(){
+    var r=rng(0x5eed2026),rows=[],start="2026-03-02";
+    var n=Math.round((Date.parse(TODAY)-Date.parse(start))/864e5);
+    var WF=[0,1,1.08,1.02,.96,.84,.45];
+    for(var i=0;i<=n;i++){
+      var d=addDays(start,i),w=dow(d),gate=r();
+      if(OFF[d]||w===0)continue;
+      if(w===6&&gate>.3)continue;
+      var base=(1.3+i*.012)*1e6*WF[w]*(d===TODAY?.4:1);
+      PROJECTS.forEach(function(P,pi){
+        var on=r(),amt=.5+r(),ses=1+Math.floor(r()*3);
+        var forced=d===TODAY&&pi===0;
+        if(on>P.prob&&!forced)return;
+        var t=base*P.w*amt;
+        P.mix.forEach(function(mx){rows.push(makeRow(d,pi,mx[0],t*mx[1]*(.8+.4*r()),.6+.2*r(),ses));});
+      });
+    }
+    return rows;
+  }
+  var BASE=genBase();
+  function sceneRows(scene){
+    if(scene==="newbie")return BASE.filter(function(r){return r.date>="2026-10-14";});
+    if(scene==="empty")return BASE.filter(function(r){return r.date<="2026-10-08";});
+    if(scene==="partial"){
+      // ops-scripts sends part of its traffic to a local model nobody has priced.
+      var out=[];
+      BASE.forEach(function(r){
+        if(r.p===5&&r.m===2&&r.date>="2026-09-01"){
+          var k=makeRow(r.date,r.p,2,r.t*.6,r.cache/r.input,r.sessions),u=makeRow(r.date,r.p,10,r.t*.4,r.cache/r.input,r.sessions);
+          out.push(k,u);
+        }else out.push(r);
+      });
+      return out;
+    }
+    return BASE;
+  }
+
+  /* ---------- state ---------- */
+  var q=new URLSearchParams(location.search);
+  var state={w:q.get("w")||"desktop",scene:q.get("scene")||"normal",theme:q.get("theme")||"auto",annos:q.get("anno")!=="0",
+    range:+(q.get("range")||30),metric:q.get("metric")||"cost",hidden:{},filterOpen:false,sort:null,barSel:null,cellSel:null};
+  if([7,30,90].indexOf(state.range)<0)state.range=30;
+  if(state.metric!=="token")state.metric="cost";
+  if(state.scene==="empty"&&!q.get("range"))state.range=7;
+  var ROWS=[],BYDATE={},COLORS={};
+  function loadScene(){
+    ROWS=sceneRows(state.scene);BYDATE={};
+    ROWS.forEach(function(r){(BYDATE[r.date]=BYDATE[r.date]||[]).push(r);});
+    // U9: colors follow full-history token rank, ignoring filter and range.
+    var tok={};ROWS.forEach(function(r){tok[r.m]=(tok[r.m]||0)+r.t;});
+    var order=Object.keys(tok).map(Number).sort(function(a,b){return tok[b]-tok[a]||a-b;});
+    COLORS={};order.forEach(function(m,i){if(i<8)COLORS[m]=i;});
+  }
+
+  /* ---------- aggregation ---------- */
+  function vis(r){return !state.hidden[PROJECTS[r.p].id];}
+  function point(d){
+    var p={date:d,tokens:0,input:0,output:0,cache:0,reason:0,cost:{priced:0,unpriced:0}};
+    (BYDATE[d]||[]).forEach(function(r){if(!vis(r))return;p.tokens+=r.t;p.input+=r.input;p.output+=r.output;p.cache+=r.cache;p.reason+=r.reason;
+      if(r.cost==null)p.cost.unpriced+=r.t;else p.cost.priced+=r.cost;});
+    p.active=p.tokens>0;p.partial=p.cost.unpriced>0;return p;
+  }
+  function mval(p){return state.metric==="cost"?p.cost.priced:p.tokens;}
+  function totals(points){
+    var s={tokens:0,input:0,output:0,cache:0,reason:0,cost:{priced:0,unpriced:0},active:0,days:points.length};
+    points.forEach(function(p){s.tokens+=p.tokens;s.input+=p.input;s.output+=p.output;s.cache+=p.cache;s.reason+=p.reason;s.cost.priced+=p.cost.priced;s.cost.unpriced+=p.cost.unpriced;if(p.active)s.active++;});
+    return s;
+  }
+  function modelRows(dates){
+    var set={},by={};dates.forEach(function(d){set[d]=1;});
+    ROWS.forEach(function(r){
+      if(!set[r.date]||!vis(r))return;
+      var x=by[r.m]||(by[r.m]={m:r.m,name:MODELS[r.m].name,prov:MODELS[r.m].prov,sessions:0,tokens:0,input:0,output:0,cache:0,llm:0,cost:{priced:0,unpriced:0}});
+      x.sessions+=r.sessions;x.tokens+=r.t;x.input+=r.input;x.output+=r.output;x.cache+=r.cache;x.llm+=r.llm;
+      if(r.cost==null)x.cost.unpriced+=r.t;else x.cost.priced+=r.cost;
+    });
+    return Object.keys(by).map(function(k){return by[k];});
+  }
+  function modelValue(x,metric){return metric==="cost"?x.cost.priced:x.tokens;}
+
+  /* ---------- annotations ---------- */
+  function anno(n,r){return '<span class="anno'+(r?" r":"")+'" aria-hidden="true">'+n+"</span>";}
+  function tipAttr(title,rows){return ' data-tip="'+esc(JSON.stringify([title,rows]))+'"';}
+
+  /* ---------- toolbar (U2) ---------- */
+  function rangeLabel(n){var a=addDays(TODAY,-(n-1));return (a.slice(0,4)===TODAY.slice(0,4)?a.slice(5)+" 至 "+TODAY.slice(5):a+" 至 "+TODAY);}
+  function tools(rangeProjects){
+    var hiddenCount=rangeProjects.filter(function(p){return state.hidden[p.id];}).length;
+    var html='<div class="tools">'+anno(1)+
+      '<div class="pseg" role="group" aria-label="范围">'+[7,30,90].map(function(n){return '<button type="button" data-act="range" data-v="'+n+'" data-k="range-'+n+'" aria-pressed="'+(state.range===n)+'">'+n+" 天</button>";}).join("")+"</div>"+
+      '<span class="range-label" aria-live="polite">'+rangeLabel(state.range)+"</span>"+
+      '<span class="pgroup"><span class="ctl-k2">指标</span><div class="pseg" role="group" aria-label="指标">'+
+        '<button type="button" data-act="metric" data-v="cost" data-k="metric-cost" aria-pressed="'+(state.metric==="cost")+'">费用</button>'+
+        '<button type="button" data-act="metric" data-v="token" data-k="metric-token" aria-pressed="'+(state.metric==="token")+'">Token</button></div></span>'+
+      '<div class="filter-wrap"><button type="button" class="tool-btn" data-act="filter" data-k="filter" aria-haspopup="dialog" aria-expanded="'+state.filterOpen+'">'+I.filter+"<span>筛选项目</span>"+(hiddenCount?'<span class="badge">已隐藏 '+hiddenCount+"</span>":"")+"</button>"+
+      (state.filterOpen?filterPop(rangeProjects):"")+"</div></div>";
+    return html;
+  }
+  function filterPop(list){
+    return '<div class="pop" role="dialog" aria-label="筛选项目"><div class="pop-head"><span>筛选项目</span><button type="button" class="link-btn" data-act="show-all" data-k="show-all">全部显示</button></div>'+
+      list.map(function(p){var off=!!state.hidden[p.id];
+        return '<label class="fitem'+(off?" off":"")+'"><input type="checkbox" data-act="toggle" data-v="'+p.id+'" data-k="tog-'+p.id+'"'+(off?"":" checked")+'><i class="pdot" data-color="'+p.color+'"></i><span class="fname">'+esc(p.id)+'</span><span class="fval">'+costText(p.cost)+"</span></label>";}).join("")+
+      '<p class="pop-note">隐藏的项目不计入指标和表格，总览和时间线同样生效。</p></div>';
+  }
+  function rangeProjectList(dates){
+    var set={};dates.forEach(function(d){set[d]=1;});
+    var by={};
+    ROWS.forEach(function(r){if(!set[r.date])return;var id=PROJECTS[r.p].id;var x=by[id]||(by[id]={id:id,color:[0,1,2,3,4,5][r.p],cost:{priced:0,unpriced:0}});if(r.cost==null)x.cost.unpriced+=r.t;else x.cost.priced+=r.cost;});
+    return PROJECTS.filter(function(p){return by[p.id];}).map(function(p){return by[p.id];});
+  }
+
+  /* ---------- summary strip (U4) ---------- */
+  function kpis(T,P,models){
+    var sub=[];
+    if(P.cost.priced>0&&T.cost.unpriced===0&&P.cost.unpriced===0){
+      var pc=Math.round((T.cost.priced-P.cost.priced)/P.cost.priced*100);
+      sub.push('<span class="delta">'+(pc===0?"持平":"较前 "+state.range+" 天 "+(pc>0?"↑":"↓")+Math.abs(pc)+"%")+"</span>");
+    }
+    if(T.cost.unpriced>0)sub.push('<button type="button" class="pending" data-act="pending" data-k="kpi-pending">另有 '+fmtTokens(T.cost.unpriced)+" Token 待计价</button>");
+    var hit=T.input>0?Math.round(T.cache/T.input*100):null,unc=Math.max(0,T.input-T.cache);
+    var perDay=T.active>0&&T.cost.priced>0?money(T.cost.priced/T.active)+(T.cost.unpriced>0?"*":""):"—";
+    var metric=state.metric==="cost"&&T.cost.priced<=0?"token":state.metric;
+    var top=models.slice().sort(function(a,b){return modelValue(b,metric)-modelValue(a,metric)||b.tokens-a.tokens||(a.name<b.name?-1:1);})[0];
+    var sum=models.reduce(function(s,x){return s+modelValue(x,metric);},0);
+    var topShare=top&&sum>0?modelValue(top,metric)/sum*100:0;
+    return '<section class="kpis" aria-label="趋势摘要">'+
+      '<div class="kpi cost"><div class="kpi-k">预估费用 <span class="info" tabindex="0" data-tip="'+esc(JSON.stringify(["预估费用",[["","按公开模型价格与固定汇率换算，仅供估算，不等同 Provider 账单"]]]))+'" aria-label="费用说明">i</span></div>'+
+        '<div class="kpi-v">'+costText(T.cost)+"</div>"+(sub.length?'<div class="kpi-s">'+sub.join("")+"</div>":"")+"</div>"+
+      '<div class="kpi">'+anno(8)+'<div class="kpi-k">Token</div><div class="kpi-v">'+fmtTokens(T.tokens)+"</div>"+
+        '<div class="tokbar" role="img" aria-label="缓存命中输入 '+fmtTokens(T.cache)+"，未命中输入 "+fmtTokens(unc)+"，输出 "+fmtTokens(T.output)+'"><i class="c-cache" style="flex-grow:'+T.cache+'"></i><i class="c-unc" style="flex-grow:'+unc+'"></i><i class="c-out" style="flex-grow:'+T.output+'"></i></div>'+
+        '<div class="tok-legend"><span><i class="c-cache"></i>命中 '+(hit==null?"—":hit+"%")+'</span><span><i class="c-unc"></i>未命中</span><span><i class="c-out"></i>输出 '+fmtTokens(T.output)+"</span></div></div>"+
+      '<div class="kpi"><div class="kpi-k">日均费用</div><div class="kpi-v">'+perDay+'</div><div class="kpi-s">活跃 '+T.active+" / "+T.days+" 天</div></div>"+
+      '<div class="kpi"><div class="kpi-k">最常用模型</div><div class="kpi-v model" title="'+esc(top?top.prov+" · "+top.name:"")+'">'+(top?esc(top.name):"—")+"</div>"+
+        (top?'<div class="kpi-s"><span class="ell">'+(metric==="cost"?"费用占比 ":"Token 占比 ")+esc(pct1(topShare))+(top.prov!=="unknown"?" · "+esc(top.prov):"")+"</span></div>":"")+"</div>"+
+      anno(2)+"</section>";
+  }
+
+  /* ---------- daily chart (U5) ---------- */
+  function xLabels(dates){
+    var n=dates.length,gap=Math.ceil(n/12),out=[];
+    dates.forEach(function(d,i){
+      if(i===n-1){out.push({i:i,text:"今天",today:true});return;}
+      if(n-1-i<gap)return;
+      if(n===7)out.push({i:i,text:d.slice(5)});
+      else if(n===30){if(dow(d)===1)out.push({i:i,text:d.slice(5)});}
+      else if(d.slice(8)==="01")out.push({i:i,text:(+d.slice(5,7))+"月"});
+    });
+    return out;
+  }
+  function barTip(p){
+    var hit=p.input>0?Math.round(p.cache/p.input*100)+"%":"—";
+    var rows=[["预估费用",costText(p.cost)],["Token",fmtTokens(p.tokens)],["输入",fmtTokens(p.input)],["输出",fmtTokens(p.output)]];
+    if(p.reason>0)rows.push(["思考",fmtTokens(p.reason)]);
+    rows.push(["缓存命中",hit]);
+    if(p.partial)rows.push(["部分待计价",fmtTokens(p.cost.unpriced)+" Token"]);
+    return rows;
+  }
+  function daily(points,T){
+    var n=points.length,tokenMode=state.metric==="token";
+    var peakP=null;points.forEach(function(p){if(p.active&&(!peakP||mval(p)>=mval(peakP)))peakP=p;});
+    var peak=peakP?mval(peakP):0,top=niceMax(peak);
+    var fmtY=tokenMode?fmtTokens:fmtAxisCost;
+    var total=tokenMode?T.tokens:T.cost.priced;
+    var avg=T.active>0?total/T.active:0;
+    var fmtV=function(v){return tokenMode?fmtTokens(v):money(v)+(T.cost.unpriced>0?"*":"");};
+    var note="近 "+n+" 天"+(peakP?" · 峰值 "+peakP.date.slice(5)+" "+(tokenMode?fmtTokens(peak):costText(peakP.cost))+" · 日均 "+fmtV(avg):"");
+    var actives=points.filter(function(p){return p.active;}).map(function(p){return p.date;});
+    var sel=state.barSel&&actives.indexOf(state.barSel)>=0?state.barSel:(peakP?peakP.date:null);
+    var anyPartial=false;
+    var cols=points.map(function(p){
+      if(!p.active)return '<div class="col"></div>';
+      var v=mval(p),h=Math.max(0,v/top*100),part=!tokenMode&&p.partial;if(part)anyPartial=true;
+      var segs="";
+      if(tokenMode){var unc=Math.max(0,p.input-p.cache);segs='<i class="c-cache" style="flex-grow:'+p.cache+'"></i><i class="c-unc" style="flex-grow:'+unc+'"></i><i class="c-out" style="flex-grow:'+p.output+'"></i>';}
+      var label=dayLabel(p.date)+" "+(tokenMode?fmtTokens(p.tokens):costText(p.cost))+"，打开当天总览";
+      return '<div class="col"><button type="button" class="bar'+(tokenMode?" token":"")+(part?" partial":"")+'" data-act="day" data-date="'+p.date+'" data-k="bar-'+p.date+'" tabindex="'+(p.date===sel?0:-1)+'" style="height:'+h.toFixed(2)+'%" aria-label="'+esc(label)+'"'+tipAttr(dayLabel(p.date),barTip(p))+">"+segs+"</button></div>";
+    }).join("");
+    var labels=xLabels(points.map(function(p){return p.date;})).map(function(l){
+      return '<span class="'+(l.today?"today end":l.i===0?"start":"")+'" style="grid-column:'+(l.i+1)+'">'+l.text+"</span>";}).join("");
+    var dense=n>=90?" dense":"";
+    var legend=tokenMode
+      ?'<span class="grp"><i class="sw c-cache"></i>缓存命中</span><span class="grp"><i class="sw c-unc"></i>未命中</span><span class="grp"><i class="sw c-out"></i>输出</span>'
+      :'<span class="grp"><i class="sw cost"></i>当天费用</span><span class="grp"><i class="sw dash"></i>虚线 = 活跃日的日均</span>'+(anyPartial?'<span class="grp"><i class="sw part"></i>部分待计价</span>':"");
+    return '<section class="sec">'+anno(3)+'<div class="sec-head"><h3>'+(tokenMode?"每日 Token":"每日费用")+'</h3><span class="sec-note">'+note+"</span></div>"+
+      '<div class="chart"><div class="yaxis" aria-hidden="true"><span class="top" style="bottom:100%">'+fmtY(top)+'</span><span style="bottom:50%">'+fmtY(top/2)+'</span><span class="zero">'+fmtY(0)+"</span></div>"+
+      '<div class="plot"><i class="gline" style="bottom:100%"></i><i class="gline" style="bottom:50%"></i><i class="gline base" style="bottom:0"></i>'+
+      (T.active>=2?'<div class="avg" aria-hidden="true" style="bottom:'+(avg/top*100).toFixed(2)+'%"></div>':"")+
+      '<div class="bars'+dense+'" role="group" aria-label="'+(tokenMode?"每日 Token":"每日费用")+"，近 "+n+' 天" style="--n:'+n+'">'+cols+"</div></div>"+
+      '<div class="xaxis'+dense+'" aria-hidden="true" style="--n:'+n+'">'+labels+"</div></div>"+
+      '<div class="legend">'+legend+'<span class="grp hint">点柱子查看当天总览</span></div></section>';
+  }
+
+  /* ---------- heatmap (U7, U8) ---------- */
+  function heat(){
+    var start=addDays(mondayOf(TODAY),-175),days=[];
+    for(var d=start;d<=TODAY;d=addDays(d,1))days.push(point(d));
+    var vals=days.filter(function(p){return p.active;}).map(mval).sort(function(a,b){return a-b;});
+    var nv=vals.length,max=nv?vals[nv-1]:0;
+    var qf=function(f){return vals[Math.min(nv-1,Math.floor(f*nv))];};
+    var q1=nv?qf(.25):0,q2=nv?qf(.5):0,q3=nv?qf(.75):0,useQ=nv>=4&&q3>q1;
+    function level(p){if(!p.active)return 0;var v=mval(p);if(v<=0)return 1;if(useQ)return v>q3?4:v>q2?3:v>q1?2:1;return Math.max(1,Math.ceil(4*v/max));}
+    var actives=days.filter(function(p){return p.active;}).map(function(p){return p.date;});
+    var defSel=actives.length?(actives.indexOf(TODAY)>=0?TODAY:actives[actives.length-1]):null;
+    var sel=state.cellSel&&actives.indexOf(state.cellSel)>=0?state.cellSel:defSel;
+    // month labels: column containing day 1; first column only when the next label is >=3 columns away; none in the last two columns.
+    var marks=[];
+    for(var c=0;c<26;c++){for(var k=0;k<7;k++){var dd=addDays(start,c*7+k);if(dd.slice(8)==="01"&&dd<=addDays(TODAY,6)){marks.push({c:c,m:+dd.slice(5,7)});break;}}}
+    if(!marks.length||marks[0].c>=3)marks.unshift({c:0,m:+start.slice(5,7)});
+    marks=marks.filter(function(x){return x.c<24;});
+    var html=marks.map(function(x){return '<span class="mon" style="grid-column:'+(x.c+2)+' / span 3">'+x.m+"月</span>";}).join("");
+    ["一","","三","","五","",""].forEach(function(l,i){html+='<span class="dw" style="grid-row:'+(i+2)+'">'+l+"</span>";});
+    days.forEach(function(p,i){
+      var col=Math.floor(i/7)+2,row=i%7+2,lv=level(p),today=p.date===TODAY?" today":"";
+      if(!p.active){html+='<i class="cell'+today+'" data-level="0" aria-hidden="true" style="grid-column:'+col+";grid-row:"+row+'"></i>';return;}
+      var label=dayLabel(p.date,true)+" "+(state.metric==="cost"?costText(p.cost):fmtTokens(p.tokens))+"，打开当天总览";
+      var rows=[["预估费用",costText(p.cost)],["Token",fmtTokens(p.tokens)],["缓存命中",p.input>0?Math.round(p.cache/p.input*100)+"%":"—"]];
+      if(p.partial)rows.push(["部分待计价",fmtTokens(p.cost.unpriced)+" Token"]);
+      html+='<button type="button" class="cell'+today+'" data-act="heat-day" data-date="'+p.date+'" data-k="cell-'+p.date+'" data-level="'+lv+'" tabindex="'+(p.date===sel?0:-1)+'" style="grid-column:'+col+";grid-row:"+row+'" aria-label="'+esc(label)+'"'+tipAttr(dayLabel(p.date,true),rows)+"></button>";
+    });
+    // streaks
+    var act={};actives.forEach(function(d){act[d]=1;});
+    var cur=0,end=null,cursor=act[TODAY]?TODAY:act[addDays(TODAY,-1)]?addDays(TODAY,-1):null;
+    if(cursor){end=cursor===TODAY?"截至今天":"截至昨天";while(act[cursor]&&cursor>=start){cur++;cursor=addDays(cursor,-1);}}
+    var best=0,bs=null,be=null,run=0,rs=null;
+    days.forEach(function(p){if(p.active){if(!run)rs=p.date;run++;if(run>=best){best=run;bs=rs;be=p.date;}}else run=0;});
+    var stats='<dl class="hstats">'+
+      '<div class="hstat"><dt>活跃天数</dt><dd>'+actives.length+" / "+days.length+' 天<span class="sub">近 26 周</span></dd></div>'+
+      '<div class="hstat"><dt>当前连续</dt><dd>'+cur+" 天"+(end?'<span class="sub">'+end+"</span>":"")+"</dd></div>"+
+      '<div class="hstat"><dt>最长连续</dt><dd>'+best+" 天"+(best?'<span class="sub">'+bs.slice(5)+" 至 "+be.slice(5)+"</span>":"")+"</dd></div>"+anno(5)+"</dl>";
+    return '<section class="sec">'+anno(4)+'<div class="sec-head"><h3>活动热力图</h3><span class="sec-note">近 26 周 · '+(state.metric==="cost"?"按费用":"按 Token")+"</span></div>"+
+      '<div class="heat-body"><div class="hm" role="group" aria-label="活动热力图，近 26 周">'+html+"</div>"+stats+"</div>"+
+      '<div class="legend"><span class="grp">少 <i class="lg" data-level="0"></i><i class="lg" data-level="1"></i><i class="lg" data-level="2"></i><i class="lg" data-level="3"></i><i class="lg" data-level="4"></i> 多</span>'+
+      '<span class="grp">每格 = 1 天，颜色按活跃日的分位数分级</span><span class="grp hint">点格子查看当天总览</span></div></section>';
+  }
+
+  /* ---------- models (U9–U11) ---------- */
+  var SORT_KEYS=[["name","模型"],["sessions","会话"],["tokens","Token"],["hit","缓存命中"],["llm","LLM"],["cost","预估费用"]];
+  function sortVal(x,key){
+    if(key==="name")return x.name.toLowerCase();if(key==="sessions")return x.sessions;if(key==="tokens")return x.tokens;
+    if(key==="hit")return x.input>0?x.cache/x.input:-1;if(key==="llm")return x.llm;return x.cost.priced;
+  }
+  function models(rows,dates){
+    var metric=state.metric,tokenMode=metric==="token";
+    var sort=state.sort||{key:tokenMode?"tokens":"cost",dir:-1};
+    var sum=rows.reduce(function(s,x){return s+modelValue(x,metric);},0);
+    rows.forEach(function(x){x.share=sum>0?modelValue(x,metric)/sum:0;x.color=COLORS.hasOwnProperty(x.m)?COLORS[x.m]:null;});
+    var sorted=rows.slice().sort(function(a,b){
+      var va=sortVal(a,sort.key),vb=sortVal(b,sort.key);
+      if(va<vb)return -sort.dir;if(va>vb)return sort.dir;return b.tokens-a.tokens||(a.name<b.name?-1:1);
+    });
+    // ring: colored models by share, "other" merged last
+    var colored=rows.filter(function(x){return x.color!=null;}).sort(function(a,b){return b.share-a.share;});
+    var others=rows.filter(function(x){return x.color==null;});
+    var stops=[],at=0,parts=[];
+    colored.forEach(function(x){var to=at+x.share*360;stops.push("var(--p"+x.color+") "+at.toFixed(1)+"deg "+to.toFixed(1)+"deg");parts.push(x.name+" "+pct1(x.share*100));at=to;});
+    var otherShare=others.reduce(function(s,x){return s+x.share;},0);
+    if(otherShare>0){stops.push("var(--text-3) "+at.toFixed(1)+"deg 360deg");parts.push("其他 "+pct1(otherShare*100));}
+    var bg=sum>0?"conic-gradient("+stops.join(",")+")":"var(--track)";
+    var anyUnpriced=rows.some(function(x){return x.cost.unpriced>0;});
+    var center=sum>0?(tokenMode?fmtTokens(sum):money(sum)+(anyUnpriced?"*":"")):"—";
+    var ring='<div class="ring-wrap">'+anno(6)+'<div class="ring" role="img" aria-label="'+esc("模型"+(tokenMode?"Token":"费用")+"占比："+parts.join("，"))+'" style="background:'+bg+'"><div class="hole"><b>'+center+"</b><span>近 "+state.range+" 天</span></div></div>"+
+      (others.length?'<p class="ring-note"><i class="pdot is-other"></i>灰色 = 其他 '+others.length+" 个模型</p>":"")+"</div>";
+    var th=function(key,label,cls){
+      var on=sort.key===key;
+      return '<th class="'+cls+'"'+(on?' aria-sort="'+(sort.dir>0?"ascending":"descending")+'"':"")+'><button type="button" class="sort-btn" data-act="sort" data-v="'+key+'" data-k="sort-'+key+'">'+label+(on?'<span class="arr" aria-hidden="true">'+(sort.dir>0?"↑":"↓")+"</span>":"")+"</button></th>";
+    };
+    var body=sorted.map(function(x){
+      var dot=x.color==null?'<i class="pdot is-other"></i>':'<i class="pdot" data-color="'+x.color+'"></i>';
+      var hit=x.input>0?Math.round(x.cache/x.input*100)+"%":"—";
+      var prov=x.prov==="unknown"?"未知 Provider":x.prov;
+      var pend=x.cost.unpriced>0?'<button type="button" class="pending" data-act="pending" data-k="pend-'+x.m+'">待计价</button>':"";
+      var costCell=(x.cost.priced>0?money(x.cost.priced)+(x.cost.unpriced>0?"*":""):(x.cost.unpriced>0?"":"¥0"));
+      var share='<div class="share"><span class="share-bar"><i'+(x.color==null?' class="is-other"':' data-color="'+x.color+'"')+' style="width:'+Math.max(2,x.share*100).toFixed(1)+'%"></i></span><span class="share-pct">'+esc(pct1(x.share*100))+"</span></div>";
+      return '<tr data-model-key="'+esc(x.prov+"|"+x.name+"|api")+'">'+
+        '<td class="c-model"><div class="mname">'+dot+'<span title="'+esc(x.prov+" · "+x.name)+'">'+esc(x.name)+'</span></div><div class="cell-sub">'+esc(prov)+"</div></td>"+
+        '<td class="c-meta">'+esc(prov)+" · 会话 "+x.sessions+" · "+fmtTokens(x.tokens)+" · 命中 "+hit+"</td>"+
+        '<td class="c-sessions">'+x.sessions+"</td>"+
+        '<td class="c-tokens">'+fmtTokens(x.tokens)+'<div class="cell-sub">输入 '+fmtTokens(x.input)+" · 输出 "+fmtTokens(x.output)+"</div></td>"+
+        '<td class="c-hit">'+hit+"</td>"+
+        '<td class="c-llm">'+dur(x.llm)+"</td>"+
+        '<td class="c-cost"><span class="cost-line">'+pend+costCell+"</span></td>"+
+        '<td class="c-share">'+share+"</td></tr>";
+    }).join("");
+    var narrow='<label class="sort-narrow">排序<select data-act="sort-narrow" data-k="sort-narrow">'+SORT_KEYS.filter(function(k){return k[0]!=="llm";}).map(function(k){return '<option value="'+k[0]+'"'+(sort.key===k[0]?" selected":"")+">"+k[1]+"</option>";}).join("")+"</select></label>";
+    var table='<div class="mt-wrap">'+anno(7)+narrow+'<table class="mt"><caption>模型明细，近 '+state.range+" 天</caption><thead><tr>"+
+      th("name","模型","c-model")+th("sessions","会话","c-sessions")+th("tokens","Token","c-tokens")+th("hit","缓存命中","c-hit")+th("llm","LLM","c-llm")+th("cost","预估费用","c-cost")+
+      '<th class="c-share">占比</th></tr></thead><tbody>'+body+"</tbody></table>"+
+      '<p class="foot">LLM 时长按 Token 占比从会话分摊，是近似值。</p></div>';
+    return '<section class="sec"><div class="sec-head"><h3>模型</h3><span class="sec-note">近 '+state.range+" 天 · "+rows.length+" 个模型 · "+(tokenMode?"按 Token 占比":"按费用占比")+"</span></div>"+
+      '<div class="models-body">'+ring+table+"</div></section>";
+  }
+
+  /* ---------- page ---------- */
+  function head(){
+    return '<header class="p-head"><h2 id="dlg-title">DSH 用量</h2>'+
+      '<div class="tabs" role="tablist" aria-label="DSH 用量">'+TABS.map(function(t){var on=t[0]==="trends";
+        return '<button type="button" class="tab" role="tab" id="tab-'+t[0]+'" aria-selected="'+on+'" tabindex="'+(on?0:-1)+'" data-act="tab" data-v="'+t[0]+'" data-k="tab-'+t[0]+'">'+t[1]+"</button>";}).join("")+"</div>"+
+      '<div class="p-actions"><span class="sync" role="status"><i class="dot" aria-hidden="true"></i><span class="sync-label">已同步 · 10:00</span></span>'+
+      '<span class="act-group"><button type="button" class="icon-btn" data-act="chrome" data-k="refresh" aria-label="刷新" title="刷新">'+I.refresh+"</button>"+
+      '<button type="button" class="icon-btn lbl" data-act="export" data-k="export" aria-label="导出">'+I.exp+"<span>导出</span></button>"+
+      '<button type="button" class="icon-btn" data-act="chrome" data-k="gear" aria-label="价格设置" title="价格设置">'+I.gear+"</button></span>"+
+      '<button type="button" class="icon-btn" data-act="chrome" data-k="close" aria-label="关闭" title="关闭（Esc）">'+I.close+"</button></div></header>";
+  }
+  function bodyHtml(){
+    if(!ROWS.length)return '<p class="empty">暂无数据</p>';
+    var dates=rangeDates(state.range);
+    var rp=rangeProjectList(dates);
+    var top=tools(rp);
+    var visibleInRange=rp.filter(function(p){return !state.hidden[p.id];});
+    if(rp.length&&!visibleInRange.length){
+      return top+'<div class="tr-empty" role="status"><p>所有项目都已隐藏</p><button type="button" class="btn" data-act="show-all" data-k="empty-show-all">全部显示</button></div>';
+    }
+    var points=dates.map(point),T=totals(points);
+    if(!T.active){
+      var next=[30,90].filter(function(n){return n>state.range&&totals(rangeDates(n).map(point)).active>0;})[0];
+      return top+'<div class="tr-empty" role="status"><p>近 '+state.range+" 天没有 Token 消耗</p>"+(next?'<button type="button" class="btn" data-act="range" data-v="'+next+'" data-k="empty-range">看近 '+next+" 天</button>":"")+"</div>"+heat();
+    }
+    var prev=totals((function(){var a=[];for(var i=2*state.range-1;i>=state.range;i--)a.push(point(addDays(TODAY,-i)));return a;})());
+    var mrows=modelRows(dates);
+    return top+kpis(T,prev,mrows)+daily(points,T)+heat()+models(mrows,dates);
+  }
+  var panelEl=document.getElementById("panel"),stage=document.getElementById("stage");
+  function render(focusKey){
+    var body=document.getElementById("body"),scroll=body?body.scrollTop:0;
+    var ae=document.activeElement,key=focusKey||(ae&&panelEl.contains(ae)&&ae.getAttribute("data-k"));
+    panelEl.innerHTML=head()+'<div class="p-body" id="body" role="tabpanel" aria-labelledby="tab-trends">'+bodyHtml()+"</div>";
+    body=document.getElementById("body");body.scrollTop=scroll;
+    hideTip();
+    if(key){var el=panelEl.querySelector('[data-k="'+key+'"]');if(el)el.focus();}
+  }
+  var toastTimer=null;
+  function toast(msg){
+    var t=stage.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");stage.appendChild(t);}
+    t.textContent=msg;clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.remove();},2600);
+  }
+
+  /* ---------- tooltip (mouse and focus, like tipProps) ---------- */
+  var tip=document.createElement("div");tip.className="ftip";tip.hidden=true;document.body.appendChild(tip);
+  function showTip(el,x,y){
+    var data=JSON.parse(el.getAttribute("data-tip"));
+    tip.innerHTML="<b>"+esc(data[0])+"</b>"+data[1].map(function(r){return r[0]?'<div class="tr"><span>'+esc(r[0])+"</span><span>"+esc(r[1])+"</span></div>":"<div>"+esc(r[1])+"</div>";}).join("");
+    tip.hidden=false;
+    var r=tip.getBoundingClientRect(),left=x+14,top=y+14;
+    if(left+r.width>innerWidth-8)left=x-r.width-14;
+    if(top+r.height>innerHeight-8)top=y-r.height-14;
+    tip.style.left=Math.max(8,left)+"px";tip.style.top=Math.max(8,top)+"px";
+  }
+  function hideTip(){tip.hidden=true;}
+  panelEl.addEventListener("mousemove",function(e){var el=e.target.closest("[data-tip]");if(el&&panelEl.contains(el))showTip(el,e.clientX,e.clientY);else hideTip();});
+  panelEl.addEventListener("mouseleave",hideTip);
+  panelEl.addEventListener("focusin",function(e){var el=e.target.closest("[data-tip]");if(el){var r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom);}});
+  panelEl.addEventListener("focusout",hideTip);
+
+  /* ---------- interactions ---------- */
+  function jump(date){toast("跳到 "+date+" 的项目总览，焦点落在“项目总览”标签上（原型停留在本页）");}
+  panelEl.addEventListener("click",function(e){
+    var t=e.target.closest("[data-act]");
+    if(state.filterOpen&&!e.target.closest(".pop")&&!(t&&t.getAttribute("data-act")==="filter")){state.filterOpen=false;render();}
+    if(!t)return;
+    var act=t.getAttribute("data-act"),v=t.getAttribute("data-v");
+    if(act==="range"){state.range=+v;state.barSel=null;render(t.getAttribute("data-k")==="empty-range"?"range-"+v:null);return;}
+    if(act==="metric"){if(state.metric!==v){state.metric=v;state.sort=null;}render();return;}
+    if(act==="filter"){state.filterOpen=!state.filterOpen;render("filter");return;}
+    if(act==="show-all"){state.hidden={};render(t.getAttribute("data-k")==="show-all"?"show-all":"filter");return;}
+    if(act==="sort"){
+      var cur=state.sort||{key:state.metric==="token"?"tokens":"cost",dir:-1};
+      state.sort=cur.key===v?{key:v,dir:-cur.dir}:{key:v,dir:v==="name"?1:-1};render();return;
+    }
+    if(act==="day"||act==="heat-day"){if(act==="day")state.barSel=t.getAttribute("data-date");else state.cellSel=t.getAttribute("data-date");jump(t.getAttribute("data-date"));return;}
+    if(act==="pending"){toast("打开价格设置，定位到"+(state.scene==="partial"?" local-coder":"待计价模型"));return;}
+    if(act==="tab"){if(v!=="trends")toast("原型只做了用量趋势页");return;}
+    if(act==="export"){toast("导出近 "+state.range+" 天的会话（CSV / JSON），不看隐藏");return;}
+    if(act==="chrome"){toast("头部按钮沿用 0.5.0 已上线的行为，原型里不做交互");}
+  });
+  panelEl.addEventListener("change",function(e){
+    var t=e.target;
+    if(t.getAttribute("data-act")==="toggle"){var id=t.getAttribute("data-v");if(state.hidden[id])delete state.hidden[id];else state.hidden[id]=true;render("tog-"+id);return;}
+    if(t.getAttribute("data-act")==="sort-narrow"){var k=t.value;state.sort={key:k,dir:k==="name"?1:-1};render("sort-narrow");}
+  });
+  // Roving tabindex: one stop for the bars and one for the heatmap; arrows walk active days in date order.
+  panelEl.addEventListener("keydown",function(e){
+    var b=e.target.closest(".bar,button.cell");if(!b)return;
+    var isBar=b.classList.contains("bar");
+    var list=Array.prototype.map.call(panelEl.querySelectorAll(isBar?".bar":"button.cell"),function(n){return n.getAttribute("data-date");});
+    var i=list.indexOf(b.getAttribute("data-date")),next=null;
+    if(e.key==="ArrowLeft"||(!isBar&&e.key==="ArrowUp"))next=Math.max(0,i-1);
+    else if(e.key==="ArrowRight"||(!isBar&&e.key==="ArrowDown"))next=Math.min(list.length-1,i+1);
+    else if(e.key==="Home")next=0;else if(e.key==="End")next=list.length-1;
+    else return;
+    e.preventDefault();
+    var d=list[next];if(isBar)state.barSel=d;else state.cellSel=d;
+    render((isBar?"bar-":"cell-")+d);
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key!=="Escape")return;
+    if(state.filterOpen){e.preventDefault();state.filterOpen=false;render("filter");return;}
+    if(panelEl.contains(document.activeElement)){e.preventDefault();toast("Esc 会关闭面板（原型里不关）");}
+  });
+
+  /* ---------- prototype controls (also readable from the query string:
+     ?w=phone&scene=partial&theme=dark&anno=0&range=90&metric=token&full=1) ---------- */
+  function syncSeg(id,val){Array.prototype.forEach.call(document.getElementById(id).querySelectorAll("button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-v")===val));});}
+  function applyTheme(){if(state.theme==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",state.theme);}
+  function bindSeg(id,key,after){
+    document.getElementById(id).addEventListener("click",function(e){
+      var b=e.target.closest("button");if(!b)return;
+      state[key]=b.getAttribute("data-v");syncSeg(id,state[key]);if(after)after();render();
+    });
+  }
+  bindSeg("width-seg","w",function(){stage.setAttribute("data-w",state.w);});
+  bindSeg("scene-seg","scene",function(){state.hidden={};state.filterOpen=false;state.sort=null;state.barSel=null;state.cellSel=null;state.range=state.scene==="empty"?7:30;loadScene();});
+  bindSeg("theme-seg","theme",applyTheme);
+  var annoT=document.getElementById("anno-toggle");
+  annoT.addEventListener("change",function(){state.annos=this.checked;stage.classList.toggle("annos",this.checked);});
+
+  syncSeg("width-seg",state.w);syncSeg("scene-seg",state.scene);syncSeg("theme-seg",state.theme);
+  annoT.checked=state.annos;
+  stage.setAttribute("data-w",state.w);stage.classList.toggle("annos",state.annos);stage.classList.toggle("full",q.get("full")==="1");applyTheme();
+  loadScene();
+  render();
+})();
+</script>
+</body>
+</html>
