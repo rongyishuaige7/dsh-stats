@@ -222,12 +222,16 @@ try {
   assert.equal(await evaluate('window.__fixture.sessionReads'), 0, 'host data must not be recomputed from session updates');
   assert.equal(await evaluate('window.__fixture.panelRenders'), hostRenders, 'host data must not render on session/workspace updates');
   const accountCalls = () => evaluate('window.__fixture.calls.filter(row => row[0] === "account").map(row => row[1])');
+  const providerCalls = () => evaluate('window.__fixture.calls.filter(row => row[0] === "providers").length');
   assert.deepEqual(await accountCalls(), [], 'balance must not be queried outside its tab');
+  assert.equal(await providerCalls(), 0, 'providers must not be queried outside the balance tab');
   await tab(4); await until('document.querySelector(".dss-bal-row")');
   assert.deepEqual(await accountCalls(), [false]);
+  assert.equal(await providerCalls(), 1, 'providers is queried once when the balance tab first loads');
   await refresh(); await delay(300);
   await tab(1); await tab(4); await until('document.querySelector(".dss-bal-row")'); await delay(300);
   assert.deepEqual(await accountCalls(), [false, true, false], 'forced refresh applies once; re-entry uses the host cache');
+  assert.equal(await providerCalls(), 1, 'providers is not queried again on refresh or re-entry');
   await tab(1);
   report.checks.push('closed panel skips aggregation; balance queried only on its tab, forced refresh once');
   // 1b/2: export-menu Escape order, then panel Escape order.
@@ -264,6 +268,7 @@ try {
   assert.equal(await evaluate('document.querySelector("#dss-tab-timeline").getAttribute("aria-selected")'), 'true', 'Enter activates the focused tab');
   assert.equal(await evaluate('document.querySelector("#dss-tabpanel").getAttribute("aria-labelledby")'), 'dss-tab-timeline', 'tabpanel follows the active tab');
   assert.deepEqual(await accountCalls(), callsBeforeArrows, 'tab keyboard navigation must not query the balance account');
+  assert.equal(await providerCalls(), 1, 'tab keyboard navigation must not query providers');
   await press('ArrowLeft');
   assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview');
   await press('Enter');
@@ -647,6 +652,35 @@ try {
   assert(!afterRemoval.body && !afterRemoval.html && afterRemoval.inside, 'removed row hands focus to the panel: ' + JSON.stringify(afterRemoval));
   await evaluate('window.__fixture.omit = []');
   report.checks.push('balance alerts: bell, validation, persistence, Esc, outside click, clear, currency mismatch, flip and row removal');
+
+  // 5d: first-load skeleton.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?lang=zh&holdAccount=1');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row.is-skeleton").length === 6');
+  await until('typeof window.__fixture.releaseAccount === "function"');
+  const skeletonNames = await evaluate('[...document.querySelectorAll(".dss-bal-row.is-skeleton .dss-bal-name")].map(node => node.textContent)');
+  assert.deepEqual(skeletonNames, ['DeepSeek', 'MiniMax Coding Plan', 'OpenRouter', 'Kimi For Coding', 'Moonshot', 'yi-api'], 'skeleton names follow providers');
+  assert(await evaluate('!!document.querySelector(".dss-bal-kpis.is-skeleton")'), 'skeleton has a summary strip');
+  assert.equal(await evaluate('document.querySelector(".dss-bal").getAttribute("aria-busy")'), 'true');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-idle-sum").textContent'), '未接入 2 个：Z.ai Coding Plan · Anthropic');
+  assert.equal(await evaluate('document.querySelector(".dss-data-status").className'), 'dss-data-status loading');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-foot").textContent'), '正在读取 6 个账户…');
+  await layout('desktop-balance-skeleton'); await capture('desktop-balance-skeleton');
+  await evaluate('window.__fixture.releaseAccount()');
+  await until('document.querySelectorAll(".dss-bal-row.is-skeleton").length === 0 && document.querySelectorAll(".dss-bal-row").length === 6');
+  assert(await evaluate('!document.querySelector(".dss-bal").hasAttribute("aria-busy")'), 'skeleton clears after account data');
+  await tab(1); await tab(4); await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  await refresh(); await delay(300);
+  assert.equal(await providerCalls(), 1, 'providers is still queried only once after refresh');
+  await navigate('/?lang=zh&holdAccount=1&noProviders=1');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row.is-skeleton").length === 3');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-bal-name").length'), 0, 'old hosts get unnamed placeholders');
+  assert(await evaluate('!document.querySelector(".dss-bal-kpis")'), 'old hosts get no KPI skeleton');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-foot").textContent'), '正在读取账户数据…');
+  assert.deepEqual(report.errors, [], 'old host skeleton reports no browser errors');
+  report.checks.push('balance: providers queried once, named/unnamed skeleton and release');
 
   for (const width of [641, 700, 768, 1024, 1100, 1101]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });

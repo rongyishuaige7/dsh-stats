@@ -48,6 +48,13 @@ async function readAccountRemote(stats, force) {
 	return adapted;
 }
 
+async function readProvidersRemote(stats) {
+	if (typeof stats.providers !== "function") return null;
+	const answered = await stats.providers();
+	if (!answered.ok) throw answered.error || new Error("stats/providers failed");
+	return parseProvidersResult(answered.value);
+}
+
 // 内联 Typert Remote 描述符：DSH 不自动挂载第三方 ./remote，
 // 需在客户端手动 ctx.remote.$mount(contribution)。
 const STATS_REMOTE_CONTRIBUTION = {
@@ -147,4 +154,4 @@ async function openStatsSession(sessions, session, uiWorkspace) {
 	}
 }
 
-module.exports = { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor };
+module.exports = { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, readProvidersRemote, subagentAddressFor };

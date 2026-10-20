@@ -17,8 +17,20 @@ window.__ModuleLoader__ = { async load({ factory }) {
     for (const [name, color] of Object.entries({ '--dsw-specific-menu': '#1d222c', '--dsw-alias-bg-layer-1': '#161a21', '--dsw-alias-bg-layer-2': '#1d222c', '--dsw-alias-label-primary': '#e7eaf0',
       '--dsw-alias-label-secondary': '#a6adbb', '--dsw-alias-label-tertiary': '#8b95a5', '--dsw-alias-border': '#3f4653', '--dsw-alias-border-inverted': '#3f4653' })) document.body.style.setProperty(name, color);
   }
-  const fixture = window.__fixture = { statsMode: query.get('stats') || 'estimated', accountMode: 'ok', accountSet: query.get('accountSet') || 'default', omit: [], calls: [], data };
+  const fixture = window.__fixture = { statsMode: query.get('stats') || 'estimated', accountMode: 'ok', accountSet: query.get('accountSet') || 'default', omit: [], releasedAccount: false, calls: [], data };
   const clone = value => JSON.parse(JSON.stringify(value));
+  const accountCollection = () => {
+    const value = clone(data.accounts);
+    if (fixture.accountSet === 'single') value.accounts = value.accounts.filter(account => account.id === 'deepseek-official');
+    if (fixture.accountSet === 'attention') {
+      const deepseek = value.accounts.find(account => account.id === 'deepseek-official');
+      Object.assign(deepseek, { balance: { ...deepseek.balance, remaining: 0, toppedUp: 0, granted: 0 } });
+      const openrouter = value.accounts.find(account => account.id === 'openrouter');
+      Object.assign(openrouter, { status: 'unauthorized', errorCode: 'unauthorized', lastSuccessAt: null, balance: null });
+    }
+    if (fixture.omit.length) value.accounts = value.accounts.filter(account => !fixture.omit.includes(account.id));
+    return value;
+  };
   let dictionaries;
   const slots = [];
   const stats = {
@@ -34,17 +46,10 @@ window.__ModuleLoader__ = { async load({ factory }) {
     },
     account: async force => {
       fixture.calls.push(['account', force]);
+      if (query.has('holdAccount') && !fixture.releasedAccount) await new Promise(resolve => { fixture.releaseAccount = () => { fixture.releasedAccount = true; resolve(); }; });
       if (fixture.accountMode === 'error') return { ok: false, error: { code: 'gateway/internal', message: 'Fixture account refresh failed' } };
       if (fixture.accountMode === 'legacy') return { ok: false, error: { code: 'gateway/method-unavailable', message: 'Legacy host' } };
-      const value = clone(data.accounts);
-      if (fixture.accountSet === 'single') value.accounts = value.accounts.filter(account => account.id === 'deepseek-official');
-      if (fixture.accountSet === 'attention') {
-        const deepseek = value.accounts.find(account => account.id === 'deepseek-official');
-        Object.assign(deepseek, { balance: { ...deepseek.balance, remaining: 0, toppedUp: 0, granted: 0 } });
-        const openrouter = value.accounts.find(account => account.id === 'openrouter');
-        Object.assign(openrouter, { status: 'unauthorized', errorCode: 'unauthorized', lastSuccessAt: null, balance: null });
-      }
-      if (fixture.omit.length) value.accounts = value.accounts.filter(account => !fixture.omit.includes(account.id));
+      const value = accountCollection();
       if (fixture.accountMode === 'stale') Object.assign(value.accounts[0], { status: 'unavailable', stale: true, errorCode: 'http-5xx' });
       return { ok: true, value };
     },
@@ -55,6 +60,22 @@ window.__ModuleLoader__ = { async load({ factory }) {
         topUpUrl: 'https://platform.deepseek.com/top_up', errorCode: null }], warnings: [] } };
     }
   };
+  if (!query.has('noProviders')) {
+    stats.providers = async () => {
+      fixture.calls.push(['providers']);
+      const value = accountCollection();
+      return { ok: true, value: { generatedAt: data.accounts.generatedAt, providers: value.accounts.map(account => ({
+        id: account.id,
+        displayName: account.displayName,
+        providerFamily: account.providerFamily,
+        accountMode: account.mode,
+        adapter: account.adapter,
+        configured: account.status !== 'not-configured' && account.adapter !== null,
+        status: account.adapter ? 'pending' : 'unsupported',
+        fetchedAt: null
+      })) } };
+    };
+  }
   const ctx = {
     effect: callback => callback(), locale: { register: (_namespace, value) => { dictionaries = value; } },
     remote: { $mount: async () => () => {}, stats }, inject: async (_keys, callback) => callback(ctx),

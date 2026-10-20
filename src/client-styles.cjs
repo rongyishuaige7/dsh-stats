@@ -653,6 +653,16 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-bal-alert-clear{margin-right:auto;border-color:transparent;background:none;color:var(--dss-text-2);padding:0 4px}
 .dss-bal-alert-clear:hover{color:var(--dss-danger);border-color:transparent}
 
+.dss-bal-row.is-skeleton{pointer-events:none}
+.dss-bal-row.is-skeleton:hover{background:none}
+.dss-bal-dot.is-idle{background:var(--dss-line)}
+.dss-bal-sk{display:inline-block;height:10px;border-radius:4px;background:var(--dss-skel);animation:dss-pulse 1.4s ease-in-out infinite;vertical-align:middle}
+.dss-bal-sk.is-lg{height:20px}
+.dss-bal-sk.is-xl{height:26px}
+@media (prefers-reduced-motion: reduce){
+  .dss-bal-sk{animation:none}
+}
+
 :is(.dss-overlay, .dss-trigger, .dss-tt):focus-visible,
 :is(.dss-overlay, .dss-trigger, .dss-tt) :focus-visible {
   outline: 2px solid var(--dss-accent);

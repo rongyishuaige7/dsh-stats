@@ -5,7 +5,7 @@ const { fmtBalanceAmount, fmtClock } = require("./client-format.cjs");
 const {
 	accountChip, accountMeta, accountReason, alertFor, attentionList, balanceParts, balanceTotals,
 	fmtQuotaPercent, legacyNotice, quotaLevel, resetParts, safeActionUrl,
-	sortAccounts, splitAccounts, tightestWindow, validateAlertAmount
+	skeletonModel, sortAccounts, splitAccounts, tightestWindow, validateAlertAmount
 } = require("./client-balance-model.cjs");
 const { tipProps, tipRows } = require("./client-tip.cjs");
 const { Popover } = require("./client-dialog.cjs");
@@ -429,11 +429,105 @@ function IdleAccounts(props) {
 	);
 }
 
-function balanceShell(children, t) {
+function balanceShell(children, t, busy) {
 	return e("section", {
 		className: "dss-bal",
-		style: { "--dss-bal-mk": t("balance.meterKeyWidth") }
+		style: { "--dss-bal-mk": t("balance.meterKeyWidth") },
+		"aria-busy": busy ? "true" : undefined
 	}, children);
+}
+
+function SkeletonKpis() {
+	return e("section", { className: "dss-bal-kpis is-skeleton", "aria-hidden": "true" },
+		[0, 1, 2].map(function(index) {
+			return e("div", { className: "dss-bal-kpi" + (index ? "" : " is-lead"), key: index },
+				e("div", { className: "dss-bal-kpi-k" },
+					e("span", { className: "dss-bal-sk", "aria-hidden": "true", style: { width: "56px" } })),
+				e("div", { className: "dss-bal-kpi-v" },
+					e("span", {
+						className: "dss-bal-sk" + (index ? " is-lg" : " is-xl"),
+						"aria-hidden": "true",
+						style: { width: (index ? 72 : 120) + "px" }
+					})),
+				e("div", { className: "dss-bal-kpi-s" },
+					e("span", { className: "dss-bal-sk", "aria-hidden": "true", style: { width: "90px" } }))
+			);
+		})
+	);
+}
+
+function SkeletonRow(props) {
+	const row = props.row;
+	const named = !!row.name;
+	const type = row.type === "subscription" ? "subscription" : "balance";
+	const firstWidth = named ? (type === "subscription" ? "60%" : "110px") : "60%";
+	return e("li", { className: "dss-bal-row is-skeleton" },
+		e("div", { className: "dss-bal-id" },
+			e("i", { className: "dss-bal-dot is-idle", "aria-hidden": "true" }),
+			e("div", { className: "dss-bal-nm" },
+				named
+					? e("b", { className: "dss-bal-name" }, row.name)
+					: e("span", { className: "dss-bal-sk is-lg", "aria-hidden": "true", style: { width: "70px" } }),
+				named
+					? e("span", { className: "dss-bal-meta" },
+						props.t("balance.type." + type) + " · " + (row.id || ""))
+					: e("span", { className: "dss-bal-sk", "aria-hidden": "true", style: { width: "90px" } })
+			)
+		),
+		e("div", { className: "dss-bal-main" },
+			e("span", { className: "dss-bal-sk is-lg", "aria-hidden": "true", style: { width: firstWidth } }),
+			e("span", { className: "dss-bal-sk", "aria-hidden": "true", style: { width: "36%" } })
+		),
+		e("div", { className: "dss-bal-act" })
+	);
+}
+
+function SkeletonIdle(props) {
+	const idle = props.idle;
+	const t = props.t;
+	if (!idle.length) return null;
+	const names = idle.map(function(account) { return account.name || account.id; }).join(" · ");
+	return e("details", { className: "dss-bal-idle", open: props.open },
+		e("summary", { className: "dss-bal-idle-sum" }, fill(t("balance.idle.summary"), [idle.length, names])),
+		idle.map(function(account) {
+			return e("div", { className: "dss-bal-idle-row", "data-account-id": account.id, key: account.id },
+				e("b", null, account.name || account.id),
+				e("span", { className: "dss-bal-reason" }, t("balance." + account.reason))
+			);
+		})
+	);
+}
+
+function BalanceSkeleton(props) {
+	const t = props.t;
+	const model = skeletonModel(props.providers);
+	const rows = model.rows;
+	const children = [];
+	if (model.named && rows.length >= 2) children.push(e(SkeletonKpis, { key: "kpis" }));
+	if (rows.length) {
+		children.push(e("section", { className: "dss-bal-list", key: "list" },
+			e("div", { className: "dss-bal-cols", "aria-hidden": "true" },
+				e("span", null, t("balance.col.account")),
+				e("span", null, t("balance.col.value")),
+				e("span", null, "")),
+			e("ul", { className: "dss-bal-rows" },
+				rows.map(function(row, index) {
+					return e(SkeletonRow, { key: row.id || "unnamed-" + index, row: row, t: t });
+				})
+			)
+		));
+	}
+	if (model.idle.length) {
+		children.push(e(SkeletonIdle, {
+			key: "idle",
+			idle: model.idle,
+			open: rows.length === 0,
+			t: t
+		}));
+	}
+	children.push(e("p", { className: "dss-bal-foot", key: "foot" },
+		model.named && rows.length ? fill(t("balance.loadingCount"), [rows.length]) : t("balance.loading")));
+	return balanceShell(e(react.Fragment, null, children), t, true);
 }
 
 function BalanceView(props) {
@@ -452,7 +546,7 @@ function BalanceView(props) {
 		);
 	}
 	if (!data && (state.kind === "loading" || state.kind === "refreshing")) {
-		return balanceShell(e("p", { className: "dss-bal-loading" }, t("balance.loading")), t);
+		return e(BalanceSkeleton, { providers: props.providers, t: t });
 	}
 	if (!data && state.kind === "error") {
 		return balanceShell(
@@ -515,4 +609,4 @@ function BalanceView(props) {
 	);
 }
 
-module.exports = { BalanceView, BalanceKpis, AccountRow, QuotaMeter, IdleAccounts, BalanceAlert };
+module.exports = { BalanceView, BalanceKpis, AccountRow, QuotaMeter, IdleAccounts, BalanceAlert, BalanceSkeleton };

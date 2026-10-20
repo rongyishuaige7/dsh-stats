@@ -3,7 +3,7 @@ let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
 const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
-const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, subagentAddressFor } = require("./client-remote.cjs");
+const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, readProvidersRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
 const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./client-header.cjs");
 const { BalanceView } = require("./client-balance.cjs");
@@ -165,6 +165,7 @@ function StatsPanel(props) {
 	var pendingNonceRef = useRef(0);
 	var [drawer, setDrawer] = useState({ open: false, focusModel: null });
 	var balanceRemote = props.balance;
+	var providersRemote = props.providers;
 	var remoteMountError = props.remoteError;
 	var tabPair = usePref("tab", "overview");
 	var tabValue = tabPair[0];
@@ -202,6 +203,8 @@ function StatsPanel(props) {
 	var [balanceData, setBalanceData] = useState(null);
 	var [balanceState, setBalanceState] = useState({ kind: balanceRemote ? "loading" : "unavailable", error: null });
 	var [balanceRefreshRequest, setBalanceRefreshRequest] = useState({ tick: 0, force: false });
+	var [balanceProviders, setBalanceProviders] = useState(null);
+	var providersAskedRef = useRef(false);
 	var markDismiss = useDialogFocus(panelRef, isOpen);
 	var dismiss = useCallback(function() { markDismiss(); onClose("dismiss"); }, [markDismiss, onClose]);
 	var closeDrawer = useCallback(function() { setDrawer({ open: false, focusModel: null }); }, []);
@@ -284,6 +287,16 @@ function StatsPanel(props) {
 		});
 		return function() { cancelled = true; };
 	}, [balanceActive, balanceRemote, balanceRefreshRequest.tick]);
+
+	// The first-load skeleton asks the host for its configured providers once per
+	// mount. It is decoration only: account data stays authoritative.
+	useEffect(function() {
+		if (!balanceActive || !providersRemote || balanceData || providersAskedRef.current) return;
+		providersAskedRef.current = true;
+		providersRemote().then(function(result) {
+			if (result && Array.isArray(result.providers)) setBalanceProviders(result.providers);
+		}).catch(function() {});
+	}, [balanceActive, providersRemote, balanceData]);
 
 	// Host data does not depend on browser session snapshots; keep it stable across session events.
 	var remoteView = useMemo(() => {
@@ -507,7 +520,7 @@ function StatsPanel(props) {
 						data: balanceData,
 						state: balanceState,
 						remote: !!balanceRemote,
-						providers: null,
+						providers: balanceProviders,
 						alerts: balanceAlerts,
 						onAlertChange: setBalanceAlert,
 						onRetry: refreshCurrent,
@@ -1012,6 +1025,7 @@ async function apply(ctx) {
 
 	let aggregateRemote = null;
 	let balanceRemote = null;
+	let providersRemote = null;
 	let pricingRemote = null;
 	let remoteError = null;
 	let disposeRemote = () => {};
@@ -1026,6 +1040,7 @@ async function apply(ctx) {
 				return parseAggregateResult(answered.value);
 			};
 			balanceRemote = (force) => readAccountRemote(childCtx.remote.stats, force);
+			providersRemote = () => readProvidersRemote(childCtx.remote.stats);
 			pricingRemote = async (request) => { const result = await childCtx.remote.stats.pricing(request); if (!result.ok) throw result.error || new Error("Price settings unavailable"); return parsePricingResult(result.value); };
 		});
 	} catch (err) {
@@ -1044,7 +1059,7 @@ async function apply(ctx) {
 		name: "shell.overlay",
 		id: "stats-panel",
 		locale: NS,
-		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), onOpenSession, aggregate: aggregateRemote, balance: balanceRemote, pricing: pricingRemote, remoteError })
+		inject: () => ({ hooks: { statsOpen: openStore }, onClose: () => openStore.close(), onOpenSession, aggregate: aggregateRemote, balance: balanceRemote, providers: providersRemote, pricing: pricingRemote, remoteError })
 	}, StatsPanel));
 
 	return () => {

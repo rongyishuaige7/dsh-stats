@@ -5,6 +5,7 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { StatusIndicator, StatusBanner, BalanceView, readAccountRemote, parseProvidersResult, parseAccountResult, aggregate, STATS_REMOTE_CONTRIBUTION } = require('../src/client.cjs').__test;
 const { balanceHeaderState } = require('../src/client-balance-model.cjs');
+const { readProvidersRemote } = require('../src/client-remote.cjs');
 
 test('every strict codec serves both Harness 0.1.5 schema and 0.1.7 create() contracts', () => {
 	const faces = [TYPERT.invocations, TYPERT_REMOTE.descriptors, STATS_REMOTE_CONTRIBUTION.descriptors];
@@ -158,4 +159,12 @@ test.each([undefined, { parentSession: 'parent', routeTree: { invalid: {} } }])(
 	const child = { id: 'missing-own', parentSession: 'parent', projectionValues: { tokenUsage: { uncachedInputTokens: 9999 }, statsRoute: route } };
 	const session = aggregate([child], [], key => key, [])[0].sessions[0];
 	expect(session).toMatchObject({ parentSession: 'parent', quality: 'partial', stats: { inputTokens: 0 } });
+});
+
+test('providers RPC is optional, parses results and propagates failures', async () => {
+	expect(await readProvidersRemote({})).toBeNull();
+	const error = new Error('providers failed');
+	await expect(readProvidersRemote({ providers: async () => ({ ok: false, error }) })).rejects.toBe(error);
+	const result = await readProvidersRemote({ providers: async () => ({ ok: true, value: { generatedAt: 1, providers: [] } }) });
+	expect(result).toEqual({ generatedAt: 1, providers: [] });
 });

@@ -174,3 +174,50 @@ test('meter label width and attention separators follow the language', () => {
 	expect(enHtml.replace(/<[^>]+>/g, '')).toContain('Kimi For Coding, MiniMax Coding Plan, Moonshot');
 	expect(enHtml).not.toContain('、');
 });
+
+function provider(id, displayName, accountMode, overrides = {}) {
+	return { id, displayName, providerFamily: 'fixture', accountMode, adapter: accountMode === 'unsupported' ? null : 'fixture-adapter', configured: accountMode !== 'unsupported', status: accountMode === 'unsupported' ? 'unsupported' : 'pending', fetchedAt: null, ...overrides };
+}
+
+test('the first load without providers shows three unnamed skeleton rows', () => {
+	const html = render({ data: null, state: { kind: 'loading' }, providers: null });
+	expect(html.match(/dss-bal-row is-skeleton/g)).toHaveLength(3);
+	expect(html).toContain('aria-busy="true"');
+	expect(html).not.toContain('dss-bal-kpis');
+	expect(html).not.toContain('dss-bal-name');
+	expect(html).toContain('正在读取账户数据…');
+});
+
+test('named providers render named skeleton rows, KPI skeleton and the idle group', () => {
+	const providers = [
+		provider('deepseek-official', 'DeepSeek', 'balance'),
+		provider('minimax-coding', 'MiniMax Coding Plan', 'subscription'),
+		provider('openrouter', 'OpenRouter', 'balance'),
+		provider('kimi-coding', 'Kimi For Coding', 'subscription'),
+		provider('moonshotai-cn', 'Moonshot', 'balance'),
+		provider('yi-api', 'yi-api', 'balance'),
+		provider('zai-coding-cn', 'Z.ai Coding Plan', 'subscription', { configured: false }),
+		provider('anthropic', 'Anthropic', 'unsupported'),
+	];
+	const html = render({ data: null, state: { kind: 'loading' }, providers });
+	expect(html.match(/dss-bal-row is-skeleton/g)).toHaveLength(6);
+	expect([...html.matchAll(/<b class="dss-bal-name">([^<]+)<\/b>/g)].map(match => match[1])).toEqual([
+		'DeepSeek', 'MiniMax Coding Plan', 'OpenRouter', 'Kimi For Coding', 'Moonshot', 'yi-api',
+	]);
+	expect(html).toContain('dss-bal-kpis is-skeleton');
+	expect(html).toContain('未接入 2 个：Z.ai Coding Plan · Anthropic');
+	expect(html).toContain('正在读取 6 个账户…');
+	expect(html).toContain('aria-busy="true"');
+});
+
+test('all-idle providers render no skeleton rows and open the idle group', () => {
+	const providers = [
+		provider('zai-coding-cn', 'Z.ai Coding Plan', 'subscription', { configured: false }),
+		provider('anthropic', 'Anthropic', 'unsupported'),
+	];
+	const html = render({ data: null, state: { kind: 'loading' }, providers });
+	expect(html).not.toContain('dss-bal-row is-skeleton');
+	expect(html).not.toContain('dss-bal-kpis');
+	expect(html).toMatch(/<details class="dss-bal-idle" open="">/);
+	expect(html).toContain('正在读取账户数据…');
+});
