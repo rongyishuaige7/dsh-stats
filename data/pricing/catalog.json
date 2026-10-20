@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101813,
-  "publishedAt": "2026-10-19T23:11:15.122Z",
+  "version": 2026101814,
+  "publishedAt": "2026-10-20T01:57:09.870Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -1728,7 +1728,8 @@
         "cacheWrite": null
       },
       "confidence": "estimated",
-      "reasoningIncludedInOutput": true
+      "reasoningIncludedInOutput": true,
+      "effectiveTo": "2026-10-20T01:57:09.870Z"
     },
     {
       "id": "openrouter/meta/muse-glimmer-30b@2026-09-17T08:46:53.180Z",
@@ -15714,7 +15715,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-14T21:39:30.525Z"
+      "effectiveFrom": "2026-10-14T21:39:30.525Z",
+      "effectiveTo": "2026-10-20T01:57:09.870Z"
     },
     {
       "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-14T21:39:30.525Z",
@@ -15996,7 +15998,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-15T04:35:44.438Z"
+      "effectiveFrom": "2026-10-15T04:35:44.438Z",
+      "effectiveTo": "2026-10-20T01:57:09.870Z"
     },
     {
       "id": "openrouter/meta-llama/llama-3.2-3b-instruct@2026-10-15T04:35:44.438Z",
@@ -17166,7 +17169,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-16T16:36:58.839Z"
+      "effectiveFrom": "2026-10-16T16:36:58.839Z",
+      "effectiveTo": "2026-10-20T01:57:09.870Z"
     },
     {
       "id": "openrouter/xingchen-agi/xing4.0-29b-a4b:free@2026-10-16T21:05:32.574Z",
@@ -18913,7 +18917,113 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-19T23:11:15.122Z"
+      "effectiveFrom": "2026-10-19T23:11:15.122Z",
+      "effectiveTo": "2026-10-20T01:57:09.870Z"
+    },
+    {
+      "id": "openrouter/upstage/solar-pro4@2026-10-20T01:57:09.870Z",
+      "family": "openrouter",
+      "canonical": "upstage/solar-pro4",
+      "aliases": [
+        "upstage/solar-pro4"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-20",
+      "observedFrom": "2026-10-20T01:57:09.870Z",
+      "rates": {
+        "uncached": 0.15,
+        "output": 0.6,
+        "cacheRead": 0.03,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-20T01:57:09.870Z"
+    },
+    {
+      "id": "openrouter/qwen/qwen3.6-35b-a3b@2026-10-20T01:57:09.870Z",
+      "family": "openrouter",
+      "canonical": "qwen/qwen3.6-35b-a3b",
+      "aliases": [
+        "qwen/qwen3.6-35b-a3b"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-20",
+      "observedFrom": "2026-10-20T01:57:09.870Z",
+      "rates": {
+        "uncached": 0.09999999999999999,
+        "output": 0.95,
+        "cacheRead": 0.049999999999999996,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-20T01:57:09.870Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-20T01:57:09.870Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek/deepseek-v4-pro"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-20",
+      "observedFrom": "2026-10-20T01:57:09.870Z",
+      "rates": {
+        "uncached": 0.9552599999999999,
+        "output": 1.9105199999999998,
+        "cacheRead": 0.07960500000000001,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-20T01:57:09.870Z"
+    },
+    {
+      "id": "openrouter/z-ai/glm-5@2026-10-20T01:57:09.870Z",
+      "family": "openrouter",
+      "canonical": "z-ai/glm-5",
+      "aliases": [
+        "z-ai/glm-5"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-20",
+      "observedFrom": "2026-10-20T01:57:09.870Z",
+      "rates": {
+        "uncached": 0.6,
+        "output": 1.92,
+        "cacheRead": 0.12,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-20T01:57:09.870Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-chat@2026-10-20T01:57:09.870Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-chat",
+      "aliases": [
+        "deepseek/deepseek-chat"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-20",
+      "observedFrom": "2026-10-20T01:57:09.870Z",
+      "rates": {
+        "uncached": 0.2574,
+        "output": 1.0287,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-20T01:57:09.870Z"
     }
   ],
   "fx": [
