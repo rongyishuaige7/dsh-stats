@@ -181,6 +181,8 @@ function ProjectFilterMenu(props) {
 	var t = props.t;
 	var [page, setPage] = useState(0);
 	var [search, setSearch] = useState("");
+	// 只认显式传入的 valueOf；省略时 props.valueOf 会落到 Object.prototype 上。
+	var valueOf = Object.prototype.hasOwnProperty.call(props, "valueOf") && typeof props.valueOf === "function" ? props.valueOf : null;
 	useEffect(function() { setPage(0); }, [props.filterKey]);
 	var query = search.trim().toLowerCase();
 	var filtered = (props.projects || []).filter(function(project) {
@@ -214,8 +216,8 @@ function ProjectFilterMenu(props) {
 					e("input", { type: "checkbox", checked: !isHidden, onChange: function() { props.onToggle(project.id); } }),
 					e("i", { className: "dss-pdot", "data-color": String(colorIndex(project, props.colorIndexes)) }),
 					e("span", { className: "dss-filter-name" }, project.name),
-					props.valueOf
-						? e("span", { className: "dss-filter-val" }, props.valueOf(project))
+					valueOf
+						? e("span", { className: "dss-filter-val" }, valueOf(project))
 						: e("span", { className: "dss-filter-cost" }, fmtCostSummary(projectCostSummary(project), t))
 				);
 			}) : e("div", { className: "dss-empty" }, t("empty"))
@@ -488,4 +490,4 @@ function ProjectTable(props) {
 	);
 }
 
-module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, pageRows, PageControls };
+module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, pageRows, PageControls, PendingChip, InfoTip };

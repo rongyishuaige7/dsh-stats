@@ -9,9 +9,10 @@ window.__ModuleLoader__ = { async load({ factory }) {
     throw new Error('Unexpected browser dependency: ' + name);
   });
   const data = await (await fetch('/data')).json();
-  // Keep date-based views aligned with the fixture on future test runs.
-  Date.now = () => data.estimated.meta.generatedAt;
   const query = new URLSearchParams(location.search);
+  // Keep date-based views aligned with the fixture on future test runs.
+  // ?shiftDays=N moves "today" without touching the fixture history.
+  Date.now = () => data.estimated.meta.generatedAt + Number(query.get('shiftDays') || 0) * 864e5;
   if (query.get('theme') === 'dark') {
     document.body.dataset.dsDarkTheme = '';
     for (const [name, color] of Object.entries({ '--dsw-specific-menu': '#1d222c', '--dsw-alias-bg-layer-1': '#161a21', '--dsw-alias-bg-layer-2': '#1d222c', '--dsw-alias-label-primary': '#e7eaf0',

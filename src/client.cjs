@@ -1,7 +1,7 @@
 let react = require("react");
 let primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let { parsePricingResult, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult } = require("./rpc-client.js");
-const { EMPTY_VIEW, MAX_VISIBLE_MODELS, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
+const { EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, costOf, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, usageCost, usageCostDetail } = require("./client-format.cjs");
 const { activityDates, addBucket, aggregate, applyDate, applyRange, buildGlobals, buildTimeline, createOpenStore, display, emptyBucket, enrichSessionProjection, fmtDateCN, hasTokenUsage, loadPref, localDayKey, modelAgg, modelDisplayName, modelNameOnly, monthlyFromDays, projectionIdentityOf, projectionSlotUsageOf, savePref, sessionDayTokens, streakAndActive, weeklyFromDays } = require("./client-data.cjs");
 const { NS, STATS_REMOTE_CONTRIBUTION, inject, openStatsSession, readAccountRemote, readProvidersRemote, subagentAddressFor } = require("./client-remote.cjs");
 const { LayerContext, createLayerStack, escapeAction, trapTab, useDialogFocus } = require("./client-dialog.cjs");
@@ -12,8 +12,10 @@ const { IconRefresh, IconGear } = require("./client-icons.cjs");
 const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
 const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
+const { TRENDS_PREF_DEFAULTS, normalizeTrendsPrefs } = require("./client-trends-model.cjs");
 const { TimelineView } = require("./client-timeline.cjs");
-const { tipRows, showTipRaw, hideTip } = require("./client-tip.cjs");
+const { TrendsView, CalendarHeatmap, modelListNeedsScroll } = require("./client-trends.cjs");
+const { hideTip } = require("./client-tip.cjs");
 
 var e = react.createElement;
 var useState = react.useState;
@@ -375,10 +377,41 @@ function StatsPanel(props) {
 	var shares = useMemo(function() { return costShares(visibleProjects); }, [visibleProjects]);
 	var pending = useMemo(function() { return pendingFocus(visibleProjects); }, [visibleProjects]);
 
+	// 趋势页偏好与范围（§7.3 第 2 条）。这些 hooks 必须在早退之前，
+	// 保证面板关闭时 hooks 数量不变。
+	var trendsPair = usePref("trends", TRENDS_PREF_DEFAULTS);
+	var trendsPrefs = normalizeTrendsPrefs(trendsPair[0]);
+	var setTrendsPrefs = useCallback(function(patch) {
+		trendsPair[1](function(current) {
+			return normalizeTrendsPrefs(Object.assign({}, normalizeTrendsPrefs(current), patch));
+		});
+	}, [trendsPair[1]]);
+	var todayKey = localDayKey(Date.now());
+	var trendsRangeProjects = useMemo(function() {
+		return tab === "trends" ? applyRange(data.projects, todayKey, trendsPrefs.range) : null;
+	}, [tab, data.projects, todayKey, trendsPrefs.range]);
+	var pendingTabFocusRef = useRef(null);
+	// U6：跳到总览后把焦点交给总览标签，避免焦点掉到 body。
+	useEffect(function() {
+		if (pendingTabFocusRef.current !== tab) return;
+		pendingTabFocusRef.current = null;
+		var node = document.getElementById("dss-tab-" + tab);
+		if (node && typeof node.focus === "function") node.focus();
+	}, [tab]);
+	var openDay = function(date) {
+		if (!date || dates.indexOf(date) < 0) return;
+		hideTip();
+		setNav({ mode: "day", date: date });
+		setTab("overview");
+		setFocusedTab("overview");
+		pendingTabFocusRef.current = "overview";
+	};
+
 	if (!open || !open.open) return null;
 
 	var toggle = (id) => setHidden((h) => ({ ...(h && typeof h === "object" && !Array.isArray(h) ? h : {}), [id]: !(h && h[id]) }));
 	var showAll = function() { setHidden({}); };
+	var exportProjects = tab === "trends" ? (trendsRangeProjects || []) : dateProjects;
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
@@ -480,10 +513,10 @@ function StatsPanel(props) {
 								onClick: refreshCurrent
 							}, e(IconRefresh, { size: 16 })),
 							tab !== "balance" ? e(ExportMenu, {
-								projects: dateProjects,
+								projects: exportProjects,
 								t,
-								onExportCSV: function() { exportCSV(dateProjects, t); },
-								onExportJSON: function() { exportJSON(dateProjects); }
+								onExportCSV: function() { exportCSV(exportProjects, t); },
+								onExportJSON: function() { exportJSON(exportProjects); }
 							}) : null,
 							e("button", {
 								type: "button",
@@ -526,15 +559,15 @@ function StatsPanel(props) {
 						onRetry: refreshCurrent,
 						t
 					}) : e(Fragment, null,
-						e(OverviewTools, {
+						tab !== "trends" ? e(OverviewTools, {
 							nav, setNav, dates, effectiveDate, t,
-							showMode: tab !== "trends",
-							showFilter: tab !== "trends",
+							showMode: true,
+							showFilter: true,
 							projects: tab === "timeline" ? dateProjects : statProjects,
 							valueOf: tab === "timeline" ? timelineValueOf : undefined,
 							hidden, onToggle: toggle, onShowAll: showAll,
 							colorIndexes, filterKey: effectiveDate
-						}),
+						}) : null,
 						tab === "overview" ? e(Fragment, null,
 							visibleProjects.length ? e(OverviewKpis, {
 								totals,
@@ -588,11 +621,26 @@ function StatsPanel(props) {
 							t
 						})
 						: e(TrendsView, {
-							globals,
-							dateGlobals,
-							selectedDate: effectiveDate,
-							onSelectDate: function(date) { setNav({ mode: "day", date: date }); },
-							t
+							projects: data.projects,
+							rangeProjects: trendsRangeProjects || [],
+							hidden,
+							hiddenKey,
+							dates,
+							today: todayKey,
+							prefs: trendsPrefs,
+							setPrefs: setTrendsPrefs,
+							colorIndexes,
+							onToggle: toggle,
+							onShowAll: showAll,
+							onOpenDay: openDay,
+							onOpenPricing: openPricing,
+							t,
+							legacy: {
+								globals,
+								dateGlobals,
+								selectedDate: effectiveDate,
+								onSelectDate: function(date) { setNav({ mode: "day", date: date }); }
+							}
 						})
 					)
 				),
@@ -613,385 +661,6 @@ function StatsPanel(props) {
 	);
 }
 
-// ------------------------------------------------------------------
-// 用量趋势视图（重构版：hero 总览 + 指标卡 + 热力图 + 堆叠趋势 + 模型分布）
-// ------------------------------------------------------------------
-function TrendsView(props) {
-	var g = props.globals; // 全量：热力图 / 7 天趋势 / 连续天数指标卡
-	var dg = props.dateGlobals || props.globals; // 按日（或全部模式）：hero / 模型分布
-	var topModel = dg.models && dg.models.length ? dg.models[0] : null;
-	var totals = dg.totals || emptyBucket();
-	var totalTok = (totals.input || 0) + (totals.output || 0);
-	var hitPct = totals.input > 0 ? Math.round((totals.cacheRead || 0) / totals.input * 100) : null;
-
-	var hero = e("div", { className: "dss-hero" },
-		e("div", { className: "dss-hero-main" },
-					e("div", { className: "dss-hero-k" }, props.t("trends.totalTokens")),
-			e("div", { className: "dss-hero-v" }, fmtTokens(totalTok)),
-			e("div", { className: "dss-hero-chips" },
-					e("span", { className: "dss-hero-chip" }, props.t("w.input") + " " + fmtTokens(totals.input || 0)),
-					e("span", { className: "dss-hero-chip" }, props.t("w.output") + " " + fmtTokens(totals.output || 0)),
-					e("span", { className: "dss-hero-chip" }, props.t("trends.totalReasoning") + " " + fmtTokens(totals.reasoning || 0)),
-					hitPct != null ? e("span", { className: "dss-hero-chip" }, props.t("w.cacheHit") + " " + hitPct + "%") : null
-			)
-		),
-		e("div", { className: "dss-hero-side" },
-			e("div", { className: "dss-hero-cell" },
-					e("div", { className: "dss-hero-k" }, props.t("trends.totalCost")),
-				e("div", { className: "dss-hero-v dss-cost", title: props.t("w.estimatedHint") }, fmtCostSummary(dg.totalCost, props.t))
-			),
-			e("div", { className: "dss-hero-cell" },
-					e("div", { className: "dss-hero-k" }, props.t("trends.mostUsed")),
-				e("div", { className: "dss-hero-v model", title: topModel ? (topModel.displayName || modelDisplayName(topModel)) : "" }, topModel ? (topModel.displayName || modelDisplayName(topModel)) : "—")
-			)
-		)
-	);
-
-	var metrics = [
-			{ v: fmtN(g.activeDays || 0), l: props.t("trends.activeDays"), s: props.t("trends.activeDaysHint") },
-			{ v: fmtN(g.streak || 0), l: props.t("trends.streak"), s: props.t("trends.streakHint") },
-			{ v: fmtN(g.longestStreak || 0), l: props.t("trends.longestStreak"), s: props.t("trends.longestStreakHint") },
-			{ v: fmtN(g.sessions ? g.sessions.length : 0), l: props.t("trends.totalSessions"), s: props.t("trends.totalSessionsHint") }
-	];
-
-	return e("div", { className: "dss-trends" },
-		hero,
-		e("div", { className: "dss-metric-row" },
-			metrics.map(function(m, i) {
-				return e("div", { key: i, className: "dss-metric" },
-					e("div", { className: "dss-metric-v" }, m.v),
-					e("div", { className: "dss-metric-l" }, m.l),
-					e("div", { className: "dss-metric-s" }, m.s)
-				);
-			})
-		),
-		e(Section, { title: props.t("trends.heatmap"), hint: props.t("trends.heatmapHint") },
-			e("div", { className: "dss-trend-duo" },
-				e("div", { className: "dss-duo-cell" },
-					e(CalendarHeatmap, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, onSelectDate: props.onSelectDate, t: props.t })
-				),
-				e("div", { className: "dss-duo-cell grow" },
-						e("div", { className: "dss-duo-title" }, props.t("trends.dailyTrend")),
-						e(DailyTrendChart, { byDay: g.byDay || new Map(), selectedDate: props.selectedDate, t: props.t })
-				)
-			)
-		),
-		e(Section, { title: props.t("trends.modelDist"), hint: props.t("trends.modelHint") },
-			e("div", { className: "dss-model-split" },
-					e(ModelRing, { models: dg.models || [], t: props.t }),
-					e(ModelList, { models: dg.models || [], t: props.t })
-			)
-		)
-	);
-}
-
-function Section(props) {
-	return e("div", { className: "dss-section" },
-		e("div", { className: "dss-sec-head" },
-			e("div", { className: "dss-sec-title" }, props.title),
-			props.hint ? e("div", { className: "dss-sec-hint" }, props.hint) : null
-		),
-		props.children
-	);
-}
-
-// 当月日历热力图：一个月份块，7 列 × 当月实际天数，周一起始，
-// 今天描边，未来日期虚化。格子随容器宽度均匀分布（列内居中）。
-// 色阶按当月数据分位数分级（GitHub 风格）：无论总量大小，色差总是明显。
-function CalendarHeatmap(props) {
-	var byDay = props.byDay;
-	var t = props.t;
-	var todayKey = localDayKey(Date.now());
-
-	var mo = { y: Number(todayKey.slice(0, 4)), m: Number(todayKey.slice(5, 7)) - 1 };
-	var first = new Date(Date.UTC(mo.y, mo.m, 1));
-	var offset = (first.getUTCDay() + 6) % 7; // 周一 = 0
-	var daysInMonth = new Date(Date.UTC(mo.y, mo.m + 1, 0)).getUTCDate();
-
-	var weekLabels = t("trends.weekdays").split(",");
-	var DOW = weekLabels.slice(1).concat(weekLabels[0]);
-
-	// 第一遍：收集当月所有活动天的总量 → 分位数阈值（25% / 50% / 75%）
-	var actTots = [];
-	for (var d0 = 1; d0 <= daysInMonth; d0++) {
-		var dk0 = mo.y + "-" + (mo.m + 1 < 10 ? "0" + (mo.m + 1) : "" + (mo.m + 1)) + "-" + (d0 < 10 ? "0" + d0 : "" + d0);
-		var b0 = byDay.get(dk0);
-		var t0 = (b0 && (b0.input || 0) + (b0.output || 0)) || 0;
-		if (t0 > 0) actTots.push(t0);
-	}
-	actTots.sort(function(a, b) { return a - b; });
-	var q1 = 0, q2 = 0, q3 = 0;
-	if (actTots.length >= 4) {
-		var fq = function(f) { return actTots[Math.min(actTots.length - 1, Math.floor(f * actTots.length))]; };
-		q1 = fq(0.25); q2 = fq(0.5); q3 = fq(0.75);
-	}
-	function lvlOf(tot) {
-		if (tot <= 0) return 0;                        // 无活动 → 底色
-		if (actTots.length >= 4) {
-			if (tot > q3) return 4;                     // 前 25%
-			if (tot > q2) return 3;
-			if (tot > q1) return 2;
-			return 1;                                   // 后 25%
-		}
-		// 活动天太少时分位无意义：按 10 万/30 万/60 万固定阈值
-		if (tot >= 600000) return 4;
-		if (tot >= 300000) return 3;
-		if (tot >= 100000) return 2;
-		return 1;
-	}
-
-	var cells = [];
-	for (var i = 0; i < offset; i++) cells.push(e("div", { key: "p" + i, className: "dss-cal-pad" }));
-	for (var day = 1; day <= daysInMonth; day++) {
-		// let 块级绑定：每个 cell 的回调捕获各自的 dk/isFuture（var 会共享最后一天的值）
-		let dk = mo.y + "-" + (mo.m + 1 < 10 ? "0" + (mo.m + 1) : "" + (mo.m + 1)) + "-" + (day < 10 ? "0" + day : "" + day);
-		let b = byDay.get(dk);
-		let tot = (b && (b.input || 0) + (b.output || 0)) || 0;
-		let lvl = lvlOf(tot);
-		let isToday = dk === todayKey;
-		let isFuture = dk > todayKey;
-		let isSel = props.selectedDate != null && dk === props.selectedDate;
-		let canSelect = tot > 0 && !isFuture && typeof props.onSelectDate === "function";
-		cells.push(e(canSelect ? "button" : "span", {
-			key: dk,
-			type: canSelect ? "button" : undefined,
-			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (canSelect ? " interactive" : "") + (isToday ? " today" : "") + (isFuture ? " future" : "") + (isSel ? " selected" : ""),
-			title: dk,
-			"aria-label": canSelect ? dk : undefined,
-			"aria-pressed": canSelect ? isSel : undefined,
-			onClick: canSelect ? function() { props.onSelectDate(dk); } : undefined,
-			onMouseEnter: function(ev) {
-				var bbb = byDay.get(dk);
-				if (!bbb) { showTipRaw(tipRows(dk, [[t("trends.activity"), isFuture ? t("trends.futureDate") : t("trends.none")]]), ev); return; }
-				showTipRaw(tipRows(dk, [
-					[t("trends.totalInput"), fmtTokens(bbb.input || 0)],
-					[t("trends.totalOutput"), fmtTokens(bbb.output || 0)],
-					[t("trends.totalReasoning"), fmtTokens(bbb.reasoning || 0)],
-					[t("w.duration"), fmtDuration((bbb.llmMs || 0) + (bbb.toolMs || 0))]
-				]), ev);
-			},
-			onMouseLeave: hideTip
-		}));
-	}
-
-	return e("div", { className: "dss-cal-wrap" },
-		e("div", { className: "dss-cal" },
-			e("div", { className: "dss-cal-month" },
-				e("div", { className: "dss-cal-title" }, mo.y + "-" + pad(mo.m + 1)),
-				e("div", { className: "dss-cal-dow" }, DOW.map(function(dw, i) { return e("span", { key: i }, dw); })),
-				e("div", { className: "dss-cal-grid" }, cells)
-			)
-		),
-		e("div", { className: "dss-cal-legend" },
-			e("span", null, t("trends.less")),
-			[0,1,2,3,4].map(function(i) { return e("i", { key: i, className: "dss-hm-lg lvl" + i }); }),
-			e("span", null, t("trends.more"))
-		)
-	);
-}
-
-// 向上取整到 1/2/5×10^n 的“好看”刻度值
-function niceCeil(n) {
-	if (!Number.isFinite(n) || n <= 0) return 1;
-	var exp = Math.pow(10, Math.floor(Math.log(n) / Math.LN10));
-	var f = n / exp;
-	var nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
-	return nice * exp;
-}
-
-// 每日 Token 趋势：最近 7 天（含今天），柱高 = 输入 + 输出；思考是输出子集，仅在提示中展示。
-function DailyTrendChart(props) {
-	var byDay = props.byDay;
-	var t = props.t;
-	var todayKey = localDayKey(Date.now());
-
-	// 近 7 天窗口：today-6 … today
-	var days = [];
-	var d = new Date(todayKey + "T00:00:00Z");
-	d.setUTCDate(d.getUTCDate() - 6);
-	for (var i = 0; i < 7; i++) {
-		days.push({ key: d.toISOString().slice(0, 10), mon: d.getUTCMonth() + 1, day: d.getUTCDate(), dow: (d.getUTCDay() + 6) % 7 });
-		d.setUTCDate(d.getUTCDate() + 1);
-	}
-
-	var maxTot = 0;
-	days.forEach(function(dd) {
-		var b = byDay.get(dd.key);
-		if (b) maxTot = Math.max(maxTot, (b.input || 0) + (b.output || 0));
-	});
-	var yMax = niceCeil(maxTot);
-
-	return e("div", { className: "dss-mchart" },
-		e("div", { className: "dss-mchart-y" },
-			[1, 0.75, 0.5, 0.25, 0].map(function(f, i) {
-				return e("div", { key: i, className: "dss-mchart-tick" }, fmtTokens(yMax * f));
-			})
-		),
-		e("div", { className: "dss-mchart-plot" },
-			e("div", { className: "dss-mchart-grid" },
-				[0,1,2,3].map(function(i) { return e("i", { key: i }); })
-			),
-			e("div", { className: "dss-mchart-bars" },
-				days.map(function(dd) {
-					var b = byDay.get(dd.key) || emptyBucket();
-					var pIn = Math.max(0, (b.input || 0)) / yMax * 100;
-					var pOut = Math.max(0, (b.output || 0)) / yMax * 100;
-					return e("div", { key: dd.key, className: "dss-mchart-col" },
-						e("div", {
-							className: "dss-mchart-bar",
-							onMouseEnter: function(ev) {
-									showTipRaw(tipRows(dd.key + (dd.key === todayKey ? " " + t("trends.today") : ""), [
-										[t("trends.totalInput"), fmtTokens(b.input || 0)],
-										[t("trends.totalOutput"), fmtTokens(b.output || 0)],
-										[t("trends.totalReasoning"), fmtTokens(b.reasoning || 0)],
-										[t("trends.cacheRead"), fmtTokens(b.cacheRead || 0)],
-										[t("w.duration"), fmtDuration((b.llmMs || 0) + (b.toolMs || 0))]
-								]), ev);
-							},
-							onMouseLeave: hideTip
-						},
-							e("div", { className: "dss-mchart-seg input", style: { height: pIn + "%" } }),
-						e("div", { className: "dss-mchart-seg output" + ((b.output || 0) > 0 ? " has-value" : ""), style: { height: pOut + "%" } })
-						)
-					);
-				})
-			),
-			// 日期行独立于柱区，位于 X 轴基线下方
-			e("div", { className: "dss-mchart-xlabels" },
-				days.map(function(dd) {
-					return e("div", { key: dd.key, className: "dss-mchart-label" + (dd.key === todayKey ? " today" : "") + (props.selectedDate != null && dd.key === props.selectedDate ? " selected" : "") },
-										dd.key === todayKey ? t("trends.today") : (dd.mon + "/" + dd.day)
-					);
-				})
-			)
-		),
-		e("div", { className: "dss-mchart-legend" },
-					e("span", null, e("i", { className: "dss-mchart-lg input" }), t("w.input")),
-					e("span", null, e("i", { className: "dss-mchart-lg output" }), t("trends.outputIncludesReasoning"))
-		)
-	);
-}
-
-function ModelRing(props) {
-	var models = props.models;
-	var t = props.t;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
-	if (!total) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var cum = 0;
-	var stops = models.map(function(m) {
-		var v = ((m.input || 0) + (m.output || 0)) / total;
-		var from = (cum * 360).toFixed(1);
-		cum += v;
-		var to = (cum * 360).toFixed(1);
-		return { color: modelColor(m.key || m.displayName || m.model || "(unknown)"), from: from, to: to, label: m.displayName || modelDisplayName(m), pct: v * 100, model: m };
-	});
-
-	var gradient = stops.map(function(s) { return s.color + " " + s.from + "deg " + s.to + "deg"; }).join(", ");
-
-	return e("div", { className: "dss-ring-wrap" },
-		e("div", { className: "dss-ring", style: { background: "conic-gradient(" + gradient + ")" } },
-			e("div", { className: "dss-ring-center" },
-				e("div", { className: "dss-ring-total" }, fmtTokens(total)),
-				e("div", { className: "dss-ring-label" }, t("trends.inputOutput"))
-			)
-		),
-		e("div", { className: "dss-ring-legend" + (modelListNeedsScroll(models) ? " scrollable" : "") },
-			stops.map(function(s, i) {
-				return e("div", {
-					key: i,
-					className: "dss-ring-item",
-					onMouseEnter: function(ev) { showModelTip(s.model, t, ev); },
-					onMouseLeave: hideTip
-				},
-					e("span", { className: "dss-ring-swatch", style: { background: s.color } }),
-					e("span", { className: "dss-ring-name", title: s.label }, s.label),
-					e("span", { className: "dss-ring-pct" }, fmtSharePct(s.pct))
-				);
-			})
-		)
-	);
-}
-
-function showModelTip(model, t, ev) {
-	showTipRaw(tipRows(model.displayName || modelDisplayName(model), [
-		[t("th.cost"), fmtCostSummary(model.costSummary, t)],
-		[t("w.input"), fmtTokens(model.input || 0)],
-		[t("w.output"), fmtTokens(model.output || 0)]
-	]), ev);
-}
-
-function modelListNeedsScroll(models) {
-	return Array.isArray(models) && models.length > MAX_VISIBLE_MODELS;
-}
-
-function ModelList(props) {
-	var models = props.models;
-	var t = props.t;
-	if (!models || !models.length) return e("div", { className: "dss-empty" }, t("empty"));
-
-	var total = models.reduce(function(s, m) { return s + ((m.input || 0) + (m.output || 0)); }, 0);
-
-	return e("div", { className: "dss-model-list-viewport" + (modelListNeedsScroll(models) ? " scrollable" : "") },
-		e("div", { className: "dss-model-list" },
-			models.map(function(m, i) {
-				var share = total > 0 ? ((m.input || 0) + (m.output || 0)) / total : 0;
-				var pct = share * 100;
-				var color = modelColor(m.key || m.displayName || m.model || "(unknown)");
-				return e("div", {
-					key: i,
-					className: "dss-model-item",
-					onMouseEnter: function(ev) { showModelTip(m, t, ev); },
-					onMouseLeave: hideTip
-				},
-					e("div", { className: "dss-model-head" },
-						e("span", { className: "dss-model-dot", style: { background: color } }),
-						e("span", { className: "dss-model-name", title: m.displayName || modelDisplayName(m) }, m.displayName || modelDisplayName(m)),
-						e("span", { className: "dss-model-pct" }, fmtSharePct(pct))
-					),
-					e("div", { className: "dss-model-track" },
-						e("div", { className: "dss-model-fill", style: { width: Math.max(1.5, pct) + "%", background: color } })
-					),
-					e("div", { className: "dss-model-meta" },
-						t("w.input") + " " + fmtTokens(m.input || 0) +
-							" · " + t("w.output") + " " + fmtTokens(m.output || 0) +
-							" · " + t("trends.totalReasoning") + " " + fmtTokens(m.reasoning || 0) +
-							" · " + t("card.sessions") + " " + fmtN(m.sessions || 0) +
-							" · LLM " + fmtDuration(m.llmMs || 0) +
-							" · " + t("w.tool") + " " + fmtDuration(m.toolMs || 0)
-					)
-				);
-			})
-		)
-	);
-}
-
-var _modelColorCache = new Map();
-var _modelFallbackIdx = 0;
-// DeepSeek 官方模型固定配色：贴合 DSH 蓝色基色（#4f8cff）
-var MODEL_COLOR_MAP = {
-	"deepseek-v4-pro": "#4f8cff",     // 主蓝
-	"deepseek-v4-flash": "#74c0fc",   // 亮蓝
-	"deepseek-chat": "#5c7cfa",       // 靛蓝
-	"deepseek-reasoner": "#a78bfa"    // 蓝紫
-};
-// 未知模型兜底色板：全部蓝/青/靛色系，与 DSH 蓝基调一致
-var MODEL_PALETTE = ["#74c0fc","#22d3ee","#91a7ff","#5c7cfa","#748ffc","#4dabf7","#66d9e8","#9775fa","#b197fc","#a5d8ff","#3bc9db","#845ef7","#e3fafc","#d0bfff"];
-function modelColor(model) {
-	if (_modelColorCache.has(model)) return _modelColorCache.get(model);
-	var name = model || "(unknown)";
-	var c;
-	if (MODEL_COLOR_MAP[name]) {
-		c = MODEL_COLOR_MAP[name];
-	} else {
-		c = MODEL_PALETTE[_modelFallbackIdx % MODEL_PALETTE.length];
-		_modelFallbackIdx++;
-	}
-	_modelColorCache.set(model, c);
-	return c;
-}
 const { zh, en } = require("./client-locale.cjs");
 
 async function apply(ctx) {

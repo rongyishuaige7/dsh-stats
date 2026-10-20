@@ -156,7 +156,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle','.dss-hero'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -190,6 +190,34 @@ async function layout(name) {
     return issues.slice(0, 10);
   })()`);
   assert.deepEqual(overlaps, [], name + ' internal overlap or clipping');
+}
+// 趋势页和余额页共用：只有 .dss-body 可以滚动，正文不小于 11px（§9.2、§9.3 第 10 条）。
+async function scrollableNames() {
+  return evaluate(`(() => {
+    const panel = document.querySelector('.dss-panel');
+    return [...panel.querySelectorAll('*')].filter(node => {
+      const style = getComputedStyle(node);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    }).map(node => String(node.className || node.tagName));
+  })()`);
+}
+async function assertSingleScroll(name, options = {}) {
+  const scrollables = await scrollableNames();
+  assert(scrollables.every(selector => selector === 'dss-body'), name + ' only body scrolls: ' + JSON.stringify(scrollables));
+  if (options.requireBody) assert.deepEqual(scrollables, ['dss-body'], name + ' body scrolls when content overflows: ' + JSON.stringify(scrollables));
+  return scrollables;
+}
+async function assertTextFloor(name) {
+  const smallFonts = await evaluate(`(() => {
+    const bad = [];
+    for (const node of document.querySelectorAll('.dss-overlay *')) {
+      if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
+      const size = parseFloat(getComputedStyle(node).fontSize);
+      if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
+    }
+    return bad.slice(0, 10);
+  })()`);
+  assert.deepEqual(smallFonts, [], name + ' text floor: ' + JSON.stringify(smallFonts));
 }
 try {
   const port = await chromePort();
@@ -357,29 +385,17 @@ try {
       await tab(index);
       if (view === 'timeline') { await click('[data-action=mode-day]'); await until('document.querySelector(".dss-tl[data-mode=day]")'); }
       if (view === 'balance') {
-        const balanceScrollables = await evaluate(`(() => {
-          const panel = document.querySelector('.dss-panel');
-          return [...panel.querySelectorAll('*')].filter(node => {
-            const style = getComputedStyle(node);
-            return (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
-          }).map(node => String(node.className || node.tagName));
-        })()`);
-        assert(balanceScrollables.every(selector => selector === 'dss-body'), name + ' balance only body scrolls: ' + JSON.stringify(balanceScrollables));
-        if (width < 600) assert.deepEqual(balanceScrollables, ['dss-body'], name + ' balance body scrolls when content overflows: ' + JSON.stringify(balanceScrollables));
-        const balanceSmallFonts = await evaluate(`(() => {
-          const bad = [];
-          for (const node of document.querySelectorAll('.dss-overlay *')) {
-            if (![...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())) continue;
-            const size = parseFloat(getComputedStyle(node).fontSize);
-            if (size < 11) bad.push({ tag: node.tagName, cls: String(node.className || ''), size });
-          }
-          return bad.slice(0, 10);
-        })()`);
-        assert.deepEqual(balanceSmallFonts, [], name + ' balance text floor: ' + JSON.stringify(balanceSmallFonts));
+        await assertSingleScroll(name + ' balance', { requireBody: width < 600 });
+        await assertTextFloor(name + ' balance');
         if (lang === 'en') {
           const englishNames = await evaluate('document.querySelector(".dss-bal-kpi-names")?.textContent || ""');
           assert(!englishNames.includes('、'), 'English attention names use commas: ' + englishNames);
         }
+      }
+      if (view === 'trends') {
+        await until('document.querySelector(".dss-tr-kpis")');
+        await assertSingleScroll(name + ' trends', { requireBody: width < 600 });
+        await assertTextFloor(name + ' trends');
       }
       await layout(name + '-' + view); await capture(name + '-' + view);
       if (width < 600 && (['overview', 'trends'].includes(view) || (view === 'balance' && width === 390))) {
@@ -912,6 +928,9 @@ try {
   await tab(1);
   await until('document.querySelector(".dss-kpis")');
   await layout('dark-overview'); await capture('dark-overview');
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await layout('dark-trends'); await capture('dark-trends');
   await navigate('/?stats=estimated&lang=zh');
   await click('.dss-trigger'); await tab(1);
   await until('document.querySelector(".dss-kpis")');
@@ -1610,6 +1629,170 @@ try {
   assert(popTagHeight <= 20, 'popover subagent tag stays on one line at 320: ' + popTagHeight);
   await press('Escape'); await press('Escape');
   report.checks.push('showcase timeline: 09-07 lanes, first-page active days and one-line subagent tags');
+
+  // §9.3 第 1–12 条：趋势页工具栏、摘要条、每日柱图和跳转。
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?lang=zh');
+  await evaluate('localStorage.removeItem("dsh-stats.trends"); localStorage.removeItem("dsh-stats.hidden")');
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+
+  // 1. 默认
+  assert.equal(await evaluate('document.querySelector("[data-action=tr-range-30]").getAttribute("aria-pressed")'), 'true', 'default range is 30 days');
+  assert.equal(await evaluate('document.querySelector("[data-action=tr-metric-cost]").getAttribute("aria-pressed")'), 'true', 'default metric is cost');
+  assert.equal(await evaluate('document.querySelector(".dss-tr-range").textContent'), '08-10 至 09-08', 'range label');
+  assert(await evaluate('!document.querySelector(".dss-body .dss-date-nav") && !document.querySelector(".dss-body [data-action=mode-day]") && !document.querySelector(".dss-body .dss-kpis")'), 'trends has no overview date tools');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-kpis .dss-kpi").length'), 4, 'summary strip has four cells');
+
+  // 2. 柱数
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-col").length'), 30, '30 day columns');
+  assert.equal(await evaluate('document.querySelectorAll("button.dss-tr-bar").length'), 7, 'one bar per active day');
+  assert.equal(await evaluate('[...document.querySelectorAll("button.dss-tr-bar")].pop().dataset.date'), '2026-09-08', 'last bar is today');
+
+  // 3. 与总览一致
+  const trendsCost30 = await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent');
+  await tab(1);
+  await until('document.querySelector(".dss-kpis")');
+  await click('[data-action=mode-all]');
+  await until('document.querySelector(".dss-kpis")');
+  const overviewCost = await evaluate('document.querySelector(".dss-kpis .dss-kpi.cost .dss-kpi-v").textContent');
+  assert.equal(trendsCost30, overviewCost, '30-day trends cost equals overview all-history cost');
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 7');
+  const trendsCost7 = await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent');
+  assert.equal(trendsCost7, overviewCost, '7-day trends cost equals overview all-history cost');
+  await tab(1);
+  await until('document.querySelector(".dss-kpis")');
+  await click('[data-action=mode-day]');
+  await until('document.querySelector(".dss-kpis")');
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+
+  // 4. 切换与持久化
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 7');
+  assert.equal(await evaluate('document.querySelector(".dss-tr-range").textContent'), '09-02 至 09-08', '7-day range label');
+  await click('[data-action=tr-metric-token]');
+  await until('document.querySelector(".dss-tr-daily h3").textContent === "每日 Token"');
+  assert(await evaluate('[...document.querySelectorAll(".dss-tr-bar")].every(node => node.classList.contains("is-token") && node.querySelectorAll("i").length === 3)'), 'token bars carry three segments');
+  assert.deepEqual(await evaluate('JSON.parse(localStorage.getItem("dsh-stats.trends"))'), { range: 7, metric: 'token' }, 'trends prefs persist');
+  await click('[data-action=close]');
+  await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger');
+  await until('document.querySelector(".dss-panel")');
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-col").length'), 7, 'reopening keeps 7 days');
+  assert.equal(await evaluate('document.querySelector("[data-action=tr-metric-token]").getAttribute("aria-pressed")'), 'true', 'reopening keeps the token metric');
+  await evaluate('localStorage.setItem("dsh-stats.trends", JSON.stringify({ range: 14, metric: "x" }))');
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-col").length'), 30, 'invalid prefs fall back to 30 days');
+  assert.equal(await evaluate('document.querySelector("[data-action=tr-metric-cost]").getAttribute("aria-pressed")'), 'true', 'invalid prefs fall back to cost');
+
+  // 5. x 轴
+  const xTexts = () => evaluate('[...document.querySelectorAll(".dss-tr-x span")].map(node => node.textContent)');
+  await click('[data-action=tr-range-30]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+  assert.deepEqual(await xTexts(), ['08-10', '08-17', '08-24', '08-31', '今天'], '30-day x labels');
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 7');
+  assert.deepEqual(await xTexts(), ['09-02', '09-03', '09-04', '09-05', '09-06', '09-07', '今天'], '7-day x labels');
+  await click('[data-action=tr-range-90]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 90');
+  assert.deepEqual(await xTexts(), ['7月', '8月', '今天'], '90-day x labels');
+  await layout('desktop-trends-90'); await capture('desktop-trends-90');
+  await click('[data-action=tr-range-30]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+
+  // 12. Token 模式截图
+  await click('[data-action=tr-metric-token]');
+  await until('document.querySelector(".dss-tr-daily h3").textContent === "每日 Token"');
+  await layout('desktop-trends-token'); await capture('desktop-trends-token');
+  await click('[data-action=tr-metric-cost]');
+  await until('document.querySelector(".dss-tr-daily h3").textContent === "每日费用"');
+
+  // 6. 键盘与跳转
+  const barHeights = await evaluate('[...document.querySelectorAll(".dss-tr-bar")].map(node => ({ date: node.dataset.date, height: parseFloat(node.style.height) }))');
+  const peakBar = barHeights.reduce((best, bar) => (!best || bar.height >= best.height ? bar : best), null);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".dss-tr-bar")].filter(node => node.tabIndex === 0).map(node => node.dataset.date)'), [peakBar.date], 'the only tab stop is the peak day');
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  try {
+    await focus('.dss-tr-bar[tabindex="0"]');
+    await press('Home');
+    assert.equal(await evaluate('document.activeElement.dataset.date'), '2026-09-02', 'Home moves to the first active day');
+    assert((await evaluate('document.querySelector("#dss-tooltip")?.textContent || ""')).includes('09-02'), 'bar tooltip follows keyboard focus');
+    await press('ArrowRight');
+    assert.equal(await evaluate('document.activeElement.dataset.date'), '2026-09-03', 'ArrowRight moves one active day');
+    await press('End');
+    assert.equal(await evaluate('document.activeElement.dataset.date'), '2026-09-08', 'End moves to the last active day');
+    await press('Enter');
+    await until('document.querySelector("#dss-tab-overview").getAttribute("aria-selected") === "true"');
+    assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'focus lands on the overview tab');
+    assert((await evaluate('document.querySelector(".dss-date-label").textContent')).includes('2026-09-08'), 'jump selects that day');
+    assert.deepEqual(await evaluate('JSON.parse(localStorage.getItem("dsh-stats.nav"))'), { mode: 'day', date: '2026-09-08' }, 'jump writes the day nav');
+  } finally {
+    await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+  }
+
+  // 7. 筛选联动
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  const costBeforeHide = await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent');
+  await openFilter();
+  await click('.dss-filter-item[data-project-id="client-dashboard"] input');
+  await closeFilter();
+  assert((await evaluate('document.querySelector(".dss-filter-badge")?.textContent || ""')).includes('1'), 'filter badge counts one hidden project');
+  assert.notEqual(await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent'), costBeforeHide, 'hiding a project changes the trends cost');
+  await tab(1);
+  await until('document.querySelector(".dss-kpis")');
+  assert(await evaluate('!document.querySelector(\'.dss-prow[data-project-id="client-dashboard"]\')'), 'hidden project leaves the overview table');
+  await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await openFilter();
+  await click('[data-action=filter-show-all]');
+  await closeFilter();
+  assert.equal(await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent'), costBeforeHide, 'show all restores the trends cost');
+
+  // 8. 全部隐藏
+  await openFilter();
+  await click('.dss-filter-item[data-project-id="api-service"] input');
+  await click('.dss-filter-item[data-project-id="client-dashboard"] input');
+  await closeFilter();
+  await until('document.querySelector(".dss-tr-empty")');
+  assert((await evaluate('document.querySelector(".dss-tr-empty").textContent')).includes('所有项目都已隐藏'), 'all-hidden empty state');
+  await click('[data-action=tr-show-all]');
+  await until('document.querySelector(".dss-tr-kpis")');
+
+  // 9. 部分计价
+  await navigate('/?stats=partial&lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  assert(await evaluate('document.querySelectorAll(".dss-tr-bar.is-partial").length > 0'), 'partial days use the striped bar');
+  assert((await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent')).endsWith('*'), 'partial cost ends with *');
+  await layout('desktop-trends-partial'); await capture('desktop-trends-partial');
+  await click('.dss-tr-kpis [data-action=pricing-pending]');
+  await until('document.querySelector(".dss-drawer")');
+  await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+
+  // 11. 空范围
+  await navigate('/?shiftDays=20&lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelector(".dss-tr-empty")');
+  assert((await evaluate('document.querySelector(".dss-tr-empty").textContent')).includes('近 7 天没有 Token 消耗'), 'empty range copy');
+  assert.equal(await evaluate('document.querySelector("[data-action=tr-empty-range]")?.textContent || ""'), '看近 30 天', 'empty range points at 30 days');
+  await click('[data-action=tr-empty-range]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 30');
+  assert.equal(await evaluate('document.querySelectorAll("button.dss-tr-bar").length'), 7, '30 days bring the bars back');
+  report.checks.push('trends: range/metric persistence, overview cost parity, 30/7/90 columns and x labels, bar keyboard and day jump, filter linkage, all-hidden, partial pricing, empty range, single scroll and >=11px text');
+
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
 } catch (error) {
