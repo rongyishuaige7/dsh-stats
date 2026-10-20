@@ -71,7 +71,7 @@ function render(props = {}) {
 		onOpenDay: () => {},
 		onOpenPricing: () => {},
 		t: makeT(lang),
-		legacy: { globals, dateGlobals: globals, selectedDate: null, onSelectDate: () => {} },
+		legacy: { globals, dateGlobals: globals },
 	}));
 }
 
@@ -112,8 +112,26 @@ test('an empty range points at the smallest larger range with tokens', () => {
 	expect(html).toContain('data-action="tr-empty-range"');
 	expect(html).toContain('看近 30 天');
 	expect(html).not.toContain('dss-tr-kpis');
-	// 过渡期仍然渲染旧的热力图分区。
-	expect(html).toContain('dss-cal-wrap');
+	// 空范围仍然渲染 26 周热力图。
+	expect(html).toContain('dss-tr-heat');
+});
+
+test('renders the 26-week heatmap and the streak stats', () => {
+	const html = render();
+	expect((html.match(/class="dss-tr-cell/g) || []).length).toBe(177);
+	expect((html.match(/data-action="tr-heat-day"/g) || []).length).toBe(DATES.length);
+	expect(html).toContain('活动热力图');
+	expect(html).toContain('近 26 周 · 按费用');
+	expect(html).toContain('活跃天数');
+	expect(html).toContain('当前连续');
+	expect(html).toContain('最长连续');
+	expect(html).toContain('7 / 177 天');
+	expect(html).toContain('7 天');
+	expect(html).toContain('截至今天');
+	expect(html).toContain('09-02 至 09-08');
+	expect(html).toContain('4月');
+	expect(html).toContain('9月');
+	expect((html.match(/class="dss-tr-cell is-today/g) || []).length).toBe(1);
 });
 
 test('partial pricing marks the cost and offers the pending chip', () => {

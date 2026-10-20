@@ -14,7 +14,7 @@ const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = r
 const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
 const { TRENDS_PREF_DEFAULTS, normalizeTrendsPrefs } = require("./client-trends-model.cjs");
 const { TimelineView } = require("./client-timeline.cjs");
-const { TrendsView, CalendarHeatmap, modelListNeedsScroll } = require("./client-trends.cjs");
+const { TrendsView, modelListNeedsScroll } = require("./client-trends.cjs");
 const { hideTip } = require("./client-tip.cjs");
 
 var e = react.createElement;
@@ -637,9 +637,7 @@ function StatsPanel(props) {
 							t,
 							legacy: {
 								globals,
-								dateGlobals,
-								selectedDate: effectiveDate,
-								onSelectDate: function(date) { setNav({ mode: "day", date: date }); }
+								dateGlobals
 							}
 						})
 					)
@@ -749,5 +747,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, modelListNeedsScroll, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, CalendarHeatmap, projectColorIndexes, projectColorIndex, pageRows, escapeAction
+	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction
 };

@@ -1,14 +1,14 @@
-// 趋势页组件：工具栏、摘要条和每日柱图（5g）。
-// 过渡期仍然渲染旧的热力图和模型区；5h 删除 CalendarHeatmap，5i 删除 ModelRing/ModelList。
+// 趋势页组件：工具栏、摘要条、每日柱图和 26 周热力图（5g、5h）。
+// 过渡期仍然渲染旧的模型区；5i 删除 ModelRing/ModelList。
 const react = require("react");
 const { PendingChip, InfoTip, ProjectFilterMenu } = require("./client-overview.cjs");
-const { MAX_VISIBLE_MODELS, fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens, pad } = require("./client-format.cjs");
-const { hasTokenUsage, localDayKey, modelAgg, modelDisplayName, modelNameOnly, sessionDayTokens } = require("./client-data.cjs");
+const { MAX_VISIBLE_MODELS, fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
+const { hasTokenUsage, modelAgg, modelDisplayName, modelNameOnly, sessionDayTokens } = require("./client-data.cjs");
 const { costDelta, pendingFocus } = require("./client-overview-model.cjs");
 const { dayCostSummaries } = require("./client-timeline-model.cjs");
 const {
-	RANGES, amountOf, dayPoints, fmtAxisCost, metricValue, niceMax, previousDates,
-	rangeDates, rangeTotals, topModel, modelShares, xLabels
+	HEAT_WEEKS, RANGES, amountOf, dayPoints, fmtAxisCost, heatCells, heatMonths, heatWindow,
+	metricValue, niceMax, previousDates, rangeDates, rangeTotals, streaks, topModel, modelShares, xLabels
 } = require("./client-trends-model.cjs");
 const { hideTip, showTipRaw, tipProps, tipRows } = require("./client-tip.cjs");
 
@@ -171,6 +171,31 @@ function barTip(point, t) {
 	return rows;
 }
 
+// 柱区和热力格共用的 roving tabindex：方向键只在活跃日之间移动。
+function focusDate(refs, date) {
+	const node = refs.current.get(date);
+	if (node && typeof node.focus === "function") node.focus();
+}
+
+function rovingKeyDown(ev, options) {
+	const { dates, date, moveTo, onOpen, vertical } = options;
+	const index = dates.indexOf(date);
+	let next = null;
+	if (ev.key === "ArrowLeft" || (vertical && ev.key === "ArrowUp")) next = dates[Math.max(0, index - 1)];
+	else if (ev.key === "ArrowRight" || (vertical && ev.key === "ArrowDown")) next = dates[Math.min(dates.length - 1, index + 1)];
+	else if (ev.key === "Home") next = dates[0];
+	else if (ev.key === "End") next = dates[dates.length - 1];
+	else if (ev.key === "Enter" || ev.key === " ") {
+		ev.preventDefault();
+		ev.stopPropagation();
+		onOpen();
+		return;
+	} else return;
+	ev.preventDefault();
+	ev.stopPropagation();
+	if (next && next !== date) moveTo(next);
+}
+
 function DailyChart(props) {
 	const { points, totals, metric, today, barDate, setBarDate, onOpenDay, canOpen, t } = props;
 	const isToken = metric === "token";
@@ -198,20 +223,16 @@ function DailyChart(props) {
 
 	const moveTo = function(date) {
 		setBarDate(date);
-		const node = barRefs.current.get(date);
-		if (node) node.focus();
+		focusDate(barRefs, date);
 	};
 	const onBarKeyDown = function(ev, date) {
-		const index = activeDates.indexOf(date);
-		if (ev.key === "ArrowLeft") { ev.preventDefault(); ev.stopPropagation(); const next = activeDates[Math.max(0, index - 1)]; if (next) moveTo(next); }
-		else if (ev.key === "ArrowRight") { ev.preventDefault(); ev.stopPropagation(); const next = activeDates[Math.min(activeDates.length - 1, index + 1)]; if (next) moveTo(next); }
-		else if (ev.key === "Home") { ev.preventDefault(); ev.stopPropagation(); if (activeDates.length) moveTo(activeDates[0]); }
-		else if (ev.key === "End") { ev.preventDefault(); ev.stopPropagation(); if (activeDates.length) moveTo(activeDates[activeDates.length - 1]); }
-		else if (ev.key === "Enter" || ev.key === " ") {
-			ev.preventDefault();
-			ev.stopPropagation();
-			if (canOpen(date)) onOpenDay(date);
-		}
+		rovingKeyDown(ev, {
+			dates: activeDates,
+			date,
+			moveTo,
+			onOpen: function() { if (canOpen(date)) onOpenDay(date); },
+			vertical: false
+		});
 	};
 
 	const anyPartial = !isToken && points.some(function(point) { return point.active && point.partial; });
@@ -297,6 +318,124 @@ function DailyChart(props) {
 	);
 }
 
+function heatTip(point, t) {
+	const rows = [
+		[t("card.cost"), fmtCostSummary(point.cost, t)],
+		[t("kpi.tokens"), fmtTokens(point.tokens)],
+		[t("w.cacheHit"), point.input > 0 ? Math.round(point.cacheRead / point.input * 100) + "%" : "—"]
+	];
+	if (point.partial) rows.push([t("tl.partial"), fmtTokens(point.cost.unpricedTokens) + " " + t("kpi.tokens")]);
+	return rows;
+}
+
+function Heatmap(props) {
+	const { heat, today, metric, canOpen, onOpenDay, cellDate, setCellDate, t } = props;
+	const isToken = metric === "token";
+	const activeDates = heat.cells.filter(function(cell) { return cell.active; }).map(function(cell) { return cell.date; });
+	// 默认停在今天；今天不活跃时停在最近的活跃日。切换指标或筛选后仍然活跃就保留。
+	const fallback = activeDates.indexOf(today) >= 0 ? today : activeDates.length ? activeDates[activeDates.length - 1] : null;
+	const selected = cellDate && activeDates.indexOf(cellDate) >= 0 ? cellDate : fallback;
+	const cellRefs = useRef(new Map());
+	const moveTo = function(date) {
+		setCellDate(date);
+		focusDate(cellRefs, date);
+	};
+
+	const months = heatMonths(heat.window).map(function(mark) {
+		return e("span", {
+			key: "m" + mark.column,
+			className: "dss-tr-month" + (mark.column >= HEAT_WEEKS ? " is-end" : ""),
+			style: { gridColumn: mark.column }
+		}, monthLabel(mark.month, t));
+	});
+
+	const weekdayNames = t("w.weekdays").split(",");
+	const dow = [1, 2, 3, 4, 5, 6, 7].map(function(row) {
+		return e("span", { key: row }, row === 1 || row === 3 || row === 5 ? weekdayNames[row] : "");
+	});
+
+	const cells = heat.cells.map(function(cell) {
+		const style = { gridColumn: cell.column, gridRow: cell.row };
+		const classes = "dss-tr-cell" + (cell.today ? " is-today" : "");
+		if (!cell.active) {
+			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style });
+		}
+		const point = heat.points.get(cell.date);
+		const openable = canOpen(cell.date);
+		const label = dayLabel(cell.date, t, true);
+		const amount = isToken ? fmtTokens(point.tokens) : fmtCostSummary(point.cost, t);
+		return e("button", {
+			key: cell.date,
+			type: "button",
+			className: classes,
+			"data-date": cell.date,
+			"data-level": cell.level,
+			"data-action": "tr-heat-day",
+			"aria-label": openable ? t("tr.openDay").replace("%s", label + " " + amount) : label + " " + amount,
+			"aria-disabled": openable ? undefined : "true",
+			tabIndex: cell.date === selected ? 0 : -1,
+			style,
+			ref: function(node) { if (node) cellRefs.current.set(cell.date, node); else cellRefs.current.delete(cell.date); },
+			onClick: openable ? function() { onOpenDay(cell.date); } : undefined,
+			onKeyDown: function(ev) {
+				rovingKeyDown(ev, {
+					dates: activeDates,
+					date: cell.date,
+					moveTo,
+					onOpen: function() { if (openable) onOpenDay(cell.date); },
+					vertical: true
+				});
+			},
+			...tipProps(function() { return tipRows(label, heatTip(point, t)); })
+		});
+	});
+
+	const stats = heat.stats;
+	const note = t("tr.heatNote").replace("%s", t(isToken ? "tr.byToken" : "tr.byCost"));
+	const currentEnd = stats.currentEnd === "today" ? t("tr.stat.today") : stats.currentEnd === "yesterday" ? t("tr.stat.yesterday") : null;
+
+	return e("section", { className: "dss-tr-sec dss-tr-heat" },
+		e("div", { className: "dss-tr-sec-head" },
+			e("h3", null, t("tr.heat")),
+			e("span", { className: "dss-tr-sec-note" }, note)
+		),
+		e("div", { className: "dss-tr-heat-body" },
+			e("div", { className: "dss-tr-heat-map" },
+				e("div", { className: "dss-tr-heat-months", "aria-hidden": "true" }, months),
+				e("div", { className: "dss-tr-heat-dow", "aria-hidden": "true" }, dow),
+				e("div", { className: "dss-tr-heat-grid", role: "group", "aria-label": t("tr.groupAria").replace("%s", t("tr.heat")).replace("%s", note) }, cells)
+			),
+			e("dl", { className: "dss-tr-heat-stats" },
+				e("div", { className: "dss-tr-stat" },
+					e("dt", null, t("tr.stat.active")),
+					e("dd", null, t("tl.activeValue").replace("%d", String(stats.active)).replace("%d", String(stats.total)))
+				),
+				e("div", { className: "dss-tr-stat" },
+					e("dt", null, t("tr.stat.current")),
+					e("dd", null, t("tl.days").replace("%d", String(stats.current)),
+						currentEnd ? e("span", { className: "dss-tr-stat-sub" }, currentEnd) : null)
+				),
+				e("div", { className: "dss-tr-stat" },
+					e("dt", null, t("tr.stat.longest")),
+					e("dd", null, t("tl.days").replace("%d", String(stats.longest)),
+						stats.longest > 0 && stats.longestStart && stats.longestEnd
+							? e("span", { className: "dss-tr-stat-sub" }, t("tl.rangeValue").replace("%s", stats.longestStart.slice(5)).replace("%s", stats.longestEnd.slice(5)))
+							: null)
+				)
+			)
+		),
+		e("div", { className: "dss-tr-legend" },
+			e("span", { className: "dss-tr-legend-grp" },
+				t("trends.less"),
+				[0, 1, 2, 3, 4].map(function(level) { return e("i", { key: level, className: "dss-mx-lg", "data-level": level }); }),
+				t("trends.more")
+			),
+			e("span", { className: "dss-tr-legend-grp" }, t("tr.heatUnit")),
+			e("span", { className: "dss-tr-legend-grp is-hint" }, t("tr.clickCell"))
+		)
+	);
+}
+
 function TrendsView(props) {
 	const t = props.t;
 	const today = props.today;
@@ -309,6 +448,7 @@ function TrendsView(props) {
 	const hiddenKey = props.hiddenKey || "";
 	const legacy = props.legacy || {};
 	const [barDate, setBarDate] = useState(null);
+	const [cellDate, setCellDate] = useState(null);
 
 	const visibleSessions = useMemo(function() {
 		const sessions = [];
@@ -339,9 +479,26 @@ function TrendsView(props) {
 	const anyHistory = useMemo(function() { return projects.some(hasTokenUsage); }, [projects]);
 	const canOpen = function(date) { return (props.dates || []).indexOf(date) >= 0; };
 
-	const heat = legacy.globals ? e(Section, { title: t("trends.heatmap") },
-		e(CalendarHeatmap, { byDay: legacy.globals.byDay || new Map(), selectedDate: legacy.selectedDate, onSelectDate: legacy.onSelectDate, t })
-	) : null;
+	// 热力图固定近 26 周，只跟随筛选和指标，不跟随范围。
+	const heat = useMemo(function() {
+		const win = heatWindow(today);
+		const windowPoints = dayPoints(win.dates, byDay, dayCosts);
+		const values = new Map();
+		const pointsByDate = new Map();
+		const activeSet = new Set();
+		windowPoints.forEach(function(point) {
+			values.set(point.date, { value: metricValue(point, metric), active: point.active });
+			pointsByDate.set(point.date, point);
+			if (point.active) activeSet.add(point.date);
+		});
+		return {
+			window: win,
+			points: pointsByDate,
+			cells: heatCells(win, values, today),
+			stats: streaks(activeSet, win, today)
+		};
+	}, [byDay, dayCosts, today, metric]);
+
 	const modelsSection = legacy.globals ? e(Section, { title: t("trends.modelDist"), hint: t("trends.modelHint") },
 		e("div", { className: "dss-model-split" },
 			e(ModelRing, { models: (legacy.dateGlobals || legacy.globals).models || [], t }),
@@ -380,7 +537,7 @@ function TrendsView(props) {
 					onClick: function() { props.setPrefs({ range: nextRange }); }
 				}, t("tr.viewRange").replace("%d", String(nextRange))) : null
 			),
-			heat
+			e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t })
 		);
 	}
 
@@ -394,13 +551,13 @@ function TrendsView(props) {
 			points, totals, metric, today, barDate, setBarDate,
 			onOpenDay: props.onOpenDay, canOpen, t
 		}),
-		heat,
+		e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t }),
 		modelsSection
 	);
 }
 
 // ------------------------------------------------------------------
-// 以下为过渡期沿用的旧组件，行为不变；5h/5i 删除。
+// 以下为过渡期沿用的旧组件，行为不变；5i 删除。
 // ------------------------------------------------------------------
 function Section(props) {
 	return e("div", { className: "dss-section" },
@@ -409,99 +566,6 @@ function Section(props) {
 			props.hint ? e("div", { className: "dss-sec-hint" }, props.hint) : null
 		),
 		props.children
-	);
-}
-
-// 5h 删除：当月日历热力图。
-function CalendarHeatmap(props) {
-	var byDay = props.byDay;
-	var t = props.t;
-	var todayKey = localDayKey(Date.now());
-
-	var mo = { y: Number(todayKey.slice(0, 4)), m: Number(todayKey.slice(5, 7)) - 1 };
-	var first = new Date(Date.UTC(mo.y, mo.m, 1));
-	var offset = (first.getUTCDay() + 6) % 7; // 周一 = 0
-	var daysInMonth = new Date(Date.UTC(mo.y, mo.m + 1, 0)).getUTCDate();
-
-	var weekLabels = t("trends.weekdays").split(",");
-	var DOW = weekLabels.slice(1).concat(weekLabels[0]);
-
-	// 第一遍：收集当月所有活动天的总量 → 分位数阈值（25% / 50% / 75%）
-	var actTots = [];
-	for (var d0 = 1; d0 <= daysInMonth; d0++) {
-		var dk0 = mo.y + "-" + (mo.m + 1 < 10 ? "0" + (mo.m + 1) : "" + (mo.m + 1)) + "-" + (d0 < 10 ? "0" + d0 : "" + d0);
-		var b0 = byDay.get(dk0);
-		var t0 = (b0 && (b0.input || 0) + (b0.output || 0)) || 0;
-		if (t0 > 0) actTots.push(t0);
-	}
-	actTots.sort(function(a, b) { return a - b; });
-	var q1 = 0, q2 = 0, q3 = 0;
-	if (actTots.length >= 4) {
-		var fq = function(f) { return actTots[Math.min(actTots.length - 1, Math.floor(f * actTots.length))]; };
-		q1 = fq(0.25); q2 = fq(0.5); q3 = fq(0.75);
-	}
-	function lvlOf(tot) {
-		if (tot <= 0) return 0;                        // 无活动 → 底色
-		if (actTots.length >= 4) {
-			if (tot > q3) return 4;                     // 前 25%
-			if (tot > q2) return 3;
-			if (tot > q1) return 2;
-			return 1;                                   // 后 25%
-		}
-		// 活动天太少时分位无意义：按 10 万/30 万/60 万固定阈值
-		if (tot >= 600000) return 4;
-		if (tot >= 300000) return 3;
-		if (tot >= 100000) return 2;
-		return 1;
-	}
-
-	var cells = [];
-	for (var i = 0; i < offset; i++) cells.push(e("div", { key: "p" + i, className: "dss-cal-pad" }));
-	for (var day = 1; day <= daysInMonth; day++) {
-		// let 块级绑定：每个 cell 的回调捕获各自的 dk/isFuture（var 会共享最后一天的值）
-		let dk = mo.y + "-" + (mo.m + 1 < 10 ? "0" + (mo.m + 1) : "" + (mo.m + 1)) + "-" + (day < 10 ? "0" + day : "" + day);
-		let b = byDay.get(dk);
-		let tot = (b && (b.input || 0) + (b.output || 0)) || 0;
-		let lvl = lvlOf(tot);
-		let isToday = dk === todayKey;
-		let isFuture = dk > todayKey;
-		let isSel = props.selectedDate != null && dk === props.selectedDate;
-		let canSelect = tot > 0 && !isFuture && typeof props.onSelectDate === "function";
-		cells.push(e(canSelect ? "button" : "span", {
-			key: dk,
-			type: canSelect ? "button" : undefined,
-			className: "dss-cal-cell lvl" + lvl + (tot > 0 ? " has" : "") + (canSelect ? " interactive" : "") + (isToday ? " today" : "") + (isFuture ? " future" : "") + (isSel ? " selected" : ""),
-			title: dk,
-			"aria-label": canSelect ? dk : undefined,
-			"aria-pressed": canSelect ? isSel : undefined,
-			onClick: canSelect ? function() { props.onSelectDate(dk); } : undefined,
-			onMouseEnter: function(ev) {
-				var bbb = byDay.get(dk);
-				if (!bbb) { showTipRaw(tipRows(dk, [[t("trends.activity"), isFuture ? t("trends.futureDate") : t("trends.none")]]), ev); return; }
-				showTipRaw(tipRows(dk, [
-					[t("trends.totalInput"), fmtTokens(bbb.input || 0)],
-					[t("trends.totalOutput"), fmtTokens(bbb.output || 0)],
-					[t("trends.totalReasoning"), fmtTokens(bbb.reasoning || 0)],
-					[t("w.duration"), fmtDuration((bbb.llmMs || 0) + (bbb.toolMs || 0))]
-				]), ev);
-			},
-			onMouseLeave: hideTip
-		}));
-	}
-
-	return e("div", { className: "dss-cal-wrap" },
-		e("div", { className: "dss-cal" },
-			e("div", { className: "dss-cal-month" },
-				e("div", { className: "dss-cal-title" }, mo.y + "-" + pad(mo.m + 1)),
-				e("div", { className: "dss-cal-dow" }, DOW.map(function(dw, i) { return e("span", { key: i }, dw); })),
-				e("div", { className: "dss-cal-grid" }, cells)
-			)
-		),
-		e("div", { className: "dss-cal-legend" },
-			e("span", null, t("trends.less")),
-			[0,1,2,3,4].map(function(i) { return e("i", { key: i, className: "dss-hm-lg lvl" + i }); }),
-			e("span", null, t("trends.more"))
-		)
 	);
 }
 
@@ -629,4 +693,4 @@ function modelColor(model) {
 	return c;
 }
 
-module.exports = { TrendsView, TrendsTools, TrendsKpis, DailyChart, CalendarHeatmap, modelListNeedsScroll };
+module.exports = { TrendsView, TrendsTools, TrendsKpis, DailyChart, Heatmap, modelListNeedsScroll };

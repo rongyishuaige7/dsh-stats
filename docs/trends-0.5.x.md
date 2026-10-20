@@ -209,7 +209,7 @@
 - tooltip：用 `tipProps(() => tipRows(title, rows))`，鼠标和焦点都会触发。
   - 标题是"08-16 周日"，格式同 `OverviewTools` 的日期标签：`date + " " + w.dayPrefix + 星期`；
   - 行依次是：预估费用（部分计价时带"*"）、Token、输入、输出、思考（> 0 时）、缓存命中；
-  - 部分计价时再加一行"部分待计价 · 1.2K Token"。
+  - 部分计价时再加一行"部分待计价"（`tl.partial`），值是未计价的 Token 数。
 - 读屏：
   - 柱区的 `aria-label` 是"每日费用，近 30 天"（`tr.groupAria`）；
   - 每根柱的 `aria-label` 是"08-16 周日 ¥12.30，打开当天总览"（`tr.openDay`）。跳不过去时（U6）带 `aria-disabled="true"`，标签里去掉"，打开当天总览"。
@@ -334,7 +334,7 @@
 
 **U12 部分计价与待计价。**
 - 判定：一天或一个模型的摘要 `status === "partial"` 或者 `unpricedTokens > 0`，就算部分计价（`isPartial`）。
-- 柱子：只在费用模式下加 `.is-partial` 斜纹。tooltip 加"部分待计价 · X Token"，`aria-label` 里的金额带"*"。
+- 柱子：只在费用模式下加 `.is-partial` 斜纹。tooltip 加一行"部分待计价"（`tl.partial`），值是未计价的 Token 数，`aria-label` 里的金额带"*"。
 - 热力格不画斜纹（格子太小），tooltip 同柱子。
 - 摘要条：大字带"*"，副行有 `PendingChip`；日均和标题行里的"日均"也带"*"。
 - 模型表：费用带"*"，并有紧凑的"待计价"。点它和点摘要条的 chip 一样，用 `openPricing` 打开价格抽屉并定位到这个模型。
@@ -636,7 +636,6 @@ div.dss-tr
 | `tr.pendingShort` | 待计价 | Unpriced |
 | `tr.providerUnknown` | 未知 Provider | Unknown provider |
 | `tr.reasoning` | 思考 | Reasoning |
-| `tr.partialTokens` | 部分待计价 · %s Token | Partly unpriced · %s tokens |
 | `tr.emptyRange` | 近 %d 天没有 Token 消耗 | No token usage in the last %d days |
 | `tr.viewRange` | 看近 %d 天 | Show last %d days |
 

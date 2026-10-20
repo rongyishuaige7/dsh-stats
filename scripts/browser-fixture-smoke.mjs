@@ -156,7 +156,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -1792,6 +1792,53 @@ try {
   await until('document.querySelectorAll(".dss-tr-col").length === 30');
   assert.equal(await evaluate('document.querySelectorAll("button.dss-tr-bar").length'), 7, '30 days bring the bars back');
   report.checks.push('trends: range/metric persistence, overview cost parity, 30/7/90 columns and x labels, bar keyboard and day jump, filter linkage, all-hidden, partial pricing, empty range, single scroll and >=11px text');
+
+  // §9.3 第 13–17 条：26 周热力图与连续统计。
+  await navigate('/?shiftDays=20&lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelector(".dss-tr-empty")');
+  assert(await evaluate('!!document.querySelector(".dss-tr-heat")'), 'empty range still renders the heatmap');
+  assert.equal(await evaluate('document.querySelectorAll("button.dss-tr-cell").length'), 7, 'empty range keeps seven active cells');
+
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(3);
+  await until('document.querySelector(".dss-tr-kpis")');
+  // 13. 格子
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-cell").length'), 177, '26 weeks of cells');
+  assert.equal(await evaluate('document.querySelector(".dss-tr-cell").dataset.date'), '2026-03-16', 'first cell is the window start');
+  assert.equal(await evaluate('[...document.querySelectorAll(".dss-tr-cell")].filter(node => node.style.gridColumnStart === "26").length'), 2, 'last column holds two cells');
+  assert.equal(await evaluate('document.querySelectorAll("button.dss-tr-cell").length'), 7, 'seven active cells');
+  assert(await evaluate('document.querySelector(\'button.dss-tr-cell[data-date="2026-09-08"]\').classList.contains("is-today")'), 'today cell is marked');
+  // 14. 标签
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".dss-tr-month")].map(node => node.textContent)'), ['4月', '5月', '6月', '7月', '8月', '9月'], 'month labels run April to September');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".dss-tr-heat-dow span")].map(node => node.textContent).filter(Boolean)'), ['一', '三', '五'], 'weekday column shows Mon/Wed/Fri only');
+  // 15. 统计
+  const heatStats = await evaluate('[...document.querySelectorAll(".dss-tr-stat")].map(node => node.textContent)');
+  assert.equal(heatStats.length, 3, 'three heat statistics');
+  assert(heatStats[0].includes('7 / 177 天'), 'active days stat: ' + heatStats[0]);
+  assert(heatStats[1].includes('7 天') && heatStats[1].includes('截至今天'), 'current streak stat: ' + heatStats[1]);
+  assert(heatStats[2].includes('7 天') && heatStats[2].includes('09-02 至 09-08'), 'longest streak stat: ' + heatStats[2]);
+  // 16. 键盘与跳转
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("button.dss-tr-cell")].filter(node => node.tabIndex === 0).map(node => node.dataset.date)'), ['2026-09-08'], 'the only heat tab stop is today');
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  try {
+    await focus('button.dss-tr-cell[tabindex="0"]');
+    await press('ArrowLeft');
+    assert.equal(await evaluate('document.activeElement.dataset.date'), '2026-09-07', 'ArrowLeft moves to the previous active day');
+    assert((await evaluate('document.querySelector("#dss-tooltip")?.textContent || ""')).includes('2026-09-07'), 'heat tooltip follows keyboard focus');
+    await press('Home');
+    assert.equal(await evaluate('document.activeElement.dataset.date'), '2026-09-02', 'Home moves to the first active day');
+    await press('Enter');
+    await until('document.querySelector("#dss-tab-overview").getAttribute("aria-selected") === "true"');
+    assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'heat jump focuses the overview tab');
+    assert((await evaluate('document.querySelector(".dss-date-label").textContent')).includes('2026-09-02'), 'heat jump selects that day');
+    assert.deepEqual(await evaluate('JSON.parse(localStorage.getItem("dsh-stats.nav"))'), { mode: 'day', date: '2026-09-02' }, 'heat jump writes the day nav');
+  } finally {
+    await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+  }
+  report.checks.push('trends heatmap: 177 cells and two-cell last column, April–September labels, Mon/Wed/Fri column, streak stats, roving keyboard and day jump, empty range keeps the heatmap');
 
   assert.deepEqual(report.errors, []);
   report.status = 'passed';
