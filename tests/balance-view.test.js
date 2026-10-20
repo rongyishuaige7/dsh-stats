@@ -221,3 +221,28 @@ test('all-idle providers render no skeleton rows and open the idle group', () =>
 	expect(html).toMatch(/<details class="dss-bal-idle" open="">/);
 	expect(html).toContain('正在读取账户数据…');
 });
+
+test('English count wording reads naturally', () => {
+	const normal = render({ lang: 'en' });
+	expect(normal).toContain('Balance accounts: 4');
+	const providers = [
+		provider('deepseek-official', 'DeepSeek', 'balance'),
+		provider('minimax-coding', 'MiniMax Coding Plan', 'subscription'),
+		provider('openrouter', 'OpenRouter', 'balance'),
+		provider('kimi-coding', 'Kimi For Coding', 'subscription'),
+		provider('moonshotai-cn', 'Moonshot', 'balance'),
+		provider('yi-api', 'yi-api', 'balance'),
+	];
+	const skeleton = render({ data: null, state: { kind: 'loading' }, providers, lang: 'en' });
+	expect(skeleton).toContain('Reading accounts (6)…');
+});
+
+test('the skeleton summary has two cells when no provider is a subscription', () => {
+	const providers = [
+		provider('deepseek-official', 'DeepSeek', 'balance'),
+		provider('openrouter', 'OpenRouter', 'balance'),
+	];
+	const html = render({ data: null, state: { kind: 'loading' }, providers });
+	expect(html).toContain('dss-bal-kpis is-skeleton is-two');
+	expect(html.match(/dss-bal-kpi-k/g)).toHaveLength(2);
+});

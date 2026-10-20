@@ -437,9 +437,13 @@ function balanceShell(children, t, busy) {
 	}, children);
 }
 
-function SkeletonKpis() {
-	return e("section", { className: "dss-bal-kpis is-skeleton", "aria-hidden": "true" },
-		[0, 1, 2].map(function(index) {
+function SkeletonKpis(props) {
+	const cells = props.cells === 2 ? 2 : 3;
+	return e("section", {
+		className: "dss-bal-kpis is-skeleton" + (cells === 2 ? " is-two" : ""),
+		"aria-hidden": "true"
+	},
+		Array.from({ length: cells }, function(_, index) {
 			return e("div", { className: "dss-bal-kpi" + (index ? "" : " is-lead"), key: index },
 				e("div", { className: "dss-bal-kpi-k" },
 					e("span", { className: "dss-bal-sk", "aria-hidden": "true", style: { width: "56px" } })),
@@ -503,7 +507,12 @@ function BalanceSkeleton(props) {
 	const model = skeletonModel(props.providers);
 	const rows = model.rows;
 	const children = [];
-	if (model.named && rows.length >= 2) children.push(e(SkeletonKpis, { key: "kpis" }));
+	if (model.named && rows.length >= 2) {
+		children.push(e(SkeletonKpis, {
+			key: "kpis",
+			cells: rows.some(function(row) { return row.type === "subscription"; }) ? 3 : 2
+		}));
+	}
 	if (rows.length) {
 		children.push(e("section", { className: "dss-bal-list", key: "list" },
 			e("div", { className: "dss-bal-cols", "aria-hidden": "true" },
