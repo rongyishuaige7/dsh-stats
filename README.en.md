@@ -119,14 +119,11 @@ Input and output use separate colors. The activity heatmap is date-selectable, w
 
 ### Balances and quotas
 
-DeepSeek shows available, topped-up, and gifted balances. MiniMax shows the current-window and weekly Coding Plan quotas. The account view keeps refresh and close actions only because account data is a current snapshot, not historical export data.
+All connected accounts appear in one list, ordered by urgency: exhausted or nearly exhausted quotas, invalid credentials, and stale snapshots come first. With multiple accounts, the summary strip totals available balance per currency and highlights the tightest quota and the number of accounts that need attention. Each row shows the balance breakdown, or a remaining-quota bar per subscription window. Each balance account can have an alert line stored in this browser only. A failed refresh only affects its own row; if the whole query fails, the header turns stale and a banner offers retry while existing rows stay visible. The account view keeps refresh and close actions only because account data is a current snapshot, not historical export data.
 
-<table>
-  <tr>
-    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="DeepSeek demo balance screen" width="100%"></a></td>
-    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance-minimax.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance-minimax.png" alt="MiniMax Coding Plan demo quota screen" width="100%"></a></td>
-  </tr>
-</table>
+<p align="center">
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="Multi-account balance list, summary strip and not-connected group" width="100%"></a>
+</p>
 
 Project overview, development timeline, and usage trends support CSV and JSON exports.
 
@@ -194,7 +191,7 @@ The DeepSeek account sign-in provider added in Harness 0.1.7 (`deepseek-account`
 has no API key for the official balance endpoint, so the account page does not list
 it; the API-key provider is queried as before.
 
-`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps the last successful snapshot and marks it stale. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
+`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps that account's last successful snapshot and marks it stale; if the whole query fails, the header turns stale and a banner offers retry while existing rows stay visible. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
 
 ## 🔐 Credential and privacy boundary
 
@@ -332,7 +329,7 @@ npm publish
 ## ⚠️ Known limitations
 
 - The current session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
-- The status band exposes data provenance, freshness, refresh failures and incomplete pricing. Repeated account failures retain the last successful balance with a stale label. Ordinary RPC failures do not trigger the DeepSeek-only legacy fallback.
+- The header status point and banner expose data provenance, refresh failures and incomplete pricing. A failed account refresh retains that account's last successful snapshot with a stale label; a failed query moves the stale state to the header and offers retry. Ordinary RPC failures do not trigger the DeepSeek-only legacy fallback.
 - The first request over many sessions prefers the official projection-cache watermark ladder; older hosts fall back to log decoding, with mtime caching for repeat work.
 - Ordinary archived sessions are marked archived; archived, logless forks backed only by inherited cache values are excluded and reported in warnings.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.

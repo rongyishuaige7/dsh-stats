@@ -121,14 +121,11 @@ dsh --profile web --dump-config
 
 ### 账户余额与额度
 
-DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当前时段与本周额度。账户页只保留刷新和关闭，因为余额属于实时快照，不属于历史统计导出数据。
+一屏列出所有已接入账户，按紧急程度排序：额度或余额快用完、凭证失效、快照过期的账户排在最前面。多账户时顶部摘要条按币种合计可用余额，并给出最紧的额度和需要关注的账户数；每行显示余额构成，或每个订阅窗口的剩余额度条。可以给每个余额账户设一条提醒线，只保存在当前浏览器。单个账户刷新失败只影响它自己那一行；整次查询失败时，头部状态点变黄并出现带重试的横幅，已有账户行保持可见。账户页只保留刷新和关闭，因为余额属于实时快照，不属于历史统计导出数据。
 
-<table>
-  <tr>
-    <td width="50%" align="center"><strong>DeepSeek</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="DeepSeek 演示余额界面" width="100%"></a></td>
-    <td width="50%" align="center"><strong>MiniMax Coding Plan</strong><br><a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance-minimax.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance-minimax.png" alt="MiniMax Coding Plan 演示额度界面" width="100%"></a></td>
-  </tr>
-</table>
+<p align="center">
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="多账户余额列表、摘要条和未接入组" width="100%"></a>
+</p>
 
 项目总览、开发时间线和用量趋势支持 CSV/JSON 导出。
 
@@ -193,7 +190,7 @@ DeepSeek 展示可用、充值和赠送余额；MiniMax 展示 Coding Plan 当�
 
 Harness 0.1.7 新增的 DeepSeek 账户登录方式（`deepseek-account`）不使用 API Key，官方余额接口无法查询，账户页不会列出它；API Key 方式照常查询。
 
-Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求，点击刷新会明确绕过这层缓存；遇到网络错误、限流或异常响应时，会保留同一配置的上一次成功快照并标记为“已过期”。未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api` 时不会当作订阅额度查询。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
+Provider 配置中的 `accountApiKeyEnv` 可以覆盖默认引用。查询结果缓存 5 分钟并合并并发请求，点击刷新会明确绕过这层缓存。单个账户遇到网络错误、限流或异常响应时，会保留该账户上一次成功快照并标为“已过期”；整次查询失败时，头部状态点变黄并出现带重试的横幅，已有账户行保持可见。未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api` 时不会当作订阅额度查询。没有公开余额接口的 Provider 仍可正常统计 Token，只会在账户页显示“不支持”。
 
 ## 🔐 凭证与隐私边界
 
@@ -324,7 +321,7 @@ npm publish
 ## ⚠️ 已知限制
 
 - 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新。
-- 状态栏显示数据来源、更新时间、刷新失败和未完整计价状态。连续刷新失败会保留上次成功的余额，并标注已过期；普通 RPC 错误不会触发仅支持 DeepSeek 的旧版账户回退。
+- 头部状态点和横幅显示数据来源、刷新失败和未完整计价状态。账户刷新失败会保留该账户上次成功的快照并标注已过期；整次查询失败时头部显示“快照已过期”并提供重试。普通 RPC 错误不会触发仅支持 DeepSeek 的旧版账户回退。
 - 首次读取大量会话时，宿主优先使用官方 projection cache 的 watermark 增量读取；旧宿主才回退解码日志，并使用 mtime 缓存减少重复开销。
 - 普通归档会话会标注“已归档”；归档、无日志且只有继承 cache 的 fork 会从统计中排除，并在告警中说明原因。
 - OpenRouter 使用带日期的模型目录快照；这类金额会标记为 `estimated`。

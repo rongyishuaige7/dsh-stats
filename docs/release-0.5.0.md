@@ -33,6 +33,14 @@ Pre-1.0 feature release, 2026-10-18.
   with intensity/project coloring, idle rows, week gaps, a time-of-day profile
   and daily bars. The timeline has no internal viewport; the panel keeps its
   single body scroll.
+- **Balance page rework (0.5.0)**: all connected accounts now appear in one
+  urgency-ordered list instead of a provider dropdown. A summary strip totals
+  available balance per currency, highlights the tightest quota and counts the
+  accounts that need attention. Rows show the balance breakdown or remaining
+  quota bars, can link to the provider console, and support a per-account alert
+  line stored in the browser only. First load uses a `stats/providers` skeleton;
+  a single failed account stays in its own row while a whole-query failure moves
+  to the header and a retry banner.
 - **Responsive detail**: 320/390/640 layouts keep session time, turns/steps,
   LLM and tool time, cache hit, input/output and model in a non-truncated meta
   line; wide rows keep every column unclipped.
@@ -49,9 +57,10 @@ this Harness release; clean installation should no longer report peer mismatches
 
 ## Verification
 
-- Full test suite: **399 tests** pass in the default timezone and `TZ=UTC`.
-- Browser fixture: **22 check groups / 45 screenshots**, 0 console errors,
-  0 runtime exceptions, 0 failed requests at 1440/390/320 px.
+- Full test suite: **445 tests** pass in the default timezone and `TZ=UTC`.
+- Browser fixture: **28 check groups / 50 screenshots**, 0 console errors,
+  0 runtime exceptions, 0 failed requests at 1440/390/320 px (run
+  `39364467883`).
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
