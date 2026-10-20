@@ -46,7 +46,7 @@ test('empty catalog shows its own state instead of the no-used note', () => {
 
 test('model detail keeps every rule phase, full identity and no catalog rollback', () => {
   const props = {
-    group: groups[0], overrides: [], t, onOtherToggle() {},
+    group: groups[0], savedOverrides: [], t, onOtherToggle() {},
     onBack() {}, onAddCustom() {}, onEditOverride() {}, titleRef: React.createRef(),
   };
   const closed = renderToStaticMarkup(React.createElement(ModelDetail, { ...props, otherOpen: false }));
@@ -61,4 +61,34 @@ test('model detail keeps every rule phase, full identity and no catalog rollback
   const open = renderToStaticMarkup(React.createElement(ModelDetail, { ...props, otherOpen: true }));
   expect(open).toContain('data-rule-id="old"');
   expect(open).toContain('data-phase="historical"');
+});
+
+test('model detail lists only the saved override snapshot', () => {
+  const savedRule = {
+    id: 'custom/one/demo@2026-10-17', providerId: 'one', family: 'one', canonical: 'demo',
+    aliases: ['demo'], currency: 'CNY', sourceUrl: null, retrievedAt: '2026-10-17',
+    confidence: 'estimated', reasoningIncludedInOutput: true,
+    rates: { uncached: 3, cacheRead: null, cacheWrite: null, output: 6 },
+  };
+  const html = renderToStaticMarkup(React.createElement(ModelDetail, {
+    group: groups[0], savedOverrides: [savedRule], t, otherOpen: false, onOtherToggle() {},
+    onBack() {}, onAddCustom() {}, onEditOverride() {}, titleRef: React.createRef(),
+  }));
+  expect(html).toContain(en['price.savedCustomRules']);
+  expect(html).toContain('data-action="price-edit-saved"');
+  expect(html).toContain(savedRule.id);
+});
+
+test('provisional detail keeps the note body and the review tag', () => {
+  const provisional = rule('prov', {
+    note: '[provisional] Auto-added from the official model table; cache duration and service tiers are pending review.',
+  });
+  const [group] = catalogGroups({ rules: [provisional] }, new Set(), at);
+  const html = renderToStaticMarkup(React.createElement(ModelDetail, {
+    group, savedOverrides: [], t, otherOpen: false, onOtherToggle() {},
+    onBack() {}, onAddCustom() {}, onEditOverride() {}, titleRef: React.createRef(),
+  }));
+  expect(html).toContain('Auto-added from the official model table; cache duration and service tiers are pending review.');
+  expect(html).not.toContain('[provisional]');
+  expect(html).toContain(en['price.provisional']);
 });

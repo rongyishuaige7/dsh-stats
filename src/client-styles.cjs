@@ -184,6 +184,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-model-identity{display:flex;flex-direction:column;gap:3px;min-width:0}
 	.dss-price-model-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 	.dss-price-model-name{font-size:var(--dss-fs-md);font-weight:600;color:var(--dss-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
+	.dss-price-used-tag{font-size:var(--dss-fs-xs);font-weight:500;color:var(--dss-info);background:var(--dss-info-soft);border:1px solid var(--dss-info-line);padding:1px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+	.dss-price-provisional{font-size:var(--dss-fs-xs);font-weight:500;color:var(--dss-warn);background:var(--dss-warn-soft);border:1px solid var(--dss-warn-line);padding:1px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0}
 	.dss-price-model-provider{font-size:var(--dss-fs-xs);color:var(--dss-text-3);overflow-wrap:anywhere}
 	.dss-price-model-summary{display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:0;text-align:right}
 	.dss-price-model-price{font-size:var(--dss-fs-sm);color:var(--dss-text-2);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}

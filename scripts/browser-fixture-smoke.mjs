@@ -35,8 +35,11 @@ const uniqueModel = group => canonicalCounts.get(group.canonical) === 1;
 const flatModel = catalogGroups.find(group => summariesByKey.get(group.key).kind === 'flat' && uniqueModel(group));
 const tieredModel = catalogGroups.find(group => summariesByKey.get(group.key).kind === 'tiered' && uniqueModel(group) && group.rules.length > 1)
   || catalogGroups.find(group => summariesByKey.get(group.key).kind === 'tiered' && uniqueModel(group));
+const provisionalModel = catalogGroups.find(group => uniqueModel(group)
+  && group.rules.some(row => row.phase === 'current' && typeof row.rule.note === 'string' && row.rule.note.startsWith('[provisional]')));
 const fixtureUsed = view.usedModelKeys(data.partial.projects, signedCatalog);
 const fixtureGroups = view.catalogGroups(signedCatalog, fixtureUsed, smokeAt);
+const usedModel = fixtureGroups.find(group => group.isUsed);
 const fixtureUsedSelection = view.selectModelGroups(fixtureGroups, { scope: 'used', page: 0, pageSize: 25 });
 const fixtureAllSelection = view.selectModelGroups(fixtureGroups, { scope: 'all', page: 0, pageSize: 25 });
 const fillTemplate = (template, ...values) => values.reduce((text, value) => text.replace('%d', String(value)), template);
@@ -150,6 +153,24 @@ async function pricingSearch(value) {
     return true;
   })()`);
   await delay(150);
+}
+async function setPricingInput(key, value) {
+  return evaluate(`(() => {
+    const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t(${JSON.stringify(key)}));
+    if (!input) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+}
+async function tagStyle(modelKey, selector) {
+  return evaluate(`(() => {
+    const row = [...document.querySelectorAll('.dss-price-model-row')].find(node => node.dataset.modelKey === ${JSON.stringify(modelKey)});
+    const node = row && row.querySelector(${JSON.stringify(selector)});
+    if (!node) return null;
+    const style = getComputedStyle(node);
+    return { fontSize: style.fontSize, color: style.color, background: style.backgroundColor, borderColor: style.borderTopColor };
+  })()`);
 }
 async function openPricingModel(key) {
   assert(await evaluate(`(() => {
@@ -1038,18 +1059,114 @@ try {
   report.checks.push('pricing language and theme: English three-section nav fits at 320px; dark model page keeps the same structure');
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await click('[data-action=price-scope-all]');
+  await pricingSection('custom');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', tieredModel.provider], ['price.model', tieredModel.canonical], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
+    assert(await setPricingInput(key, value), 'saved-rule field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await pricingSection('models');
+  await pricingSearch(tieredModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)})`);
+  await openPricingModel(tieredModel.key);
+  assert(await evaluate('!document.querySelector("[data-action=price-edit-saved]")'), 'unsaved working rule is not a saved override in detail');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  await until('document.querySelector("[data-action=price-edit-saved]")');
+  assert(await evaluate('document.querySelector(".dss-price-saved").textContent.includes(window.__fixture.t("price.savedCustomRules"))'), 'saved rule appears in detail after save');
+  await pricingSection('custom');
+  await until('document.querySelector("[data-action=price-remove-rule]")');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await pricingSection('models');
+  await until('document.querySelector(".dss-price-detail-title")');
+  assert(await evaluate('!!document.querySelector("[data-action=price-edit-saved]")'), 'unsaved removal keeps the saved override in detail');
+  await click('[data-action=price-discard]');
+  await until('!document.querySelector(".dss-price-commit")');
+  assert(await evaluate('!!document.querySelector("[data-action=price-edit-saved]")'), 'discard restores the saved override in detail');
+  await pricingSection('custom');
+  await until('document.querySelector("[data-action=price-remove-rule]")');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  await pricingSection('models');
+  await until('document.querySelector(".dss-price-detail-title")');
+  assert(await evaluate('!document.querySelector("[data-action=price-edit-saved]")'), 'saved removal clears the detail override entry');
+  report.checks.push('pricing saved overrides: working add/remove is not shown as saved; save adds, discard restores and saved removal clears the detail entry');
+
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await click('[data-action=price-scope-all]');
+  assert(provisionalModel, 'a provisional catalog model exists');
+  assert(usedModel, 'a used catalog model exists');
+  const provisionalRule = provisionalModel.rules.find(row => row.phase === 'current' && typeof row.rule.note === 'string' && row.rule.note.startsWith('[provisional]')).rule;
+  const provisionalBody = provisionalRule.note.slice('[provisional]'.length).trim();
+  await pricingSearch(provisionalModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(provisionalModel.key)})`);
+  const lightProvisionalTag = await tagStyle(provisionalModel.key, '.dss-price-provisional');
+  assert(lightProvisionalTag && lightProvisionalTag.fontSize === '11px', 'light provisional tag uses the xs size');
+  assert(lightProvisionalTag.background !== 'rgba(0, 0, 0, 0)' && lightProvisionalTag.color !== lightProvisionalTag.background, 'light provisional tag uses semantic colors');
+  await openPricingModel(provisionalModel.key);
+  const provisionalDetail = await evaluate(`(() => {
+    const rule = [...document.querySelectorAll('.dss-price-rule-detail')].find(node => node.dataset.ruleId === ${JSON.stringify(provisionalRule.id)});
+    return rule ? { note: rule.querySelector('.dss-price-note')?.textContent || '', tag: !!rule.querySelector('.dss-price-provisional') } : null;
+  })()`);
+  assert(provisionalDetail && provisionalDetail.note.includes(provisionalBody), 'provisional note body is visible');
+  assert(!provisionalDetail.note.includes('[provisional]'), 'provisional prefix is not shown');
+  assert(provisionalDetail.tag, 'provisional review tag stays in detail');
+  await capture('desktop-pricing-provisional');
+  await backPricingModel(provisionalModel.key);
+  await pricingSearch(usedModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(usedModel.key)})`);
+  const lightUsedTag = await tagStyle(usedModel.key, '.dss-price-used-tag');
+  assert(lightUsedTag && lightUsedTag.fontSize === '11px', 'light used tag uses the xs size');
+  assert(lightUsedTag.background !== 'rgba(0, 0, 0, 0)' && lightUsedTag.color !== lightUsedTag.background, 'light used tag uses semantic colors');
+  await navigate('/?stats=partial&theme=dark&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await click('[data-action=price-scope-all]');
+  await pricingSearch(provisionalModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(provisionalModel.key)})`);
+  const darkProvisionalTag = await tagStyle(provisionalModel.key, '.dss-price-provisional');
+  assert(darkProvisionalTag && darkProvisionalTag.fontSize === '11px', 'dark provisional tag uses the xs size');
+  await openPricingModel(provisionalModel.key);
+  const darkProvisionalDetail = await evaluate(`(() => {
+    const rule = [...document.querySelectorAll('.dss-price-rule-detail')].find(node => node.dataset.ruleId === ${JSON.stringify(provisionalRule.id)});
+    return rule ? { note: rule.querySelector('.dss-price-note')?.textContent || '', tag: !!rule.querySelector('.dss-price-provisional') } : null;
+  })()`);
+  assert(darkProvisionalDetail && darkProvisionalDetail.note.includes(provisionalBody), 'provisional note body is visible in dark theme');
+  assert(darkProvisionalDetail.tag, 'provisional review tag stays in dark detail');
+  await capture('dark-pricing-provisional');
+  await backPricingModel(provisionalModel.key);
+  await pricingSearch(usedModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(usedModel.key)})`);
+  const darkUsedTag = await tagStyle(usedModel.key, '.dss-price-used-tag');
+  assert(darkUsedTag && darkUsedTag.fontSize === '11px', 'dark used tag uses the xs size');
+  assert(lightUsedTag.color !== darkUsedTag.color, 'used tag follows the light and dark info tokens');
+  assert(lightProvisionalTag.color !== darkProvisionalTag.color, 'provisional tag follows the light and dark warn tokens');
+  report.checks.push('pricing labels: used and provisional tags keep 11px semantic styles in light and dark; provisional note body stays visible without the prefix');
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
   await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
   await until('document.querySelector(".dss-price-model-row")');
   await pricingSection('custom');
   await until('document.querySelector(".dss-price-form")');
-  const setPricingInput = (key, value) => evaluate(`(() => {
-    const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t(${JSON.stringify(key)}));
-    if (!input) return false;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  })()`);
   for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2'], ['price.cacheRead', '0']]) {
     assert(await setPricingInput(key, value), 'custom field ' + key);
   }

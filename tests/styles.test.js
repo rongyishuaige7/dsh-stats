@@ -196,3 +196,16 @@ test('model rows keep a 48px hit area, thin separators and a three-column sectio
 	expect(nav.declarations).toContain('grid-template-columns:repeat(3,minmax(0,1fr))');
 	expect(nav.declarations).not.toMatch(/overflow(?:-[xy])?\s*:\s*(?:auto|scroll)/);
 });
+
+test('pricing tags keep semantic colors and the xs size', () => {
+	const used = parsed.find(rule => rule.selector === '.dss-price-used-tag');
+	expect(used.declarations).toContain('font-size:var(--dss-fs-xs)');
+	expect(used.declarations).toContain('color:var(--dss-info)');
+	expect(used.declarations).toContain('background:var(--dss-info-soft)');
+	expect(used.declarations).toContain('border:1px solid var(--dss-info-line)');
+	const provisional = parsed.find(rule => rule.selector === '.dss-price-provisional');
+	expect(provisional.declarations).toContain('font-size:var(--dss-fs-xs)');
+	expect(provisional.declarations).toContain('color:var(--dss-warn)');
+	expect(provisional.declarations).toContain('background:var(--dss-warn-soft)');
+	expect(provisional.declarations).toContain('border:1px solid var(--dss-warn-line)');
+});

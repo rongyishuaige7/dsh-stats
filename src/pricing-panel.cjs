@@ -69,6 +69,7 @@ function isProvisional(rule) {
   return typeof rule.note === 'string' && rule.note.startsWith('[provisional]');
 }
 function ruleDetails(rule, t) {
+  const note = isProvisional(rule) ? rule.note.slice('[provisional]'.length).trim() : rule.note;
   const rows = rule.contextTiers ? [[t('price.standard'), rule.contextTiers.short], [t('price.long'), rule.contextTiers.long]]
     : rule.serviceTiers ? Object.entries(rule.serviceTiers).flatMap(([tier, rates]) => [[tier, rates.short], [tier + ' ' + t('price.long'), rates.long]])
     : rule.timeOfUse ? [[t('price.peak'), rule.timeOfUse.peak], [t('price.offPeak'), rule.timeOfUse.offPeak]]
@@ -81,7 +82,7 @@ function ruleDetails(rule, t) {
         e('div', { className: 'dss-price-rate-v' }, rates?.[k] == null ? t('price.unknown') : fmtRateValue(rates[k], rule.currency))
       )))
     )),
-    rule.note && !isProvisional(rule) ? e('p', { className: 'dss-price-note' }, rule.note) : null,
+    note ? e('p', { className: 'dss-price-note' }, note) : null,
     rule.timeOfUse ? e('p', { className: 'dss-price-note' }, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗')) : null,
     rule.contextThreshold ? e('p', { className: 'dss-price-note' }, t('price.threshold') + ': ' + (rule.contextThreshold >= 1000 ? (rule.contextThreshold / 1000) + 'k' : rule.contextThreshold)) : null,
     rule.tierMultipliers ? e('p', { className: 'dss-price-note' }, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
@@ -182,11 +183,11 @@ function ModelList({ selection, scope, search, t, onScope, onSearch, onPage, onO
       e('span', null, (selection.page + 1) + ' / ' + selection.pageCount),
       e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-next-page', disabled: selection.page + 1 >= selection.pageCount, onClick: () => onPage(selection.page + 1) }, t('price.next'))) : null);
 }
-function ModelDetail({ group, overrides, t, onBack, onAddCustom, onEditOverride, titleRef, otherOpen, onOtherToggle }) {
+function ModelDetail({ group, savedOverrides, t, onBack, onAddCustom, onEditOverride, titleRef, otherOpen, onOtherToggle }) {
   const ordered = orderedRules(group);
   const current = ordered.filter(row => row.phase === 'current');
   const other = ordered.filter(row => row.phase !== 'current');
-  const saved = overrides.filter(rule => rule.providerId === group.provider && rule.canonical === group.canonical);
+  const saved = savedOverrides.filter(rule => rule.providerId === group.provider && rule.canonical === group.canonical);
   return e(React.Fragment, null,
     e('div', { className: 'dss-price-detail-head' },
       e('button', { type: 'button', className: 'dss-price-back', 'data-action': 'price-back-models', onClick: onBack }, '← ' + t('price.backToModels')),
@@ -279,7 +280,7 @@ class PricingErrorBoundary extends React.Component {
 }
 function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
-  const [overrides, setOverrides] = React.useState([]), [draft, setDraft] = React.useState(blankDraft), [search, setSearch] = React.useState('');
+  const [overrides, setOverrides] = React.useState([]), [savedOverrides, setSavedOverrides] = React.useState([]), [draft, setDraft] = React.useState(blankDraft), [search, setSearch] = React.useState('');
   const [preview, setPreview] = React.useState(null), [autoUpdate, setAutoUpdate] = React.useState(true), [dirty, setDirty] = React.useState(false);
   const [editingId, setEditingId] = React.useState(null);
   const [section, setSection] = React.useState('models'), [scope, setScope] = React.useState(null);
@@ -311,7 +312,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     const pendingDraft = draftForFocus(pendingFocusRef.current);
     pendingFocusRef.current = null;
     if (!locateDraft(pendingDraft)) setDraft(blankDraft());
-    setStatus(result); setOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setEditingId(null);
+    setStatus(result); setOverrides(rules); setSavedOverrides(rules); setAutoUpdate(result.autoUpdate); setDirty(false); setPreview(null); setEditingId(null);
     setCatalogAt(Date.now());
   }
   async function call(request, mode = 'accept') {
@@ -422,7 +423,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const sections = [['models', 'sectionModels'], ['custom', 'sectionCustom'], ['updates', 'sectionUpdates']];
   const sectionContent = section === 'models'
     ? (selectedGroup
-      ? e(ModelDetail, { group: selectedGroup, overrides, t, onBack: backToModels, onAddCustom: locate, onEditOverride: openSavedRule, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
+      ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, onBack: backToModels, onAddCustom: locate, onEditOverride: openSavedRule, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
       : e(React.Fragment, null,
         e(SyncSummary, { status, busy, dirty, t, onRefresh: () => call({ action: 'refresh' }) }),
         e(PendingPanel, { missing, t, onConfigure: locate }),
