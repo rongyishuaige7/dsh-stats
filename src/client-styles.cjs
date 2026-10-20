@@ -298,7 +298,6 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pdetail td{padding:0 10px 14px 34px;text-align:left;white-space:normal;border-bottom:1px solid var(--dss-line)}
 .dss-pdetail-meta{display:flex;flex-wrap:wrap;gap:4px 16px;padding:8px 0 2px 10px;border-bottom:1px dashed var(--dss-line);margin-bottom:4px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);font-variant-numeric:tabular-nums}
 .dss-pdetail-meta b{color:var(--dss-text-2);font-weight:600}
-.dss-ppath-full{flex:1 1 220px;min-width:0;color:var(--dss-text-3);overflow-wrap:anywhere}
 .dss-sessions{display:flex;flex-direction:column;min-width:0}
 .dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 74px 62px 104px 36px 92px minmax(110px,150px) 68px;gap:6px;padding:6px 8px;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm);align-items:center;width:100%;box-sizing:border-box;min-width:0}
 .dss-ptable .dss-sess>:nth-child(n+2){transform:none}
@@ -364,7 +363,6 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
   .dss-ptable .dss-sess.sub>.dss-sess-title,.dss-ptable .dss-sess.sub>.dss-sess-meta{padding-left:16px}
   .dss-ptable .dss-sess-h{display:none}
   .dss-pdetail-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;align-items:start;padding-left:8px}
-  .dss-ppath-full{grid-column:1/-1;flex:none}
   .dss-kpi.cost .dss-info-wrap{position:static}
   .dss-kpi.cost .dss-info-tip{left:14px;right:14px;width:auto;top:calc(100% + 6px);z-index:25}
 }

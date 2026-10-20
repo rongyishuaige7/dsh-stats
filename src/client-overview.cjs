@@ -445,8 +445,7 @@ function ProjectTable(props) {
 						e("span", null, t("card.turnsSteps") + " ", e("b", null, fmtN(detailStats.turns || 0) + " / " + fmtN(detailStats.steps || 0))),
 						e("span", null, t("w.tool") + " ", e("b", null, fmtDuration(detailStats.toolMs || 0))),
 						e("span", null, t("th.ttft") + " ", e("b", null, detailStats.ttftAvgMs != null ? fmtDuration(detailStats.ttftAvgMs) : "—")),
-						e("span", null, t("th.tps") + " ", e("b", null, detailStats.tps != null ? fmtTps(detailStats.tps) : "—")),
-						e("span", { className: "dss-ppath-full", title: project.path }, project.path)
+						e("span", null, t("th.tps") + " ", e("b", null, detailStats.tps != null ? fmtTps(detailStats.tps) : "—"))
 					),
 					e(ProjectSessions, {
 						project: project,

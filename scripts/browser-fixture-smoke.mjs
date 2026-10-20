@@ -1150,7 +1150,8 @@ try {
   assert(wideSession.llm.includes(' / '), 'session row shows LLM and tool: ' + wideSession.llm);
   assert(await evaluate('!!document.querySelector(".dss-pdetail-meta")'), 'expanded row exposes project detail metrics');
   const detailMeta = await evaluate('document.querySelector(".dss-pdetail-meta").textContent');
-  assert(detailMeta.includes('/fixture/large-0') && detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta keeps turns/steps, tool, ttft, tps and full path: ' + detailMeta);
+  assert(detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta keeps turns/steps, tool, ttft and tps: ' + detailMeta);
+  assert(!detailMeta.includes('/fixture/large-0'), 'detail meta does not repeat the project path: ' + detailMeta);
   await focus('[data-project-id=large-0] [data-action=expand]');
   await press('Enter');
   assert.equal(await evaluate('document.querySelector("[data-project-id=large-0] [data-action=expand]").getAttribute("aria-expanded")'), 'false');

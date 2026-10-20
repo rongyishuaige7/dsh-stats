@@ -90,7 +90,7 @@ These are light-mode captures of the running UI. Dense views use the full README
 
 ### Project overview
 
-A cost-first KPI row, a Token-structure legend and active-span strip, a seven-column project table, and a filter menu. Sort by any column, keep the header sticky, and expand a row for project-level turns/steps, tool time, first token, tok/s, full path, and session details.
+A cost-first KPI row, a Token-structure legend and active-span strip, a seven-column project table, and a filter menu. Sort by any column, keep the header sticky, and expand a row for project-level turns/steps, tool time, first token, tok/s, and session details.
 
 Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu, or pricing drawer one layer at a time and finally closes the panel; `Enter` sorts from a header button or expands/collapses a row.
 
