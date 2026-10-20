@@ -438,16 +438,18 @@ function Heatmap(props) {
 
 function ModelSection(props) {
 	const { models, modelColors, metric, range, totals, sort, onSort, onSortNarrow, onOpenPricing, t } = props;
-	if (!models || !models.length) return null;
 	const isToken = metric === "token";
-	const shares = useMemo(function() { return modelShares(models, metric); }, [models, metric]);
-	const rows = useMemo(function() { return sortModels(models, sort.key, sort.dir, metric); }, [models, sort.key, sort.dir, metric]);
-	const stops = useMemo(function() { return ringStops(models, shares, modelColors); }, [models, shares, modelColors]);
+	const list = useMemo(function() { return models || []; }, [models]);
+	const shares = useMemo(function() { return modelShares(list, metric); }, [list, metric]);
+	const rows = useMemo(function() { return sortModels(list, sort.key, sort.dir, metric); }, [list, sort.key, sort.dir, metric]);
+	const stops = useMemo(function() { return ringStops(list, shares, modelColors); }, [list, shares, modelColors]);
 	const byKey = useMemo(function() {
 		const map = new Map();
-		models.forEach(function(row) { map.set(row.key, row); });
+		list.forEach(function(row) { map.set(row.key, row); });
 		return map;
-	}, [models]);
+	}, [list]);
+	// 提前返回放在所有 hooks 之后：挂载期间 models 变成空时 hooks 数量不变。
+	if (!list.length) return null;
 
 	const total = isToken ? totals.tokens : amountOf(totals.cost);
 	const center = total > 0 ? (isToken ? fmtTokens(totals.tokens) : fmtCostSummary(totals.cost, t)) : "—";
@@ -501,6 +503,9 @@ function ModelSection(props) {
 		const accountSuffix = row.accountType && row.accountType !== "api" ? " · " + row.accountType : "";
 		const unpriced = row.costSummary && row.costSummary.unpricedTokens > 0 ? row.costSummary.unpricedTokens : 0;
 		const meta = providerText + " · " + t("th.sessions") + " " + fmtN(row.sessions || 0) + " · " + fmtTokens(tokens) + " · " + t("kpi.hit") + " " + hit;
+		const costText = fmtCostSummary(row.costSummary, t);
+		// 完全未计价：只留 chip，不再重复写"待计价"。
+		const chipOnly = unpriced > 0 && costText === t("pricing.pending");
 		const dot = dotColor == null
 			? e("i", { className: "dss-pdot is-other" })
 			: e("i", { className: "dss-pdot", "data-color": String(dotColor) });
@@ -530,7 +535,7 @@ function ModelSection(props) {
 						focus: { provider: row.providerId, model: row.modelRaw, tokens: unpriced },
 						onOpen: onOpenPricing
 					}) : null,
-					e("span", { className: "dss-cost-amt" }, fmtCostSummary(row.costSummary, t))
+					chipOnly ? null : e("span", { className: "dss-cost-amt" }, costText)
 				)
 			),
 			e("td", { className: "c-share" },
@@ -538,7 +543,7 @@ function ModelSection(props) {
 					e("span", {
 						className: "dss-share-bar dss-tr-share" + (dotColor == null ? " is-other" : ""),
 						"data-color": dotColor == null ? undefined : String(dotColor)
-					}, e("i", { style: { width: Math.max(2, share * 100).toFixed(1) + "%" } })),
+					}, e("i", { style: { width: (share * 100) + "%" } })),
 					e("span", { className: "dss-share-pct" }, fmtSharePct(share * 100))
 				)
 			)
@@ -549,7 +554,7 @@ function ModelSection(props) {
 		e("div", { className: "dss-tr-sec-head" },
 			e("h3", null, t("tr.models")),
 			e("span", { className: "dss-tr-sec-note" },
-				rangeText + " · " + t("tr.modelCount").replace("%d", String(models.length)) + " · " + t(isToken ? "tr.shareByToken" : "tr.shareByCost"))
+				rangeText + " · " + t("tr.modelCount").replace("%d", String(list.length)) + " · " + t(isToken ? "tr.shareByToken" : "tr.shareByCost"))
 		),
 		e("div", { className: "dss-tr-models-body" },
 			e("div", { className: "dss-tr-ring-wrap" },
@@ -599,24 +604,24 @@ function TrendsView(props) {
 	const [cellDate, setCellDate] = useState(null);
 	const [sortState, setSortState] = useState(function() {
 		const initial = defaultModelSort(metric);
-		return { key: initial.key, dir: initial.dir, metric: metric };
+		return { key: initial.key, dir: initial.dir };
 	});
-	// 切换指标后回到新指标的默认排序。
-	useEffect(function() {
-		setSortState(function(current) {
-			if (current.metric === metric) return current;
-			const next = defaultModelSort(metric);
-			return { key: next.key, dir: next.dir, metric: metric };
-		});
-	}, [metric]);
+	// 指标一变就回到新指标的默认排序。渲染时调整状态，既不用 effect 补一帧，
+	// 也不会把上一次停留在同一指标时选的排序又捡回来。
+	const [sortMetric, setSortMetric] = useState(metric);
+	if (sortMetric !== metric) {
+		setSortMetric(metric);
+		const next = defaultModelSort(metric);
+		setSortState({ key: next.key, dir: next.dir });
+	}
 	const sort = sortState;
 	const changeSort = function(key) {
 		setSortState(function(current) {
-			return { key: key, dir: current.key === key ? -current.dir : defaultSortDir(key), metric: metric };
+			return { key: key, dir: current.key === key ? -current.dir : defaultSortDir(key) };
 		});
 	};
 	const changeSortNarrow = function(key) {
-		setSortState({ key: key, dir: defaultSortDir(key), metric: metric });
+		setSortState({ key: key, dir: defaultSortDir(key) });
 	};
 
 	const visibleSessions = useMemo(function() {
@@ -724,11 +729,12 @@ function TrendsView(props) {
 			onOpenDay: props.onOpenDay, canOpen, t
 		}),
 		e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t }),
-		e(ModelSection, {
+		// 没有模型时整节不挂载，ModelSection 的 hooks 也就不会从有到无。
+		models.length ? e(ModelSection, {
 			models, modelColors, metric, range, totals, sort,
 			onSort: changeSort, onSortNarrow: changeSortNarrow,
 			onOpenPricing: props.onOpenPricing, t
-		})
+		}) : null
 	);
 }
 

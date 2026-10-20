@@ -1904,15 +1904,22 @@ try {
   const unpricedRow = await evaluate(`(() => {
     const row = [...document.querySelectorAll('.dss-tr-mrow')].find(node => node.dataset.modelKey.includes('fixture-unpriced'));
     if (!row) return null;
-    return { chip: !!row.querySelector('[data-action=pricing-pending]'), cost: row.querySelector('.c-cost .dss-cost-amt')?.textContent || '' };
+    const cell = row.querySelector('.c-cost');
+    const text = cell ? cell.textContent : '';
+    return {
+      chip: !!row.querySelector('[data-action=pricing-pending]'),
+      amt: !!row.querySelector('.dss-cost-amt'),
+      pendingCount: text.split('待计价').length - 1
+    };
   })()`);
   assert(unpricedRow && unpricedRow.chip, 'unpriced model row carries a compact pending chip: ' + JSON.stringify(unpricedRow));
-  assert(unpricedRow.cost.includes('待计价'), 'unpriced model row reads as pending: ' + unpricedRow.cost);
+  assert(!unpricedRow.amt, 'a fully unpriced row drops the duplicate amount: ' + JSON.stringify(unpricedRow));
+  assert(unpricedRow.pendingCount === 1, 'a fully unpriced row says pending exactly once: ' + JSON.stringify(unpricedRow));
   await click('.dss-tr-mrow .c-cost [data-action=pricing-pending]');
   await until('document.querySelector(".dss-drawer")');
   await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
   await press('Escape'); await until('!document.querySelector(".dss-drawer")');
-  report.checks.push('trends models: two sortable rows and cost-descending default, metric switch resets the sort, shares add up, ring aria-label, stable colors across range/metric/hidden, partial model pending chip opens the pricing drawer');
+  report.checks.push('trends models: two sortable rows and cost-descending default, metric switch resets the sort, shares add up, ring aria-label, stable colors across range/metric/hidden, partial model pending chip opens the pricing drawer, fully unpriced row says pending once');
 
   assert.deepEqual(report.errors, []);
   report.status = 'passed';

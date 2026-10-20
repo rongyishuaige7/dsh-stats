@@ -190,6 +190,33 @@ test('a partially priced model row shows a starred cost and a pending chip', () 
 	expect(html).toContain('data-model-key="deepseek|deepseek-v4-pro|api"');
 });
 
+test('a fully unpriced model row keeps only the chip and says pending once', () => {
+	const key = 'deepseek\u0000fixture-unpriced\u0000api';
+	const row = {
+		key, model: 'fixture-unpriced', modelRaw: 'fixture-unpriced', providerId: 'deepseek', accountType: 'api',
+		sessions: 1, input: 1000, output: 100, cacheRead: 0, llmMs: 1000, displayName: 'deepseek · fixture-unpriced',
+		costSummary: { status: 'pending', totals: [], unpricedTokens: 1100, unknownRows: 0 },
+	};
+	const html = renderToStaticMarkup(React.createElement(ModelSection, {
+		models: [row],
+		modelColors: new Map([[key, 0]]),
+		metric: 'cost',
+		range: 30,
+		totals: { tokens: 1100, cost: row.costSummary },
+		sort: { key: 'cost', dir: -1 },
+		onSort: () => {},
+		onSortNarrow: () => {},
+		onOpenPricing: () => {},
+		t: makeT('zh'),
+	}));
+	const cell = html.match(/<td class="c-cost">([\s\S]*?)<\/td>/);
+	expect(cell).not.toBeNull();
+	expect(cell[1]).toContain('data-action="pricing-pending"');
+	expect(cell[1]).not.toContain('dss-cost-amt');
+	// 只数文本节点：chip 的 title 属性里也有同一个词。
+	expect(cell[1].split('>待计价<').length - 1).toBe(1);
+});
+
 test('both locales render every key and expose the same tr.* key set', () => {
 	const zhHtml = render({ lang: 'zh' });
 	const enHtml = render({ lang: 'en' });

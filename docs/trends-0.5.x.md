@@ -313,8 +313,8 @@
 | Token | `c-tokens` / `tokens` | `fmtTokens(input + output)`；副行"输入 1.1M · 输出 82K" |
 | 缓存命中 | `c-hit` / `hit` | `cacheRead / input`，取整到百分比；`input` 为 0 时写"—" |
 | LLM | `c-llm` / `llm` | `fmtDuration(llmMs)`。表格下方加脚注"LLM 时长按 Token 占比从会话分摊，是近似值。"（`p.dss-tr-foot`） |
-| 预估费用 | `c-cost` / `cost` | `div.dss-cost-line` 是 `fmtCostSummary(costSummary)`，部分计价时带"*"。`costSummary.unpricedTokens > 0` 时后面跟一个紧凑的 `PendingChip`：`compact: true`，`label` 是 `tr.pendingShort`"待计价"，`focus` 是 `{provider: providerId, model: modelRaw, tokens: unpricedTokens}` |
-| 占比 | `c-share` / 不可排序 | `.dss-share`：`span.dss-share-bar.dss-tr-share[data-color] > i`，条用模型颜色（`.is-other` 时用灰色），后面是 `.dss-share-pct`。占比按当前指标计算 |
+| 预估费用 | `c-cost` / `cost` | `div.dss-cost-line` 里是 `fmtCostSummary(costSummary)`，部分计价时带"*"。`costSummary.unpricedTokens > 0` 时前面放一个紧凑的 `PendingChip`，和总览表格一致：`compact: true`，`label` 是 `tr.pendingShort`"待计价"，`focus` 是 `{provider: providerId, model: modelRaw, tokens: unpricedTokens}`。没有任何已计价金额时只显示 chip，不重复写"待计价" |
+| 占比 | `c-share` / 不可排序 | `.dss-share`：`span.dss-share-bar.dss-tr-share[data-color] > i`，条用模型颜色（`.is-other` 时用灰色），后面是 `.dss-share-pct`。占比按当前指标计算；占比为 0 时条宽为 0 |
 
 其余规则：
 - 行是 `tr.dss-tr-mrow[data-model-key]`，`data-model-key` 是 `key` 里的 `\u0000` 换成 `|` 之后的字符串。
