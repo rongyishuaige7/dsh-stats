@@ -1512,6 +1512,79 @@ try {
   await until('document.querySelector("[data-action=price-add-rule]")');
   assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'canceling the continued editor clears the footer');
   report.checks.push('pricing continue editing: models and updates both return to the custom editor with fields, conditions and focus preserved');
+  // A delayed preview response must not revive a draft changed during the request.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await pricingSection('custom');
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'deepseek'], ['price.model', 'deepseek-v4-flash'], ['price.uncached', '1'], ['price.output', '2']]) {
+    assert(await setPricingInput(key, value), 'race saved field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  await click('[data-action=price-edit-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  await setPricingInput('price.output', '3');
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelector(".dss-price-custom-row")');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-pending-remove")');
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  for (const [key, value] of [['price.provider', 'fixture-compatible'], ['price.model', 'fixture-unpriced'], ['price.uncached', '1'], ['price.output', '2']]) {
+    assert(await setPricingInput(key, value), 'race new field ' + key);
+  }
+  await click('[data-action=price-stage-rule]');
+  await until('document.querySelectorAll(".dss-price-custom-row").length === 2');
+  await pricingSection('models');
+  await pricingSearch('deepseek-v4-flash');
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)})`);
+  await openPricingModel(tieredModel.key);
+  await until('document.querySelector("[data-action=price-edit-saved]")');
+  await evaluate('window.__fixture.holdPricing = "preview"');
+  assert(await evaluate(`(() => {
+    const preview = document.querySelector('[data-action=price-preview]');
+    const edit = document.querySelector('[data-action=price-edit-saved]');
+    if (!preview || !edit) return false;
+    preview.click();
+    edit.click();
+    return true;
+  })()`), 'preview and detail edit are both available for the race');
+  await until('window.__fixture.calls.some(row => row[0] === "pricing" && row[1] === "preview")');
+  await delay(100);
+  assert(await evaluate('document.querySelector("[data-action=price-edit-saved]").disabled'), 'detail edit is disabled while preview is in flight');
+  await pricingSection('custom');
+  await until('document.querySelector(".dss-price-pending-remove")');
+  assert(await evaluate('!document.querySelector(".dss-price-form")'), 'detail edit cannot restore a pending removal during preview');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-custom-row").length'), 2, 'pending removal and new working rule remain');
+  await evaluate('window.__fixture.releasePricing && window.__fixture.releasePricing()');
+  await evaluate('window.__fixture.holdPricing = null');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  const racePreview = await pricingPayload('preview');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-commit")');
+  const raceSave = await pricingPayload('save');
+  assert.equal(raceSave.overridesJson, racePreview.overridesJson, 're-preview and save carry the same rule set');
+  const raceRules = JSON.parse(raceSave.overridesJson);
+  assert(raceRules.length === 1 && raceRules[0].providerId === 'fixture-compatible' && raceRules[0].canonical === 'fixture-unpriced', 'stale response cannot add the restored saved rule');
+  assert(!raceRules.some(rule => rule.providerId === 'deepseek' && rule.canonical === 'deepseek-v4-flash'), 'saved A is not revived into the save payload');
+  await click('[data-action=price-remove-rule]');
+  await until('document.querySelector(".dss-price-pending-remove")');
+  await click('[data-action=price-preview]');
+  await until('document.querySelector(".dss-price-preview")');
+  await click('[data-action=price-save]');
+  await until('!document.querySelector(".dss-price-custom-row")');
+  report.checks.push('pricing preview race: in-flight preview blocks draft entries, stale response cannot revive a removed rule, and re-preview matches save');
 
   // Conflict and preview failure keep the drafts.
   await navigate('/?stats=partial&lang=en');

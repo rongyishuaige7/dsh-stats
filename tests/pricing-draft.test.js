@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   blankDraft, draftRule, draftEqual, rulesEqual, ruleHasConditions, draftHasConditions,
-  workingForSaved, customRuleRows, buildPreviewRequest, buildSaveRequest,
+  workingForSaved, customRuleRows, settingsSignature, previewMatchesDraft, buildPreviewRequest, buildSaveRequest,
 } = require('../src/pricing-panel.cjs');
 
 const rule = (id, extra = {}) => ({
@@ -87,4 +87,17 @@ test('a generated rule uses the current draft values and validates', () => {
   expect(generated).toMatchObject({ providerId: 'one', canonical: 'demo', currency: 'CNY', accountType: 'api' });
   expect(generated.rates).toEqual({ uncached: 1, cacheRead: null, cacheWrite: null, output: 2 });
   expect(generated.tierMultipliers).toEqual({ standard: 1 });
+});
+
+
+test('preview binding rejects stale versions and changed settings', () => {
+  const first = rule('first', { rates: { uncached: 1, cacheRead: null, cacheWrite: null, output: 2 } });
+  const second = rule('second', { rates: { uncached: 1, cacheRead: null, cacheWrite: null, output: 3 } });
+  const signature = settingsSignature([first], true);
+  const preview = { version: 4, signature, fingerprint: 'fp' };
+  expect(previewMatchesDraft(preview, signature, 4)).toBe(true);
+  expect(previewMatchesDraft(preview, signature, 5)).toBe(false);
+  expect(previewMatchesDraft(preview, settingsSignature([first, second], true), 4)).toBe(false);
+  expect(previewMatchesDraft(preview, settingsSignature([first], false), 4)).toBe(false);
+  expect(previewMatchesDraft(null, signature, 4)).toBe(false);
 });
