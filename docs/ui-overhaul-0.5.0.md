@@ -116,7 +116,7 @@
 - **存储**：隐藏状态仍存在 `dsh-stats.hidden`，格式不变。
 - **适用范围**：总览、时间线和趋势页共用这个按钮；隐藏的项目在三页里都不计入指标和表格。
 
-**D5 价格设置抽屉。** 价格设置从正文顶部移到面板右侧的抽屉里：宽 `min(460px, 100%)`，带遮罩，内容区自己滚动。头部齿轮按钮负责开关。任何"待计价"chip 都能打开抽屉，并直接定位到对应模型的新建规则表单（见 §7.3 `focusModel`）。
+**D5 计价设置抽屉。** 计价设置从正文顶部移到面板右侧的抽屉里：宽 `min(560px, 100%)`，带遮罩，抽屉头部固定，正文以 `.dss-drawer-body` 单层滚动。抽屉固定三个分区：模型价格、自定义规则、更新与版本；模型按 25 个组/页，目录快照初始 5 个、每次查看更多 5 个。头部齿轮按钮负责开关，任何"待计价"chip 都能打开抽屉并直接定位到对应模型的新建规则表单（见 §7.3 `focusModel`）。完整规格见 [计价设置实施文档](pricing-settings-0.5.0.md)。
 
 **D6 数据状态。** 头部状态点显示 `已同步 · HH:MM`、`正在刷新…`、`数据不完整 · HH:MM`、`本地摘要` 等。只有 `partial`、`stale`、`fallback`，或 `exact` 但带非空 `state.error` 时，才在头部下方显示横幅，诊断信息放在可折叠的 `<details>` 里。余额标签页隐藏状态点，`BalanceView` 自己显示状态。
 
@@ -290,7 +290,7 @@ Token 定义在三个根元素 `:where(.dss-overlay, .dss-trigger, .dss-tt)` 上
   - 隐藏 `.dss-pricing` 自己的 `h3` 标题，避免和抽屉标题重复。`PricingErrorBoundary` 的报错视图保持可见。
   - 点击遮罩或关闭按钮关闭，抽屉通过 `useLayer` 入栈。
   - **关闭后焦点还给打开它的元素**（`opener`，即齿轮按钮或某个 chip）。如果 `opener` 已经不在文档里（例如保存价格后 chip 消失），就还给齿轮按钮。
-  - 抽屉设 `container: dss-drawer / inline-size`。原 `pricingCSS` 里的两条视口媒体查询（`max-width:1000px` 和 `max-width:640px`）改成 `@container dss-drawer`，否则桌面上 460px 宽的抽屉会套用宽屏布局。`_phaseDCSS` 里余额相关的 640px 媒体查询保持不变。
+  - 抽屉设 `container: dss-drawer / inline-size`。原 `pricingCSS` 里的两条视口媒体查询（`max-width:1000px` 和 `max-width:640px`）改成 `@container dss-drawer`，否则桌面上 460px 宽的抽屉会套用宽屏布局。`_phaseDCSS` 里余额相关的 640px 媒体查询保持不变。（6b 起抽屉改为 560px 三分区，见 [计价设置实施文档](pricing-settings-0.5.0.md)；此处保留切片 2 当时的 460px 记录。）
 - **`PricingPanel` 的新属性 `focusModel?: { provider, model, nonce }`**：
   - **注意加载会清空表单**：`accept(result)`（`pricing-panel.cjs:128-134`）在每次加载和保存成功后都会执行 `setDraft(blankDraft())`。所以不能只在挂载时从属性初始化 draft，等 `pricing` RPC 返回后就被清掉了。
   - 做法：
@@ -667,7 +667,7 @@ npm pack --dry-run
 | 事项 | 默认 |
 | --- | --- |
 | 是否先发 `0.5.0-rc.1` | 不发 |
-| 抽屉宽度 | `min(460px, 100%)` |
+| 抽屉宽度 | `min(560px, 100%)`（6b 起；见 [计价设置实施文档](pricing-settings-0.5.0.md)） |
 | 排序是否持久化 | 不持久化 |
 | 环比基准 | 上一个活跃日，不用上周同日 |
 | README 截图来源 | CI fixture 截图，不用真实数据 |

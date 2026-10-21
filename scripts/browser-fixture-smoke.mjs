@@ -40,6 +40,7 @@ const provisionalModel = catalogGroups.find(group => uniqueModel(group)
 const fixtureUsed = view.usedModelKeys(data.partial.projects, signedCatalog);
 const fixtureGroups = view.catalogGroups(signedCatalog, fixtureUsed, smokeAt);
 const usedModel = fixtureGroups.find(group => group.isUsed);
+const longModel = [...catalogGroups].sort((a, b) => (b.provider.length + b.canonical.length) - (a.provider.length + a.canonical.length))[0];
 const fixtureUsedSelection = view.selectModelGroups(fixtureGroups, { scope: 'used', page: 0, pageSize: 25 });
 const fixtureAllSelection = view.selectModelGroups(fixtureGroups, { scope: 'all', page: 0, pageSize: 25 });
 const fillTemplate = (template, ...values) => values.reduce((text, value) => text.replace('%d', String(value)), template);
@@ -1687,6 +1688,42 @@ try {
   await press('Escape'); await until('!document.querySelector(".dss-drawer")');
   report.checks.push('pricing focus: pending model received before status is cached and prefilled after load');
 
+  // Overall acceptance: long identities/forms and short windows.
+  await navigate('/?stats=partial&lang=en');
+  await evaluate('Date.now = () => 1792238400000');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await click('.dss-trigger'); await tab(1); await click('[data-action=pricing]');
+  await until('document.querySelector(".dss-price-model-row")');
+  await click('[data-action=price-scope-all]');
+  await pricingSearch(longModel.canonical);
+  await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(longModel.key)})`);
+  await openPricingModel(longModel.key);
+  assert.equal(await evaluate('document.querySelector(".dss-price-detail-title").textContent'), longModel.provider + ' / ' + longModel.canonical, 'long model identity is complete');
+  await layout('pricing-long-detail'); await assertDrawerSingleScroll('pricing-long-detail');
+  await capture('narrow-pricing-long-detail');
+  await backPricingModel(longModel.key);
+  await pricingSection('custom');
+  await click('[data-action=price-add-rule]');
+  await until('document.querySelector(".dss-price-form")');
+  const longProvider = 'fixture-compatible-provider-' + 'x'.repeat(50);
+  const longCanonical = 'fixture-model-' + 'y'.repeat(60);
+  assert(await setPricingInput('price.provider', longProvider), 'long provider field');
+  assert(await setPricingInput('price.model', longCanonical), 'long model field');
+  assert(await setPricingInput('price.uncached', '1'), 'long form rate');
+  assert(await setPricingInput('price.output', '2'), 'long form output');
+  await until('document.querySelector(".dss-price-commit")');
+  await layout('pricing-long-form'); await assertDrawerSingleScroll('pricing-long-form');
+  await capture('narrow-pricing-long-form');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 420, deviceScaleFactor: 1, mobile: true });
+  await layout('pricing-short-window'); await assertDrawerSingleScroll('pricing-short-window');
+  const shortFooter = await evaluate('(() => { const box = document.querySelector(".dss-price-commit").getBoundingClientRect(); return { top: box.top, bottom: box.bottom, viewport: innerHeight }; })()');
+  assert(shortFooter.top < shortFooter.viewport && shortFooter.bottom <= shortFooter.viewport + 1, 'short window keeps the footer inside the viewport');
+  await capture('narrow-pricing-short-window');
+  await click('[data-action=price-cancel-editor]');
+  await until('document.querySelector("[data-action=price-add-rule]")');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await press('Escape'); await until('!document.querySelector(".dss-drawer")');
+  report.checks.push('pricing acceptance: long model/form content, short-window footer and single drawer scroll');
   // Updates, catalog snapshots, pinning and manual checks.
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000');

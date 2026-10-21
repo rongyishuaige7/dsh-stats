@@ -1,6 +1,6 @@
 # 0.5.0 release
 
-Pre-1.0 feature release, 2026-10-18.
+Pre-1.0 feature release candidate, 2026-10-21. Tag and npm publication are still pending.
 
 ## Highlights
 
@@ -23,10 +23,20 @@ Pre-1.0 feature release, 2026-10-18.
   legend, active-span strip, a seven-column project table with a sticky header,
   a filter menu with hidden-state persistence, and expandable project/session
   details. The panel has a fixed height and a single body scroll for both the
-  overview and the timeline. The header, status banner
-  and pricing drawer stay in place. The pricing settings moved to
-  a right-side drawer with focus-model locating, and Esc closes the top layer
-  (filter, menu, drawer) before the panel.
+  overview and the timeline. The header, status banner and pricing drawer stay
+  in place. Esc closes the top layer (filter, menu, drawer) before the panel.
+- **Pricing settings drawer (0.5.0)**: the old long pricing page is replaced by
+  a 560px three-section drawer (full panel width on narrow screens): Models,
+  Custom rules, and Updates & versions. Models use 25-group pages with
+  used/all filtering, search, flat/tiered summaries, and complete rule detail;
+  custom rules use a list/editor split with conditions, two-layer drafts,
+  pending removal/undo, preview invalidation, and a fixed action footer.
+  Updates & versions separates the current catalog, check/sync times, the
+  auto-update draft, and 5-at-a-time catalog snapshots. Restoring a snapshot
+  pins it and pauses automatic updates while preserving custom rules; unpinning
+  requires a previewed save and does not trigger a refresh. Model history rates
+  remain distinct from whole-catalog snapshots. See
+  `docs/pricing-settings-0.5.0.md`.
 - **Timeline rework (0.5.0)**: the day view now uses project lanes above
   half-hour cost/token bars, a keyboard-reachable half-hour detail popover and
   expandable session rows. The all view is a calendar matrix, 30 days per page,
@@ -78,17 +88,20 @@ this Harness release; clean installation should no longer report peer mismatches
 
 ## Verification
 
-- Full test suite: **445 tests** pass in the default timezone and `TZ=UTC`.
-- Browser fixture: **28 check groups / 50 screenshots**, 0 console errors,
-  0 runtime exceptions, 0 failed requests at 1440/390/320 px (run
-  `39366926311`).
+- Full test suite: **504 tests** pass in the default timezone and `TZ=UTC`.
+- Browser fixture: **44 check groups / 77 screenshots**, 0 console errors,
+  0 runtime exceptions, 0 failed requests at 1440/390/320 px. The fixture covers
+  the pricing drawer model list/detail, custom drafts, preview races, pinned and
+  unpinned updates, seven signed historical snapshots, empty history, restore
+  success/failure, long identities/forms, short windows, and the previous
+  6b–6e regressions.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
-- Signed catalog `2026101809`: 846 rules, verified against the pinned public key.
+- Signed catalog `2026101817`: 876 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
-- Pricing auto-publish workflow run: success (16 provisional models signed).
+- Pricing auto-publish workflow remains separate from this UI slice.
 
 ## Upgrade
 
@@ -117,6 +130,10 @@ independently; do not reinstall merely to receive new prices.
 - The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
   the timeline no longer has an internal viewport. Narrow layout and
   non-truncation are asserted separately at 320/390/640 px.
+- Desktop real-device acceptance for the pricing drawer (Chinese/English,
+  light/dark, narrow window, pending-model direct entry, preview/save,
+  restore/unpin) remains pending; fixture coverage is not real-device
+  acceptance.
 
 ## Release gates
 
