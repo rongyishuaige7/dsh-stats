@@ -252,7 +252,6 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-editor-block .dss-link-btn{flex:none}
 	.dss-pricing .dss-link-btn:disabled{opacity:.45;cursor:default;text-decoration:none}
 	.dss-price-form{border-top:1px solid var(--dss-line);padding-top:10px;margin-top:10px;min-width:0}
-	.dss-price-form>.dss-export{margin-top:2px}
 	.dss-price-auto{display:flex;align-items:center;gap:6px;font-size:var(--dss-fs-sm);color:var(--dss-text);margin:8px 0}
 	.dss-price-updates{display:flex;flex-direction:column;gap:14px;min-width:0}
 	.dss-price-updates-block{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--dss-line-soft);min-width:0}
