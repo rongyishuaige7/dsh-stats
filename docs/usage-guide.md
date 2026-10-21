@@ -69,14 +69,16 @@ dsh plugin --profile <name> add -w @rongyi7/dsh-stats
 dsh plugin --profile web add -w @rongyi7/dsh-stats@0.4.3
 ```
 
-安装本地构建的 tarball（`npm pack` 生成）：
+安装本地构建的 tarball（`npm pack` 生成）。桌面端同样使用自带 CLI：
 
 ```bash
-dsh plugin --profile desktop add -w ./rongyi7-dsh-stats-0.5.0.tgz
+"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
+  --profile desktop add -w ./rongyi7-dsh-stats-0.5.0.tgz
 ```
 
-上面的文件名随版本变化。`0.5.0` 尚未发布到 npm，因此不能用 `@0.5.0` 作为可从 npm 下载的示例；
-本地 tarball 只用于自己构建或验证。
+上面的文件名随版本变化。桌面端安装时，把 §1.1 命令里的包名换成 tarball 路径即可。
+`0.5.0` 尚未发布到 npm，因此不能用 `@0.5.0` 作为可从 npm 下载的示例；本地 tarball 只用于
+自己构建或验证。
 
 ### 1.5 确认是否注册成功
 
@@ -116,7 +118,7 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 | 装完侧边栏没有「用量」 | 确认命令成功、完整重启宿主；浏览器再做一次硬刷新。DSH 会缓存客户端模块和 Typert 描述符。 |
 | 桌面端重启后仍无入口 | 确认装的是 `desktop` profile，而不是只装了 `web`。 |
 | 用 `npm install --prefix ~/.dsh/profiles/web ...` 直接改 profile | 不要这样做。profile 由 pnpm 管理，官方 `dsh plugin` 命令会同时处理依赖和 bundle 注册。 |
-| 价格页提示“计价设置暂不可用，请确认插件版本” | 宿主侧没有加载到当前插件版本，重启宿主；仍失败时检查 `--dump-config`。 |
+| 价格页提示“计价设置暂不可用，请确认插件版本” | 宿主侧没有加载到当前插件版本，重启宿主。Web 仍失败时检查 `dsh --profile web --dump-config`；桌面端改看侧边栏入口或 §1.5 的 profile 文件。 |
 
 ### 1.8 版本与兼容性
 
@@ -233,7 +235,8 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
   `-vision`、`:batch`、`:free`。这只限制“借用更短的已知模型价”；目录里本身有独立规则的模型
   （比如 `gpt-5.4-mini`）照常按自己的规则计价。
 
-这些会话不进入主费用汇总，并在会话详情与导出的 `meta.warnings` 中标注原因。
+这些会话不进入主费用汇总。原因在会话详情和 RPC 的 `meta.warnings` 里；导出只保留
+`costStatus`、`ruleId`、`pricingSource`，可以据此逐条定位。
 
 ### 3.5 Provider 匹配
 
@@ -311,7 +314,8 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 - Provider 配置中的 `accountApiKeyEnv`（也接受 `accountApiKeyRef` 等写法）可以覆盖默认引用。
 - 查询结果缓存 5 分钟并合并并发请求；点刷新会明确绕过这层缓存。
 - 单个账户遇到网络错误、限流或异常响应时，会保留该账户上一次成功快照并标为「已过期」。
-- 整次查询失败时，头部状态点变黄并出现带重试的横幅，已有账户行保持可见。
+- 整次查询失败时：已有上次成功结果则标题变「快照已过期」，上方出现可重试的横幅，账户行保持可见；
+  首次失败则标题显示「读取失败」，重试在账户区里。
 - Harness 0.1.7 新增的 DeepSeek 账户登录方式（`deepseek-account`）不使用 API Key，
   官方余额接口无法查询，账户页不会列出它；API Key 方式照常查询。
 - 未声明账户类型的 MiniMax 旧配置继续默认使用 Coding Plan；显式配置 `accountType: api`
@@ -338,10 +342,17 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 | 账户页 | 读取失败 | 第一次查询就失败，还没有可用结果。 |
 | 账户页 | 账户服务不可用 | 宿主没有提供账户 RPC。 |
 
-**失败横幅**把当前标签页的同一状态在内容上方再显示一次，带「数据诊断」和重试。
-统计页的「数据不完整」「刷新失败，显示上次快照」「本地摘要 · 内置价格」都会出横幅，
-「已同步」但仍带告警时用信息样式列出诊断；账户页只有「快照已过期」出横幅，第一次查询失败时
-重试按钮在账户区里，不另出横幅。
+**失败横幅**出现在内容上方，用另一套文案，并按条件附带「数据诊断」和重试：
+
+| 标题状态 | 横幅文案 | 数据诊断 | 重试按钮 |
+| --- | --- | --- | --- |
+| 快照已过期 | 刷新失败，显示上次快照 | 有错误信息时显示 | 有对应的统计或账户 RPC 时显示 |
+| 本地摘要 · 内置价格 | 回退数据，可能不完整 | 有错误信息时显示 | 仅当宿主仍提供统计 RPC 时显示 |
+| 数据不完整 | 数据不完整 | 有告警或错误信息时显示 | 不显示 |
+| 已同步（带告警） | 已同步（信息样式） | 显示 | 不显示 |
+
+账户页只有「快照已过期」出横幅；第一次查询失败（标题「读取失败」）和「账户服务不可用」都不出
+横幅，前者在账户区里提供重试。统计页完全拿不到统计 RPC 时，横幅是信息样式，也没有重试。
 
 **本地摘要 · 内置价格**只属于统计页，表示浏览器侧在估算；账户查询失败不会触发它。
 
@@ -356,13 +367,19 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 ### 5.3 导出
 
 - 项目总览、开发时间线、用量趋势支持 CSV 和 JSON。
+- 导出的是**当前范围选中的项目**：总览和时间线取当前日期（选「全部」时是全部项目），趋势取当前
+  区间；隐藏的项目也会包含在内。
+- JSON 是这些项目的数组，不是完整的 RPC 响应，`meta` 和 `meta.warnings` 不在其中。每个项目的
+  会话用量保留宿主返回的 `cost` 对象。
 - 界面和汇总只用人民币。USD 原价按固定汇率换算，换算后的金额进入 `estimated`，不会被描述成
   确定的 Provider 账单。
-- JSON 导出是宿主返回的原始结构，USD 计价的用量保留 `pricing.nativeAmount`、`nativeCurrency`、
-  `fxRate`、`fxDate`、`fxSource`，可以核对原币金额和当时用的汇率。
-- CSV 是项目表格，包含已隐藏项目；只有 `currency`、`costAmount`、`exactAmount`、
-  `estimatedAmount` 等扁平列，没有原币金额列。
-- 两种导出都带 `costStatus`、`ruleId`、`pricingSource`、Provider、模型身份和排除原因，方便复核。
+- JSON 的每条用量有 `cost.status`、`cost.ruleId`、`cost.sourceUrl`；USD 计价的用量另有
+  `cost.pricing.nativeAmount`、`nativeCurrency`、`fxRate`、`fxDate`、`fxSource`，可以核对原币
+  金额和当时用的汇率。
+- CSV 是扁平的项目表格，每条用量一行；`costStatus` 是该行的 `cost.status`，`pricingSource`
+  是该规则来源的 URL（对应 JSON 里的 `cost.sourceUrl`）。CSV 有 `currency`、`costAmount`、
+  `exactAmount`、`estimatedAmount` 等列，没有原币金额列。
+- 两种导出都没有排除原因的文本；原因在面板的会话详情里。
 - 账户余额页不提供导出：余额属于实时快照，不属于历史统计。
 - 凭证不会进入 CSV/JSON 导出。
 

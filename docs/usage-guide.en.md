@@ -72,14 +72,16 @@ Pin a published version (the current stable release in this example):
 dsh plugin --profile web add -w @rongyi7/dsh-stats@0.4.3
 ```
 
-Install a tarball built locally with `npm pack`:
+Install a tarball built locally with `npm pack`. The desktop app uses its bundled CLI here too:
 
 ```bash
-dsh plugin --profile desktop add -w ./rongyi7-dsh-stats-0.5.0.tgz
+"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
+  --profile desktop add -w ./rongyi7-dsh-stats-0.5.0.tgz
 ```
 
-The file name follows the version. `0.5.0` is not on npm yet, so `@0.5.0` is not a downloadable
-example; local tarballs are only for your own builds and verification.
+The file name follows the version. For the desktop app, use the §1.1 command with the tarball path
+instead of the package name. `0.5.0` is not on npm yet, so `@0.5.0` is not a downloadable example;
+local tarballs are only for your own builds and verification.
 
 ### 1.5 Verify registration
 
@@ -122,7 +124,7 @@ Restart the host afterwards.
 | No “Usage” entry after installing | Confirm the command succeeded, fully restart the host, and hard-refresh the browser. DSH caches client modules and Typert descriptors. |
 | Still missing after restarting the desktop app | Make sure you installed into the `desktop` profile, not only `web`. |
 | Running `npm install --prefix ~/.dsh/profiles/web ...` to edit a profile | Don't. Profiles are managed by pnpm, and the official `dsh plugin` command keeps dependencies and bundle registration in sync. |
-| Pricing settings say “Pricing settings are unavailable” | The host did not load the current plugin version. Restart the host and check `--dump-config` if it persists. |
+| Pricing settings say “Pricing settings are unavailable” | The host did not load the current plugin version. Restart the host. If it persists on Web, check `dsh --profile web --dump-config`; on the desktop app check the sidebar entry or the profile file from §1.5. |
 
 ### 1.8 Versions and compatibility
 
@@ -252,8 +254,8 @@ before pricing and are never presented as API spend.
   model price is borrowed. This only limits the fallback; a model with its own rule in the catalog
   (for example `gpt-5.4-mini`) is priced normally.
 
-Those sessions stay out of the primary spend total and keep the reason in session details and in
-`meta.warnings` in exports.
+Those sessions stay out of the primary spend total. The reason is in session details and in the RPC's
+`meta.warnings`; exports keep `costStatus`, `ruleId` and `pricingSource` for tracing.
 
 ### 3.5 Provider matching
 
@@ -379,11 +381,19 @@ Three related notices exist in the panel, and they have different triggers.
 | Balance | Read failed | The first query failed and there is no usable result yet. |
 | Balance | Account service unavailable | The host exposes no account RPC. |
 
-**The failure banner** repeats the current tab's state above the content, with data diagnostics and a
-retry. On the statistics tabs it appears for “Incomplete data”, “Refresh failed; last snapshot” and
-“Local summaries · bundled prices”; “Synced” with warnings uses the information style to list
-diagnostics. On the balance tab only “Snapshot expired” produces a banner; on a first failure the
-retry button lives in the account area instead.
+**The failure banner** sits above the content, uses different wording, and adds data diagnostics and
+a retry only under the conditions below:
+
+| Title status | Banner text | Data diagnostics | Retry button |
+| --- | --- | --- | --- |
+| Snapshot expired | Refresh failed; last snapshot | Shown when an error is available | Shown when the matching statistics or account RPC exists |
+| Local summaries · bundled prices | Fallback data; may be incomplete | Shown when an error is available | Only when the host still provides the statistics RPC |
+| Incomplete data | Incomplete data | Shown when warnings or an error exist | Not shown |
+| Synced with warnings | Synced (information style) | Shown | Not shown |
+
+On the balance tab only “Snapshot expired” produces a banner; a first failure (“Read failed”) and
+“Account service unavailable” do not, and the first failure offers retry inside the account area.
+When the statistics RPC is missing entirely, the banner uses the information style and has no retry.
 
 **Local summaries · bundled prices** belongs to the statistics tabs only: it means the browser is
 estimating, and a failed account query never triggers it.
@@ -399,15 +409,20 @@ time (UTC+8), independent of the host machine's time zone.
 ### 5.3 Exports
 
 - Overview, Timeline and Usage Trends support CSV and JSON.
+- Exports contain the projects **selected by the current scope**: the current date on Overview and
+  Timeline (all projects when “All” is selected), and the current range on Usage Trends. Hidden
+  projects are included.
+- JSON is an array of those projects, not the complete RPC response, so `meta` and `meta.warnings`
+  are not part of it. Each project's session usage rows keep the `cost` object returned by the host.
 - The UI and summaries use RMB only. USD list prices are converted with the fixed FX snapshot, and the
   converted amount lands in `estimated`; it is never described as a settled provider bill.
-- JSON is the raw host payload: USD-priced usage rows keep `pricing.nativeAmount`,
-  `nativeCurrency`, `fxRate`, `fxDate` and `fxSource`, so the original amount and the rate used can
-  be audited.
-- CSV is the project table and includes hidden projects; it has flat columns such as `currency`,
-  `costAmount`, `exactAmount` and `estimatedAmount`, and no original-currency amount column.
-- Both exports include `costStatus`, `ruleId`, `pricingSource`, provider, model identity and the
-  exclusion reason, so amounts can be audited.
+- In JSON each usage row has `cost.status`, `cost.ruleId` and `cost.sourceUrl`; USD-priced rows also
+  keep `cost.pricing.nativeAmount`, `nativeCurrency`, `fxRate`, `fxDate` and `fxSource`, so the
+  original amount and the rate used can be audited.
+- CSV is a flat project table with one row per usage. `costStatus` is that row's `cost.status` and
+  `pricingSource` is the rule's source URL (the JSON `cost.sourceUrl`). CSV has columns such as
+  `currency`, `costAmount`, `exactAmount` and `estimatedAmount`, and no original-currency column.
+- Neither export contains the exclusion-reason text; the reason is in the panel's session details.
 - Account Balance has no export: balances are a live snapshot, not historical statistics.
 - Credentials never appear in CSV/JSON exports.
 

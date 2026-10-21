@@ -113,10 +113,12 @@ The gear icon opens the pricing settings drawer with three fixed sections: model
 
 - **Costs are estimates.** Rates are per million tokens and the UI and summaries use RMB only. USD list prices are converted with the fixed FX snapshot `1 USD = 6.7205 CNY` (`2026-08-26`, [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)), and the converted amount counts as an estimate; live rates are never applied. JSON exports keep each usage row's original-currency amount and the rate used, so amounts stay auditable.
 - **Three amounts.** `¥12.34` is priced, `¥12.34*` means some usage is unpriced, and “Awaiting price” means no safe rule applies. The ⓘ next to the cost explains it.
-- **Subscriptions are not converted.** Subscription and token-plan usage never becomes API spend; unknown models, explicit relay/local routes without a custom rate, and conflicting rules are not guessed either. They stay out of the primary total, and the reason remains in session details and exports.
-- **Data source and price certainty are different things.** The status next to the title follows the current tab: on the statistics tabs it describes where the data came from (“Synced”, “Incomplete data”, “Refresh failed; last snapshot”, “Local summaries · bundled prices”), and on the balance tab it describes the latest account query. Amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
+- **Subscriptions are not converted.** Subscription and token-plan usage never becomes API spend; unknown models, explicit relay/local routes without a custom rate, and conflicting rules are not guessed either. They stay out of the primary total; the reason is in session details, and exports keep `costStatus`, `ruleId` and `pricingSource` for tracing.
+- **The title status** follows the current tab: on the statistics tabs it describes where the data came from (“Synced”, “Incomplete data”, “Refresh failed; last snapshot”, “Local summaries · bundled prices”), and on the balance tab it describes the latest account query.
+- **The banner above the content** uses different wording: “Snapshot expired” pairs with “Refresh failed; last snapshot”, and “Local summaries · bundled prices” pairs with “Fallback data; may be incomplete”. Data diagnostics appear only when an error is available, and retry appears only for expired or fallback states while the matching RPC still exists.
+- **Data source and price certainty are different things.** The status describes where the data came from; amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
 - **Credentials stay on the host.** Account queries resolve credentials in the DSH host and call each provider's official endpoint; credentials never enter the client bundle, RPC logs or CSV/JSON exports.
-- **Export scope.** Overview, Timeline and Usage Trends support CSV/JSON; Account Balance is a live snapshot and has no export.
+- **Export scope.** Overview, Timeline and Usage Trends support CSV/JSON and export the projects selected by the current date or range; Account Balance is a live snapshot and has no export.
 - **Time zone.** Timeline slots, peak/off-peak windows and pricing rule times use Beijing time (UTC+8), independent of the host machine.
 
 Full pricing statuses, provider matching, custom rules and catalog updates are in the [pricing section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#3-pricing); catalog collection and signing are described in the [pricing design](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/pricing-updates.md).
@@ -132,7 +134,7 @@ Confirm the install command succeeded, then fully restart the host (quit the des
 <details>
 <summary><strong>Why does the cost look incomplete?</strong></summary>
 
-The primary total only includes amounts that can be confirmed and converted to RMB. Subscription usage, unknown models, explicit relay/local routes and archived logless forks are not guessed and are therefore excluded; session details and exports keep `costStatus`, `ruleId`, `pricingSource` and the exclusion reason so each case can be traced.
+The primary total only includes amounts that can be confirmed and converted to RMB. Subscription usage, unknown models, explicit relay/local routes and archived logless forks are not guessed and are therefore excluded; the reason is in session details, and exports keep `costStatus`, `ruleId` and `pricingSource` so each case can be traced.
 </details>
 
 <details>
