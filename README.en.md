@@ -20,10 +20,10 @@ The UI brand is **DSH Usage**; the install package is still **`@rongyi7/dsh-stat
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="Light-mode overview with estimated cost, token composition and the project table" width="100%"></a>
   <br>
-  <sub>Light mode · demo data from an isolated fixture · click for the full overview</sub>
+  <sub>Light mode · real desktop data with sensitive values masked · click for the full overview</sub>
 </p>
 
-> Screenshots come from isolated test fixtures: project names, paths and session identifiers are fictional, and balances and quotas are demo values. They contain no API keys, cookies, management tokens or session content. Costs are derived from public prices; the provider's bill remains authoritative.
+> Except for the account balance page, screenshots come from the desktop app; project names, paths, session titles, account names and amounts are masked as xxxx. The balance page still uses isolated fixture demo data. They contain no API keys, cookies, management tokens or session content. Costs are derived from public prices; the provider's bill remains authoritative.
 
 ## 📦 Installation
 
@@ -71,7 +71,7 @@ Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu and prici
 Usage and estimated cost by project: sort by any column, expand a project for turns/steps, tool time, first token, tok/s and session details, and search or hide projects in the top-right. Hidden projects are excluded from metrics and trends. Projects page 50 at a time and sessions 100 at a time; paging never changes the top summary.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Overview with summary metrics and the project table (demo data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Overview with summary metrics and the project table (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ### Timeline
@@ -79,10 +79,10 @@ Usage and estimated cost by project: sort by any column, expand a project for tu
 The day view arranges projects as lanes above half-hour cost or token bars; click a segment or bar for that half hour, or expand a lane to open its sessions. The all view is a calendar matrix, 30 days per page; click a cell to open that day.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Timeline day view (demo data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Timeline day view (real data, sensitive values masked)" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Timeline all view as a calendar matrix (demo data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Timeline all view as a calendar matrix (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ### Usage trends
@@ -90,7 +90,7 @@ The day view arranges projects as lanes above half-hour cost or token bars; clic
 Ranges are the last 7, 30 or 90 days, and the metric switches between cost and tokens. The summary strip gives the range total, daily average and top model; daily bars follow, then a fixed 26-week activity heatmap, and a model share table for the current metric. Clicking a bar or heat cell opens that day in the overview.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap and model shares (demo data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap and model shares (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ### Account balance
@@ -106,7 +106,7 @@ Every connected account appears in one list, ordered by urgency: exhausted or ne
 The gear icon opens the pricing settings drawer with three fixed sections: models, custom rules, and updates & versions. Search models and inspect current and historical rules; fill in a custom rule, preview its impact, then save; manage automatic updates, pinned versions and catalog snapshots.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="Pricing settings drawer with models, custom rules and updates (demo data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="Pricing settings drawer with models, custom rules and updates (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ## 💰 Data and cost

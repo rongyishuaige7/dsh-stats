@@ -20,10 +20,10 @@ DSH Usage 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="浅色模式的项目总览：预估费用、Token 构成与项目表" width="100%"></a>
   <br>
-  <sub>浅色模式 · 隔离夹具的演示数据 · 点击查看完整总览</sub>
+  <sub>浅色模式 · 桌面端真实数据，敏感信息已打码 · 点击查看完整总览</sub>
 </p>
 
-> 截图都来自隔离测试夹具：项目名、路径和会话标识是虚构的，余额与额度是演示值，不包含 API Key、Cookie、管理令牌或会话内容。费用按公开价格推算，最终以 Provider 账单为准。
+> 除账户余额页外，截图来自桌面端实拍；项目名、路径、会话标题、账户名和金额已打码为 xxxx。余额页仍使用隔离夹具的演示数据。截图不包含 API Key、Cookie、管理令牌或会话内容。费用按公开价格推算，最终以 Provider 账单为准。
 
 ## 📦 安装
 
@@ -71,7 +71,7 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
 按项目看用量和预估费用：表格可按任意列排序，展开项目查看轮/步、工具时长、首 token、tok/s 和会话明细；右上角可以搜索并隐藏项目，隐藏的项目不计入指标和趋势。项目每页 50 个、会话每页 100 条，翻页不改变顶部汇总。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="项目总览：汇总指标与项目表（演示数据）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="项目总览：汇总指标与项目表（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ### 开发时间线
@@ -79,10 +79,10 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
 按日视图把项目排成泳道，上方每根柱子是半小时的费用或 Token，点色条或柱子看这半小时的明细，展开泳道打开会话。全部模式是日历矩阵，每页 30 天，点格子进入当天。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="开发时间线按日视图（演示数据）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="开发时间线按日视图（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="开发时间线全部模式日历矩阵（演示数据）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="开发时间线全部模式日历矩阵（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ### 用量趋势
@@ -90,7 +90,7 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
 范围可选近 7 / 30 / 90 天，指标可在费用和 Token 之间切换。上方摘要给出区间合计、日均和最常用模型，中间是每日柱图，下面是固定 26 周的活动热力图，末尾按当前指标列出模型占比。点柱子或热力格会跳到那天的总览。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="用量趋势、活动热力图和模型占比（演示数据）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="用量趋势、活动热力图和模型占比（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ### 账户余额
@@ -106,7 +106,7 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
 头部的齿轮图标打开计价设置抽屉，固定三个分区：模型价格、自定义规则、更新与版本。模型价格里可以搜索模型、查看当前规则和历史规则；自定义规则填好后先「预览影响」再保存；更新与版本管理自动更新开关、固定版本和历史目录快照。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="计价设置抽屉：模型价格、自定义规则、更新与版本（演示数据）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="计价设置抽屉：模型价格、自定义规则、更新与版本（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ## 💰 数据与费用
