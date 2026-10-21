@@ -56,7 +56,7 @@ For a custom profile, replace `desktop` / `web` with the real profile name.
 
 The plugin requires Node.js 22 or newer. The desktop app ships its own runtime, so no separate Node install is needed there.
 
-The npm stable release is `0.4.3` (published 2026-10-15); this repository's `main` is `0.5.0`, which is not published yet, and the interface notes below follow `main`. `0.4.3` declares Harness peers up to `0.2.0-rc.2`, and the host's compatibility check lets prereleases participate, so the current desktop host (`0.2.1-rc.2`) allows it to load. Loading is not acceptance: `0.4.3` was verified through `0.2.0-rc.2` by module contracts and browser fixtures, while the plugin version with a complete Web run on `0.2.1-rc.2` is `0.5.0`. After `0.5.0` is published, both the desktop app and Web can use the stable release.
+The npm stable release is `0.5.0` (published 2026-10-21); both the desktop app and Web can install it, and the interface notes below follow this release. `0.5.0` was verified on DSH `0.2.1-rc.2` by module contracts, browser fixtures and a real Web run. `0.4.3` declares Harness peers up to `0.2.0-rc.2`; the host's compatibility check lets prereleases participate, so `0.2.1-rc.2` still allows it to load, but it was only verified through `0.2.0-rc.2` — upgrading to `0.5.0` is the verified path.
 
 Pinned versions, local tarballs, registration checks, upgrades and pnpm troubleshooting are in the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#1-installation).
 

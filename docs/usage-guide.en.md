@@ -4,8 +4,7 @@ This guide covers installing `@rongyi7/dsh-stats` (UI brand **DSH Usage**), the 
 pricing, account queries, data sources and exports. For the introduction see the
 [README](../README.en.md); for architecture and data contracts see [DESIGN.md](../DESIGN.md).
 
-- Applies to: `main` at `0.5.0`. The npm stable release is `0.4.3`, so small UI details may differ
-  in an installed copy.
+- Applies to: `0.5.0` (published 2026-10-21), on both the desktop app and Web.
 - Supported environments: the DSH desktop app and a DSH Web host.
 
 ## 1. Installation
@@ -69,7 +68,7 @@ dsh plugin --profile <name> add -w @rongyi7/dsh-stats
 Pin a published version (the current stable release in this example):
 
 ```bash
-dsh plugin --profile web add -w @rongyi7/dsh-stats@0.4.3
+dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.0
 ```
 
 Install a tarball built locally with `npm pack`. The desktop app uses its bundled CLI here too:
@@ -80,8 +79,8 @@ Install a tarball built locally with `npm pack`. The desktop app uses its bundle
 ```
 
 The file name follows the version. For the desktop app, use the §1.1 command with the tarball path
-instead of the package name. `0.5.0` is not on npm yet, so `@0.5.0` is not a downloadable example;
-local tarballs are only for your own builds and verification.
+instead of the package name. Local tarballs are only for your own builds and verification; for a
+normal install, use the published version number.
 
 ### 1.5 Verify registration
 
@@ -130,8 +129,7 @@ Restart the host afterwards.
 
 | Item | Status (checked 2026-10-21) |
 | --- | --- |
-| npm stable | `0.4.3`, published 2026-10-15 |
-| This repository (`main`) | `0.5.0`, not published yet |
+| npm stable | `0.5.0`, published 2026-10-21 |
 | Harness bundled in the desktop app | `0.2.1-rc.2` |
 | Plugin `0.5.0` declaration | `engines.dsh: >=0.1.0-rc.6 <0.3.0`, plus peer ranges |
 | Plugin `0.4.3` declaration | No `engines.dsh`; peer ranges up to `^0.2.0-rc.2` |
@@ -145,8 +143,8 @@ participate (`includePrerelease`). So:
   in the comparison, so `0.2.1-rc.2` still falls inside the range and it is **allowed to load**.
 
 Loading is not acceptance. `0.4.3` was verified through `0.2.0-rc.2` by module contracts and browser
-fixtures; the plugin version with a complete Web run on `0.2.1-rc.2` is `0.5.0`. Until `0.5.0` ships,
-the npm stable release can load in the desktop app, but it is an unverified combination.
+fixtures; the plugin version with a real Web run on `0.2.1-rc.2` is `0.5.0`. `0.4.3` still loads
+in the desktop app, but it is an unverified combination; upgrading to `0.5.0` is the verified path.
 
 Per-release real-host, module-contract and browser-fixture results are in the
 [compatibility matrix](compatibility.md). “Supports the desktop app” means the current release works

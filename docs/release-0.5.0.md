@@ -1,6 +1,6 @@
 # 0.5.0 release
 
-Pre-1.0 feature release candidate, 2026-10-21. Tag and npm publication are still pending.
+Pre-1.0 feature release, 2026-10-21.
 
 ## Highlights
 
@@ -58,6 +58,14 @@ Pre-1.0 feature release candidate, 2026-10-21. Tag and npm publication are still
   cost/token switch, with a summary strip, daily bars, a fixed 26-week heatmap
   and a model ring plus sortable table. Clicking a bar or a heat cell opens that
   day in the overview, and the page follows the project filter.
+- **Repository entry**: the panel title (“DSH 用量” / “DSH Usage”) is now a link
+  to <https://github.com/rongyishuaige7/dsh-stats>, opened in a new window with
+  `noopener noreferrer`. It is keyboard reachable, keeps the dialog's accessible
+  name, and is not reachable while the pricing drawer is open.
+- **README and bilingual guide**: the README now covers desktop and Web
+  installation side by side, and the detailed install, pricing, account,
+  data-status and export material moved to `docs/usage-guide.md` and
+  `docs/usage-guide.en.md`. `README.zh.md` stays a pointer page.
 
 ## Trends page (0.5.0)
 
@@ -81,23 +89,34 @@ Pre-1.0 feature release candidate, 2026-10-21. Tag and npm publication are still
 | Harness | Verification |
 | --- | --- |
 | `0.1.3-alpha.2` through `0.2.0-rc.2` | previously verified; see `docs/compatibility.md` |
-| `0.2.1-rc.2` | isolated real-module contract: 6/6 checks pass on Node `22.22.0`; full Web verified with plugin 0.5.0 (R1/R16 and UI checks) |
+| `0.2.1-rc.2` | isolated real-module contract: 6/6 checks pass on Node `22.22.0`; real Web runs at `8b047ce` (R1/R16 and UI checks) and at `9611c25` (shell, four tabs, pricing drawer, 0 errors) |
 
 `0.2.1-rc.2` is supported by peer ranges. The desktop app currently bundles
 this Harness release; clean installation should no longer report peer mismatches.
 
 ## Verification
 
-- Full test suite: **504 tests** pass in the default timezone and `TZ=UTC`.
-- Browser fixture: **44 check groups / 77 screenshots**, 0 console errors,
+- Full test suite: **505 tests** pass in the default timezone and `TZ=UTC`.
+- Browser fixture: **50 check groups / 80 screenshots**, 0 console errors,
   0 runtime exceptions, 0 failed requests at 1440/390/320 px. The fixture covers
   the pricing drawer model list/detail, custom drafts, preview races, pinned and
   unpinned updates, seven signed historical snapshots, empty history, restore
   success/failure, long identities/forms, short windows, and the previous
   6b–6e regressions.
+- Pricing collector: the OpenAI Standard section now carries an 11-column table
+  (output moved to the second column, cache writes split into 30m and 12h) next
+  to the 4-column table for older models. The adapter maps columns by header
+  name, keeps the 30m write as the cache-write rate, and leaves the 12h write
+  unmodelled. Before this fix every row was skipped and the run failed closed.
 - Real Harness contracts: matrix includes `0.1.3-alpha.2`, `0.1.5-rc.1`,
   `0.1.5-rc.2`, `0.1.5-rc.3`, `0.1.6-alpha.1`, `0.1.7-rc.2`, `0.2.0-rc.2`,
   and `0.2.1-rc.2`.
+- Real Web (`0.2.1-rc.2`, plugin built at `9611c25`): `npm run smoke:web` passed
+  with the panel, four tabs, `exact` status and the pricing drawer (catalog
+  `2026101817`, 876 rules); 0 console errors, 0 runtime exceptions, 0 failed
+  requests. The temporary home had no credentials or sessions, so the balance
+  and overview zero states were exercised, not live data. See
+  `docs/compatibility.md`.
 - Signed catalog `2026101817`: 876 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
@@ -114,7 +133,7 @@ dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.0
   --profile desktop add -w @rongyi7/dsh-stats@0.5.0
 ```
 
-The npm commands above apply once `0.5.0` is published. Before that, install the local
+Both commands install the published `0.5.0`. To try a local build first, install the
 `rongyi7-dsh-stats-0.5.0.tgz` tarball with the same command shape. The `desktop` profile is managed
 by the app, so a separately installed npm `dsh` refuses it.
 
@@ -125,22 +144,26 @@ independently; do not reinstall merely to receive new prices.
 
 - Provisional rules cover **standard rates only**. Fast/Priority/Batch/Flex,
   1-hour cache writes and special tiers require review or remain unsupported.
+  OpenAI's 12-hour cache write is not modelled; the 30-minute write is used.
 - Provisional rules are not promoted automatically. A maintainer reviews the
   `[provisional]` rule, changes confidence to `exact`, removes the marker and
   signs through `sign_reviewed_catalog`.
 - Existing model price changes intentionally require review.
 - Meta open-weight models do not have a single first-party token price; they
   follow the actual host/OpenRouter route.
-- Real Web verification covered exact-status data, R1 generation Esc and R16
-  approval Esc. Unpriced-price flows and partial/stale banners remain
-  fixture-only; no provider was added to exercise them.
+- Real Web verification at `9611c25` covered the shell, four tabs, exact status
+  and the pricing drawer. Live balances, non-zero statistics, unpriced-price
+  flows and partial/stale banners remain fixture-only. The R1 generation Esc and
+  R16 approval Esc checks date from the `8b047ce` run and were not repeated.
 - The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
   the timeline no longer has an internal viewport. Narrow layout and
   non-truncation are asserted separately at 320/390/640 px.
-- Desktop real-device acceptance for the pricing drawer (Chinese/English,
-  light/dark, narrow window, pending-model direct entry, preview/save,
-  restore/unpin) remains pending; fixture coverage is not real-device
-  acceptance.
+- **Desktop real-device acceptance is still pending.** Before tagging, run this
+  checklist on the desktop build that matches the tag and record the result here:
+  Chinese and English UI; light and dark themes; a narrow window; opening a
+  pending model directly from the overview; pricing preview and save; restoring a
+  snapshot and unpinning it; and the panel title opening the repository in the
+  system browser. Fixture and real-Web coverage is not real-device acceptance.
 
 ## Release gates
 
@@ -152,7 +175,8 @@ independently; do not reinstall merely to receive new prices.
    `DSH_HARNESS_ROOT="$TMP" npm run smoke:harness`
 6. `npm run smoke:browser`
 7. `npm pack --dry-run`
-8. Commit the version bump, create tag `v0.5.0`, publish `@rongyi7/dsh-stats@0.5.0`
+8. Desktop real-device acceptance from Known limitations, recorded here.
+9. Commit the version bump, create tag `v0.5.0`, publish `@rongyi7/dsh-stats@0.5.0`
    with `prepublishOnly`, then create the GitHub release from this document.
 
 ## Release infrastructure

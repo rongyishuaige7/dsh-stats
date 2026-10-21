@@ -98,6 +98,34 @@ Full Web runs for `0.1.5-rc.2` and `0.1.6-alpha.1` remain unverified; their modu
 contract and independent UI fixture coverage is unchanged. See
 [0.3.1 release verification](release-0.3.1.md).
 
+## October 21, 2026 real Web verification (Harness 0.2.1-rc.2 + plugin 0.5.0 at `9611c25`)
+
+The October 18 run below was built from `8b047ce`. Another 45 commits touched
+`src/` afterwards (balance, trends, the pricing drawer and the title link), so
+that run no longer described `main`. A fresh isolated run at `9611c25` repeated
+the same shape:
+
+- Temporary prefix with `@deepseek-ai/dsh@0.2.1-rc.2`; temporary `DSH_HOME` and
+  `DSH_AGENTS_HOME`; the tarball built at `9611c25`
+  (`@rongyi7/dsh-stats@0.5.0`) installed with the official
+  `dsh plugin --profile web add -w` command.
+- `npm run smoke:web` **passed**: plugin entry present, panel open, four tabs
+  reachable, data status `exact`, account tab rendered, 0 console errors,
+  0 runtime exceptions, 0 failed requests, screenshots at 1440 and 390 px.
+- `DSH_SMOKE_EXPECT_PRICING=1` exercised the new drawer: the models section
+  rendered with catalog `2026101817`, 876 rules, 384 models and the three
+  section tabs. The check previously waited for `input[type=checkbox]`, which
+  only existed on the pre-0.5.0 long pricing page; it now waits for the drawer's
+  section nav and catalog sync line.
+- Scope: no credentials were copied into the temporary home, so the balance page
+  rendered its empty state (`yi-api` absent) instead of live provider data, and
+  the workspace had no sessions, so the overview showed the zero state. The
+  R1/R16 Esc checks were not repeated because no generation or approval was
+  created.
+
+The temporary host was stopped, its prefix and browser profile were deleted, and
+no file under `~/.dsh` was changed.
+
 ## October 18, 2026 verification (Harness 0.2.1-rc.2)
 
 npm reports `latest=0.2.0-rc.2`, `next=0.2.1-rc.2`. The `0.2.1-rc.2` package
@@ -109,6 +137,9 @@ now accepts both shapes and passes all six checks against an isolated
 plugin-0.5.0 full Web run was later completed and is recorded below.
 
 ## October 18, 2026 real Web verification (Harness 0.2.1-rc.2 + plugin 0.5.0)
+
+This run describes the plugin tarball built from `8b047ce`; the October 21 run
+above supersedes it for `main`.
 
 A clean Web profile was created in a temporary prefix with
 `@deepseek-ai/dsh@0.2.1-rc.2`. The plugin tarball was built from the fix commit
