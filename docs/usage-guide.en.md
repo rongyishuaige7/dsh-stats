@@ -374,7 +374,7 @@ Three related notices exist in the panel, and they have different triggers.
 | --- | --- | --- |
 | Statistics | Synced | The host RPC returned statistics without degradation; the timeline slices event timestamps into 30-minute slots. |
 | Statistics | Incomplete data | The host flagged degradation (missing or partially written log, failed validation); known values stay visible. |
-| Statistics | Refresh failed; last snapshot | This read failed but an earlier successful result exists. |
+| Statistics | Snapshot expired | This read failed but an earlier successful result exists. |
 | Statistics | Local summaries · bundled prices | The browser has no statistics RPC (older host, or the plugin did not load), or the first read failed; it estimates from visible projection values with bundled prices. |
 | Balance | Synced | This account query succeeded. |
 | Balance | Snapshot expired | An earlier successful result exists but this query failed. |
