@@ -1,349 +1,175 @@
 <h1 align="center">DSH Usage</h1>
 
-<p align="center"><strong>See your DSH usage, time, and spend at a glance.</strong></p>
-<p align="center">Organize sessions by project and see tokens, development time, model cost, and account balances.</p>
+<p align="center">A usage dashboard for DeepSeek Harness: tokens, development time and estimated cost by project, plus balances and quotas for configured accounts.</p>
 
 <p align="center">
-  <a href="README.md">简体中文</a> · <strong>English</strong>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/README.md">简体中文</a> · <strong>English</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@rongyi7/dsh-stats"><img src="https://img.shields.io/npm/v/@rongyi7/dsh-stats?color=1677ff&amp;label=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@rongyi7/dsh-stats"><img src="https://img.shields.io/npm/dm/%40rongyi7%2Fdsh-stats?label=downloads" alt="npm monthly downloads"></a>
   <a href="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml"><img src="https://github.com/rongyishuaige7/dsh-stats/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@rongyi7/dsh-stats?color=8b5cf6" alt="license"></a>
 </p>
 
-> **DSH records every conversation. DSH Usage shows what each project used.** `(｡•̀ᴗ-)✧`
+DSH Usage is a usage dashboard for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), available in the desktop app and on the web. It reads DSH session records and organizes tokens, development time and estimated cost by project, date and model. When a price cannot be confirmed it says so instead of guessing. `(｡•̀ᴗ-)✧`
 
-`DSH Usage` is a local [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web usage panel. It organizes DSH sessions by project, date, and model; when a price cannot be confirmed, it marks the amount instead of guessing.
-
-<p align="center"><strong>Usage by project</strong> · <strong>Model-based cost</strong> · <strong>Keys stay local</strong> · <strong>One-click export</strong></p>
+The UI brand is **DSH Usage**; the install package is still **`@rongyi7/dsh-stats`**, the dependency name existing profiles already use. Both refer to this plugin.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="Light-mode project overview with masked identity fields and aggregate metrics" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="Light-mode overview with estimated cost, token composition and the project table" width="100%"></a>
   <br>
-  <sub>Light mode · masked project identity · click for the complete project overview</sub>
+  <sub>Light mode · demo data from an isolated fixture · click for the full overview</sub>
 </p>
 
-> Screenshots contain no API keys, cookies, management tokens, or session content. Project identities are masked, and balances and quotas use demo values. Costs are derived from public API pricing rules; the provider's bill remains authoritative.
+> Screenshots come from isolated test fixtures: project names, paths and session identifiers are fictional, and balances and quotas are demo values. They contain no API keys, cookies, management tokens or session content. Costs are derived from public prices; the provider's bill remains authoritative.
 
-## 🚀 Quick start
+## 📦 Installation
 
-Requires a DeepSeek Harness `web` profile and Node.js `>= 22`.
+The plugin installs into a DSH profile. The desktop app and Web are separate profiles (`desktop` and `web`); installing into one does not install into the other. The `-w` flag is pnpm's workspace install option, not a file path.
 
-```bash
-dsh plugin --profile web add @rongyi7/dsh-stats
-```
-
-After installation, fully restart the running DSH Web process:
+### Desktop app
 
 ```bash
-dsh web
+dsh plugin --profile desktop add -w @rongyi7/dsh-stats
 ```
 
-Reopen the page. The “Usage” entry will appear at the bottom of the sidebar.
+Then quit DSH completely (Cmd+Q on macOS, not just closing the window) and open it again. The “Usage” entry sits at the bottom of the sidebar.
 
-> **Name note:** The user-facing brand is now **DSH Usage**. To keep existing DSH profiles and remote interfaces working, the install package remains `@rongyi7/dsh-stats` for now; the install command does not change.
+`dsh` must be a CLI that shares the same `~/.dsh` as the app. The desktop app bundles one; a `dsh` from a separate npm install can manage the same profile directory but belongs to a different runtime, so retry with the bundled CLI if a profile command fails. See the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#11-desktop-app) for the macOS path.
 
-<details>
-<summary><strong>Pin a version, install a tarball, or verify registration</strong></summary>
-
-Pin a release:
+### Web
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.5.0
+dsh plugin --profile web add -w @rongyi7/dsh-stats
 ```
 
-Install a local tarball:
+Restart the Web host (`dsh web`), then reload the page. Reloading the browser alone does not reload host-side plugins.
 
-```bash
-dsh plugin --profile web add ./rongyi7-dsh-stats-0.5.0.tgz
-```
+For a custom profile, replace `desktop` / `web` with the real profile name.
 
-Verify the bundle registration:
+### Versions and requirements
 
-```bash
-dsh --profile web --dump-config
-```
+The plugin requires Node.js 22 or newer. The desktop app ships its own runtime, so no separate Node install is needed there.
 
-You should see the `stats` entry and `@rongyi7/dsh-stats` in the bundle list. **Do not** use `npm install --prefix ~/.dsh/profiles/web ...` to mutate a DSH profile: profiles are managed by pnpm, and the official `dsh plugin` command keeps the dependency graph and bundle registration intact.
+The npm stable release is `0.4.3` (published 2026-10-15); this repository's `main` is `0.5.0`, which is not published yet, and the interface notes below follow `main`. The `0.4.3` peer range stops at Harness `0.2.0-rc.2`, while the current desktop app bundles `0.2.1-rc.2`: until `0.5.0` ships, installing the npm stable release into the desktop app is an unverified combination. After `0.5.0` is published, both the desktop app and Web can use the stable release.
 
-If a newer pnpm reports `ERR_PNPM_ADDING_TO_ROOT`, use `dsh plugin --profile web add -w @rongyi7/dsh-stats`. The workspace root here is the Web profile directory.
-</details>
+Pinned versions, local tarballs, registration checks, upgrades and pnpm troubleshooting are in the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#1-installation).
 
-## ✨ Core capabilities
+## 🖼️ Interface
 
-| Capability | What you get |
-| --- | --- |
-| 📊 Usage by project | Tokens, time, and spend for every project. |
-| ⏱️ Development time | Day lanes with cost/token bars and half-hour details; a 30-day calendar matrix for all history. |
-| 📈 Trends and models | Seven, 30 and 90-day changes plus the models and projects you use most. |
-| 💳 Cost estimates | Public model prices converted to RMB; unknown amounts are never guessed. |
-| 👤 Balances and quotas | Balances and plan quotas for configured providers. |
-| 🔒 Privacy and export | Keys stay on the host, and statistics export to CSV/JSON. |
+The panel has four tabs. The header always shows the data-source status, refresh, export, pricing settings and close.
 
-The project overview uses a fixed-height panel with one scrolling body: KPIs, the metrics strip, filters, the project table, and expanded session details all live there. Projects page 50 at a time and sessions 100 at a time; paging never changes the top summary. Model distribution keeps three models visible. `(ง •̀_•́)ง`
+Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu and pricing drawer one layer at a time and finally the panel; `Enter` sorts from a header button and expands or collapses a row.
 
-## 🖼️ Interface tour
+### Overview
 
-These are light-mode captures of the running UI. Dense views use the full README width; click any image to inspect it at its original resolution.
-
-### Project overview
-
-A cost-first KPI row, a Token-structure legend and active-span strip, a seven-column project table, and a filter menu. Sort by any column, keep the header sticky, and expand a row for project-level turns/steps, tool time, first token, tok/s, and session details.
-
-Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu, or pricing drawer one layer at a time and finally closes the panel; `Enter` sorts from a header button or expands/collapses a row.
+Usage and estimated cost by project: sort by any column, expand a project for turns/steps, tool time, first token, tok/s and session details, and search or hide projects in the top-right. Hidden projects are excluded from metrics and trends. Projects page 50 at a time and sessions 100 at a time; paging never changes the top summary.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Complete project overview with masked project identity fields" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/overview.png" alt="Overview with summary metrics and the project table (demo data)" width="100%"></a>
 </p>
 
-### Development timeline
+### Timeline
 
 The day view arranges projects as lanes above half-hour cost or token bars; click a segment or bar for that half hour, or expand a lane to open its sessions. The all view is a calendar matrix, 30 days per page; click a cell to open that day.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Development timeline day view (fixture data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Timeline day view (demo data)" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Development timeline calendar matrix (fixture data)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Timeline all view as a calendar matrix (demo data)" width="100%"></a>
 </p>
 
 ### Usage trends
 
-The range switches between the last 7, 30 and 90 days, and the metric between cost and tokens. A summary strip shows the range total, the daily average and the top model; daily bars follow, then a fixed 26-week activity heatmap, and a model table ranked by the current metric. Clicking a bar or a heat cell opens that day in the overview. The page shares the project filter with the overview and timeline, so hidden projects are excluded, and the heatmap's current streak counts back from today or yesterday.
+Ranges are the last 7, 30 or 90 days, and the metric switches between cost and tokens. The summary strip gives the range total, daily average and top model; daily bars follow, then a fixed 26-week activity heatmap, and a model share table for the current metric. Clicking a bar or heat cell opens that day in the overview.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap, and model distribution" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/trends.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/trends.png" alt="Usage trends, activity heatmap and model shares (demo data)" width="100%"></a>
 </p>
 
-### Balances and quotas
+### Account balance
 
-All connected accounts appear in one list, ordered by urgency: exhausted or nearly exhausted quotas, invalid credentials, and stale snapshots come first. With multiple accounts, the summary strip totals available balance per currency and highlights the tightest quota and the number of accounts that need attention. Each row shows the balance breakdown, or a remaining-quota bar per subscription window. Each balance account can have an alert line stored in this browser only. A failed refresh only affects its own row; if the whole query fails, the header turns stale and a banner offers retry while existing rows stay visible. The account view does not provide exports because account data is a current snapshot, not historical statistics.
+Every connected account appears in one list, ordered by urgency: exhausted or nearly exhausted quotas, invalid credentials and stale snapshots come first. With multiple accounts, the strip totals available balance per currency and shows the tightest quota and how many accounts need attention. Each balance account can have an alert line, saved in this browser only.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="Multi-account balance list, summary strip and not-connected group" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/balance.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/balance.png" alt="Multi-account balance list, summary strip and not-connected group (demo data)" width="100%"></a>
 </p>
 
-Project overview, development timeline, and usage trends support CSV and JSON exports.
+### Pricing settings
 
-## 💰 Pricing
-
-All rates are calculated per million tokens. Provider rules may be denominated in USD, but spend summaries are converted to RMB (CNY), and the UI and spend exports show RMB only. The current fixed FX snapshot is `1 USD = 6.7205 CNY`, retrieved on `2026-08-26` from [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY). The pricing engine considers context length, service tier, cache type, and effective time, and includes rule metadata and estimate status in project exports for auditing. Account balances remain in each provider's native currency.
-
-| Provider | Built-in models | Pricing notes |
-| --- | --- | --- |
-| [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | `deepseek-v4-pro`, `deepseek-v4-flash` | CNY; Beijing-time 30-minute slots select historical, peak, or off-peak rates. |
-| [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` | CNY; M3 separates standard/priority and `<=512K`/`>512K` context. |
-| [OpenAI](https://developers.openai.com/api/docs/pricing) | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-cyber`, `gpt-5.4`, `gpt-5.4-mini` | Source rates are USD; Astra was verified on 2026-09-17, with the `272K` threshold and Batch/Flex/Priority tiers; other models retain their own observation dates; cache-write pricing for `gpt-5.4` models uses a conservative input-rate estimate when needed. |
-| [Anthropic](https://docs.anthropic.com/en/docs/about-claude/pricing) | Claude Opus 5, Sonnet 5, Sonnet 4.6, Haiku 4.5 | USD; cache-write duration gaps are explicitly estimated. |
-| [Google](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3.7 Flash, 3.1 Pro Preview, 2.5 Pro/Flash | USD; includes the `200K` context tier; missing cache-storage duration is estimated. |
-| [Moonshot/Kimi](https://platform.kimi.com/docs/pricing/chat.md) | Kimi K3, K2.7 Code/Highspeed, K2.6 | CNY; official model rules. |
-| [Z.ai](https://docs.z.ai/guides/overview/pricing) | GLM 5.2, 5.1, 5, 5 Turbo, 4.7, 4.7 FlashX/Flash | USD; official model rules. |
-| [OpenRouter](https://openrouter.ai/api/v1/models) | Dated routes for mainstream OpenAI, Anthropic, Google, Kimi, and GLM models | USD; catalog snapshots are marked `estimated`. |
-
-Pricing is primarily **provider-scoped**. Explicitly recognized first-party providers use their list prices and are `exact`; the DSH pass-through routes `nbdeepseek` and `deepseek-modlens` explicitly inherit DeepSeek's official API pricing. When an unknown or API-compatible provider has no usable pricing metadata but its model uniquely matches one first-party rule, the original provider is retained, the amount is marked `estimated`, and the result is converted to RMB. This is a public-price estimate, not the relay's bill. The estimate status remains available in data and exports, while the UI shows the calculated RMB amount without an approximation marker. Explicit `relay`/`local` modes, subscription/token-plan usage, unknown models, and ambiguous matches are not guessed, are excluded from the primary spend total, and retain an explanation in session details and warnings.
-
-### Cost status guide
-
-| Status | Meaning |
-| --- | --- |
-| `exact` | Every priced usage row matched a deterministic built-in rule. |
-| `estimated` | An amount is available, but a dynamic snapshot, missing price-affecting metadata, or a unique official-model fallback for an unknown API provider is involved; the UI shows the calculated RMB amount, while the estimate status remains in data and exports. |
-| `free` | All matched usage is free; the summary keeps a zero amount instead of displaying an unknown cost. |
-| `partial` | Known and unpriced usage coexist; the primary total shows only included RMB, with the incomplete reason in details. |
-| `unsupported` | No safe rule applies; the session is excluded from the primary spend total and the detail view explains why. |
-
-Individual usage rows may also be marked `subscription` or `ambiguous`. Subscription aliases such as `coding-plan` and `coding_plan` are normalized before pricing and are never presented as API spend.
-
-### Price settings and updates
-
-The dashboard uses “Estimated cost”: `¥12.34` for available prices, `¥12.34*` for partially priced usage, and “Awaiting price” when no usable rate exists. Click the ⓘ next to the cost for details. Sources and update errors stay in the price settings drawer.
-
-The gear icon in the header opens the **Pricing settings** drawer from the right: 560px on desktop and full panel width on narrow screens. The drawer has three fixed sections:
-
-- **Models**: used models are listed first, with an all-models switch, search, and 25 model groups per page. Opening a model shows the full provider/model, current rules, source, and a collapsed “Other periods” section. Simple prices show an input/output summary; complex prices show “Tiered pricing · N current rules”. Pending models link directly to a prefilled custom rule.
-- **Custom rules**: the rule list and the add/edit page are separate. Enter provider/model IDs and per-million-token rates; empty means unknown and `0` means free. Optional conditions cover dates, account type, context thresholds, and service multipliers. Without a start date, earlier usage is estimated; with a start date, the rule applies only inside its interval. Times use Beijing time (UTC+8). Add/update draft, pending removal, and undo all operate on the local rule set; a form with unadded changes blocks preview and save. The fixed footer provides Preview impact / Save / Discard changes.
-- **Updates & versions**: shows the full current version, real publish time, last check/successful sync, the auto-update draft, and catalog snapshots. Auto-update changes require preview and save. Snapshots start with the latest five and reveal five more per “Show more”; restoring replaces the whole catalog, pauses automatic updates, and keeps saved custom rules. While a version is pinned, both Check updates entries are disabled. Re-enabling automatic updates and saving only unpins the catalog; it does not download anything, and the user can check manually afterwards. When unpinned with automatic updates off, manual checks remain available. Failed updates retain the last valid catalog.
-
-“Other periods” inside a model is that model’s historical rate data; “Catalog snapshots” in Updates & versions is a whole signed catalog version. They are different data layers. Custom rules take precedence over the public catalog, including explicitly configured relay/local accounts. Subscription tokens never become API spend.
+The gear icon opens the pricing settings drawer with three fixed sections: models, custom rules, and updates & versions. Search models and inspect current and historical rules; fill in a custom rule, preview its impact, then save; manage automatic updates, pinned versions and catalog snapshots.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="Pricing settings drawer with models, custom rules, and updates" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/prices-drawer.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/prices-drawer.png" alt="Pricing settings drawer with models, custom rules and updates (demo data)" width="100%"></a>
 </p>
 
-The host checks signed catalogs at startup and hourly, with a cooled-down check for unpriced models. Manual refresh, disabling updates, and restoring a version are available. Only public pricing data is downloaded; no sessions or credentials are uploaded.
+## 💰 Data and cost
 
-A maintainer workflow runs every 30 minutes. Validated simple OpenRouter text-model rates can publish automatically; new OpenAI, Anthropic, and Google standard prices are added as provisional rules and signed, while existing price changes, retired or limited models, missing fields, and ambiguous aliases require review. Catalog updates need no plugin reinstall. Historical rule intervals are retained. USD conversions use dated, reviewed FX snapshots in the catalog, using the earliest snapshot when no earlier one exists; they do not follow live FX fluctuations.
+- **Costs are estimates.** Rates are per million tokens and spend summaries are converted to RMB using a fixed FX snapshot, `1 USD = 6.7205 CNY` (`2026-08-26`, [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)). It does not follow live rates.
+- **Three amounts.** `¥12.34` is priced, `¥12.34*` means some usage is unpriced, and “Awaiting price” means no safe rule applies. The ⓘ next to the cost explains it.
+- **Subscriptions are not converted.** Subscription and token-plan usage never becomes API spend; unknown models, explicit relay/local routes without a custom rate, and conflicting rules are not guessed either. They stay out of the primary total, and the reason remains in session details and exports.
+- **Data source and price certainty are different things.** The status next to the title reads “Synced”, “Incomplete data”, “Refresh failed; last snapshot” or “Local summaries · bundled prices” and describes where the data came from. Amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
+- **Credentials stay on the host.** Account queries resolve credentials in the DSH host and call each provider's official endpoint; credentials never enter the client bundle, RPC logs or CSV/JSON exports.
+- **Export scope.** Overview, Timeline and Usage Trends support CSV/JSON; Account Balance is a live snapshot and has no export.
+- **Time zone.** Timeline slots, peak/off-peak windows and pricing rule times use Beijing time (UTC+8), independent of the host machine.
 
-The cache and settings revisions live in `$DSH_HOME/plugins/dsh-stats/pricing/` (default `~/.dsh/plugins/dsh-stats/pricing/`). Original token logs are preserved. Browser fallback explicitly shows “Local summaries · bundled prices”. See [pricing design and maintenance](docs/pricing-updates.md).
-
-
-## 👤 Balances and subscription quotas
-
-Account queries run only in the host. The references below are variable names, never secret values to paste into a README or chat:
-
-| Account | Official endpoint | Default credential reference |
-| --- | --- | --- |
-| DeepSeek balance | `/user/balance` | `DEEPSEEK_API_KEY` |
-| OpenRouter credits | `/api/v1/credits` | `OPENROUTER_MANAGEMENT_KEY` (Management Key required) |
-| Moonshot balance | `/v1/users/me/balance` | `MOONSHOT_API_KEY` |
-| Z.ai balance | `/api/paas/v4/balance` | `ZAI_API_KEY` |
-| Kimi For Coding | `/coding/v1/usages` | `KIMI_API_KEY` |
-| Z.ai Coding Plan | `/api/monitor/usage/quota/limit` | `ZAI_API_KEY` |
-| MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise) plus official compatibility paths | `MINIMAX_API_KEY` |
-
-The DeepSeek account sign-in provider added in Harness 0.1.7 (`deepseek-account`)
-has no API key for the official balance endpoint, so the account page does not list
-it; the API-key provider is queried as before.
-
-`accountApiKeyEnv` can override a provider's account credential reference. Results are cached for five minutes and concurrent requests are deduplicated; the refresh button explicitly bypasses that cache. A transient network, rate-limit, or response error keeps that account's last successful snapshot and marks it stale; if the whole query fails, the header turns stale and a banner offers retry while existing rows stay visible. MiniMax configurations without an account type keep the historical Coding Plan default, while an explicit `accountType: api` is not queried as a subscription. Providers without a public account endpoint still contribute token usage and simply show “unsupported” on the balance screen.
-
-## 🔐 Credential and privacy boundary
-
-- Credentials are resolved through the DSH host `credentials` service only; they never enter the client bundle, RPC logs, or CSV/JSON exports.
-- Account adapters allow fixed official HTTPS hosts, issue GET requests only, reject redirects, time out after 15 seconds, and cap responses at 1 MiB.
-- Never commit real API keys, cookies, management keys, `auth.json`, or `.credentials.yaml` to Git, an issue, or an Agent conversation.
-- The screenshots use `********` project labels, `/workspace/********` paths, and replaced session identifiers. Balance amounts and MiniMax quota values are demo values; only aggregate dates and usage metrics from the selected all-time view remain.
-
-## 🎯 Accuracy and data sources
-
-The panel labels its current data source instead of silently implying precision:
-
-- **Host exact** — the host RPC reads durable session logs and projections; the timeline uses event timestamps and 30-minute slots.
-- **Partial/stale** — a log is missing, being written, or an account endpoint failed; known values remain visible with a warning.
-- **Client approximate** — an older host does not expose the RPC, so the browser estimates from projection values. Useful for a quick glance, not an audit.
-
-Dates, timeline slots, and DeepSeek peak/off-peak windows use explicit Beijing time (UTC+8), independent of the host machine timezone.
+Full pricing statuses, provider matching, custom rules and catalog updates are in the [pricing section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#3-pricing); catalog collection and signing are described in the [pricing design](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/pricing-updates.md).
 
 ## ❓ FAQ
 
 <details>
-<summary><strong>Why does the panel say “Client approximate”?</strong></summary>
+<summary><strong>Why is the “Usage” entry missing after installing?</strong></summary>
 
-Tier 2 RPC did not load, or the host is still running an older plugin. Restart `dsh web` and confirm `stats` appears in `dsh --profile web --dump-config`. The source tooltip includes the concrete fallback error.
+Confirm the install command succeeded, then fully restart the host (quit the desktop app, or restart `dsh web`) and hard-refresh the browser if needed. DSH caches client modules and Typert descriptors. Also confirm you installed into the profile you are running: installing into `web` does not add the entry to `desktop`.
 </details>
 
 <details>
-<summary><strong>Why is the most-used model `(unknown)`?</strong></summary>
+<summary><strong>Why does the cost look incomplete?</strong></summary>
 
-The source session may not contain provider/model metadata. When the model field itself is missing, there is no reliable rule to select, so the UI uses `(unknown)`. If a model is present but the provider is unknown and the model uniquely matches a first-party rule, the model remains visible and its calculated RMB amount is shown while the data retains `estimated`; ambiguous or unknown models still stay unpriced.
+The primary total only includes amounts that can be confirmed and converted to RMB. Subscription usage, unknown models, explicit relay/local routes and archived logless forks are not guessed and are therefore excluded; session details and exports keep `costStatus`, `ruleId`, `pricingSource` and the exclusion reason so each case can be traced.
 </details>
 
 <details>
-<summary><strong>Why does a session have no cost?</strong></summary>
+<summary><strong>Why is an account missing from the balance tab?</strong></summary>
 
-The primary spend total shows only amounts that can be confirmed and converted to RMB. Archived logless forks, unknown models, explicit relay/local routes, and subscription usage are not guessed and are excluded from that total; session details, warnings, and exports retain `costStatus`, `ruleId`, `pricingSource`, provider/model identity, and the exclusion reason.
+Account queries use each provider's official balance endpoint. Providers without a public endpoint appear in the “not connected” group with a reason, and token statistics are unaffected; an account with an endpoint but no credential shows the missing variable name. DeepSeek's `deepseek-account` sign-in has no API key to query. Credential variables and overrides are in the [accounts section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#4-accounts-and-credentials).
 </details>
 
 <details>
-<summary><strong>Why does the balance tab have no CSV/JSON buttons?</strong></summary>
+<summary><strong>How do I update?</strong></summary>
 
-CSV/JSON are historical statistics exports and remain on the overview, timeline, and trends views. The balance tab is a cached account snapshot, so it keeps refresh and close actions only.
+Run the install command for that profile again with the target version, then restart the same way you installed. The price catalog updates independently: the host checks the signed catalog at startup and hourly, so a price change needs no reinstall.
 </details>
-
-<details>
-<summary><strong>Why is the output bar much smaller than the input bar?</strong></summary>
-
-Code sessions often send a much larger context than they generate. Output bars retain a minimum visible height, and hovering reveals the exact value. The “Output (incl. reasoning)” legend is centered below the seven-day chart.
-</details>
-
-<details>
-<summary><strong>Why is the Usage entry missing after installation?</strong></summary>
-
-DSH caches client modules and Typert descriptors. Confirm the install completed, fully restart `dsh web`, and hard-refresh the browser if necessary.
-</details>
-
-## 🧩 Tier 2 data flow (contributors)
-
-<details>
-<summary><strong>Show the architecture</strong></summary>
-
-```text
-browser client.cjs
-  apply()
-    -> ctx.remote.$mount(inlined STATS_REMOTE_CONTRIBUTION)
-    -> ctx.inject(["remote", "remote.stats"], childCtx)
-    -> childCtx.remote.stats.aggregate()
-    -> childCtx.remote.stats.account()
-
-host index.js
-  StatsService
-    aggregate(): workspace + projection + session.jsonl.zstd
-               -> project totals, 30-minute timeline, model/pricing detail
-    account(): balance and quota adapters with normalized stale fallback
-    providers(): capability metadata only; credential values are never returned
-    current(): legacy DeepSeek balance compatibility RPC
-```
-
-See [DESIGN.md](DESIGN.md) for the full contract, integration decisions, and hard-won Typert details. `lib/` is generated output: edit `src/`, then rebuild.
-</details>
-
-## 🛠️ Local development
-
-Compatibility covers Harness `0.1.3-alpha.2` through `0.2.1-rc.2`. `0.1.5-rc.3` and
-`0.1.7-rc.2` are verified in complete Web hosts; the other releases pass real
-module contract checks. See the
-[compatibility matrix](docs/compatibility.md). Harness 0.1.7+ needs plugin 0.4.1 or later;
-0.4.0 does not load on 0.1.7+.
-
-```bash
-npm install
-npm run build
-npm test
-npm pack --dry-run
-```
-
-```text
-src/index.js                # host StatsService and aggregate/account RPC
-src/host-sessions.js        # session log discovery, zstd decoding, projection state, session info
-src/host-usage.js           # slot durations and priced usage segments
-src/host-balance.js         # legacy DeepSeek balance RPC
-src/host-util.js            # host constants and date, identity and file helpers
-src/client.cjs              # client entry, React views, and apply()
-src/client-format.cjs       # formatting and CNY cost helpers
-src/client-data.cjs         # date windows, projection aggregation, timeline and trend data
-src/client-remote.cjs       # Typert remote descriptors, account RPC, session navigation
-src/client-locale.cjs       # zh/en UI strings
-src/client-styles.cjs       # panel styles
-src/pricing.cjs             # provider-scoped, effective-dated pricing
-src/route-data.cjs          # immutable usage index retaining request context and counts
-src/accounts.js             # official balance/quota adapters (host only)
-src/rpc-schemas.cjs         # shared host/browser RPC schemas
-src/typert-host.js          # host Typert manifest
-src/typert-remote-client.js # client RPC descriptor
-scripts/build.mjs           # esbuild build script
-lib/                        # generated files shipped in the package
-```
-
-`prepublishOnly` rebuilds automatically before `npm publish`. For profile installation and iteration, always use the official `dsh plugin` command.
-
-`npm run smoke:browser` checks desktop and mobile views with isolated fixtures and
-does not query real accounts. Upstream contract commands are documented in the
-[compatibility matrix](docs/compatibility.md); fixes and performance evidence are
-recorded in the [maintenance notes](docs/reliability-2026-09.md).
-
-Release checklist:
-
-```bash
-npm run build
-npm test
-npm pack --dry-run
-npm publish
-```
 
 ## ⚠️ Known limitations
 
-- The current session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
-- The header status point and banner expose data provenance, refresh failures and incomplete pricing. A failed account refresh retains that account's last successful snapshot with a stale label; a failed query moves the stale state to the header and offers retry. Ordinary RPC failures do not trigger the DeepSeek-only legacy fallback.
-- The first request over many sessions prefers the official projection-cache watermark ladder; older hosts fall back to log decoding, with mtime caching for repeat work.
-- Ordinary archived sessions are marked archived; archived, logless forks backed only by inherited cache values are excluded and reported in warnings.
+- The session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
+- Ordinary archived sessions are marked “archived”; archived, logless forks backed only by inherited cache are excluded from statistics.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.
-- Spend summaries use RMB throughout, with USD converted using the documented FX snapshot; historical values are not re-fetched from the network each time the panel opens. Unknown API providers receive an `estimated` amount only when the model uniquely matches an official rule; explicit relays/local providers, unknown or ambiguous models, and subscription usage remain unpriced.
 - Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool durations remain cumulative work metrics.
+
+## 🛠️ Development and docs
+
+```bash
+npm ci
+npm run build
+npm test
+```
+
+`lib/` is generated output: edit `src/`, then rebuild. Architecture, data contracts and performance trade-offs are in [DESIGN.md](https://github.com/rongyishuaige7/dsh-stats/blob/main/DESIGN.md); per-release module contracts, complete Web runs and browser-fixture results are in the [compatibility matrix](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md). `npm run smoke:browser` checks the desktop and mobile UI with isolated fixtures.
+
+Documentation index:
+
+- [Usage guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md) (English) · [使用指南](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md) (中文)
+- [Pricing updates and maintenance](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/pricing-updates.md)
+- [Compatibility matrix](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md)
+- [0.5.0 release notes](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/release-0.5.0.md)
 
 ## 🙌 Contributing and license
 
-Issues and pull requests are welcome. Licensed under the [MIT License](LICENSE).
+Open an [issue](https://github.com/rongyishuaige7/dsh-stats/issues) or send a pull request. Licensed under the [MIT License](https://github.com/rongyishuaige7/dsh-stats/blob/main/LICENSE).
 
-`╰(*°▽°*)╯` May every stats panel make your development rhythm a little easier to see.
+`╰(*°▽°*)╯`
