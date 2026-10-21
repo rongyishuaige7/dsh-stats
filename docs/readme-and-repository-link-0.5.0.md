@@ -1,7 +1,7 @@
 # README 整理与项目仓库入口实施文档
 
 - 日期：2026-10-21。
-- 状态：R1 已通过 Codex 审核（收口提交 `1ac6a43`）；R2 自验完成，待 Codex 审核。由 DeepSeek 分片实施。
+- 状态：R1、R2 均已通过 Codex 审核（R1 收口 `1ac6a43`，R2 实现 `31e7368`）。由 DeepSeek 分片实施。
 - 代码基线：`6654c52`；开工时重新确认工作树、远端进度与发布状态。
 - 用户要求：保留颜文字，减少模板化和宣传式表达；以持续维护的开源项目介绍；明确支持 DSH 桌面端和 Web；在插件中提供项目仓库入口。
 - 项目地址：<https://github.com/rongyishuaige7/dsh-stats>。
@@ -195,7 +195,7 @@ git diff --exit-code -- lib
 - 已知未覆盖：桌面端真机安装与外部链接行为未验收。
 - 相关修正：`docs/release-0.5.0.md` 的桌面安装命令已在 R2 改为自带 CLI；本文 §2.4 保留方案原文作为历史记录。
 
-### R2：标题仓库链接（自验完成，待 Codex 审核）
+### R2：标题仓库链接（已通过 Codex 审核）
 
 - 实现：`h2#dss-title` 内加入原生 `<a>`，固定 `https://github.com/rongyishuaige7/dsh-stats`，只定义一次；
   `target="_blank"`、`rel="noopener noreferrer"`、`data-action="project-repository"`。
@@ -203,12 +203,16 @@ git diff --exit-code -- lib
 - 样式：链接继承标题字号、字重与颜色；hover 下划线；`focus-visible` 使用 `--dss-accent` 的 2px 轮廓。
 - 验证（浏览器夹具，`scripts/browser-fixture-smoke.mjs`）：
   - 属性、可访问名称、对话框名称、四个标签页可达、初始焦点不变、Tab 顺序。
-  - 点击与 Enter 记录到固定 URL、`_blank`、`noopener noreferrer`；面板不关闭，`aggregate`/`account`/`pricing`
-    调用数不变。
+  - 点击与 Enter 在捕获阶段被拦截，记录到固定 URL、`_blank`、`noopener noreferrer`；面板不关闭，
+    `aggregate`/`account`/`pricing` 调用数不变。这一项验证的是链接的目标与边界，不真正打开新页面。
   - 计价抽屉打开时链接不可达；抽屉与面板的 Esc 顺序、触发器焦点恢复保持。
   - 320/390/641/700/768/1024/1440 七种宽度、中英双语：标题单行、头部无溢出、不与标签重叠、字号不低于 11px。
   - 截图：`title-link-focus-light.png`、`title-link-focus-dark.png`、`title-link-320-en.png`（隔离夹具，已实际查看）。
 - 工程门禁：`verify:pricing`、`build`、默认与 `TZ=UTC` 测试、四个 bundle 语法检查、`npm pack --dry-run`、
   `smoke:browser`、`git diff --check`、重建后 `lib` 无漂移。
-- 未覆盖：桌面端系统浏览器打开行为没有真机证据，fixture 不能替代，列为待验；未安装、未重启真实服务、
-  未部署、未打 tag、未发布 npm。
+- Codex 补验：在中文和英文界面分别用鼠标点击和 Enter 实际触发了原生新页面打开行为（`target="_blank"`），
+  补足原 smoke 只做点击拦截、不打开新页面的缺口。两项验证相互独立：smoke 检查目标与请求边界，Codex
+  的补验检查浏览器中的真实新页面行为。
+- 审核结论：R2 通过。审核只覆盖上述实现与验证范围，不改变下列未覆盖项。
+- 未覆盖：桌面端系统浏览器打开行为仍没有真机证据，Codex 的浏览器补验不能替代，列为待验。
+- 边界：本次未安装插件、未重启真实服务、未部署、未打 tag、未发布 npm。
