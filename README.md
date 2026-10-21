@@ -79,10 +79,10 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
 按日视图把项目排成泳道，上方每根柱子是半小时的费用或 Token，点色条或柱子看这半小时的明细，展开泳道打开会话。全部模式是日历矩阵，每页 30 天，点格子进入当天。
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="开发时间线按日视图（真实数据，敏感信息已打码）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png?v=2" alt="开发时间线按日视图（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="开发时间线全部模式日历矩阵（真实数据，敏感信息已打码）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=2" alt="开发时间线全部模式日历矩阵（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ### 用量趋势

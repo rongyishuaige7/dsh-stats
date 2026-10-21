@@ -79,10 +79,10 @@ Usage and estimated cost by project: sort by any column, expand a project for tu
 The day view arranges projects as lanes above half-hour cost or token bars; click a segment or bar for that half hour, or expand a lane to open its sessions. The all view is a calendar matrix, 30 days per page; click a cell to open that day.
 
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png" alt="Timeline day view (real data, sensitive values masked)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png?v=2" alt="Timeline day view (real data, sensitive values masked)" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png" alt="Timeline all view as a calendar matrix (real data, sensitive values masked)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=2" alt="Timeline all view as a calendar matrix (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ### Usage trends
