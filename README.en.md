@@ -31,13 +31,16 @@ The plugin installs into a DSH profile. The desktop app and Web are separate pro
 
 ### Desktop app
 
+Install with the CLI bundled with the desktop app (macOS path below; on other systems use the matching `dsh` inside the app directory):
+
 ```bash
-dsh plugin --profile desktop add -w @rongyi7/dsh-stats
+"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
+  --profile desktop add -w @rongyi7/dsh-stats
 ```
 
 Then quit DSH completely (Cmd+Q on macOS, not just closing the window) and open it again. The “Usage” entry sits at the bottom of the sidebar.
 
-`dsh` must be a CLI that shares the same `~/.dsh` as the app. The desktop app bundles one; a `dsh` from a separate npm install can manage the same profile directory but belongs to a different runtime, so retry with the bundled CLI if a profile command fails. See the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#11-desktop-app) for the macOS path.
+The desktop profile is managed by the app itself: a `dsh` installed separately from npm refuses to operate on the `desktop` profile. See the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#11-desktop-app) for details.
 
 ### Web
 
@@ -53,7 +56,7 @@ For a custom profile, replace `desktop` / `web` with the real profile name.
 
 The plugin requires Node.js 22 or newer. The desktop app ships its own runtime, so no separate Node install is needed there.
 
-The npm stable release is `0.4.3` (published 2026-10-15); this repository's `main` is `0.5.0`, which is not published yet, and the interface notes below follow `main`. The `0.4.3` peer range stops at Harness `0.2.0-rc.2`, while the current desktop app bundles `0.2.1-rc.2`: until `0.5.0` ships, installing the npm stable release into the desktop app is an unverified combination. After `0.5.0` is published, both the desktop app and Web can use the stable release.
+The npm stable release is `0.4.3` (published 2026-10-15); this repository's `main` is `0.5.0`, which is not published yet, and the interface notes below follow `main`. `0.4.3` declares Harness peers up to `0.2.0-rc.2`, and the host's compatibility check lets prereleases participate, so the current desktop host (`0.2.1-rc.2`) allows it to load. Loading is not acceptance: `0.4.3` was verified through `0.2.0-rc.2` by module contracts and browser fixtures, while the plugin version with a complete Web run on `0.2.1-rc.2` is `0.5.0`. After `0.5.0` is published, both the desktop app and Web can use the stable release.
 
 Pinned versions, local tarballs, registration checks, upgrades and pnpm troubleshooting are in the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#1-installation).
 
@@ -108,10 +111,10 @@ The gear icon opens the pricing settings drawer with three fixed sections: model
 
 ## 💰 Data and cost
 
-- **Costs are estimates.** Rates are per million tokens and spend summaries are converted to RMB using a fixed FX snapshot, `1 USD = 6.7205 CNY` (`2026-08-26`, [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)). It does not follow live rates.
+- **Costs are estimates.** Rates are per million tokens and the UI and summaries use RMB only. USD list prices are converted with the fixed FX snapshot `1 USD = 6.7205 CNY` (`2026-08-26`, [Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)), and the converted amount counts as an estimate; live rates are never applied. JSON exports keep each usage row's original-currency amount and the rate used, so amounts stay auditable.
 - **Three amounts.** `¥12.34` is priced, `¥12.34*` means some usage is unpriced, and “Awaiting price” means no safe rule applies. The ⓘ next to the cost explains it.
 - **Subscriptions are not converted.** Subscription and token-plan usage never becomes API spend; unknown models, explicit relay/local routes without a custom rate, and conflicting rules are not guessed either. They stay out of the primary total, and the reason remains in session details and exports.
-- **Data source and price certainty are different things.** The status next to the title reads “Synced”, “Incomplete data”, “Refresh failed; last snapshot” or “Local summaries · bundled prices” and describes where the data came from. Amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
+- **Data source and price certainty are different things.** The status next to the title follows the current tab: on the statistics tabs it describes where the data came from (“Synced”, “Incomplete data”, “Refresh failed; last snapshot”, “Local summaries · bundled prices”), and on the balance tab it describes the latest account query. Amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
 - **Credentials stay on the host.** Account queries resolve credentials in the DSH host and call each provider's official endpoint; credentials never enter the client bundle, RPC logs or CSV/JSON exports.
 - **Export scope.** Overview, Timeline and Usage Trends support CSV/JSON; Account Balance is a live snapshot and has no export.
 - **Time zone.** Timeline slots, peak/off-peak windows and pricing rule times use Beijing time (UTC+8), independent of the host machine.

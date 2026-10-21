@@ -31,13 +31,16 @@ DSH Usage 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness
 
 ### 桌面端
 
+用桌面应用自带的 CLI 安装（macOS 路径如下，其他系统用应用目录里对应的 `dsh`）：
+
 ```bash
-dsh plugin --profile desktop add -w @rongyi7/dsh-stats
+"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
+  --profile desktop add -w @rongyi7/dsh-stats
 ```
 
 装完完整退出 DSH（macOS 用 Cmd+Q，不是只关窗口），再重新打开。侧边栏底部的「用量」就是入口。
 
-`dsh` 需要是与桌面应用共用同一个 `~/.dsh` 的 CLI。桌面版自带一份；终端里的 `dsh` 来自另一份 npm 安装时也能管理同一个 profile，但属于另一套运行时，报错时改用桌面版自带的 CLI。具体路径见[使用指南](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md#11-桌面端)。
+桌面 profile 由应用自己管理：用 npm 单独安装的 `dsh` 会直接拒绝操作 `desktop` profile。更多细节见[使用指南](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md#11-桌面端)。
 
 ### Web
 
@@ -53,7 +56,7 @@ dsh plugin --profile web add -w @rongyi7/dsh-stats
 
 插件要求 Node.js 22 或更高；桌面端自带运行时，不需要另外安装 Node。
 
-npm 上的稳定版是 `0.4.3`（2026-10-15 发布），本仓库主分支是尚未发布的 `0.5.0`，下面的界面说明按主分支写。`0.4.3` 的 peer 范围到 Harness `0.2.0-rc.2` 为止，而当前桌面版内置 `0.2.1-rc.2`：在 `0.5.0` 发布前，桌面端安装 npm 稳定版属于未验证组合。`0.5.0` 发布后，桌面端和 Web 都可以用稳定版。
+npm 上的稳定版是 `0.4.3`（2026-10-15 发布），本仓库主分支是尚未发布的 `0.5.0`，下面的界面说明按主分支写。`0.4.3` 声明的 Harness peer 范围到 `0.2.0-rc.2`，宿主检查兼容性时允许预发布版本参与，所以在当前桌面宿主（`0.2.1-rc.2`）上会被允许加载。允许加载不等于完成验收：`0.4.3` 的验证覆盖到 `0.2.0-rc.2`（模块契约与浏览器夹具），`0.2.1-rc.2` 上完成完整 Web 验证的插件版本是 `0.5.0`。等 `0.5.0` 发布后，桌面端和 Web 都可以用稳定版。
 
 固定版本、本地 tarball、注册验证、升级卸载和 pnpm 排错，见[使用指南的安装部分](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md#1-安装)。
 
@@ -108,10 +111,10 @@ npm 上的稳定版是 `0.4.3`（2026-10-15 发布），本仓库主分支是尚
 
 ## 💰 数据与费用
 
-- **费用是估算**。价格按每百万 Token 计算，消费汇总统一换算成人民币；当前用固定汇率快照 `1 USD = 6.7205 CNY`（`2026-08-26`，[Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)），不随实时汇率浮动。
+- **费用是估算**。价格按每百万 Token 计算，界面和汇总统一用人民币；USD 原价按固定汇率快照 `1 USD = 6.7205 CNY`（`2026-08-26`，[Frankfurter](https://api.frankfurter.app/2026-08-26?from=USD&to=CNY)）换算，换算后的金额算作估算，不随实时汇率浮动。JSON 导出保留每条用量的原币金额和所用汇率，方便审计。
 - **三种金额**：`¥12.34` 是已计价，`¥12.34*` 是部分用量未计价，没有可用规则时显示「待计价」。点费用旁的 ⓘ 看说明。
 - **订阅不折算**。订阅和 Token Plan 用量不会变成 API 费用；未知模型、显式 relay/local 且没配费率、规则冲突的会话也不猜价，不计入主汇总，原因留在会话详情和导出字段里。
-- **数据来源和单价是两件事**。标题旁的状态点是「已同步」「数据不完整」「刷新失败，显示上次快照」或「本地摘要 · 内置价格」，描述的是数据从哪来；金额本身另有一套 `exact` / `estimated` / `free` / `partial` / `unsupported` 状态。
+- **数据来源和单价是两件事**。标题旁的状态点跟着当前标签页：统计页描述统计数据从哪来（「已同步」「数据不完整」「刷新失败，显示上次快照」「本地摘要 · 内置价格」），账户页描述这次账户查询的结果。金额本身另有一套 `exact` / `estimated` / `free` / `partial` / `unsupported` 状态。
 - **凭证只在宿主侧使用**。账户查询由 DSH 宿主读取凭证并请求各 Provider 的官方接口，凭证不进入前端 bundle、RPC 日志或 CSV/JSON 导出。
 - **导出范围**。项目总览、开发时间线和用量趋势支持 CSV/JSON；账户余额是实时快照，不提供导出。
 - **时区**。时间线、峰谷时段和计价规则的生效时间都用北京时间（UTC+8），不受宿主机时区影响。

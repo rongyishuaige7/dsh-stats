@@ -21,23 +21,25 @@ the workspace root. It is not a file path.
 
 ### 1.1 Desktop app
 
-```bash
-dsh plugin --profile desktop add -w @rongyi7/dsh-stats
+The `desktop` profile is managed by the desktop app itself, so use the CLI bundled with the app.
+A `dsh` installed separately from npm refuses to operate on this profile:
+
+```text
+error: profile "desktop" is managed exclusively by the Electron application
 ```
 
-Then **quit DSH completely** (Cmd+Q on macOS, not just closing the window) and open it again.
-The “Usage” entry sits at the bottom of the sidebar.
-
-`dsh` must be a CLI that shares the same `~/.dsh` as the app. The desktop app bundles one; on macOS:
+On macOS the bundled CLI and command are:
 
 ```bash
 "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
   --profile desktop add -w @rongyi7/dsh-stats
 ```
 
-A `dsh` from a separate npm install can still manage the same profile directory, but it belongs to a
-different runtime. If a profile command fails, retry with the bundled CLI before editing
-`~/.dsh/profiles/desktop` by hand.
+Then **quit DSH completely** (Cmd+Q on macOS, not just closing the window) and open it again.
+The “Usage” entry sits at the bottom of the sidebar.
+
+Don't edit files under `~/.dsh/profiles/desktop` by hand: the app maintains that profile's
+dependencies, bundle registration and patch layer.
 
 ### 1.2 Web
 
@@ -81,11 +83,19 @@ example; local tarballs are only for your own builds and verification.
 
 ### 1.5 Verify registration
 
+For Web:
+
 ```bash
 dsh --profile web --dump-config
 ```
 
-The output should contain `stats` and `@rongyi7/dsh-stats`. Use `desktop` for the desktop app.
+The output should contain `stats` and `@rongyi7/dsh-stats`. The command regenerates that profile's
+`cordis.yml`.
+
+The desktop app does not support `--dump-config`: the command is always refused for the `desktop`
+profile, even with the bundled CLI. Instead, open `~/.dsh/profiles/desktop/package.json` and check
+that `@rongyi7/dsh-stats` appears in both `dependencies` and `dsh.profile.bundles`, or simply look
+for the “Usage” entry at the bottom of the sidebar.
 
 ### 1.6 Upgrading and removing
 
@@ -121,12 +131,20 @@ Restart the host afterwards.
 | npm stable | `0.4.3`, published 2026-10-15 |
 | This repository (`main`) | `0.5.0`, not published yet |
 | Harness bundled in the desktop app | `0.2.1-rc.2` |
-| Plugin `0.5.0` peer range | Covers `0.2.0-rc.2` and `0.2.1-rc.2` |
-| Plugin `0.4.3` peer range | Up to `0.2.0-rc.2` |
+| Plugin `0.5.0` declaration | `engines.dsh: >=0.1.0-rc.6 <0.3.0`, plus peer ranges |
+| Plugin `0.4.3` declaration | No `engines.dsh`; peer ranges up to `^0.2.0-rc.2` |
 
-So until `0.5.0` ships, installing the npm stable release into the desktop app is an **unverified
-combination**: `0.4.3` does not declare `0.2.1-rc.2` as a peer, and the install may print peer
-warnings. Once `0.5.0` is published, both the desktop app and Web can use the stable release.
+Before loading a plugin, the host checks compatibility: an own `engines.dsh` range decides alone, and
+only without one does it check every `@deepseek-ai/dsh*` peer range. Both checks let prereleases
+participate (`includePrerelease`). So:
+
+- `0.5.0` declares an `engines.dsh` range that covers `0.2.1-rc.2`, so it loads.
+- `0.4.3` has no `engines.dsh`, and although its peers stop at `^0.2.0-rc.2`, prereleases participate
+  in the comparison, so `0.2.1-rc.2` still falls inside the range and it is **allowed to load**.
+
+Loading is not acceptance. `0.4.3` was verified through `0.2.0-rc.2` by module contracts and browser
+fixtures; the plugin version with a complete Web run on `0.2.1-rc.2` is `0.5.0`. Until `0.5.0` ships,
+the npm stable release can load in the desktop app, but it is an unverified combination.
 
 Per-release real-host, module-contract and browser-fixture results are in the
 [compatibility matrix](compatibility.md). “Supports the desktop app” means the current release works
@@ -178,8 +196,11 @@ shows the current data-source status, refresh, export, pricing settings (gear) a
   reset time (Beijing time).
 - Each balance account can have an alert line. It is saved in this browser only and compares amounts
   in the account's own currency, without FX conversion.
-- A failed refresh only affects its own row and marks it stale; if the whole query fails, the header
-  turns stale and a banner offers retry while existing rows stay visible.
+- A failed refresh only affects its own row and marks it stale.
+- When the whole query fails and an earlier successful result exists, the header turns stale and a
+  retryable banner appears while existing rows stay visible. With no earlier result, the header shows
+  “Read failed” and the account area shows “Account data could not be read” with its own retry button;
+  no banner is added in that case.
 - The account tab has no export: balances are a live snapshot, not historical statistics.
 
 ## 3. Pricing
@@ -226,7 +247,10 @@ before pricing and are never presented as API spend.
 - Subscription / token-plan usage: never converted into API spend.
 - Unknown models, or a missing model name.
 - Conflicting rules (`ambiguous`).
-- Price-sensitive suffixes such as `-mini`, `-pro`, `-vision`, `:batch` and `:free`.
+- Price-sensitive suffixes on a fallback match for an unknown provider: when the extra part of the
+  model name hits `-mini`, `-pro`, `-vision`, `:batch`, `:free` and similar words, no shorter known
+  model price is borrowed. This only limits the fallback; a model with its own rule in the catalog
+  (for example `gpt-5.4-mini`) is priced normally.
 
 Those sessions stay out of the primary spend total and keep the reason in session details and in
 `meta.warnings` in exports.
@@ -240,6 +264,9 @@ Those sessions stay out of the primary spend total and keep the reason in sessio
 - For an unknown or API-compatible provider, a model that uniquely matches one official rule, or
   uniquely matches at a token boundary by longest known name (for example a regional or deployment
   suffix), keeps its original provider and is marked `estimated`.
+- The fallback only applies to models without their own rule: if the extra suffix hits a
+  price-sensitive word, no shorter known model price is borrowed. Models with their own rule use
+  normal matching and are unaffected.
 - That is a public-price estimate, not the relay's bill.
 
 Use “Pricing settings → Models” for the actual rates; this document does not copy the price table.
@@ -321,8 +348,9 @@ to paste into a README or chat.
   bypasses that cache.
 - A transient network, rate-limit or response error keeps that account's last successful snapshot and
   marks it stale.
-- If the whole query fails, the header turns stale and a banner offers retry while existing rows stay
-  visible.
+- If the whole query fails while an earlier successful result exists, the header turns stale and a
+  retryable banner appears while existing rows stay visible. On a first failure with no data, the
+  header shows “Read failed” and the retry lives in the account area instead.
 - The DeepSeek account sign-in provider added in Harness 0.1.7 (`deepseek-account`) has no API key
   for the official balance endpoint, so the account page does not list it; the API-key provider is
   queried as before.
@@ -334,17 +362,31 @@ to paste into a README or chat.
 
 ## 5. Data sources, exports and input
 
-### 5.1 Data-source status
+### 5.1 Data sources and status
 
-The status next to the panel title names the current data source, using the UI wording:
+Three related notices exist in the panel, and they have different triggers.
 
-| Label | Meaning |
-| --- | --- |
-| Synced | The host RPC reads durable session logs and projections; the timeline slices event timestamps into 30-minute slots. |
-| Incomplete data | A log is missing, being written or failed validation; known values stay visible with a warning. |
-| Refresh failed; last snapshot | This read failed and the panel keeps the last valid result. |
-| Local summaries · bundled prices | An older host has no RPC, so the browser estimates from visible projection values with bundled prices. |
-| Data diagnostics | Expands to the concrete fallback reason and error. |
+**The status next to the title** follows the current tab:
+
+| Tab | Label | When it appears |
+| --- | --- | --- |
+| Statistics | Synced | The host RPC returned statistics without degradation; the timeline slices event timestamps into 30-minute slots. |
+| Statistics | Incomplete data | The host flagged degradation (missing or partially written log, failed validation); known values stay visible. |
+| Statistics | Refresh failed; last snapshot | This read failed but an earlier successful result exists. |
+| Statistics | Local summaries · bundled prices | The browser has no statistics RPC (older host, or the plugin did not load), or the first read failed; it estimates from visible projection values with bundled prices. |
+| Balance | Synced | This account query succeeded. |
+| Balance | Snapshot expired | An earlier successful result exists but this query failed. |
+| Balance | Read failed | The first query failed and there is no usable result yet. |
+| Balance | Account service unavailable | The host exposes no account RPC. |
+
+**The failure banner** repeats the current tab's state above the content, with data diagnostics and a
+retry. On the statistics tabs it appears for “Incomplete data”, “Refresh failed; last snapshot” and
+“Local summaries · bundled prices”; “Synced” with warnings uses the information style to list
+diagnostics. On the balance tab only “Snapshot expired” produces a banner; on a first failure the
+retry button lives in the account area instead.
+
+**Local summaries · bundled prices** belongs to the statistics tabs only: it means the browser is
+estimating, and a failed account query never triggers it.
 
 “Synced” describes the **data source**, not price certainty: a synced panel can still show `estimated`
 or `partial` amounts. Conversely, an `exact` price does not prove the log is complete.
@@ -357,8 +399,14 @@ time (UTC+8), independent of the host machine's time zone.
 ### 5.3 Exports
 
 - Overview, Timeline and Usage Trends support CSV and JSON.
-- CSV is the project table and includes hidden projects; JSON includes sessions and pricing details.
-- Exported fields include `costStatus`, `ruleId`, `pricingSource`, provider, model identity and the
+- The UI and summaries use RMB only. USD list prices are converted with the fixed FX snapshot, and the
+  converted amount lands in `estimated`; it is never described as a settled provider bill.
+- JSON is the raw host payload: USD-priced usage rows keep `pricing.nativeAmount`,
+  `nativeCurrency`, `fxRate`, `fxDate` and `fxSource`, so the original amount and the rate used can
+  be audited.
+- CSV is the project table and includes hidden projects; it has flat columns such as `currency`,
+  `costAmount`, `exactAmount` and `estimatedAmount`, and no original-currency amount column.
+- Both exports include `costStatus`, `ruleId`, `pricingSource`, provider, model identity and the
   exclusion reason, so amounts can be audited.
 - Account Balance has no export: balances are a live snapshot, not historical statistics.
 - Credentials never appear in CSV/JSON exports.
@@ -376,7 +424,8 @@ time (UTC+8), independent of the host machine's time zone.
   cache are excluded from statistics and reported in warnings.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.
 - An unknown API provider only receives an `estimated` amount when the model uniquely matches, or
-  uniquely matches by longest known name, an official rule.
+  uniquely matches by longest known name, an official rule; on that fallback, a price-sensitive
+  suffix stops the match from borrowing a shorter model's price.
 - Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool
   durations remain cumulative work metrics.
 - The UI ships Chinese and English.
