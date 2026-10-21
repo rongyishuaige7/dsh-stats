@@ -82,7 +82,7 @@ The day view arranges projects as lanes above half-hour cost or token bars; clic
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png?v=2" alt="Timeline day view (real data, sensitive values masked)" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=2" alt="Timeline all view as a calendar matrix (real data, sensitive values masked)" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=3" alt="Timeline all view as a calendar matrix (real data, sensitive values masked)" width="100%"></a>
 </p>
 
 ### Usage trends

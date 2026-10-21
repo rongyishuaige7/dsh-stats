@@ -82,7 +82,7 @@ npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可�
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline.png?v=2" alt="开发时间线按日视图（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=2" alt="开发时间线全部模式日历矩阵（真实数据，敏感信息已打码）" width="100%"></a>
+  <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/timeline-all.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/timeline-all.png?v=3" alt="开发时间线全部模式日历矩阵（真实数据，敏感信息已打码）" width="100%"></a>
 </p>
 
 ### 用量趋势
