@@ -271,6 +271,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-commit{flex:none;border-top:1px solid var(--dss-line);background:var(--dss-panel);padding:8px 16px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
 	.dss-price-commit .dss-price-actions{margin:0}
 	.dss-price-commit .dss-price-preview{margin:0}
+	.dss-price-hint{margin:0;font-size:var(--dss-fs-xs);color:var(--dss-text-3);overflow-wrap:anywhere}
 	.dss-price-commit .dss-export{min-height:28px}
 	@container dss-drawer (max-width:420px){
 	  .dss-price-model-row{grid-template-columns:minmax(0,1fr)}

@@ -48,6 +48,7 @@ const pairs = {
   typeTime: ['分时费率', 'Time-of-use rates'], typeLegacy: ['历史费率', 'Legacy rates'], typeService: ['服务档费率', 'Service tiers'],
   ruleDetailsTitle: ['查看条件与费率', 'View conditions and rates'], editorDirtyHint: ['表单有未加入的修改，请先加入草稿或取消编辑。', 'The form has unadded changes. Add it to the draft or cancel editing first.'],
   continueEditing: ['继续编辑', 'Continue editing'], unsavedClose: ['未保存；关闭计价设置将放弃修改', 'Unsaved. Closing pricing settings discards changes.'],
+  previewFirst: ['保存前请先预览影响', 'Preview the impact before saving'], previewing: ['正在计算影响…', 'Calculating impact…'],
   deferredFocusHint: ['已保留待定位模型 %s / %s，完成当前编辑后可再次定位。', 'Pending model %s / %s saved; locate it again after finishing this edit.'],
   locateDeferred: ['定位待处理模型', 'Open pending model'],
  noSnapshots: ['暂无可恢复的目录快照', 'No restorable catalog snapshots'], noCustomRules: ['暂无自定义规则', 'No custom rules yet'], newRule: ['新增规则', 'New rule'], editRule: ['编辑规则', 'Edit rule']

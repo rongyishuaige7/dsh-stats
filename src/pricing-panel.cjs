@@ -438,7 +438,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [removedRules, setRemovedRules] = React.useState(() => new Map());
   const [expandedRuleIds, setExpandedRuleIds] = React.useState(() => new Set());
   const [editorNotice, setEditorNotice] = React.useState(''), [deferredFocus, setDeferredFocus] = React.useState(null);
-  const [preview, setPreview] = React.useState(null), [autoUpdateDraft, setAutoUpdateDraft] = React.useState(true);
+  const [preview, setPreview] = React.useState(null), [previewing, setPreviewing] = React.useState(false), [autoUpdateDraft, setAutoUpdateDraft] = React.useState(true);
   const [checking, setChecking] = React.useState(false), [snapshotLimit, setSnapshotLimit] = React.useState(5);
   const [search, setSearch] = React.useState('');
   const [section, setSection] = React.useState('models'), [scope, setScope] = React.useState(null);
@@ -486,7 +486,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   async function call(request, mode = 'commit', previewMeta = null) {
     if (busyRef.current) return;
     const refreshing = request.action === 'refresh';
-    busyRef.current = true; setBusy(true); if (refreshing) setChecking(true); setError('');
+    busyRef.current = true; setBusy(true); if (refreshing) setChecking(true); if (mode === 'preview') setPreviewing(true); setError('');
     try {
       const result = await remote(request);
       if (!mountedRef.current) {
@@ -499,7 +499,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
           version: previewMeta.version, signature: previewMeta.signature });
       } else { accept(result); if (request.action !== 'status') onChanged(); }
     } catch (err) { if (mountedRef.current) fail(err); }
-    finally { busyRef.current = false; if (mountedRef.current) { setBusy(false); if (refreshing) setChecking(false); } }
+    finally { busyRef.current = false; if (mountedRef.current) { setBusy(false); if (mode === 'preview') setPreviewing(false); if (refreshing) setChecking(false); } }
   }
   React.useEffect(() => {
     let cancelled = false;
@@ -784,7 +784,8 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     editorDirty ? e('div', { className: 'dss-price-editor-block' },
       e('span', null, editorNotice || t('price.editorDirtyHint')),
       e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-continue-editing', disabled: busy, onClick: continueEditing }, t('price.continueEditing'))) : null,
-    !editorDirty && preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after)) : null,
+    !editorDirty && preview ? e('p', { className: 'dss-price-preview', role: 'status' }, t('price.affected') + ' ' + preview.changed.length + ' · ' + amount(preview.before) + ' → ' + amount(preview.after))
+      : !editorDirty ? e('p', { className: 'dss-price-hint', role: 'status' }, previewing ? t('price.previewing') : t('price.previewFirst')) : null,
     e('div', { className: 'dss-price-actions' },
       button(t('price.preview'), previewSettings, editorDirty, 'price-preview'),
       button(t('price.save'), saveSettings, editorDirty || !preview, 'price-save'),

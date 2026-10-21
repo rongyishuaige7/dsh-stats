@@ -1271,6 +1271,8 @@ try {
   }
   await click('[data-action=price-stage-rule]');
   await until('document.querySelector(".dss-price-commit")');
+  assert(await evaluate('document.querySelector(".dss-price-hint")?.textContent === window.__fixture.t("price.previewFirst")'), 'staged draft explains that the impact must be previewed before saving');
+  assert(await evaluate('document.querySelector("[data-action=price-save]").disabled'), 'save stays disabled until the impact is previewed');
   await pricingSection('models');
   await pricingSearch(tieredModel.canonical);
   await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)})`);
@@ -1278,6 +1280,8 @@ try {
   assert(await evaluate('!document.querySelector("[data-action=price-edit-saved]")'), 'unsaved working rule is not a saved override in detail');
   await click('[data-action=price-preview]');
   await until('document.querySelector(".dss-price-preview")');
+  assert(await evaluate('!document.querySelector(".dss-price-hint")'), 'the preview summary replaces the hint');
+  assert(await evaluate('!document.querySelector("[data-action=price-save]").disabled'), 'save unlocks after the preview');
   await click('[data-action=price-save]');
   await until('!document.querySelector(".dss-price-commit")');
   await until('document.querySelector("[data-action=price-edit-saved]")');
@@ -1547,7 +1551,7 @@ try {
   await click('[data-action=price-save]');
   await until('!document.querySelector(".dss-price-custom-row")');
   assert(await evaluate('!document.querySelector(".dss-price-commit")'), 'saved removal clears the footer');
-  report.checks.push('pricing custom: list/editor, conditions, dirty form protection, preview invalidation, payload, save/discard, pending removal and undo');
+  report.checks.push('pricing custom: list/editor, conditions, dirty form protection, preview-before-save hint, preview invalidation, payload, save/discard, pending removal and undo');
   // Saved rule association survives repeated edits and pending removal.
   await navigate('/?stats=partial&lang=en');
   await evaluate('Date.now = () => 1792238400000');
