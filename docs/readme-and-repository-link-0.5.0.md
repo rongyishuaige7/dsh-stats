@@ -1,7 +1,7 @@
 # README 整理与项目仓库入口实施文档
 
 - 日期：2026-10-21。
-- 状态：实施交接方案；本次只落本文，README 与插件尚未改动。由 DeepSeek 分片实施，Codex 审核。
+- 状态：R1 已通过 Codex 审核（收口提交 `1ac6a43`）；R2 自验完成，待 Codex 审核。由 DeepSeek 分片实施。
 - 代码基线：`6654c52`；开工时重新确认工作树、远端进度与发布状态。
 - 用户要求：保留颜文字，减少模板化和宣传式表达；以持续维护的开源项目介绍；明确支持 DSH 桌面端和 Web；在插件中提供项目仓库入口。
 - 项目地址：<https://github.com/rongyishuaige7/dsh-stats>。
@@ -183,3 +183,32 @@ git diff --exit-code -- lib
 每片报告提供提交与推送、准确 CI 链接、实际验证结果、改动范围与未覆盖项。R1 列出内容迁移对照和发布状态核对结果；R2 提供外链行为、键盘与头部布局证据，区分 fixture 与真机结果。
 
 本文交付不代表 README 已优化或仓库入口已上线。发布、升级真实环境和桌面验收继续按各自授权与记录执行。
+
+## 6. 实施记录
+
+### R1：README 与使用指南
+
+- 收口提交：`1ac6a43`（R1 主体 `d786c3d`，随后 `97e2754`、`81666b4`、`1ac6a43` 三轮修正）。
+- Codex 审核通过，R1 结束。
+- 交付内容：重写中英文 README，新增 `docs/usage-guide.md` 与 `docs/usage-guide.en.md`，更新中文跳转页；
+  安装、计价、账户、数据状态与导出细节迁入指南。
+- 已知未覆盖：桌面端真机安装与外部链接行为未验收。
+- 相关修正：`docs/release-0.5.0.md` 的桌面安装命令已在 R2 改为自带 CLI；本文 §2.4 保留方案原文作为历史记录。
+
+### R2：标题仓库链接（自验完成，待 Codex 审核）
+
+- 实现：`h2#dss-title` 内加入原生 `<a>`，固定 `https://github.com/rongyishuaige7/dsh-stats`，只定义一次；
+  `target="_blank"`、`rel="noopener noreferrer"`、`data-action="project-repository"`。
+- 对话框名称：`aria-labelledby` 改指向标题文字 `#dss-title-text`，可访问性树中仍为「DSH 用量」/「DSH Usage」。
+- 样式：链接继承标题字号、字重与颜色；hover 下划线；`focus-visible` 使用 `--dss-accent` 的 2px 轮廓。
+- 验证（浏览器夹具，`scripts/browser-fixture-smoke.mjs`）：
+  - 属性、可访问名称、对话框名称、四个标签页可达、初始焦点不变、Tab 顺序。
+  - 点击与 Enter 记录到固定 URL、`_blank`、`noopener noreferrer`；面板不关闭，`aggregate`/`account`/`pricing`
+    调用数不变。
+  - 计价抽屉打开时链接不可达；抽屉与面板的 Esc 顺序、触发器焦点恢复保持。
+  - 320/390/641/700/768/1024/1440 七种宽度、中英双语：标题单行、头部无溢出、不与标签重叠、字号不低于 11px。
+  - 截图：`title-link-focus-light.png`、`title-link-focus-dark.png`、`title-link-320-en.png`（隔离夹具，已实际查看）。
+- 工程门禁：`verify:pricing`、`build`、默认与 `TZ=UTC` 测试、四个 bundle 语法检查、`npm pack --dry-run`、
+  `smoke:browser`、`git diff --check`、重建后 `lib` 无漂移。
+- 未覆盖：桌面端系统浏览器打开行为没有真机证据，fixture 不能替代，列为待验；未安装、未重启真实服务、
+  未部署、未打 tag、未发布 npm。

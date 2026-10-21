@@ -62,7 +62,7 @@ Pinned versions, local tarballs, registration checks, upgrades and pnpm troubles
 
 ## 🖼️ Interface
 
-The panel has four tabs. The header always shows the data-source status, refresh, export, pricing settings and close.
+The panel has four tabs. The header always shows the data-source status, refresh, export, pricing settings and close. The panel title “DSH Usage” is itself a link to the project repository and opens GitHub in a new window.
 
 Keyboard: `Tab` cycles inside the panel; `Esc` closes the filter, menu and pricing drawer one layer at a time and finally the panel; `Enter` sorts from a header button and expands or collapses a row.
 

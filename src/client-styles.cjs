@@ -284,6 +284,9 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-panel{position:relative;container:dss-panel / inline-size}
 .dss-head{flex:none;flex-wrap:nowrap;gap:16px;padding:12px 16px 12px 20px}
 .dss-head h2{flex:0 0 auto;min-width:0}
+.dss-head h2 .dss-title-link{color:inherit;text-decoration:none;font:inherit;border-radius:4px}
+.dss-head h2 .dss-title-link:hover{text-decoration:underline;text-underline-offset:3px}
+.dss-head h2 .dss-title-link:focus-visible{outline:2px solid var(--dss-accent);outline-offset:2px}
 .dss-head-actions{margin-left:auto}
 .dss-tabs{gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .dss-tabs::-webkit-scrollbar{display:none}

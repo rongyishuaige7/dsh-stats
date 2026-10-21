@@ -106,10 +106,17 @@ this Harness release; clean installation should no longer report peer mismatches
 ## Upgrade
 
 ```bash
-dsh plugin --profile web add @rongyi7/dsh-stats@0.5.0
-# or, for the desktop profile
-dsh plugin --profile desktop add @rongyi7/dsh-stats@0.5.0
+# Web
+dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.0
+
+# Desktop app: use the CLI bundled with the app
+"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
+  --profile desktop add -w @rongyi7/dsh-stats@0.5.0
 ```
+
+The npm commands above apply once `0.5.0` is published. Before that, install the local
+`rongyi7-dsh-stats-0.5.0.tgz` tarball with the same command shape. The `desktop` profile is managed
+by the app, so a separately installed npm `dsh` refuses it.
 
 Restart the host after replacing the plugin. The signed catalog updates
 independently; do not reinstall merely to receive new prices.
