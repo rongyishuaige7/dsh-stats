@@ -117,6 +117,11 @@ this Harness release; clean installation should no longer report peer mismatches
   requests. The temporary home had no credentials or sessions, so the balance
   and overview zero states were exercised, not live data. See
   `docs/compatibility.md`.
+- Desktop real device (DeepSeek Harness on macOS, bundled Harness `0.2.1-rc.2`;
+  plugin tarball built at `9611c25`, whose `lib/*` is identical to this release):
+  the maintainer reviewed every page and reported no blocking issue; the panel
+  title opened the repository in the system browser; a custom rule was added,
+  previewed and saved, then removed and saved again.
 - Signed catalog `2026101817`: 876 rules, verified against the pinned public key.
 - Fresh build matches committed `lib/*`; `npm pack` preview contains the four
   runtime bundles, license and READMEs.
@@ -158,12 +163,11 @@ independently; do not reinstall merely to receive new prices.
 - The fixed-height panel aligns day, all and timeline bottoms at 1440 px;
   the timeline no longer has an internal viewport. Narrow layout and
   non-truncation are asserted separately at 320/390/640 px.
-- **Desktop real-device acceptance is still pending.** Before tagging, run this
-  checklist on the desktop build that matches the tag and record the result here:
-  Chinese and English UI; light and dark themes; a narrow window; opening a
-  pending model directly from the overview; pricing preview and save; restoring a
-  snapshot and unpinning it; and the panel title opening the repository in the
-  system browser. Fixture and real-Web coverage is not real-device acceptance.
+- Desktop acceptance did not itemize Chinese/English, light/dark, a narrow
+  window or opening a pending model directly; those states have fixture
+  screenshots and assertions. Snapshot restore and unpin were not run on the
+  device, because restoring pins the real profile to an older catalog; browser
+  fixture group 34 and the pricing-store tests cover that path.
 
 ## Release gates
 
@@ -175,9 +179,10 @@ independently; do not reinstall merely to receive new prices.
    `DSH_HARNESS_ROOT="$TMP" npm run smoke:harness`
 6. `npm run smoke:browser`
 7. `npm pack --dry-run`
-8. Desktop real-device acceptance from Known limitations, recorded here.
-9. Commit the version bump, create tag `v0.5.0`, publish `@rongyi7/dsh-stats@0.5.0`
-   with `prepublishOnly`, then create the GitHub release from this document.
+8. Desktop real-device acceptance, recorded under Verification.
+9. Create tag `v0.5.0` on the release commit; `publish.yml` re-runs the checks and
+   publishes `@rongyi7/dsh-stats@0.5.0` with `prepublishOnly`. Then create the
+   GitHub release from this document.
 
 ## Release infrastructure
 
