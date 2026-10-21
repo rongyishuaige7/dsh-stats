@@ -141,20 +141,49 @@ export function parseGoogle(html) {
   return rows;
 }
 
+// The Standard section holds two tables with different shapes: an 11-column
+// table for current models (short/long context, 30m and 12h cache writes) and a
+// 4-column table for older ones. Columns are matched by header name, never by
+// position: the page already moved output to the second column and split cache
+// writes in two, so a positional mapping would file every price under the wrong
+// rate. The 12h write is not modelled by the catalog; 30m stays the cacheWrite.
+const OPENAI_COLUMNS = new Map([
+  ['short context input', 'short.uncached'],
+  ['short context output', 'short.output'],
+  ['short context cached input', 'short.cacheRead'],
+  ['short context 30m write', 'short.cacheWrite'],
+  ['long context input', 'long.uncached'],
+  ['long context output', 'long.output'],
+  ['long context cached input', 'long.cacheRead'],
+  ['long context 30m write', 'long.cacheWrite'],
+  ['input', 'short.uncached'],
+  ['output', 'short.output'],
+  ['cached input', 'short.cacheRead']
+]);
+const headerKey = value => stripHtml(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function parseOpenAI(markdown) {
   const section = markdown.split('### Standard pricing data')[1]?.split('### Batch pricing data')[0];
   if (!section) throw new Error('OpenAI pricing table changed');
-  const rows = [];
+  const rows = []; let columns = null;
   for (const line of section.split('\n')) {
     const cells = line.split('|').slice(1, -1).map(v => v.trim());
-    if (cells.length !== 9 || !/^(gpt-|chatgpt-|o\d)/.test(cells[0])) continue;
+    if (!cells.length) continue;
+    if (cells.every(cell => /^:?-{3,}:?$/.test(cell))) continue;
+    if (headerKey(cells[0]) === 'model') {
+      columns = cells.map(cell => OPENAI_COLUMNS.get(headerKey(cell)) ?? null);
+      if (!columns.includes('short.uncached') || !columns.includes('short.output')) throw new Error('OpenAI pricing table changed');
+      continue;
+    }
+    if (!columns || cells.length !== columns.length || !/^(gpt-|chatgpt-|o\d)/.test(cells[0])) continue;
     // Annotated names need explicit mapping, not heuristic removal of suffixes:
     // only the long-context threshold annotation is understood; others are skipped.
     const name = /^([a-z0-9][a-z0-9.-]+)(?: \(<(\d+)K context length\))?$/.exec(cells[0]);
     if (!name) continue;
-    const values = cells.slice(1).map(dollar);
-    rows.push({ model: name[1], ...(name[2] ? { threshold: Number(name[2]) * 1000 } : {}), short: { uncached: values[0], cacheRead: values[1], cacheWrite: values[2], output: values[3] },
-      long: values.slice(4).every(v => v === null) ? null : { uncached: values[4], cacheRead: values[5], cacheWrite: values[6], output: values[7] } });
+    const value = key => { const index = columns.indexOf(key); return index === -1 ? null : dollar(cells[index]); };
+    const short = { uncached: value('short.uncached'), cacheRead: value('short.cacheRead'), cacheWrite: value('short.cacheWrite'), output: value('short.output') };
+    const long = { uncached: value('long.uncached'), cacheRead: value('long.cacheRead'), cacheWrite: value('long.cacheWrite'), output: value('long.output') };
+    rows.push({ model: name[1], ...(name[2] ? { threshold: Number(name[2]) * 1000 } : {}), short,
+      long: Object.values(long).every(rate => rate === null) ? null : long });
   }
   if (rows.length < 3) throw new Error('OpenAI pricing table incomplete');
   return rows;

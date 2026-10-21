@@ -13,13 +13,18 @@ const anthropicMd = `## Model pricing
 const googleHtml = `<h2 id="gemini-3.8-flash">Gemini 3.8 Flash</h2>
 <table class="pricing-table"><tr><td>Input price</td><td>Free</td><td>$0.75</td></tr><tr><td>Output price (including thinking tokens)</td><td>Free</td><td>$3.75</td></tr><tr><td>Context caching price</td><td>Free</td><td>$0.075</td></tr></table>
 <h2 id="gemini-next">Gemini Next</h2>`;
+const openaiHeader = '| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |';
+const openaiDoc = (frontier, legacy = []) => ['### Standard pricing data', openaiHeader,
+  '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |', ...frontier,
+  ...(legacy.length ? ['', '| Model | Input | Output | Cached input |', '| --- | --- | --- | --- |', ...legacy] : []),
+  '### Batch pricing data'].join('\n');
 const source = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) }
   : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? anthropicMd : url.includes('google') ? googleHtml : markdown;
-const markdown = `### Standard pricing data
-| gpt-6-astra | $10 | $1 | $12.5 | $50 | $20 | $2 | $25 | $75 |
-| gpt-new | $1 | - | - | $2 | - | - | - | - |
-| gpt-other | $1 | $0 | - | $2 | - | - | - | - |
-### Batch pricing data`;
+const markdown = openaiDoc([
+  '| gpt-6-astra | $10 | $50 | $1 | $12.5 | $25 | $20 | $75 | $2 | $25 | $50 |',
+  '| gpt-new | $1 | $2 | - | - | - | - | - | - | - | - |',
+  '| gpt-other | $1 | $2 | $0 | - | - | - | - | - | - | - |'
+]);
 
 test('official parser distinguishes missing and free rates, and fails closed on changed markup', () => {
   expect(parseOpenAI(markdown)[1].short.cacheRead).toBeNull();
@@ -29,15 +34,18 @@ test('official parser distinguishes missing and free rates, and fails closed on 
 });
 
 test('official parser maps long-context annotations and honours the unknown cache-write convention', async () => {
-  const annotated = `### Standard pricing data
-| gpt-6-astra | $10 | $1 | $12.5 | $50 | $20 | $2 | $25 | $75 |
-| gpt-5.4 (<272K context length) | $2.50 | $0.25 | - | $15.00 | $5.00 | $0.50 | - | $22.50 |
-| gpt-5.4-mini | $0.75 | $0.075 | - | $4.50 | - | - | - | - |
-| gpt-4o (legacy tier) | $1 | - | - | $2 | - | - | - | - |
-### Batch pricing data`;
+  const annotated = openaiDoc([
+    '| gpt-6-astra | $10 | $50 | $1 | $12.5 | $25 | $20 | $75 | $2 | $25 | $50 |',
+    '| gpt-5.4 (<272K context length) | $2.50 | $15.00 | $0.25 | - | - | $5.00 | $22.50 | $0.50 | - | - |'
+  ], [
+    '| gpt-5.4-mini | $0.75 | $4.50 | $0.075 |',
+    '| gpt-4o (legacy tier) | $1 | - | - |'
+  ]);
   const rows = parseOpenAI(annotated);
   expect(rows.map(r => r.model)).toEqual(['gpt-6-astra', 'gpt-5.4', 'gpt-5.4-mini']);
   expect(rows[1]).toMatchObject({ threshold: 272000, long: { output: 22.5, cacheWrite: null } });
+  // The 4-column legacy table has no cache-write column at all.
+  expect(rows[2]).toMatchObject({ short: { uncached: 0.75, cacheRead: 0.075, cacheWrite: null, output: 4.5 }, long: null });
   const fetchSource = async url => url.includes('openrouter') ? { data: Array.from({ length: 10 }, (_, i) => model('vendor/new-' + i)) } : url.includes('deepseek') ? deepSeekHtml : url.includes('claude.com') ? anthropicMd : url.includes('google') ? googleHtml : annotated;
   // Reviewed rules estimate unpublished cache writes at the input price: not a change.
   const reviewed = await collect({ fetchSource, at, deepSeekBaseline });
@@ -48,6 +56,24 @@ test('official parser maps long-context annotations and honours the unknown cach
   const changed = await collect({ fetchSource, at, baseCatalog: stale, deepSeekBaseline });
   expect(changed.report.candidates.filter(c => c.source.includes('openai')).map(c => c.model)).toEqual(['gpt-5.4']);
   expect(changed.report.autoPublished.map(r => r.canonical)).not.toContain('gpt-5.4');
+});
+
+test('official parser maps the reordered 11-column table by header, not by position', () => {
+  const reordered = `### Standard pricing data
+| Model | Short context output | Short context input | Short context 30m write | Short context 12h write | Short context cached input | Long context output | Long context input | Long context 30m write | Long context cached input |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gpt-6-astra | $50 | $10 | $12.5 | $25 | $1 | $75 | $20 | $25 | $2 |
+| gpt-a | $2 | $1 | $2.5 | $5 | $0.1 | $3 | $4 | $5 | $0.2 |
+| gpt-b | $4 | $2 | $5 | $10 | $0.2 | $6 | $8 | $10 | $0.4 |
+### Batch pricing data`;
+  // Same numbers as the catalog: only the 30m write is the cacheWrite rate, and
+  // the column order must not shift any price into the wrong slot.
+  expect(parseOpenAI(reordered)[0]).toMatchObject({
+    short: { uncached: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
+    long: { uncached: 20, cacheRead: 2, cacheWrite: 25, output: 75 }
+  });
+  // A table without a recognizable header fails closed instead of guessing.
+  expect(() => parseOpenAI('### Standard pricing data\n| gpt-a | $1 | $2 |\n### Batch pricing data')).toThrow();
 });
 
 test('structured collector scopes models to OpenRouter and rejects unsupported billing dimensions', () => {
