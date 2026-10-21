@@ -1,7 +1,28 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pricingStore } from '../../src/pricing-store.js';
 import { StatsService } from '../../src/index.js';
+
+function historicalEnvelopes(currentVersion, count) {
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  const commits = execFileSync('git', ['log', '--format=%H', '--', 'data/pricing/latest.json'], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 })
+    .trim().split('\n').filter(Boolean);
+  const found = [], seen = new Set();
+  for (const commit of commits) {
+    let envelope;
+    try {
+      envelope = JSON.parse(execFileSync('git', ['show', commit + ':data/pricing/latest.json'], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }));
+    } catch { continue; }
+    const catalog = JSON.parse(envelope.payload);
+    if (!Number.isSafeInteger(catalog.version) || catalog.version <= 0 || catalog.version === currentVersion || seen.has(catalog.version)) continue;
+    seen.add(catalog.version); found.push({ version: catalog.version, envelope });
+    if (found.length === count) break;
+  }
+  if (found.length < count) throw new Error('pricing fixture needs ' + count + ' signed historical snapshots, found ' + found.length);
+  return found;
+}
 
 export async function browserData(home) {
   const previousHome = process.env.DSH_HOME;
@@ -242,13 +263,25 @@ export async function browserData(home) {
     mkdirSync(pricingDir, { recursive: true });
     const envelope = JSON.parse(readFileSync(new URL('../../data/pricing/latest.json', import.meta.url), 'utf8'));
     writeFileSync(join(pricingDir, 'current.json'), JSON.stringify({ envelope, lastSuccessAt: now }));
+    const currentVersion = JSON.parse(envelope.payload).version;
+    const snapshotFiles = new Map();
+    const historical = historicalEnvelopes(currentVersion, 7);
+    for (const snapshot of historical) snapshotFiles.set('catalog-' + snapshot.version + '.json', JSON.stringify(snapshot.envelope));
+    // Duplicate and invalid version names exercise filtering in the UI while
+    // leaving the signed canonical snapshots recoverable.
+    snapshotFiles.set('catalog-0' + historical[0].version + '.json', JSON.stringify(historical[0].envelope));
+    for (const [name, content] of snapshotFiles) writeFileSync(join(pricingDir, name), content);
+    const pricingHistory = {
+      clear() { for (const name of snapshotFiles.keys()) { try { unlinkSync(join(pricingDir, name)); } catch {} } },
+      restore() { for (const [name, content] of snapshotFiles) writeFileSync(join(pricingDir, name), content); },
+    };
     pricingStore(service, home).fetch = async () => { throw new Error('fixture-offline'); };
     const pricingRequest = async request => {
       const previous = process.env.DSH_HOME; process.env.DSH_HOME = home;
       try { return await StatsService.prototype.pricing.call(service, request); }
       finally { if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous; }
     };
-    return { estimated, partial, unsupported, large, showcase, accounts, pricingRequest };
+    return { estimated, partial, unsupported, large, showcase, accounts, pricingRequest, pricingHistory };
   } finally {
     if (previousHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previousHome;

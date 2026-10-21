@@ -164,6 +164,10 @@ test('catalog snapshots filter, dedupe, sort and exclude the current version', (
     .toEqual({ versions: [5, 4, 3, 2, 1], total: 5, hasMore: false });
   expect(catalogSnapshotRows({ version: 9, history: [1, 2, 3, 4, 5, 6] }))
     .toEqual({ versions: [6, 5, 4, 3, 2], total: 6, hasMore: true });
+  expect(catalogSnapshotRows({ version: 99, history: [8, 6, 4, 2, 7, 5, 3] }, 5))
+    .toEqual({ versions: [8, 7, 6, 5, 4], total: 7, hasMore: true });
+  expect(catalogSnapshotRows({ version: 99, history: [8, 6, 4, 2, 7, 5, 3] }, 10))
+    .toEqual({ versions: [8, 7, 6, 5, 4, 3, 2], total: 7, hasMore: false });
   expect(catalogSnapshotRows({ version: 9, history: [1, 2, 3, 4, 5, 6] }, 6))
     .toEqual({ versions: [6, 5, 4, 3, 2, 1], total: 6, hasMore: false });
   expect(catalogSnapshotRows({ version: 9, history: [1, 2, 3, 4, 5, 6] }, 2))

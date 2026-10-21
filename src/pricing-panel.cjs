@@ -63,6 +63,10 @@ function fillText(t, key, ...values) {
   for (const value of values) text = text.replace('%s', String(value));
   return text;
 }
+function timeText(value, t, fallback) {
+  const text = value ? fmtBeijing(value) : '';
+  return text ? text + ' ' + t('price.beijing') : fallback;
+}
 function formatQuickRates(t, inVal, outVal) {
   const tpl = t('price.quickRates');
   if (typeof tpl === 'string' && tpl.includes('%s')) return tpl.replace('%s', inVal).replace('%s', outVal);
@@ -232,15 +236,17 @@ function PendingPanel({ missing, t, busy, onConfigure }) {
     missing.length > 3 ? e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-pending-more', onClick: () => setExpanded(!expanded) },
       expanded ? t('price.showLess') : fill(t, 'price.showMorePending', missing.length - 3)) : null);
 }
-function SyncSummary({ status, busy, dirty, t, onRefresh }) {
-  const last = status.lastSuccessAt ? fmtBeijing(status.lastSuccessAt) + ' ' + t('price.beijing') : t('price.builtin');
+function SyncSummary({ status, busy, dirty, pinned, checking, t, onRefresh }) {
+  const last = status.lastSuccessAt ? timeText(status.lastSuccessAt, t, t('price.builtinNoSync')) : t('price.builtinNoSync');
+  const title = pinned ? t('price.pinnedHint') : dirty ? t('price.saveFirst') : undefined;
   return e('div', { className: 'dss-price-sync' },
     e('div', { className: 'dss-price-sync-line' },
-      e('strong', null, t('price.currentCatalog') + ' ' + status.version),
-      e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-refresh', disabled: busy || dirty,
-        title: dirty ? t('price.saveFirst') : undefined, onClick: onRefresh }, t('price.checkUpdates'))),
-    e('span', { className: 'dss-price-sync-last' }, t('price.updated') + ' ' + last));
+      e('strong', null, t('price.currentCatalog') + ' ' + status.version + (pinned ? ' · ' + t('price.pinnedShort') : '')),
+      e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-refresh', disabled: busy || dirty || pinned,
+        title, onClick: onRefresh }, checking ? t('price.checking') : t('price.checkUpdates'))),
+    e('span', { className: 'dss-price-sync-last' }, t('price.lastSuccess') + ': ' + last));
 }
+
 function ModelList({ selection, scope, search, t, onScope, onSearch, onPage, onOpen, onClearSearch, onShowAll, listRef, titleRef, notice, hasUsed, catalogEmpty }) {
   const empty = selection.modelCount === 0;
   return e(React.Fragment, null,
@@ -356,25 +362,49 @@ function CustomEditor({ draft, editingId, editorDirty, busy, conditionsOpen, t, 
         e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-cancel-editor', disabled: busy, onClick: onCancel }, t('price.cancelEditor')))));
 }
 
-function UpdatesSection({ status, autoUpdate, busy, dirty, t, onAuto, onRefresh, onRollback }) {
-  const snapshots = catalogSnapshotRows(status, Number.MAX_SAFE_INTEGER);
-  const last = status.lastSuccessAt ? fmtBeijing(status.lastSuccessAt) + ' ' + t('price.beijing') : t('price.builtin');
-  return e(React.Fragment, null,
-    e('div', { className: 'dss-price-updates-current' },
-      e('strong', null, t('price.currentVersion') + ' ' + status.version),
-      e('span', null, t('price.updated') + ' ' + last)),
-    e('label', { className: 'dss-price-auto' }, e('input', { type: 'checkbox', 'data-action': 'price-auto', checked: autoUpdate, disabled: busy, onChange: ev => onAuto(ev.target.checked) }), ' ', t('price.auto')),
-    e('div', { className: 'dss-price-actions' },
-      e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-refresh', disabled: busy || dirty,
-        title: dirty ? t('price.saveFirst') : undefined, onClick: onRefresh }, t('price.checkUpdates'))),
-    e('details', { className: 'dss-price-history-section' },
-      e('summary', null, t('price.catalogSnapshots')),
-      e('p', { className: 'dss-price-muted' }, t('price.rollbackHint')),
-      snapshots.versions.length ? snapshots.versions.map(version => e('div', { key: version, className: 'dss-price-snapshot-row', 'data-version': version },
-        e('span', null, String(version)),
-        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-rollback', disabled: busy || dirty, title: dirty ? t('price.saveFirst') : undefined, onClick: () => onRollback(version) }, t('price.rollback'))))
-        : e('p', { className: 'dss-price-muted' }, t('price.noSnapshots'))));
+function UpdatesSection({ status, autoUpdate, busy, dirty, pinned, checking, snapshotLimit, t, historyRef, onAuto, onRefresh, onRollback, onShowMore }) {
+  const snapshots = catalogSnapshotRows(status, snapshotLimit);
+  const autoDirty = autoUpdate !== status.autoUpdate;
+  const published = timeText(status.publishedAt, t, t('price.unknown'));
+  const lastCheck = status.lastCheckAt ? timeText(status.lastCheckAt, t, t('price.neverChecked')) : t('price.neverChecked');
+  const lastSuccess = status.lastSuccessAt ? timeText(status.lastSuccessAt, t, t('price.builtinNoSync')) : t('price.builtinNoSync');
+  const refreshTitle = pinned ? t('price.pinnedHint') : dirty ? t('price.saveFirst') : undefined;
+  return e('div', { className: 'dss-price-updates' },
+    e('section', { className: 'dss-price-updates-block' },
+      e('h4', null, t('price.currentVersion')),
+      e('div', { className: 'dss-price-updates-current' },
+        e('strong', null, String(status.version)),
+        e('span', null, t('price.publishedAt') + ': ' + published),
+        e('span', { className: 'dss-price-pinned' + (pinned ? ' is-on' : '') }, pinned ? t('price.pinnedVersion') + ' ' + status.pinnedVersion : t('price.notPinned')))),
+    e('section', { className: 'dss-price-updates-block' },
+      e('h4', null, t('price.syncTitle')),
+      e('div', { className: 'dss-price-sync-times' },
+        e('span', null, t('price.lastCheck') + ': ' + lastCheck),
+        e('span', null, t('price.lastSuccess') + ': ' + lastSuccess)),
+      status.error ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
+        e('details', null, e('summary', null, t('source.details')), status.error)) : null,
+      e('label', { className: 'dss-price-auto' },
+        e('input', { type: 'checkbox', 'data-action': 'price-auto', checked: autoUpdate, disabled: busy, onChange: ev => onAuto(ev.target.checked) }),
+        ' ', t('price.auto'),
+        autoDirty ? e('span', { className: 'dss-price-unsaved' }, t('price.pendingSave')) : null),
+      e('p', { className: 'dss-price-muted' }, t('price.autoHint')),
+      pinned ? e('p', { className: 'dss-price-muted' }, t('price.pinnedHint')) : !status.autoUpdate ? e('p', { className: 'dss-price-muted' }, t('price.manualHint')) : null,
+      e('div', { className: 'dss-price-actions' },
+        e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-refresh', disabled: busy || dirty || pinned,
+          title: refreshTitle, onClick: onRefresh }, checking ? t('price.checking') : t('price.checkUpdates')))),
+    e('section', { className: 'dss-price-history-section' },
+      e('h4', { ref: historyRef, tabIndex: -1 }, t('price.catalogSnapshots')),
+      e('p', { className: 'dss-price-muted' }, t('price.snapshotHint')),
+      snapshots.versions.length ? e('div', { className: 'dss-price-snapshot-list' },
+        snapshots.versions.map((version, index) => e('div', { key: version, className: 'dss-price-snapshot-row', 'data-version': version, 'data-snapshot-index': index, tabIndex: -1 },
+          e('span', null, String(version)),
+          e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-rollback', disabled: busy || dirty,
+            title: dirty ? t('price.saveFirst') : undefined, onClick: () => onRollback(version) }, t('price.rollback')))))
+        : e('p', { className: 'dss-price-muted' }, t('price.noSnapshots')),
+      snapshots.hasMore ? e('button', { type: 'button', className: 'dss-link-btn', 'data-action': 'price-snapshots-more', onClick: onShowMore },
+        fill(t, 'price.showMoreSnapshots', snapshots.total - snapshots.versions.length)) : null));
 }
+
 class PricingErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -409,6 +439,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const [expandedRuleIds, setExpandedRuleIds] = React.useState(() => new Set());
   const [editorNotice, setEditorNotice] = React.useState(''), [deferredFocus, setDeferredFocus] = React.useState(null);
   const [preview, setPreview] = React.useState(null), [autoUpdateDraft, setAutoUpdateDraft] = React.useState(true);
+  const [checking, setChecking] = React.useState(false), [snapshotLimit, setSnapshotLimit] = React.useState(5);
   const [search, setSearch] = React.useState('');
   const [section, setSection] = React.useState('models'), [scope, setScope] = React.useState(null);
   const [selectedKey, setSelectedKey] = React.useState(null), [modelNotice, setModelNotice] = React.useState('');
@@ -421,13 +452,15 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
   const restoreKeyRef = React.useRef(null), detailFocusRef = React.useRef(false), pageFocusRef = React.useRef(false);
   const focusListRef = React.useRef(false), footerFocusRef = React.useRef(false), scopeInitRef = React.useRef(false), customFocusRef = React.useRef(false);
   const mountedRef = React.useRef(true), busyRef = React.useRef(false), draftVersionRef = React.useRef(0);
+  const snapshotFocusRef = React.useRef(false), snapshotFocusIndexRef = React.useRef(0), historyHeadingRef = React.useRef(null), rollbackFocusRef = React.useRef(false);
   React.useEffect(() => () => { mountedRef.current = false; }, []);
   function markDraftChanged() { draftVersionRef.current += 1; }
   const editorDirty = !draftEqual(draft, editorBaseline);
   const settingsDirty = !!status && (autoUpdateDraft !== status.autoUpdate || removedRules.size > 0 || !rulesEqual(workingOverrides, savedOverrides));
   const anyDirty = editorDirty || settingsDirty;
   const customRows = customRuleRows(workingOverrides, savedOverrides, workingOrigins, removedRules);
-  const fail = err => { setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed')); setPreview(null); };
+  const pinned = !!status && status.pinnedVersion !== null;
+  const fail = err => { setError(t(err?.message === 'pricing-settings-conflict' ? 'price.conflict' : 'price.failed')); setPreview(null); rollbackFocusRef.current = false; };
   function openEditor(nextDraft, nextEditingId, baseline, conditions, nextSavedId = null) {
     setDraft(nextDraft); setEditingId(nextEditingId); setEditingSavedId(nextSavedId); setEditorBaseline(baseline);
     setEditorOpen(true); setConditionsOpen(conditions); setSection('custom'); setEditorNotice(''); setError('');
@@ -445,14 +478,15 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     pendingFocusRef.current = null;
     setStatus(result); setWorkingOverrides(rules); setSavedOverrides(rules);
     setAutoUpdateDraft(result.autoUpdate); setWorkingOrigins(new Map()); setRemovedRules(new Map()); setEditingSavedId(null); setExpandedRuleIds(new Set());
-    setPreview(null); setEditorNotice(''); setError(''); setDeferredFocus(null); setCatalogAt(Date.now());
+    setPreview(null); setEditorNotice(''); setError(''); setDeferredFocus(null); setSnapshotLimit(5); setCatalogAt(Date.now());
     focusAfterLocateRef.current = false; customFocusRef.current = false;
     setEditorOpen(false); setDraft(blankDraft()); setEditingId(null); setEditorBaseline(blankDraft()); setConditionsOpen(false);
     if (pendingDraft) openEditor(pendingDraft, null, pendingDraft, false);
   }
   async function call(request, mode = 'commit', previewMeta = null) {
     if (busyRef.current) return;
-    busyRef.current = true; setBusy(true); setError('');
+    const refreshing = request.action === 'refresh';
+    busyRef.current = true; setBusy(true); if (refreshing) setChecking(true); setError('');
     try {
       const result = await remote(request);
       if (!mountedRef.current) {
@@ -465,7 +499,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
           version: previewMeta.version, signature: previewMeta.signature });
       } else { accept(result); if (request.action !== 'status') onChanged(); }
     } catch (err) { if (mountedRef.current) fail(err); }
-    finally { busyRef.current = false; if (mountedRef.current) setBusy(false); }
+    finally { busyRef.current = false; if (mountedRef.current) { setBusy(false); if (refreshing) setChecking(false); } }
   }
   React.useEffect(() => {
     let cancelled = false;
@@ -541,6 +575,18 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     setModelNotice(t('price.modelGone'));
     focusListRef.current = true;
   }, [groups, selectedKey, status]);
+  React.useEffect(() => {
+    if (!snapshotFocusRef.current) return;
+    snapshotFocusRef.current = false;
+    const row = document.querySelector('[data-snapshot-index="' + snapshotFocusIndexRef.current + '"]');
+    if (row) row.focus();
+    else if (historyHeadingRef.current) historyHeadingRef.current.focus();
+  }, [snapshotLimit]);
+  React.useEffect(() => {
+    if (!rollbackFocusRef.current) return;
+    rollbackFocusRef.current = false;
+    if (historyHeadingRef.current) historyHeadingRef.current.focus();
+  }, [status?.version, status?.revision, status?.pinnedVersion]);
   React.useEffect(() => {
     if (!customFocusRef.current || editorOpen) return;
     customFocusRef.current = false;
@@ -690,6 +736,16 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     footerFocusRef.current = true;
     call(buildSaveRequest({ overrides: workingOverrides, autoUpdate: autoUpdateDraft, fingerprint: preview.fingerprint, revision: status.revision }), 'commit');
   }
+  function showMoreSnapshots() {
+    snapshotFocusIndexRef.current = snapshotLimit;
+    snapshotFocusRef.current = true;
+    setSnapshotLimit(limit => limit + 5);
+  }
+  function rollbackVersion(version) {
+    if (busyRef.current || anyDirty || !status) return;
+    rollbackFocusRef.current = true;
+    call({ action: 'rollback', version, revision: status.revision });
+  }
   function openModel(key) { detailFocusRef.current = true; setModelNotice(''); setOtherOpen(false); setSelectedKey(key); }
   function backToModels() { if (!selectedKey) return; restoreKeyRef.current = selectedKey; setSelectedKey(null); }
   function changePage(next) { pageFocusRef.current = true; setPage(next); }
@@ -702,7 +758,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
     ? (selectedGroup
       ? e(ModelDetail, { group: selectedGroup, savedOverrides, t, busy, onBack: backToModels, onAddCustom: requestFocus, onEditOverride: requestSavedEdit, titleRef: detailTitleRef, otherOpen, onOtherToggle: setOtherOpen })
       : e(React.Fragment, null,
-        e(SyncSummary, { status, busy, dirty: anyDirty, t, onRefresh: () => call({ action: 'refresh' }) }),
+        e(SyncSummary, { status, busy, dirty: anyDirty, pinned, checking, t, onRefresh: () => call({ action: 'refresh' }) }),
         e(PendingPanel, { missing, t, busy, onConfigure: requestFocus }),
         e(ModelList, { selection, scope: effectiveScope, search, t, onScope: changeScope, onSearch: changeSearch, onPage: changePage,
           onOpen: openModel, onClearSearch: () => changeSearch(''), onShowAll: () => changeScope('all'), listRef, titleRef: listTitleRef, notice: modelNotice, hasUsed: used.size > 0, catalogEmpty: groups.length === 0 })))
@@ -712,14 +768,15 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
         : e(CustomList, { rows: customRows, t, busy, editorDirty, editorNotice, deferredFocus, expandedIds: expandedRuleIds,
           headingRef: customHeadingRef, onAdd: requestNewRule, onContinue: continueEditing, onEdit: requestEdit, onRemove: removeRule, onUndo: undoRemove,
           onLocateDeferred: locateDeferred, onToggleExpand: toggleRuleExpanded }))
-      : e(UpdatesSection, { status, autoUpdate: autoUpdateDraft, busy, dirty: anyDirty, t, onAuto: changeAutoUpdate,
-        onRefresh: () => call({ action: 'refresh' }), onRollback: version => call({ action: 'rollback', version, revision: status.revision }) });
+      : e(UpdatesSection, { status, autoUpdate: autoUpdateDraft, busy, dirty: anyDirty, pinned, checking,
+        snapshotLimit, t, historyRef: historyHeadingRef, onAuto: changeAutoUpdate, onShowMore: showMoreSnapshots,
+        onRefresh: () => call({ action: 'refresh' }), onRollback: rollbackVersion });
   const bodyContent = !status
     ? e('div', { className: 'dss-price-state' },
       e('p', null, busy ? t('price.loading') : t('price.unavailable')),
       !busy && remote && error ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-retry-status', onClick: () => setStatusTick(n => n + 1) }, t('price.retry')) : null)
     : e(React.Fragment, null,
-      status.error ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
+      status.error && section !== 'updates' ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
         e('details', null, e('summary', null, t('source.details')), status.error)) : null,
       sectionContent);
   const commit = anyDirty ? e('div', { className: 'dss-price-commit' },

@@ -97,9 +97,36 @@ test('provisional detail keeps the note body and the review tag', () => {
 test('updates section disables restore while settings are dirty', () => {
   const status = { version: 5, history: [4], lastSuccessAt: Date.parse('2026-10-17T00:00:00Z') };
   const render = dirty => renderToStaticMarkup(React.createElement(UpdatesSection, {
-    status, autoUpdate: true, busy: false, dirty, t, onAuto() {}, onRefresh() {}, onRollback() {},
+    status, autoUpdate: true, busy: false, dirty, pinned: false, checking: false, snapshotLimit: 5,
+    t, historyRef: React.createRef(), onAuto() {}, onRefresh() {}, onRollback() {}, onShowMore() {},
   }));
   expect(render(false)).toContain('data-action="price-rollback"');
   expect(render(false)).not.toContain('data-action="price-rollback" disabled=""');
   expect(render(true)).toContain('data-action="price-rollback" disabled=""');
+});
+
+test('updates section pages snapshots and shows pinned sync metadata', () => {
+  const status = {
+    version: 10, publishedAt: '2026-10-18T00:00:00Z', lastCheckAt: Date.parse('2026-10-18T01:00:00Z'),
+    lastSuccessAt: Date.parse('2026-10-18T02:00:00Z'), pinnedVersion: 9, autoUpdate: false,
+    history: [9, 8, 7, 6, 5, 4, 3],
+  };
+  const render = snapshotLimit => renderToStaticMarkup(React.createElement(UpdatesSection, {
+    status, autoUpdate: false, busy: false, dirty: false, pinned: true, checking: false, snapshotLimit,
+    t, historyRef: React.createRef(), onAuto() {}, onRefresh() {}, onRollback() {}, onShowMore() {},
+  }));
+  const first = render(5);
+  expect(first).toContain('>10<');
+  expect(first).toContain(en['price.publishedAt']);
+  expect(first).toContain(en['price.lastCheck']);
+  expect(first).toContain(en['price.lastSuccess']);
+  expect(first).toContain(en['price.pinnedVersion'] + ' 9');
+  expect(first).toContain('data-version="9"');
+  expect(first).toContain('data-version="5"');
+  expect(first).not.toContain('data-version="4"');
+  expect(first).toContain(en['price.showMoreSnapshots'].replace('%d', '2'));
+  expect(first).toContain('data-action="price-refresh" disabled=""');
+  const all = render(10);
+  expect(all).toContain('data-version="3"');
+  expect(all).not.toContain('data-action="price-snapshots-more"');
 });

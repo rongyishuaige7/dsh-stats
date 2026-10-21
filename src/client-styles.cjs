@@ -254,11 +254,21 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-form{border-top:1px solid var(--dss-line);padding-top:10px;margin-top:10px;min-width:0}
 	.dss-price-form>.dss-export{margin-top:2px}
 	.dss-price-auto{display:flex;align-items:center;gap:6px;font-size:var(--dss-fs-sm);color:var(--dss-text);margin:8px 0}
-	.dss-price-updates-current{display:flex;flex-direction:column;gap:2px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--dss-line-soft)}
-	.dss-price-updates-current strong{font-size:var(--dss-fs-md);font-weight:650;overflow-wrap:anywhere}
-	.dss-price-updates-current span{font-size:var(--dss-fs-xs);color:var(--dss-text-3)}
-	.dss-price-history-section{margin-top:10px}
-	.dss-price-snapshot-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--dss-line-soft);font-size:var(--dss-fs-sm);font-variant-numeric:tabular-nums;min-width:0}
+	.dss-price-updates{display:flex;flex-direction:column;gap:14px;min-width:0}
+	.dss-price-updates-block{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--dss-line-soft);min-width:0}
+	.dss-price-updates-current{display:flex;flex-direction:column;gap:2px;padding-bottom:2px;min-width:0}
+	.dss-price-updates-current strong{font-size:var(--dss-fs-lg);font-weight:650;overflow-wrap:anywhere}
+	.dss-price-updates-current span{font-size:var(--dss-fs-xs);color:var(--dss-text-3);overflow-wrap:anywhere}
+	.dss-price-pinned{font-size:var(--dss-fs-xs);color:var(--dss-text-3);background:var(--dss-neutral-soft);border:1px solid var(--dss-neutral-line);border-radius:4px;padding:1px 5px;width:fit-content;max-width:100%;white-space:normal}
+	.dss-price-pinned.is-on{color:var(--dss-info);background:var(--dss-info-soft);border-color:var(--dss-info-line)}
+	.dss-price-sync-times{display:flex;flex-direction:column;gap:2px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);overflow-wrap:anywhere}
+	.dss-price-history-section{margin-top:0;min-width:0}
+	.dss-price-history-section h4{outline:none;scroll-margin-top:8px}
+	.dss-price-history-section h4:focus-visible{outline:2px solid var(--dss-accent);outline-offset:2px}
+	.dss-price-snapshot-list{display:flex;flex-direction:column;min-width:0}
+	.dss-price-snapshot-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 2px;border-bottom:1px solid var(--dss-line-soft);font-size:var(--dss-fs-sm);font-variant-numeric:tabular-nums;min-width:0;outline:none}
+	.dss-price-snapshot-row:focus-visible{outline:2px solid var(--dss-accent);outline-offset:-2px}
+	.dss-price-snapshot-row>span{overflow-wrap:anywhere;min-width:0}
 	.dss-price-commit{flex:none;border-top:1px solid var(--dss-line);background:var(--dss-panel);padding:8px 16px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
 	.dss-price-commit .dss-price-actions{margin:0}
 	.dss-price-commit .dss-price-preview{margin:0}
