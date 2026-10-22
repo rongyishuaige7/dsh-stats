@@ -473,7 +473,7 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 	}
 	header = header || firstHeader;
 	const count = inheritedCount(header, quality.inheritedEventCount ?? seedMarker?.seq);
-	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength);
+	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength) && !Number.isSafeInteger(header.inheritedEventCount);
 	const times = [];
 	const activityTimes = [];
 	let currentModel = null;
