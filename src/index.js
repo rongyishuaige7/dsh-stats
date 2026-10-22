@@ -594,7 +594,9 @@ let StatsService = (() => {
 					cacheRead: totalCacheRead, cacheWrite: totalCacheWrite,
 					reasoning: totalReasoning
 				};
-				const updatedAt = Math.max(info.lastTime ?? 0, lastPromptAt ?? 0, createdAt ?? 0) || null;
+				const updatedTimes = [info.lastTime, lastPromptAt, createdAt]
+					.filter((value) => Number.isFinite(value) && value >= 0);
+				const updatedAt = updatedTimes.length > 0 ? Math.max(...updatedTimes) : null;
 				const perSlotUsage = usedProjectionUsage && updatedAt !== null
 					? [projectionSlotUsage(info, projectionUsage, updatedAt, priceEngine)]
 					: slotUsages(info.usages, priceEngine);
