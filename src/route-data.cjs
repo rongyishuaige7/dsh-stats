@@ -56,6 +56,7 @@ function updateRoute(tree, key, update) {
 			}
 			rows.splice(low, 0, replacement);
 		}
+		rows.sort(compareRoutes);
 		rowCache.set(next, rows);
 	}
 	return next;
