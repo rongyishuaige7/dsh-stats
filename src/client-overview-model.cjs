@@ -4,7 +4,7 @@ const { mergeCostSummaries, projectCostSummary, sessionCounts } = require("./cli
 
 function overviewTotals(projects) {
 	var list = Array.isArray(projects) ? projects : [];
-	var totals = { projects: list.length, main: 0, subagent: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, cost: mergeCostSummaries(list.map(projectCostSummary)) };
+	var totals = { projects: list.length, main: 0, subagent: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, input: 0, output: 0, cacheRead: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, cost: mergeCostSummaries(list.map(function(project) { return projectCostSummary(project || {}); })) };
 	list.forEach(function(project) {
 		var stats = project && project.stats ? project.stats : {};
 		var counts = sessionCounts(project && project.sessions);
@@ -63,10 +63,11 @@ function costDelta(current, previous) {
 
 function costShares(projects) {
 	var list = Array.isArray(projects) ? projects : [];
-	var amounts = list.map(function(project) { return cnyAmount(projectCostSummary(project)); });
+	var amounts = list.map(function(project) { return project ? cnyAmount(projectCostSummary(project)) : null; });
 	var total = amounts.reduce(function(sum, amount) { return amount == null ? sum : sum + amount; }, 0);
 	var shares = new Map();
 	list.forEach(function(project, index) {
+		if (!project || project.id == null) return;
 		shares.set(project.id, total > 0 && amounts[index] != null ? amounts[index] / total : null);
 	});
 	return shares;
@@ -123,6 +124,8 @@ function sortProjects(projects, key, dir, ctx) {
 	var context = ctx && typeof ctx === "object" ? ctx : {};
 	var direction = dir == null ? defaultSortDir(key) : (dir > 0 ? 1 : -1);
 	function primary(a, b) {
+		a = a || {};
+		b = b || {};
 		if (key === "cost") return compareProjectCost(a, b);
 		if (key === "name") return nameOf(a).localeCompare(nameOf(b), undefined, { numeric: true });
 		var va, vb;
