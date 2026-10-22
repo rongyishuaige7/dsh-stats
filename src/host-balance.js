@@ -118,8 +118,10 @@ async function fetchDeepSeekBalance(credentials, fetchImpl = globalThis.fetch, n
 			}
 			throw new DeepSeekBalanceError("fetch-failed");
 		}
-		if (!response || !response.ok) {
-			const status = Number(response?.status);
+		if (!response) throw new DeepSeekBalanceError("fetch-failed");
+		if (!response.ok) {
+			const status = Number(response.status);
+			if (!Number.isInteger(status) || status < 400) throw new DeepSeekBalanceError("fetch-failed");
 			if (status === 401) throw new DeepSeekBalanceError("http-401");
 			if (status === 403) throw new DeepSeekBalanceError("http-403");
 			if (status === 429) throw new DeepSeekBalanceError("http-429");
