@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "verify:lib": "npm run build && git diff --exit-code -- lib",
     "prepublishOnly": "npm run verify:pricing && node scripts/build.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

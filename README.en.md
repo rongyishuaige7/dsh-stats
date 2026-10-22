@@ -164,7 +164,7 @@ npm run build
 npm test
 ```
 
-`lib/` is generated output: edit `src/`, then rebuild. Architecture, data contracts and performance trade-offs are in [DESIGN.md](https://github.com/rongyishuaige7/dsh-stats/blob/main/DESIGN.md); per-release module contracts, complete Web runs and browser-fixture results are in the [compatibility matrix](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md). `npm run smoke:browser` checks the desktop and mobile UI with isolated fixtures.
+`lib/` is generated output: edit `src/`, then rebuild. `npm run verify:lib` rebuilds and checks the bundle is committed; after `git config core.hooksPath .githooks`, the `pre-push` hook runs the same check before every push. Architecture, data contracts and performance trade-offs are in [DESIGN.md](https://github.com/rongyishuaige7/dsh-stats/blob/main/DESIGN.md); per-release module contracts, complete Web runs and browser-fixture results are in the [compatibility matrix](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md). `npm run smoke:browser` checks the desktop and mobile UI with isolated fixtures.
 
 Documentation index:
 

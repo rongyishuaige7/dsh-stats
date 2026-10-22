@@ -164,7 +164,7 @@ npm run build
 npm test
 ```
 
-`lib/` 是发布产物，请修改 `src/` 后重新构建，不要手工编辑。架构、数据契约和性能权衡见 [DESIGN.md](https://github.com/rongyishuaige7/dsh-stats/blob/main/DESIGN.md)，逐版本的模块契约、完整 Web 与浏览器夹具结果见[兼容性矩阵](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md)，`npm run smoke:browser` 使用隔离夹具检查桌面和手机界面。
+`lib/` 是发布产物，请修改 `src/` 后重新构建，不要手工编辑。`npm run verify:lib` 会重建并检查产物是否已提交；执行一次 `git config core.hooksPath .githooks` 后，`pre-push` 会在推送前跑同一项检查。架构、数据契约和性能权衡见 [DESIGN.md](https://github.com/rongyishuaige7/dsh-stats/blob/main/DESIGN.md)，逐版本的模块契约、完整 Web 与浏览器夹具结果见[兼容性矩阵](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md)，`npm run smoke:browser` 使用隔离夹具检查桌面和手机界面。
 
 文档索引：
 

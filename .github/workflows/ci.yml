@@ -34,7 +34,11 @@ jobs:
         run: npm run build
 
       - name: Verify generated bundles are committed
-        run: git diff --exit-code -- lib
+        run: |
+          if ! git diff --exit-code -- lib; then
+            echo "::error::lib/ is stale. Run 'npm run build' and commit lib/ with its source."
+            exit 1
+          fi
 
       - name: Test
         run: npm test
