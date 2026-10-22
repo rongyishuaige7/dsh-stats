@@ -31,9 +31,12 @@ function applyWindow(projects, startMs, endMs) {
 		var sessions = p.sessions.filter(function(s) {
 			var usageTimestamp = s.updatedAt != null ? s.updatedAt : s.createdAt;
 			var detailedRows = (s.slots || []).concat(s.slotStats || [], s.slotUsage || []);
-			if (detailedRows.length) return detailedRows.some(function(x) { return slotInWindow(x.slot, startMs, endMs); });
-			// 无逐槽数据（客户端近似）：退回按会话时间戳判断
-			return usageTimestamp != null && usageTimestamp >= startMs && usageTimestamp < endMs;
+			if (detailedRows.length && detailedRows.some(function(x) { return slotInWindow(x.slot, startMs, endMs); })) return true;
+			// 无逐槽 usage/stats 的粗粒度数据只归到会话时间戳所在窗口。
+			var hasUsageRows = Array.isArray(s.slotUsage) && s.slotUsage.length > 0;
+			var hasStatRows = Array.isArray(s.slotStats) && s.slotStats.length > 0;
+			if (!hasUsageRows || !hasStatRows) return usageTimestamp != null && usageTimestamp >= startMs && usageTimestamp < endMs;
+			return false;
 		});
 		if (!sessions.length) return null;
 		// 裁剪每个会话到当天
@@ -254,7 +257,7 @@ function projectionSlotUsageOf(s, identity) {
 			serviceTier: pricing.normalizeServiceTier(row.serviceTier),
 			contextTokens,
 			contextOver512k: contextTokens > 512000,
-			pricingIncomplete: !Number.isFinite(row.contextTokens) || !Number.isSafeInteger(row.count),
+			pricingIncomplete: !Number.isFinite(row.contextTokens),
 			slot,
 			uncached,
 			output,
