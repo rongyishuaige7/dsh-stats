@@ -34,7 +34,7 @@ function rule(value, custom) {
   check(['CNY', 'USD'].includes(value.currency), 'currency');
   check(['exact', 'estimated'].includes(value.confidence), 'confidence');
   check(value.sourceUrl === null && custom || source(value.sourceUrl), 'source URL');
-  check(/^\d{4}-\d\d-\d\d$/.test(value.retrievedAt) && Number.isFinite(Date.parse(value.retrievedAt)), 'retrieved date');
+  check(typeof value.retrievedAt === 'string' && /^\d{4}-\d\d-\d\d$/.test(value.retrievedAt) && Number.isFinite(Date.parse(value.retrievedAt)), 'retrieved date');
   check(Array.isArray(value.aliases) && value.aliases.length > 0 && value.aliases.length <= 30 && value.aliases.every(a => text(a) && a === a.toLowerCase()) && value.aliases.includes(value.canonical.toLowerCase()), 'aliases');
   check(value.reasoningIncludedInOutput === true, 'reasoning billing semantics');
   if (custom || value.providerId !== undefined) check(text(value.providerId), 'provider ID');
