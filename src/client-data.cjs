@@ -426,7 +426,9 @@ function aggregate(sessionSummaries, workspaceItems, t, archivedIds) {
 	});
 	strayByCwd.forEach((members, cwd) => {
 		// 与宿主一致：cwd 与已有项目 path 相同时合并，避免出现两个同名项目。
-		var existing = projects.find(function(p) { return p.path === cwd; });
+		var existing = projects.find(function(p) {
+			return (p.path || "").replace(/[/\\]+$/, "") === (cwd || "").replace(/[/\\]+$/, "");
+		});
 		var target = existing || {
 			id: "cwd-" + cwd,
 			name: cwd === UNCATEGORIZED ? t("w.uncategorized") : basename(cwd),
