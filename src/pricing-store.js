@@ -44,6 +44,7 @@ export class PricingStore {
       const cached = this.settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
         : { envelope: read(join(this.dir, 'catalog-' + this.settings.pinnedVersion + '.json'), MAX_ENVELOPE_BYTES) };
       const catalog = verifyEnvelope(cached.envelope, publicKey);
+      if (this.settings.pinnedVersion !== null && catalog.version !== this.settings.pinnedVersion) throw new Error('pricing-cache-invalid');
       if (catalog.version >= this.catalog.version || this.settings.pinnedVersion === catalog.version) {
         this.catalog = catalog; this.envelope = cached.envelope;
         this.lastSuccessAt = Number.isFinite(cached.lastSuccessAt) ? cached.lastSuccessAt : null;
