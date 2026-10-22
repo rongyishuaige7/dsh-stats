@@ -153,8 +153,9 @@ function missingModels(projects) {
 		((project && project.sessions) || []).forEach(function(session) {
 			((session && session.slotUsage) || []).forEach(function(usage) {
 				if (!usage || !(usage.cost && usage.cost.unpricedTokens > 0) || usage.cost.status === "subscription") return;
-				var key = JSON.stringify([usage.providerId, usage.modelRaw || usage.model]);
-				var row = rows.get(key) || { provider: usage.providerId, model: usage.modelRaw || usage.model, tokens: 0 };
+				var model = usage.modelRaw || usage.model || (session && session.model);
+				var key = JSON.stringify([usage.providerId, model]);
+				var row = rows.get(key) || { provider: usage.providerId, model: model, tokens: 0 };
 				row.tokens += usage.cost.unpricedTokens;
 				rows.set(key, row);
 			});
