@@ -48,7 +48,7 @@ function normalizeBalanceInfo(info) {
 	const total = parseBalanceAmount(info.total_balance);
 	const toppedUp = parseBalanceAmount(info.topped_up_balance);
 	const granted = parseBalanceAmount(info.granted_balance);
-	if (!currency || total === null || (info.topped_up_balance != null && toppedUp === null) || (info.granted_balance != null && granted === null)) {
+	if (!currency || total === null || (info.topped_up_balance != null && info.topped_up_balance !== "" && toppedUp === null) || (info.granted_balance != null && info.granted_balance !== "" && granted === null)) {
 		throw new DeepSeekBalanceError("invalid-response");
 	}
 	return {
