@@ -235,6 +235,13 @@ function BalanceAlert(props) {
 	const error = errorState[0], setError = errorState[1];
 	const inputRef = react.useRef(null);
 
+	// Keep the field in sync when the stored alert changes (for example after
+	// an external refresh or a clear), instead of keeping the first value.
+	react.useEffect(function() {
+		setValue(alert ? String(alert.amount) : "");
+		setError(null);
+	}, [alert ? alert.amount : null, alert ? alert.currency : null]);
+
 	// If the row disappears while focus is still inside the popover, hand focus
 	// to the panel instead of letting it fall to the body.
 	react.useEffect(function() {
