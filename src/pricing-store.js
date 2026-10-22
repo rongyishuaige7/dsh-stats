@@ -72,12 +72,12 @@ export class PricingStore {
       let settings = this.settings;
       try { settings = this.validateSettings(read(join(this.dir, 'settings.json'), MAX_OVERRIDES_BYTES + 1024)); }
       catch (error) { if (error.code !== 'ENOENT') { this.settingsInvalid = true; throw new Error('pricing-settings-invalid'); } }
+      this.settings = settings; this.settingsInvalid = false;
       let cached;
       try { cached = settings.pinnedVersion === null ? read(join(this.dir, 'current.json'))
         : { envelope: read(join(this.dir, 'catalog-' + settings.pinnedVersion + '.json'), MAX_ENVELOPE_BYTES) }; }
       catch (error) { if (error.code !== 'ENOENT' || settings.pinnedVersion !== null) throw new Error('pricing-cache-invalid'); }
       const catalog = cached ? verifyEnvelope(cached.envelope, this.publicKey) : this.catalog;
-      this.settings = settings; this.settingsInvalid = false;
       if (settings.pinnedVersion === catalog.version || settings.pinnedVersion === null && catalog.version >= pricing.BUILTIN.version) {
         this.catalog = catalog; if (cached) this.envelope = cached.envelope;
         if (Number.isFinite(cached?.lastSuccessAt)) this.lastSuccessAt = cached.lastSuccessAt;
