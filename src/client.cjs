@@ -733,7 +733,11 @@ async function apply(ctx) {
 	}, StatsPanel));
 
 	return () => {
-		if (typeof disposeRemote === "function") disposeRemote();
+		try {
+			if (typeof disposeRemote === "function") disposeRemote();
+		} catch (error) {
+			console.warn("[dsh-stats] remote.stats 卸载失败:", error);
+		}
 		if (ownedStyle && ownedStyle.isConnected) ownedStyle.remove();
 		var tooltip = typeof document !== "undefined" ? document.getElementById("dss-tooltip") : null;
 		if (tooltip) tooltip.remove();
