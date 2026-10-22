@@ -10,13 +10,13 @@ const e = react.createElement;
 const IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
 
 function statusText(state, remote, t) {
-	var at = state.at != null ? " · " + fmtClock(state.at) : "";
+	var at = Number.isFinite(state.at) ? " · " + fmtClock(state.at) : "";
 	if (state.kind === "exact") return t("source.exact") + at;
 	if (state.kind === "loading") return t("source.loading");
 	if (state.kind === "refreshing") return t("source.refreshing");
 	if (state.kind === "partial") return t("source.partial") + at;
 	if (state.kind === "stale") return t("status.stale") + at;
-	if (state.kind === "fallback") return t("source.local");
+	if (state.kind === "fallback") return t("source.local") + at;
 	return t("source." + state.kind);
 }
 
