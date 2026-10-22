@@ -57,7 +57,7 @@ function rule(value, custom) {
   if (value.legacy) { check(value.family === 'deepseek', 'legacy family'); rates(value.legacy); rates(value.peak); rates(value.offPeak); }
   if (value.contextTiers) { tiers(value.contextTiers); check(Number.isSafeInteger(value.contextThreshold) && value.contextThreshold > 0, 'context threshold'); }
   if (value.serviceTiers) { check(record(value.serviceTiers) && Object.keys(value.serviceTiers).every(k => TIERS.includes(k)), 'service tiers'); for (const v of Object.values(value.serviceTiers)) tiers(v); }
-  if (value.tierMultipliers) { check(record(value.tierMultipliers) && Object.keys(value.tierMultipliers).every(k => TIERS.includes(k)), 'multipliers'); for (const v of Object.values(value.tierMultipliers)) check(Number.isFinite(v) && v > 0 && v <= 100, 'multiplier'); }
+  if (value.tierMultipliers !== undefined) { check(record(value.tierMultipliers) && Object.keys(value.tierMultipliers).every(k => TIERS.includes(k)), 'multipliers'); for (const v of Object.values(value.tierMultipliers)) check(Number.isFinite(v) && v > 0 && v <= 100, 'multiplier'); }
 }
 function freeze(value) { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }
 function rules(values, custom) {
@@ -82,11 +82,12 @@ function validateCatalog(input) {
   rules(input.rules, false);
   check(input.schemaVersion >= 2 || input.rules.every(r => !r.timeOfUse), 'time of use requires schema 2');
   check(Array.isArray(input.fx) && input.fx.length > 0 && input.fx.length <= 10000, 'FX entries');
-  let previous = '';
+  let previous = -Infinity;
   for (const fx of input.fx) {
     check(record(fx) && Object.keys(fx).every(k => ['date', 'usdCny', 'sourceUrl'].includes(k)), 'FX fields');
-    check(/^\d{4}-\d\d-\d\d$/.test(fx.date) && Number.isFinite(Date.parse(fx.date)) && fx.date > previous, 'FX date order');
-    check(Number.isFinite(fx.usdCny) && fx.usdCny > 0 && fx.usdCny <= 100 && typeof fx.sourceUrl === 'string' && (() => { try { const url = new URL(fx.sourceUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.hash; } catch { return false; } })(), 'FX rate'); previous = fx.date;
+    const time = Date.parse(fx.date);
+    check(/^\d{4}-\d\d-\d\d$/.test(fx.date) && Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === fx.date && time > previous, 'FX date order');
+    check(Number.isFinite(fx.usdCny) && fx.usdCny > 0 && fx.usdCny <= 100 && typeof fx.sourceUrl === 'string' && (() => { try { const url = new URL(fx.sourceUrl); return url.protocol === 'https:' && !url.username && !url.password && !url.hash; } catch { return false; } })(), 'FX rate'); previous = time;
   }
   const result = freeze(JSON.parse(snapshotJson(input, MAX_CATALOG_BYTES, 'catalog'))); validated.add(result); return result;
 }
