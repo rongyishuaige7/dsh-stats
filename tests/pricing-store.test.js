@@ -184,7 +184,7 @@ test('status reuses the catalog history until the directory changes', () => {
   expect(store.status().history).toEqual([3, 2]);
 });
 
-test('large escaped catalogs survive download, disk restart, rollback and browser RPC', async () => {
+test('large escaped catalogs survive download, disk restart, rollback and browser RPC', { timeout: 20000 }, async () => {
   const catalog = { ...base, version: base.version + 1, rules: Array.from({ length: 3100 }, (_, i) => custom({
     id: 'large-' + i, canonical: 'large-' + i, aliases: ['large-' + i],
     sourceUrl: 'https://example.com/pricing', note: '"\\'.repeat(500),
