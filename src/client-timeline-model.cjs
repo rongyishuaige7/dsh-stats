@@ -139,6 +139,14 @@ function timelineTicks(win) {
 			odd: index % 2 === 1
 		});
 	}
+	if (ticks.length && ticks[ticks.length - 1].slot !== end) {
+		ticks.push({
+			slot: end,
+			label: slotClock(end),
+			edge: "last",
+			odd: ticks.length % 2 === 1
+		});
+	}
 	return ticks;
 }
 
@@ -623,7 +631,9 @@ function timelineRangeModel(input) {
 	const rows = pageDates.map(function(date, rowIndex) {
 		const data = dayModels.get(date);
 		const byColumn = Array.from({ length: columns }, function() { return {}; });
+		const projectIds = new Map();
 		data.slots.forEach(function(entry, projectId) {
+			projectIds.set(String(projectId), projectId);
 			for (let slot = 0; slot < 48; slot++) {
 				const value = entry.ms[slot];
 				if (!value) continue;
@@ -642,6 +652,7 @@ function timelineRangeModel(input) {
 			Object.keys(by).sort().forEach(function(projectId) {
 				if (by[projectId] > dominantMs) { dominantMs = by[projectId]; dominant = projectId; }
 			});
+			if (dominant != null) dominant = projectIds.get(dominant);
 			return { level: level, dominant: dominant, by: by, ms: ms };
 		});
 		const projects = [];
