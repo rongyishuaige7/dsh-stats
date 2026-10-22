@@ -37,7 +37,7 @@ function balanceErrorCode(error) {
 }
 
 function parseBalanceAmount(value) {
-	if (value === undefined || value === null || value === "") return null;
+	if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return null;
 	const number = typeof value === "string" ? Number(value.trim()) : value;
 	return Number.isFinite(number) && number >= 0 ? number : null;
 }
@@ -108,7 +108,7 @@ async function fetchDeepSeekBalance(credentials, fetchImpl = globalThis.fetch, n
 		let response;
 		try {
 			response = await fetchImpl(DEEPSEEK_BALANCE_API, {
-				headers: { authorization: `Bearer ${apiKey}` },
+				headers: { authorization: `Bearer ${apiKey.trim()}` },
 				redirect: "error",
 				signal: controller.signal
 			});
