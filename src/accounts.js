@@ -151,8 +151,9 @@ function clampPercent(value) {
 
 function timestampOrNull(value) {
 	if (value === null || value === undefined || value === "") return null;
-	const parsed = typeof value === "number" && Number.isFinite(value)
-		? new Date(value < 20_000_000_000 ? value * 1000 : value)
+	const numeric = numberOrNull(value);
+	const parsed = numeric !== null
+		? new Date(numeric < 20_000_000_000 ? numeric * 1000 : numeric)
 		: new Date(String(value));
 	return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 }
