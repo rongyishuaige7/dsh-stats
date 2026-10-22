@@ -324,7 +324,9 @@ function convertCostToCny(cost, options) {
 	if (currency === DISPLAY_CURRENCY) return { ...cost, currency: DISPLAY_CURRENCY };
 	if (cost.amount == null || currency !== "USD") return { ...cost };
 	var fxAt = cost.pricing?.pricedAt;
-	var day = Number.isFinite(fxAt) ? new Date(fxAt).toISOString().slice(0, 10) : "9999-12-31";
+	// Date covers ±8.64e15 ms; an out-of-range pricedAt must fall back to the
+	// newest snapshot instead of throwing RangeError out of the summary.
+	var day = Number.isFinite(fxAt) && Math.abs(fxAt) <= 8.64e15 ? new Date(fxAt).toISOString().slice(0, 10) : "9999-12-31";
 	var fx = fxForDay(day);
 	var rate = positiveRate(options?.usdCnyRate) || fx.usdCny;
 	if (!rate) return { ...cost };
@@ -349,12 +351,16 @@ function convertCostSummaryToCny(summary, options) {
 	var totals = new Map();
 	var conversionFailures = 0;
 	for (var total of summary.totals) {
+		if (!total || typeof total !== "object") { conversionFailures++; continue; }
 		var converted = convertCostToCny({
 			status: (total.estimatedAmount || 0) > 0 ? "estimated" : "exact",
 			amount: total.amount,
 			currency: total.currency,
 			exactAmount: total.exactAmount || 0,
-			estimatedAmount: total.estimatedAmount || 0
+			estimatedAmount: total.estimatedAmount || 0,
+			// Dropping the usage day here repriced every historical summary at the
+			// newest FX row; carry it through instead.
+			pricing: total.pricing
 		}, options);
 		if (!converted || converted.currency !== DISPLAY_CURRENCY) {
 			conversionFailures++;
@@ -362,6 +368,7 @@ function convertCostSummaryToCny(summary, options) {
 		}
 		var row = totals.get(DISPLAY_CURRENCY) || { currency: DISPLAY_CURRENCY, amount: 0, exactAmount: 0, estimatedAmount: 0 };
 		row.amount += converted.amount || 0;
+		if (converted.pricing && Number.isFinite(converted.pricing.pricedAt)) row.pricing = { pricedAt: converted.pricing.pricedAt };
 		row.exactAmount += converted.exactAmount || 0;
 		row.estimatedAmount += converted.estimatedAmount || 0;
 		totals.set(DISPLAY_CURRENCY, row);
@@ -386,6 +393,15 @@ function mergeCostSummariesCny(summaries, options) {
 	return mergeCostSummaries((summaries || []).map(function(summary) { return convertCostSummaryToCny(summary, options); }));
 }
 
+function beijingWeekday(slot) {
+	return new Date(slot * 30 * 60 * 1000 + BEIJING_OFFSET_MS).getUTCDay();
+}
+
+function deepSeekPeakDay(slot) {
+	var day = beijingWeekday(slot);
+	return day >= 1 && day <= 5;
+}
+
 function deepSeekPeak(slot) {
 	var t = slot * 30 * 60 * 1000;
 	var bj = new Date(t + BEIJING_OFFSET_MS);
@@ -398,7 +414,8 @@ function deepSeekPeak(slot) {
 function timeOfUsePeriod(rule, at) {
   const bj = new Date(at + BEIJING_OFFSET_MS), day = bj.toISOString().slice(0, 10);
   const c = rule.timeOfUse.calendar;
-  const potentialPeak = bj.getUTCDay() >= 1 && bj.getUTCDay() <= 5 && deepSeekPeak(Math.floor(at / 1800000));
+  const slot = Math.floor(at / 1800000);
+  const potentialPeak = deepSeekPeakDay(slot) && deepSeekPeak(slot);
   return { peak: potentialPeak && !c.holidays.includes(day), uncertain: potentialPeak && (day < c.from || day > c.to) };
 }
 
@@ -421,7 +438,9 @@ function ratesFor(rule, usage, at, period) {
 	if (rule.legacy) {
 		var time = Number.isFinite(at) ? at : Number.isFinite(usage && usage.slot) ? usage.slot * 30 * 60 * 1000 : Date.now();
 		if (time < DEEPSEEK_CHANGE_AT) return rule.legacy;
-		return deepSeekPeak(Number.isFinite(usage && usage.slot) ? usage.slot : Math.floor(time / (30 * 60 * 1000))) ? rule.peak : rule.offPeak;
+		var peakSlot = Number.isFinite(usage && usage.slot) ? usage.slot : Math.floor(time / (30 * 60 * 1000));
+		// DeepSeek peak pricing excludes weekends, like timeOfUsePeriod above.
+		return deepSeekPeak(peakSlot) && deepSeekPeakDay(peakSlot) ? rule.peak : rule.offPeak;
 	}
 	if (rule.serviceTiers) {
 		var service = normalizeServiceTier(usage?.serviceTier);
@@ -531,6 +550,9 @@ function summarizeCosts(costs) {
 	var pricedRows = 0;
 	var estimatedRows = 0;
 	var freeRows = 0;
+	// Free rows without a currency never reach pricedRows; count the priced ones
+	// separately so the two counters can be compared.
+	var freePricedRows = 0;
 	for (var cost of costs || []) {
 		if (!cost || typeof cost !== "object") continue;
 		if (cost.status === "free") freeRows++;
@@ -540,10 +562,15 @@ function summarizeCosts(costs) {
 			continue;
 		}
 		pricedRows++;
+		if (cost.status === "free") freePricedRows++;
 		// Metadata-only usage rows can carry a model/provider identity but no
 		// tokens. They must not turn an otherwise exact summary into estimated.
 		if (cost.status === "estimated" && (cost.estimatedAmount || cost.amount || 0) > 0) estimatedRows++;
 		var row = totals.get(cost.currency) || { currency: cost.currency, amount: 0, exactAmount: 0, estimatedAmount: 0 };
+		// Keep the newest usage day so a later summary-to-CNY merge can still pick
+		// the same FX snapshot as a row-by-row conversion.
+		var pricedAt = cost.pricing && Number.isFinite(cost.pricing.pricedAt) ? cost.pricing.pricedAt : null;
+		if (pricedAt != null && !(row.pricing && row.pricing.pricedAt >= pricedAt)) row.pricing = { pricedAt: pricedAt };
 		row.amount += cost.amount;
 		row.exactAmount += cost.exactAmount || 0;
 		row.estimatedAmount += cost.estimatedAmount || 0;
@@ -552,7 +579,7 @@ function summarizeCosts(costs) {
 	var status = "unsupported";
 	if ((pricedRows > 0 || freeRows > 0) && (unknownRows > 0 || unpricedTokens > 0)) status = "partial";
 	else if (pricedRows > 0 && estimatedRows > 0) status = "estimated";
-	else if (freeRows > 0 && pricedRows === freeRows) status = "free";
+	else if (freePricedRows > 0 && pricedRows === freePricedRows) status = "free";
 	else if (pricedRows > 0) status = "exact";
 	else if (freeRows > 0) status = "free";
 	return { status: status, totals: Array.from(totals.values()).sort(function(a, b) { return a.currency.localeCompare(b.currency); }), unpricedTokens: unpricedTokens, unknownRows: unknownRows };
@@ -563,12 +590,18 @@ function mergeCostSummaries(summaries) {
 	for (var summary of summaries || []) {
 		if (!summary) continue;
 		for (var total of summary.totals || []) {
+			// A malformed row carries no amount; drop it instead of throwing out of
+			// the whole merge.
+			if (!total || typeof total !== "object") continue;
 			pseudoCosts.push({
 				status: summary.status === "free" ? "free" : total.estimatedAmount > 0 ? "estimated" : "exact",
 				amount: total.amount,
 				currency: total.currency,
 				exactAmount: total.exactAmount,
 				estimatedAmount: total.estimatedAmount,
+				// Keep the usage day across merges, otherwise a later CNY conversion
+				// would silently use the newest FX row.
+				pricing: total.pricing,
 				unpricedTokens: 0
 			});
 		}

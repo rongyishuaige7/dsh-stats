@@ -542,3 +542,85 @@ test('pricing payload limits are shared by host and browser', () => {
 	expect(pricing.MAX_CATALOG_BYTES).toBe(8 * 1024 * 1024);
 	expect(pricing.MAX_OVERRIDES_BYTES).toBe(1024 * 1024);
 });
+
+test('legacy peak rates exclude Beijing weekends', () => {
+	const engine = pricing.createPricing({
+		schemaVersion: 2,
+		version: 1,
+		publishedAt: '2026-01-01T00:00:00Z',
+		rules: [{
+			id: 'legacy/deepseek', family: 'deepseek', canonical: 'legacy-model', aliases: ['legacy-model'],
+			currency: 'CNY', sourceUrl: 'https://example.com/pricing', retrievedAt: '2026-01-01',
+			confidence: 'exact', reasoningIncludedInOutput: true,
+			legacy: { uncached: 1, cacheRead: 0, cacheWrite: 0, output: 2 },
+			peak: { uncached: 2, cacheRead: 0, cacheWrite: 0, output: 4 },
+			offPeak: { uncached: 1, cacheRead: 0, cacheWrite: 0, output: 2 },
+		}],
+		fx: [{ date: '2026-01-01', usdCny: 7, sourceUrl: 'https://example.com/fx' }],
+	});
+	const quote = (day) => engine.priceUsage({
+		model: 'legacy-model', providerId: 'deepseek', time: Date.parse(day + 'T10:00:00+08:00'), uncached: 1000000, output: 0,
+	});
+	expect(quote('2026-08-21').amount).toBe(2); // Friday peak
+	expect(quote('2026-08-24').amount).toBe(2); // Monday peak
+	expect(quote('2026-08-22').amount).toBe(1); // Saturday
+	expect(quote('2026-08-23').amount).toBe(1); // Sunday
+	expect(quote('2026-08-14').amount).toBe(1); // before the 2026-08-17 change: flat legacy rate
+});
+
+test('a currency-less free row does not turn a priced summary into free', () => {
+	const free = priceUsage(usage({ providerId: 'custom-relay', model: 'future-free-model', accountType: 'free' }));
+	const priced = priceUsage(usage({ providerId: 'deepseek-official', model: 'deepseek-v4-pro', accountType: 'api' }));
+	const summary = summarizeCosts([free, priced]);
+
+	expect(free).toMatchObject({ status: 'free', currency: null });
+	expect(priced.status).toBe('exact');
+	expect(summary.status).toBe('exact');
+	expect(summary.totals[0].amount).toBeGreaterThan(0);
+	expect(summarizeCosts([free]).status).toBe('free');
+});
+
+test('summary-to-CNY conversion keeps the usage-day FX snapshot', () => {
+	const engine = pricing.createPricing({
+		schemaVersion: 2,
+		version: 1,
+		publishedAt: '2026-01-01T00:00:00Z',
+		rules: [{
+			id: 'usd-openai-test', family: 'openai', canonical: 'gpt-test', aliases: ['gpt-test'],
+			currency: 'USD', sourceUrl: 'https://example.com/pricing', retrievedAt: '2026-01-01',
+			confidence: 'exact', reasoningIncludedInOutput: true, providerId: 'openai',
+			rates: { uncached: 1, cacheRead: 0, cacheWrite: 0, output: 2 },
+		}],
+		fx: [
+			{ date: '2026-01-01', usdCny: 7, sourceUrl: 'https://example.com/fx' },
+			{ date: '2026-08-18', usdCny: 8, sourceUrl: 'https://example.com/fx' },
+		],
+	});
+	const at = Date.parse('2026-01-05T12:00:00Z');
+	const cost = engine.priceUsage(
+		{ time: at, uncached: 1000000, output: 0 },
+		{ providerId: 'openai', modelRaw: 'gpt-test', accountType: 'api' },
+	);
+
+	expect(cost).toMatchObject({ status: 'exact', currency: 'USD', amount: 1 });
+	expect(engine.summarizeCosts([cost]).totals[0].pricing).toEqual({ pricedAt: at });
+	expect(engine.summarizeCostsCny([cost]).totals[0].amount).toBeCloseTo(7);
+	expect(engine.mergeCostSummariesCny([engine.summarizeCosts([cost])]).totals[0].amount).toBeCloseTo(7);
+});
+
+test('an out-of-range pricedAt falls back to the newest FX snapshot', () => {
+	const converted = convertCostToCny({ currency: 'USD', amount: 1, pricing: { pricedAt: 1e18 } });
+	expect(converted.currency).toBe('CNY');
+	expect(converted.amount).toBeCloseTo(USD_CNY_RATE);
+});
+
+test('a null totals row counts as a conversion failure instead of throwing', () => {
+	const converted = convertCostSummaryToCny({
+		status: 'exact',
+		totals: [null, { currency: 'CNY', amount: 5, exactAmount: 5, estimatedAmount: 0 }],
+		unpricedTokens: 0,
+		unknownRows: 0,
+	});
+	expect(converted.totals).toEqual([{ currency: 'CNY', amount: 5, exactAmount: 5, estimatedAmount: 0 }]);
+	expect(converted.unknownRows).toBe(1);
+});

@@ -15,6 +15,9 @@ const _stats$schema = z.object({
 }).strict()
 const _costTotal$schema = z.object({
   currency: z.string(), amount: z.number().nonnegative(), exactAmount: z.number().nonnegative(), estimatedAmount: z.number().nonnegative(),
+  // The usage day behind a total, kept so a later CNY merge reuses the same FX
+  // snapshot instead of the newest one. Optional: older payloads omit it.
+  pricing: z.object({ pricedAt: z.number().nonnegative() }).strict().optional(),
 }).strict()
 const _costSummary$schema = z.object({
   status: z.enum(['exact', 'estimated', 'free', 'partial', 'unsupported']), totals: z.array(_costTotal$schema),
