@@ -596,7 +596,7 @@ function ModelSection(props) {
 function TrendsView(props) {
 	const t = props.t;
 	const today = props.today;
-	const prefs = props.prefs;
+	const prefs = Object.assign({ range: 30, metric: "cost" }, props.prefs);
 	const range = prefs.range;
 	const metric = prefs.metric;
 	const projects = props.projects || [];
