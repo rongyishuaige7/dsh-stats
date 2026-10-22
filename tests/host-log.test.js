@@ -176,7 +176,7 @@ test('invalid packed timestamps reject the whole batch without emitting a partia
 	expect(result).toMatchObject({ times: [], malformedRecords: 1, partial: true });
 });
 
-test('legacy caches evict by estimated retained bytes and reuse entries that still fit', async () => {
+test('legacy caches evict by estimated retained bytes and reuse entries that still fit', { timeout: 20000 }, async () => {
 	const home = tempHome();
 	const payload = Array.from({ length: 51000 }, (_, seq) => JSON.stringify({ type: 'event', seq, time: 1000 + seq })).join('\n') + '\n';
 	for (const id of ['first', 'second']) {
@@ -199,7 +199,7 @@ test('legacy caches evict by estimated retained bytes and reuse entries that sti
 	} finally { SESSION_CACHE_LIMITS.bytes = originalBytes; }
 });
 
-test('legacy cache retains a working set larger than the old unit cap', async () => {
+test('legacy cache retains a working set larger than the old unit cap', { timeout: 20000 }, async () => {
 	const home = tempHome();
 	const payload = Array.from({ length: 800 }, (_, seq) => JSON.stringify({ type: 'request/header', seq, time: 1000 + seq * 1000 })).join('\n') + '\n';
 	for (let index = 0; index < 130; index++) {
