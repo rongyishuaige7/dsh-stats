@@ -61,7 +61,7 @@ function rule(value, custom) {
 }
 function freeze(value) { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }
 function rules(values, custom) {
-  check(Array.isArray(values) && values.length <= (custom ? 500 : 20000), 'rule count');
+  check(Array.isArray(values) && values.length <= (custom ? 500 : 20000) && (custom || values.length > 0), 'rule count');
   const ids = new Set(), aliases = new Map();
   for (const value of values) {
     rule(value, custom); check(!ids.has(value.id), 'duplicate rule ID'); ids.add(value.id);
