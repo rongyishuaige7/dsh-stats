@@ -402,6 +402,17 @@ let StatsService = (() => {
 					} catch (error) {
 						const message = error?.message || String(error);
 						warnings.push({ code: isLegacyDescriptorError(error) ? "OFFICIAL_LEGACY_DESCRIPTOR" : "OFFICIAL_PERSISTENCE_FAILED", sessionId, message });
+						if (officialSource && !info) {
+							const fallbackParent = firstString(entry?.identity?.parentSession);
+							const fallbackSeed = Number.isSafeInteger(entry?.identity?.seedLength) && entry.identity.seedLength >= 0 ? entry.identity.seedLength : null;
+							info = {
+								times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [],
+								origin: firstString(entry?.identity?.origin) ?? (fallbackParent ? "subagent" : null),
+								activityTimes: [],
+								parentSession: fallbackParent, seedLength: fallbackSeed, inheritedEventCount: 0,
+								stats: null, partial: false, stale: false, missing: false, unavailable: true
+							};
+						}
 					}
 					if (revision !== null && officialSource && info && !info.partial && !info.stale &&
 						warnings.slice(warningStart).every(row => row.code.startsWith("OFFICIAL_") && row.code.endsWith("_USED"))) {
