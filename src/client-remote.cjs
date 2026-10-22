@@ -16,7 +16,7 @@ function adaptLegacyBalance(value) {
 				adapter: "deepseek-balance",
 				status: account.status === "ok" ? "ok" : account.status === "unconfigured" ? "not-configured" : "unavailable",
 				stale,
-				fetchedAt: account.fetchedAt || value.generatedAt,
+				fetchedAt: account.fetchedAt == null ? value.generatedAt : account.fetchedAt,
 				lastSuccessAt: account.fetchedAt,
 				errorCode: account.errorCode,
 				missingCredential: account.status === "unconfigured" ? "DEEPSEEK_API_KEY" : null,
