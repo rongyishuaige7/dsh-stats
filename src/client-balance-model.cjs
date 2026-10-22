@@ -83,6 +83,7 @@ function normalizeBalanceAlerts(value) {
 function alertFor(account, alerts) {
 	if (!isRecord(account) || account.mode !== "balance" || !isRecord(account.balance)) return null;
 	if (account.balance.unlimited === true) return null;
+	if (!isFiniteNumber(account.balance.remaining)) return null;
 	if (!isRecord(alerts)) return null;
 	const alert = alerts[account.id];
 	if (!isRecord(alert)) return null;
@@ -117,7 +118,9 @@ function subscriptionMin(account) {
 function accountChip(account, alerts) {
 	if (!isRecord(account)) return null;
 	if (account.stale === true) return { tone: "warn", key: "chip.stale" };
-	const statusChip = STATUS_CHIPS[account.status];
+	const statusChip = Object.prototype.hasOwnProperty.call(STATUS_CHIPS, account.status)
+		? STATUS_CHIPS[account.status]
+		: null;
 	if (statusChip) return { tone: statusChip.tone, key: statusChip.key };
 	if (account.mode === "subscription") {
 		const min = subscriptionMin(account);
@@ -246,9 +249,9 @@ function balanceTotals(active) {
 	(Array.isArray(active) ? active : []).forEach(function(account) {
 		if (!isRecord(account) || account.mode !== "balance") return;
 		balanceCount++;
+		if (account.stale === true) staleCount++;
 		const balance = account.balance;
 		if (!isRecord(balance)) { unreadCount++; return; }
-		if (account.stale === true) staleCount++;
 		if (balance.unlimited === true) return;
 		if (!isFiniteNumber(balance.remaining) || !isNonEmptyString(balance.currency)) return;
 		if (!Object.prototype.hasOwnProperty.call(cents, balance.currency)) {
