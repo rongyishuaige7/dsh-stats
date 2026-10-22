@@ -122,8 +122,9 @@ function projectCsvTable(projects, t) {
 			sessionExportUsages(session).forEach(function (usage) {
 				var identity = identityForUsage(usage, session.modelRaw || session.model, session.providerId, session.accountType);
 				var cost = usageCostDetail(usage, session.modelRaw || session.model, session.providerId, session.accountType);
+				var updatedAt = session.updatedAt == null ? null : new Date(session.updatedAt);
 				rows.push(projectFields.concat([
-					session.id, session.title, session.updatedAt == null ? "" : new Date(session.updatedAt).toISOString(), session.quality || "",
+					session.id, session.title, updatedAt && !isNaN(updatedAt.getTime()) ? updatedAt.toISOString() : "", session.quality || "",
 					Number.isFinite(usage.slot) ? new Date(usage.slot * SLOT_MS).toISOString() : "",
 					identity.providerId, identity.providerFamily, identity.modelRaw, usage.modelCanonical || cost.modelCanonical || identity.modelCanonical, identity.accountType,
 					usage.serviceTier || "standard", Number.isFinite(usage.contextTokens) ? usage.contextTokens : "",
