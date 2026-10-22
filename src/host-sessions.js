@@ -563,7 +563,7 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 			const provider = firstString(config?.provider, config?.providerId, config?.provider_id, ev.data?.header?.provider);
 			if (provider) currentProvider = provider;
 			currentAccountType = accountTypeOf(config, currentAccountType);
-			currentServiceTier = pricing.normalizeServiceTier(config?.serviceTier || config?.service_tier);
+			currentServiceTier = pricing.normalizeServiceTier(firstString(config?.serviceTier, config?.service_tier) || currentServiceTier);
 		} else if (ev.type === "step/start") {
 			openStep = Number.isFinite(t) ? { turn: ev.data?.turn, step: ev.data?.step, startTime: t, firstTokenTime: null } : null;
 		} else if (ev.type === "assistant/chunk") {
