@@ -119,7 +119,9 @@ function dayPoints(dates, byDay, dayCosts) {
 			input,
 			output,
 			cacheRead,
-			uncached: Math.max(0, input - cacheRead),
+			uncached: Number.isFinite(bucket.uncached)
+				? bucket.uncached
+				: Math.max(0, input - cacheRead - num(bucket.cacheWrite)),
 			reasoning: num(bucket.reasoning),
 			tokens,
 			cost,

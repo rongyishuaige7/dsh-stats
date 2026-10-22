@@ -40,7 +40,7 @@ function rangeText(dates, today, t) {
 // 摘要条日均：保留原摘要的 status，部分计价也带"*"。
 function averageText(totals, activeDays, t) {
 	const amount = amountOf(totals.cost);
-	if (activeDays <= 0 || amount <= 0) return "—";
+	if (activeDays <= 0 || amount == null) return "—";
 	return fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: amount / activeDays, exactAmount: 0, estimatedAmount: 0 }] }, t);
 }
 
