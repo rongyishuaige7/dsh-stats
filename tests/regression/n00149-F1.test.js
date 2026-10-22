@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] tierMultipliers 取假值（0 / '' / false / null / NaN）时被真值判断跳过校验，任意值原样进入冻结快照
 // Source: src/pricing-validation.cjs:60  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { describe, test, expect } from 'vitest';
 import mod from '../../src/pricing-validation.cjs';

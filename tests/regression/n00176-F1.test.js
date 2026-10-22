@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] retrievedAt / fx.date 未做 typeof 校验，数组等非字符串值经正则隐式转字符串后通过校验并原样进入快照
 // Source: src/pricing-validation.cjs:37  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import mod from '../../src/pricing-validation.cjs';
 

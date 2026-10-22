@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F2] 汇总里存在真实金额时仍可能被标记为 free（反之全免费时被标记为 exact）
 // Source: src/pricing.cjs:555  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 const mod = require('../../src/pricing.cjs');
 

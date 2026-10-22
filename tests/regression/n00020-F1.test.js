@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] 费用环比上涨 0.5% 因浮点误差被判为“持平”，与等幅下降显示 ↓1% 不对称
 // Source: src/client-overview.cjs:60  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { createRequire } from 'node:module';
 import { expect, test } from 'vitest';

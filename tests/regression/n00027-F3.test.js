@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F3] USD 汇总换算为 CNY 后 estimatedAmount 已置为全额，但 status 仍保留 'exact'
 // Source: src/pricing.cjs:369  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 const mod = require('../../src/pricing.cjs');
 

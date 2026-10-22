@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] OverviewTools 把继承来的 Object.prototype.valueOf 当作格式化函数转发给筛选菜单，打开筛选弹层时会崩溃
 // Source: src/client-overview.cjs:174  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { createRequire } from 'node:module';
 

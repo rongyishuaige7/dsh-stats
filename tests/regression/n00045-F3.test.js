@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F3] costShares 遇到 null 项目条目抛 TypeError，而不是按未计价返回 null 份额
 // Source: src/client-overview-model.cjs:66  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { createRequire } from 'node:module';
 

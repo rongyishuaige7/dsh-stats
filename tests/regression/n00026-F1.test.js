@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] 单个会话的官方事件派生抛错后 info 仍为 undefined，aggregate 在读取 info.seqGap 时整体崩溃
 // Source: src/index.js:402-523  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 

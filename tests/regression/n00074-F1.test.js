@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] USD 汇总经 mergeCostSummariesCny 换算时丢失 pricing.pricedAt，历史用量按最新汇率折算，与 summarizeCostsCny 结果不一致
 // Source: src/pricing.cjs:351-358  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { describe, test, expect } from 'vitest';
 import mod from '../../src/pricing.cjs';

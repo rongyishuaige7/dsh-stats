@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] legacy（peak/offPeak）模式的 DeepSeek 规则在周末仍按峰时价计费
 // Source: src/pricing.cjs:421  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import mod from '../../src/pricing.cjs';
 

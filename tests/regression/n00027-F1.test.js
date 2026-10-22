@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] providerId 仅大小写不同时，同一 catalog 规则被误判为 unsupported
 // Source: src/pricing.cjs:471  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 const mod = require('../../src/pricing.cjs');
 

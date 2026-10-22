@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F3] pricedAt 为有限但超出 Date 可表示范围的时间戳时，convertCostToCny 抛 RangeError 而不是回退到最新汇率快照
 // Source: src/pricing.cjs:326-328  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { describe, test, expect } from 'vitest';
 import mod from '../../src/pricing.cjs';

@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] topped_up_balance/granted_balance 为空字符串时被误判为 invalid-response，与 parseBalanceAmount 的缺失语义矛盾
 // Source: src/host-balance.js:51  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { expect, test } from 'vitest';
 import { normalizeBalanceInfo } from '../../src/host-balance.js';

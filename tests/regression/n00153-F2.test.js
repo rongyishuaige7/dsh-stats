@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F2] header 已用 inheritedEventCount 声明 fork 边界时仍被判为 unknownSeed，整条日志的自有事件被丢弃
 // Source: src/host-sessions.js:476  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { expect, test } from 'vitest';
 import {

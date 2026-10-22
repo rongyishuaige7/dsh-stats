@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] 热力图分档在多数活跃日并列于峰值时，峰值日只得到 2 级，最高两档不可达
 // Source: src/client-trends-model.cjs:247  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 const mod = require('../../src/client-trends-model.cjs');
 

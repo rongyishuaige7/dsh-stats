@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] FX 的 date 接受不存在的日历日（2026-02-30 被 Date.parse 滚动成 3 月 2 日），并因此破坏 FX 日期严格递增的不变式
 // Source: src/pricing-validation.cjs:88  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import mod from '../../src/pricing-validation.cjs';
 

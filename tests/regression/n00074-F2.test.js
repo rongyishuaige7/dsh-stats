@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F2] 汇总 totals 中出现 null/undefined 行时 convertCostSummaryToCny / mergeCostSummaries 直接抛 TypeError，而不是计为转换失败
 // Source: src/pricing.cjs:351-358  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { describe, test, expect } from 'vitest';
 import mod from '../../src/pricing.cjs';

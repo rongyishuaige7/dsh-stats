@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F2] pricingIncomplete 依赖 route row 上不存在的 count 字段，所有逐槽用量都被标记为计价信息不完整
 // Source: src/client-data.cjs:257  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { createRequire } from 'node:module';
 import { test, expect, vi } from 'vitest';

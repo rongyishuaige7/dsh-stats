@@ -1,7 +1,7 @@
 // Regression test promoted by night-evolver.
 // Run: 20261021-130102-dsh-stats  Finding: [F1] updateRoute 命中行缓存后就地替换行，若 update 改动了排序字段（slot/contextTokens 等），缓存行数组不再有序，routeRows 返回乱序结果且后续二分插入位置错误
 // Source: src/route-data.cjs:47  Contract: —
-// Verified fixed at cc91b835d19f199f7256ed156bd81d99f3f138f2 by `recheck`; do not delete without checking the finding.
+// Verified fixed by `recheck`; do not delete without checking the finding.
 
 import { createRequire } from 'node:module';
 
