@@ -361,6 +361,9 @@ function Heatmap(props) {
 			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style });
 		}
 		const point = heat.points.get(cell.date);
+		if (!point) {
+			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style });
+		}
 		const openable = canOpen(cell.date);
 		const label = dayLabel(cell.date, t, true);
 		const amount = isToken ? fmtTokens(point.tokens) : fmtCostSummary(point.cost, t);
