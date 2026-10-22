@@ -350,6 +350,7 @@ function convertCostSummaryToCny(summary, options) {
 	if (!summary || !Array.isArray(summary.totals)) return summary;
 	var totals = new Map();
 	var conversionFailures = 0;
+	var estimatedConversion = false;
 	for (var total of summary.totals) {
 		if (!total || typeof total !== "object") { conversionFailures++; continue; }
 		var converted = convertCostToCny({
@@ -366,6 +367,7 @@ function convertCostSummaryToCny(summary, options) {
 			conversionFailures++;
 			continue;
 		}
+		if (converted.status === "estimated" && (converted.estimatedAmount || 0) > 0) estimatedConversion = true;
 		var row = totals.get(DISPLAY_CURRENCY) || { currency: DISPLAY_CURRENCY, amount: 0, exactAmount: 0, estimatedAmount: 0 };
 		row.amount += converted.amount || 0;
 		if (converted.pricing && Number.isFinite(converted.pricing.pricedAt)) row.pricing = { pricedAt: converted.pricing.pricedAt };
@@ -374,6 +376,7 @@ function convertCostSummaryToCny(summary, options) {
 		totals.set(DISPLAY_CURRENCY, row);
 	}
 	var status = summary.status;
+	if (estimatedConversion) status = "estimated";
 	var unpricedTokens = Number.isFinite(summary.unpricedTokens) ? summary.unpricedTokens : 0;
 	var unknownRows = (Number.isFinite(summary.unknownRows) ? summary.unknownRows : 0) + conversionFailures;
 	if (conversionFailures > 0 || unknownRows > 0 || unpricedTokens > 0) status = totals.size > 0 ? "partial" : "unsupported";
@@ -487,7 +490,7 @@ function priceUsage(usage, identityInput) {
 	if (identity.accountType === "unknown" || !resolved.custom && (identity.accountType === "relay" || identity.accountType === "local")) {
 		return emptyCost("unsupported", identity, tokens);
 	}
-	if (identity.providerFamily === "unknown" && !resolved.estimatedFallback && !resolved.custom && !resolved.matches.some(rule => rule.providerId === identity.providerId)) {
+	if (identity.providerFamily === "unknown" && !resolved.estimatedFallback && !resolved.custom && !resolved.matches.some(rule => normalizedProviderKey(rule.providerId) === normalizedProviderKey(identity.providerId))) {
 		return emptyCost(resolved.matches.length > 1 ? "ambiguous" : "unsupported", identity, tokens);
 	}
 	var matches = resolved.matches;
