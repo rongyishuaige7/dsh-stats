@@ -365,7 +365,7 @@ function TimelineDay(props) {
 		const sessionPage = sessionPages[lane.projectId] || 0;
 		const sessionWindow = pageRows(lane.sessions, sessionPage, TIMELINE_SESSION_PAGE);
 		const sessionRows = sessionWindow.rows.map(function(session, index) {
-			const isLast = lane.sessions[lane.sessions.length - 1] === session;
+			const isLast = sessionWindow.rows[sessionWindow.rows.length - 1] === session;
 			const sessionRuns = timelineRuns(session.ms, win);
 			const title = session.title || t("w.untitled");
 			const tip = tipProps(function() {
