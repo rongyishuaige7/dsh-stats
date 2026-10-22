@@ -33,7 +33,7 @@ function fmtClock(ms) {
 }
 function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : Number(tps.toFixed(1))); }
-function fmtPct(p) { return p == null || !Number.isFinite(p) ? "—" : `${p}%`; }
+function fmtPct(p) { return p == null || !Number.isFinite(p) ? "—" : `${Number(p.toFixed(1))}%`; }
 function fmtSharePct(pct) {
 	if (pct == null || !Number.isFinite(pct) || pct <= 0) return "0%";
 	return pct < 0.1 ? "<0.1%" : pct.toFixed(1) + "%";
