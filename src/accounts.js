@@ -376,7 +376,12 @@ export async function responseJson(response, signal) {
 	}
 	// Compatibility with injected fetch implementations that have no stream.
 	if (typeof response?.arrayBuffer === "function") {
-		const bytes = new Uint8Array(await response.arrayBuffer());
+		let bytes;
+		try {
+			bytes = new Uint8Array(await response.arrayBuffer());
+		} catch {
+			throw new AccountError("unavailable", "transport-failed");
+		}
 		if (bytes.byteLength > MAX_RESPONSE_BYTES) throw new AccountError("invalid-response", "response-too-large");
 		try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new AccountError("invalid-response", "invalid-json"); }
 	}
@@ -507,9 +512,18 @@ function genericUsageView(template, body) {
 
 async function resolveCredential(credentials, ref) {
 	if (!ref || !credentials || typeof credentials.resolve !== "function") return "";
+	let hit;
 	try {
-		const hit = await credentials.resolve(ref);
-		return nonEmpty(typeof hit === "string" ? hit : hit?.value) || "";
+		hit = await credentials.resolve(ref);
+	} catch {
+		throw new AccountError("unavailable", "credential-unavailable");
+	}
+	return nonEmpty(typeof hit === "string" ? hit : hit?.value) || "";
+}
+
+async function hasCredential(credentials, ref) {
+	try {
+		return !!(await resolveCredential(credentials, ref));
 	} catch {
 		return "";
 	}
@@ -727,7 +741,12 @@ async function querySubscription(spec, key, deps, now) {
 async function queryProviderAccount(spec, credentials, deps = {}) {
 	const now = (deps.now || Date.now)();
 	if (!spec.adapter || spec.mode === "unsupported") return emptyAccount(spec, "unsupported", now);
-	const key = await resolveCredential(credentials, spec.apiKeyRef);
+	let key;
+	try {
+		key = await resolveCredential(credentials, spec.apiKeyRef);
+	} catch {
+		return emptyAccount(spec, "unavailable", now, "credential-unavailable");
+	}
 	if (!key) return emptyAccount(spec, "not-configured", now);
 	try {
 		return spec.mode === "balance" ? await queryBalance(spec, key, deps, now) : await querySubscription(spec, key, deps, now);
@@ -817,7 +836,7 @@ async function providerViews(owner, ctx) {
 		const signature = JSON.stringify(spec);
 		const hit = state.cache.get(spec.id);
 		const cached = hit?.signature === signature ? hit.account : null;
-		const configured = spec.adapter !== null && (cached ? cached.status !== "not-configured" : !!(await resolveCredential(credentials, spec.apiKeyRef)));
+		const configured = spec.adapter !== null && (cached ? cached.status !== "not-configured" : await hasCredential(credentials, spec.apiKeyRef));
 		return {
 			id: spec.id,
 			displayName: spec.displayName,
