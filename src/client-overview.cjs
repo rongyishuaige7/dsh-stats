@@ -57,7 +57,7 @@ function InfoTip({ id, label, text }) {
 
 function formatDelta(delta, prevDate, t) {
 	if (!delta) return null;
-	var pct = Math.round(delta.ratio * 100);
+	var pct = Math.round(delta.ratio * 100 + Math.sign(delta.ratio) * 1e-9);
 	if (pct === 0) return t("kpi.flat");
 	return t("kpi.vs").replace("%s", String(prevDate).slice(5)) + " " + (pct > 0 ? "↑" : "↓") + Math.abs(pct) + "%";
 }
@@ -171,7 +171,7 @@ function OverviewTools(props) {
 			onShowAll: props.onShowAll,
 			colorIndexes: props.colorIndexes,
 			filterKey: props.filterKey,
-			valueOf: props.valueOf,
+			valueOf: Object.prototype.hasOwnProperty.call(props, "valueOf") && typeof props.valueOf === "function" ? props.valueOf : undefined,
 			t: t
 		}) : null
 	);
