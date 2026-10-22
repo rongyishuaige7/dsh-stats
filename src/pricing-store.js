@@ -206,7 +206,8 @@ export class PricingStore {
       if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
       if (revision !== this.settings.revision) throw new Error('pricing-settings-conflict');
       if (!Number.isSafeInteger(version) || version <= 0) throw new Error('pricing-version-invalid');
-      const envelope = read(join(this.dir, 'catalog-' + version + '.json'), MAX_ENVELOPE_BYTES);
+      let envelope;
+      try { envelope = read(join(this.dir, 'catalog-' + version + '.json'), MAX_ENVELOPE_BYTES); } catch { throw new Error('pricing-version-invalid'); }
       const catalog = verifyEnvelope(envelope, this.publicKey);
       if (catalog.version !== version) throw new Error('pricing-version-invalid');
       // The settings file is the single commit point; startup follows its pin.
