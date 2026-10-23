@@ -437,6 +437,8 @@ function ratesFor(rule, usage, at, period) {
 		? usage.contextTokens
 		: usage && usage.contextOver512k === true
 			? 512001
+			: usage && usage.contextOver512k === false
+				? 0
 			: tokenCounts(usage).uncached + tokenCounts(usage).cacheRead + tokenCounts(usage).cacheWrite;
 	if (rule.legacy) {
 		var time = Number.isFinite(at) ? at : Number.isFinite(usage && usage.slot) ? usage.slot * 30 * 60 * 1000 : Date.now();
