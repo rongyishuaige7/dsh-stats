@@ -38,7 +38,7 @@ function usedModelKeys(projects, catalog) {
         rule = byId.get(engine.priceUsage({ providerId, model, time, accountType, uncached: 0, output: 0 }).ruleId);
         if (!rule) {
           // Subscription usage still identifies a model even without an API quote.
-          const identity = engine.normalizeIdentity(providerId, model, accountType, time);
+          const identity = engine.normalizeIdentity(providerId, model, time, accountType);
           for (const candidate of catalog.rules) if (candidate.canonical === identity.modelCanonical
             && (candidate.providerId ? candidate.providerId === identity.providerId : candidate.family === identity.providerFamily)) used.add(groupKey(candidate));
         }
@@ -70,7 +70,7 @@ function catalogGroups(catalog, used, at) {
 // Context, time-of-use, legacy and multi-rule prices keep every condition in
 // the detail view instead of promoting one tier to a general price.
 function hasComplexPrice(rule) {
-  if (rule.contextTiers != null || rule.serviceTiers != null || rule.timeOfUse != null || rule.legacy != null) return true;
+  if (rule.contextTiers != null || rule.contextThreshold != null || rule.serviceTiers != null || rule.timeOfUse != null || rule.legacy != null) return true;
   return rule.tierMultipliers != null && Object.values(rule.tierMultipliers).some(value => value !== 1);
 }
 function modelPriceSummary(group) {
