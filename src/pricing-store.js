@@ -179,7 +179,7 @@ export class PricingStore {
         if (this.envelope) atomic(join(this.dir, 'catalog-' + this.catalog.version + '.json'), this.envelope);
         atomic(join(this.dir, 'catalog-' + catalog.version + '.json'), envelope);
         // A restore always wins over a download that was already in flight.
-        if (this.settings.pinnedVersion !== null || !force && !this.inflightForce && (!this.settings.autoUpdate || revision !== this.settings.revision)) return;
+        if (this.settings.pinnedVersion !== null || !force && !this.inflightForce && !this.settings.autoUpdate) return;
         const lastSuccessAt = this.now();
         atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt });
         this.lastSuccessAt = lastSuccessAt;
