@@ -133,7 +133,7 @@ function accountChip(account, alerts) {
 	}
 	if (account.mode === "balance" && isRecord(account.balance)) {
 		const balance = account.balance;
-		if (balance.unlimited !== true && balance.remaining === 0) return { tone: "danger", key: "chip.balanceOut" };
+		if (balance.unlimited !== true && balance.remaining <= 0) return { tone: "danger", key: "chip.balanceOut" };
 		const alert = alertFor(account, alerts);
 		if (alert && balance.remaining > 0 && balance.remaining < alert.amount) return { tone: "warn", key: "chip.balanceLow" };
 	}
@@ -161,7 +161,7 @@ function sortAccounts(active, alerts) {
 function accountMeta(account) {
 	const type = account && account.mode === "subscription" ? "subscription" : "balance";
 	const plan = account && typeof account.plan === "string" ? account.plan.trim() : "";
-	const displayName = account && typeof account.displayName === "string" ? account.displayName : "";
+	const displayName = account && typeof account.displayName === "string" ? account.displayName.trim() : "";
 	if (plan && plan !== displayName) return { type: type, detail: { kind: "plan", value: plan } };
 	if (account && account.adapter === "generic-usage") return { type: type, detail: { kind: "route", value: null } };
 	return { type: type, detail: { kind: "id", value: account && account.id != null ? account.id : "" } };
