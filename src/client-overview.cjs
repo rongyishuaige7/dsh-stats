@@ -1,7 +1,18 @@
 // Overview rework: tools, KPIs, strip, filter menu and the project table.
 const react = require("react");
 const { Popover } = require("./client-dialog.cjs");
-const { costShares, cnyAmount, costDelta, pendingFocus, sortProjects, defaultSortDir } = require("./client-overview-model.cjs");
+const overviewModel = require("./client-overview-model.cjs");
+const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir } = overviewModel;
+const modelSortProjects = overviewModel.sortProjects;
+const sortProjects = function(projects, key, dir, options) {
+	if (key === "sessions") {
+		projects = (Array.isArray(projects) ? projects : []).map(function(project) {
+			return Object.assign({}, project, { sessionCount: (project.sessions || []).length });
+		});
+	}
+	return modelSortProjects(projects, key, dir, options);
+};
+overviewModel.sortProjects = sortProjects;
 const { fmtClock, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, pad, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
 const { localDayKey, modelNameOnly } = require("./client-data.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
@@ -262,10 +273,11 @@ function ProjectSessions(props) {
 	);
 	var rows = [];
 	var grouped = false;
+	var pageSubCount = window.rows.filter(function(session) { return session.subagent; }).length;
 	window.rows.forEach(function(session) {
 		if (session.subagent && !grouped) {
 			grouped = true;
-			rows.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + sub.length + ")"));
+			rows.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + pageSubCount + ")"));
 		}
 		var title = session.title || t("w.untitled");
 		var model = modelNameOnly(session);
