@@ -192,8 +192,8 @@ function AccountMain(props) {
 		else if (amount == null) classes.push("is-none");
 		if (account.stale) classes.push("is-stale");
 		if (parts.zero) classes.push("is-zero");
-		const text = unlimited ? t("balance.unlimited") : amount != null ? fmtBalanceAmount(amount, parts.currency) : "—";
-		const sub = amountSubNodes(parts.parts, parts.alertLine, parts.currency, t);
+		const text = unlimited ? t("balance.unlimited") : amount != null ? fmtBalanceAmount(amount, parts.currency || "") : "—";
+		const sub = amountSubNodes(parts.parts, parts.alertLine, parts.currency || "", t);
 		nodes.push(e("div", { className: "dss-bal-amt-line", key: "amt" },
 			e("span", { className: classes.join(" ") }, text),
 			sub.length ? e("span", { className: "dss-bal-amt-sub" }, sub) : null
