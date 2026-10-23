@@ -80,9 +80,10 @@ function providerFamilyOf(providerId) {
 function matchModelAlias(rule, model) {
 	if (rule.aliases.indexOf(model) >= 0) return true;
 	// Anthropic dated model ids are stable aliases of the named family.
-	if (rule.family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
+	var family = String(rule.family || "").trim().toLowerCase();
+	if (family === "anthropic" && model.startsWith(rule.canonical.toLowerCase() + "-")
 		&& /^20[0-9]{6}$/.test(model.slice(rule.canonical.length + 1))) return true;
-	if (rule.family === "deepseek") {
+	if (family === "deepseek") {
 		if (rule.canonical === "deepseek-v4-flash" &&
 			(model === "deepseek-v4.1-flash" || model === "deepseek/deepseek-v4.1-flash" || model === "deepseek/deepseek-v4-flash")) return true;
 		if (rule.canonical === "deepseek-v4-pro" &&
@@ -128,8 +129,9 @@ function indexRule(index, rule) {
 		to: rule.effectiveTo ? Date.parse(rule.effectiveTo) : Infinity };
 	const add = (map, key) => { const rows = map.get(key) || []; rows.push(entry); map.set(key, rows); };
 	for (const alias of rule.aliases) add(index.aliases, alias);
-	if (rule.family === "anthropic") add(index.dated, rule.canonical.toLowerCase());
-	if (rule.family === "deepseek") {
+	const family = String(rule.family || "").trim().toLowerCase();
+	if (family === "anthropic") add(index.dated, rule.canonical.toLowerCase());
+	if (family === "deepseek") {
 		if (rule.canonical === "deepseek-v4-flash") {
 			for (const a of ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-flash"]) add(index.aliases, a);
 		} else if (rule.canonical === "deepseek-v4-pro") {
@@ -353,27 +355,33 @@ function convertCostSummaryToCny(summary, options) {
 	var estimatedConversion = false;
 	for (var total of summary.totals) {
 		if (!total || typeof total !== "object") { conversionFailures++; continue; }
-		var converted = convertCostToCny({
-			status: (total.estimatedAmount || 0) > 0 ? "estimated" : "exact",
-			amount: total.amount,
-			currency: total.currency,
-			exactAmount: total.exactAmount || 0,
-			estimatedAmount: total.estimatedAmount || 0,
-			// Dropping the usage day here repriced every historical summary at the
-			// newest FX row; carry it through instead.
-			pricing: total.pricing
-		}, options);
-		if (!converted || converted.currency !== DISPLAY_CURRENCY) {
-			conversionFailures++;
-			continue;
+		var parts = total.currency === "USD" && total._pricingBuckets
+			? Array.from(total._pricingBuckets.values())
+			: [{ amount: total.amount, exactAmount: total.exactAmount || 0, estimatedAmount: total.estimatedAmount || 0, pricedAt: total.pricing && total.pricing.pricedAt }];
+		var convertedParts = 0;
+		for (var part of parts) {
+			var converted = convertCostToCny({
+				status: (part.estimatedAmount || 0) > 0 ? "estimated" : "exact",
+				amount: part.amount,
+				currency: total.currency,
+				exactAmount: part.exactAmount || 0,
+				estimatedAmount: part.estimatedAmount || 0,
+				// Dropping the usage day here repriced every historical summary at the
+				// newest FX row; carry it through instead.
+				pricing: part.pricedAt == null ? undefined : { pricedAt: part.pricedAt }
+			}, options);
+			if (!converted || converted.currency !== DISPLAY_CURRENCY) continue;
+			convertedParts++;
+			if (converted.status === "estimated" && (converted.estimatedAmount || 0) > 0) estimatedConversion = true;
+			var row = totals.get(DISPLAY_CURRENCY) || { currency: DISPLAY_CURRENCY, amount: 0, exactAmount: 0, estimatedAmount: 0 };
+			row.amount += converted.amount || 0;
+			if (converted.pricing && Number.isFinite(converted.pricing.pricedAt)
+				&& !(row.pricing && row.pricing.pricedAt >= converted.pricing.pricedAt)) row.pricing = { pricedAt: converted.pricing.pricedAt };
+			row.exactAmount += converted.exactAmount || 0;
+			row.estimatedAmount += converted.estimatedAmount || 0;
+			totals.set(DISPLAY_CURRENCY, row);
 		}
-		if (converted.status === "estimated" && (converted.estimatedAmount || 0) > 0) estimatedConversion = true;
-		var row = totals.get(DISPLAY_CURRENCY) || { currency: DISPLAY_CURRENCY, amount: 0, exactAmount: 0, estimatedAmount: 0 };
-		row.amount += converted.amount || 0;
-		if (converted.pricing && Number.isFinite(converted.pricing.pricedAt)) row.pricing = { pricedAt: converted.pricing.pricedAt };
-		row.exactAmount += converted.exactAmount || 0;
-		row.estimatedAmount += converted.estimatedAmount || 0;
-		totals.set(DISPLAY_CURRENCY, row);
+		if (convertedParts === 0) conversionFailures++;
 	}
 	var status = summary.status;
 	if (estimatedConversion) status = "estimated";
@@ -576,6 +584,15 @@ function summarizeCosts(costs) {
 		// the same FX snapshot as a row-by-row conversion.
 		var pricedAt = cost.pricing && Number.isFinite(cost.pricing.pricedAt) ? cost.pricing.pricedAt : null;
 		if (pricedAt != null && !(row.pricing && row.pricing.pricedAt >= pricedAt)) row.pricing = { pricedAt: pricedAt };
+		// Preserve the per-day amounts as non-enumerable metadata so a summary
+		// conversion can use the same FX snapshot as a row-by-row conversion.
+		if (!row._pricingBuckets) Object.defineProperty(row, "_pricingBuckets", { value: new Map() });
+		var bucketKey = pricedAt == null ? "none" : pricedAt;
+		var bucket = row._pricingBuckets.get(bucketKey);
+		if (!bucket) { bucket = { pricedAt: pricedAt, amount: 0, exactAmount: 0, estimatedAmount: 0 }; row._pricingBuckets.set(bucketKey, bucket); }
+		bucket.amount += cost.amount;
+		bucket.exactAmount += cost.exactAmount || 0;
+		bucket.estimatedAmount += cost.estimatedAmount || 0;
 		row.amount += cost.amount;
 		row.exactAmount += cost.exactAmount || 0;
 		row.estimatedAmount += cost.estimatedAmount || 0;
