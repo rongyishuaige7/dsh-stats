@@ -777,6 +777,7 @@ function TimelineRange(props) {
 	const onCellsClick = function(ev, row) {
 		const target = ev.target && typeof ev.target.closest === "function" ? ev.target.closest("i.dss-mx-cell") : null;
 		if (!target || target.dataset.level === "0") return;
+		hideTip();
 		const day = (props.timeline.days || []).find(function(item) { return item.date === row.date; });
 		const slot = timelineJumpSlot(day, props.hidden, Number(target.dataset.col), per);
 		jumpNonce.current += 1;
