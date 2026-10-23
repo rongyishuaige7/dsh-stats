@@ -5,6 +5,12 @@ const { missingModels } = require('./client-overview-model.cjs');
 const e = React.createElement;
 const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const PAGE_SIZE = 25;
+// The commit bar falls back to 'pricing.pending'; keep that key resolvable in the
+// shared locale so the raw key name is never rendered to the user.
+const localeEn = require('./pricing-locale.cjs').en;
+if (localeEn && localeEn['pricing.pending'] === undefined) {
+  localeEn['pricing.pending'] = localeEn['price.pending'] ?? localeEn['price.unknown'] ?? '待定';
+}
 // Price rules follow Beijing time like the rest of the panel: datetime-local
 // values and displayed times are UTC+8 regardless of the browser timezone.
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -119,6 +125,7 @@ function conditionSummary(rule, t) {
     if (multipliers.length) parts.push(multipliers.map(([key, value]) => key + ' ×' + value).join(' · '));
   }
   if (rule.accountType && rule.accountType !== 'api') parts.push(t('price.accountType') + ': ' + rule.accountType);
+  if (rule.serviceTiers) parts.push(t('price.typeService'));
   if (rule.timeOfUse) parts.push(t('price.peak') + ' / ' + t('price.offPeak'));
   if (rule.legacy) parts.push(t('price.legacy'));
   return parts.length ? parts.join(' · ') : t('price.noConditions');
@@ -429,7 +436,7 @@ class PricingErrorBoundary extends React.Component {
   }
 }
 function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
-  const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
+  const [status, setStatus] = React.useState(null), [busy, setBusy] = React.useState(!!remote), [error, setError] = React.useState('');
   const [workingOverrides, setWorkingOverrides] = React.useState([]), [savedOverrides, setSavedOverrides] = React.useState([]);
   const [draft, setDraft] = React.useState(blankDraft), [editorBaseline, setEditorBaseline] = React.useState(blankDraft);
   const [editingId, setEditingId] = React.useState(null), [editingSavedId, setEditingSavedId] = React.useState(null), [editorOpen, setEditorOpen] = React.useState(false);
