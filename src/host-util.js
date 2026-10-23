@@ -16,7 +16,16 @@ const MIN_INTERVAL_MS = 60 * 1000;
 const LONG_CONTEXT_TOKENS = 512_000;
 const ZSTD_MAGIC = 4247762216;
 const STATS_SCHEMA_VERSION = 2;
-const SESSION_PROJECTION_DOMAIN_VERSIONS = Object.freeze(new Set([3, 4, 5, 6, 7]));
+const SESSION_PROJECTION_DOMAIN_VERSIONS = new Proxy(new Set([3, 4, 5, 6, 7]), {
+	get(target, prop) {
+		if (prop === "add") return function () { return this; };
+		if (prop === "delete") return function () { return false; };
+		if (prop === "clear") return function () {};
+		const value = target[prop];
+		return typeof value === "function" ? value.bind(target) : value;
+	}
+});
+Object.freeze(SESSION_PROJECTION_DOMAIN_VERSIONS);
 const SESSION_PROJECTION_DOMAIN_VERSION = 3;
 function isSupportedProjectionDomainVersion(version) {
 	return version === undefined || SESSION_PROJECTION_DOMAIN_VERSIONS.has(version);
