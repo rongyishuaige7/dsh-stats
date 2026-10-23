@@ -83,7 +83,7 @@ export class PricingStore {
         this.catalog = catalog; if (cached) this.envelope = cached.envelope;
         if (Number.isFinite(cached?.lastSuccessAt)) this.lastSuccessAt = cached.lastSuccessAt;
       }
-      this.rebuild(); this.diskStamp = stampKey;
+      this.rebuild(); this.diskStamp = stampKey; this.error = null;
     } catch (error) { this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : 'pricing-cache-invalid'; }
   }
   withLock(fn) {
@@ -134,7 +134,7 @@ export class PricingStore {
     return { version: this.catalog.version, publishedAt: this.catalog.publishedAt, fingerprint: this.fingerprint,
       lastCheckAt: this.lastCheckAt, lastSuccessAt: this.lastSuccessAt, error: this.error,
       revision: this.settings.revision, autoUpdate: this.settings.autoUpdate, pinnedVersion: this.settings.pinnedVersion,
-      catalogJson: this.catalogJson, overridesJson: this.overridesJson, history };
+      catalogJson: this.catalogJson, overridesJson: this.overridesJson, history: [...history] };
   }
   async refresh({ force = false, unknown = false } = {}) {
     if (this.closed) return this.status();
