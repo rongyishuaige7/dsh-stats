@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101826,
-  "publishedAt": "2026-10-23T19:59:53.362Z",
+  "version": 2026101827,
+  "publishedAt": "2026-10-23T22:55:52.122Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -19832,7 +19832,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-23T19:59:53.362Z"
+      "effectiveFrom": "2026-10-23T19:59:53.362Z",
+      "effectiveTo": "2026-10-23T22:55:52.122Z"
     },
     {
       "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-23T19:59:53.362Z",
@@ -19854,6 +19855,27 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-23T19:59:53.362Z"
+    },
+    {
+      "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-23T22:55:52.122Z",
+      "family": "openrouter",
+      "canonical": "deepseek/deepseek-v4-pro",
+      "aliases": [
+        "deepseek/deepseek-v4-pro"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-23",
+      "observedFrom": "2026-10-23T22:55:52.122Z",
+      "rates": {
+        "uncached": 0.692694,
+        "output": 1.385388,
+        "cacheRead": 0.057724500000000005,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-23T22:55:52.122Z"
     }
   ],
   "fx": [
