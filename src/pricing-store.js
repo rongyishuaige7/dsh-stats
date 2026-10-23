@@ -79,7 +79,7 @@ export class PricingStore {
         : { envelope: read(join(this.dir, 'catalog-' + settings.pinnedVersion + '.json'), MAX_ENVELOPE_BYTES) }; }
       catch (error) { if (error.code !== 'ENOENT' || settings.pinnedVersion !== null) throw new Error('pricing-cache-invalid'); }
       const catalog = cached ? verifyEnvelope(cached.envelope, this.publicKey) : this.catalog;
-      if (settings.pinnedVersion === catalog.version || settings.pinnedVersion === null && catalog.version >= pricing.BUILTIN.version) {
+      if (settings.pinnedVersion === catalog.version || settings.pinnedVersion === null && catalog.version >= this.catalog.version) {
         this.catalog = catalog; if (cached) this.envelope = cached.envelope;
         if (Number.isFinite(cached?.lastSuccessAt)) this.lastSuccessAt = cached.lastSuccessAt;
       }
@@ -87,7 +87,7 @@ export class PricingStore {
     } catch (error) { this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : 'pricing-cache-invalid'; }
   }
   withLock(fn) {
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    try { mkdirSync(this.dir, { recursive: true, mode: 0o700 }); } catch { throw new Error('pricing-settings-busy'); }
     const lock = join(this.dir, 'settings.lock');
     let fd;
     try { fd = openSync(lock, 'wx', 0o600); }
@@ -138,13 +138,18 @@ export class PricingStore {
   }
   async refresh({ force = false, unknown = false } = {}) {
     if (this.closed) return this.status();
-    if (this.inflight) return this.inflight;
+    if (this.inflight) {
+      if (!force) return this.inflight;
+      this.inflightForce = true;
+      return this.inflight;
+    }
     this.syncDisk();
     const now = this.now();
     if (!force && (!this.settings.autoUpdate || this.settings.pinnedVersion !== null || this.settingsInvalid)) return this.status();
     if (!force && this.lastCheckAt !== null && now - this.lastCheckAt < (unknown ? 15 * 60000 : HOUR)) return this.status();
     this.lastCheckAt = now;
-    this.inflight = this.download({ force, revision: this.settings.revision }).finally(() => { this.inflight = null; });
+    this.inflightForce = false;
+    this.inflight = this.download({ force, revision: this.settings.revision }).finally(() => { this.inflight = null; this.inflightForce = false; });
     return this.inflight;
   }
   async download({ force, revision }) {
@@ -174,7 +179,7 @@ export class PricingStore {
         if (this.envelope) atomic(join(this.dir, 'catalog-' + this.catalog.version + '.json'), this.envelope);
         atomic(join(this.dir, 'catalog-' + catalog.version + '.json'), envelope);
         // A restore always wins over a download that was already in flight.
-        if (this.settings.pinnedVersion !== null || !force && (!this.settings.autoUpdate || revision !== this.settings.revision)) return;
+        if (this.settings.pinnedVersion !== null || !force && !this.inflightForce && (!this.settings.autoUpdate || revision !== this.settings.revision)) return;
         const lastSuccessAt = this.now();
         atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt });
         this.lastSuccessAt = lastSuccessAt;
