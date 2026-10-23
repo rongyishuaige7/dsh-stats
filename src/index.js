@@ -337,14 +337,19 @@ let StatsService = (() => {
 				let title = typeof rawTitle === "string" ? rawTitle : null;
 				let meta = objectRecord(entry?.rows?.sessionListMetadata?.val) || {};
 				const rawCreatedAt = entry?.identity?.createdAt;
-				const rawLastPromptAt = meta.lastPromptAt;
+				let rawLastPromptAt = meta.lastPromptAt;
 				let createdAt = Number.isFinite(rawCreatedAt) && rawCreatedAt >= 0 ? rawCreatedAt : null;
 				let lastPromptAt = Number.isFinite(rawLastPromptAt) && rawLastPromptAt >= 0 ? rawLastPromptAt : null;
 				let info;
 				let officialSource = null;
 				let officialValues = null;
 				let cacheOnly = false;
-				const liveSession = contextService(hostCtx, "sessions")?.get?.(sessionId);
+				let liveSession;
+				try {
+					liveSession = contextService(hostCtx, "sessions")?.get?.(sessionId);
+				} catch (error) {
+					warnings.push({ code: "OFFICIAL_LIVE_SESSION_FAILED", sessionId, message: error?.message || String(error) });
+				}
 				let revision = null;
 				try {
 					revision = await officialReadRevision(hostCtx, sessionId, warnings);
@@ -480,6 +485,16 @@ let StatsService = (() => {
 						...(budgetExceeded ? { lastSeq: -1, projectionOnly: true } : {})
 					};
 				}
+				if (entry && info && info.lastSeq >= 0) {
+					const rows = objectRecord(entry.rows);
+					const versioned = (row) => objectRecord(row) && (Object.prototype.hasOwnProperty.call(row, "ver") || Object.prototype.hasOwnProperty.call(row, "seq"));
+					if (versioned(rows?.sessionListMetadata) && rows.sessionListMetadata.seq !== info.lastSeq) {
+						meta = {};
+						lastPromptAt = null;
+						rawLastPromptAt = null;
+					}
+					if (versioned(rows?.title) && rows.title.seq !== info.lastSeq) title = null;
+				}
 				if (officialValues) {
 					if (objectRecord(officialValues.sessionStats)) statsRow = officialValues.sessionStats;
 					const officialUsage = normalizeProjectionUsage(officialValues.tokenUsage);
@@ -505,6 +520,7 @@ let StatsService = (() => {
 							unavailable: info.unavailable,
 							seqGap: info.seqGap,
 							futureVersion: info.futureVersion,
+							unknownSeed: info.unknownSeed,
 							lastSeq: info.lastSeq,
 							header: info.header
 						};
@@ -826,7 +842,9 @@ let StatsService = (() => {
 		async current() {
 			const state = balanceState(this);
 			const now = Date.now();
-			if (state.cache && now - state.cache.at < BALANCE_CACHE_MS) return state.cache.payload;
+			// A cached timestamp from the future (clock step back) cannot establish
+			// freshness: the negative age would otherwise keep the cache alive forever.
+			if (state.cache && now >= state.cache.at && now - state.cache.at < BALANCE_CACHE_MS) return state.cache.payload;
 			if (state.inflight) return state.inflight;
 			state.inflight = (async () => {
 				try {
