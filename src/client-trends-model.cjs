@@ -173,7 +173,7 @@ function niceMax(peak) {
 		// 先按 10 的整数幂放大再乘系数，最后按 12 位有效数字收尾，
 		// 避免 0.30000000000000004 这类浮点尾巴进入刻度文字。
 		const value = Number((step * Math.pow(10, exponent)).toPrecision(12));
-		if (value >= peak) return value;
+		if (value >= Number(peak.toPrecision(12))) return value;
 	}
 	return Number((10 * Math.pow(10, exponent)).toPrecision(12));
 }
