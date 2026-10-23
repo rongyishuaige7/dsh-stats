@@ -407,7 +407,7 @@ function routeProjectionApply(state, event) {
 		return { ...state, current };
 	}
 	const usage = routeProjectionUsage(event);
-	if (!usage || !Number.isFinite(event.time) || event.time < 0) return state;
+	if (!usage || !Number.isFinite(event.time) || event.time < 0 || !Number.isSafeInteger(Math.floor(event.time / SLOT_MS))) return state;
 	const source = event.data?.message?.source;
 	const route = routeProjectionRoute(source, current);
 	const sample = {
