@@ -1,18 +1,7 @@
 // Overview rework: tools, KPIs, strip, filter menu and the project table.
 const react = require("react");
 const { Popover } = require("./client-dialog.cjs");
-const overviewModel = require("./client-overview-model.cjs");
-const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir } = overviewModel;
-const modelSortProjects = overviewModel.sortProjects;
-const sortProjects = function(projects, key, dir, options) {
-	if (key === "sessions") {
-		projects = (Array.isArray(projects) ? projects : []).map(function(project) {
-			return Object.assign({}, project, { sessionCount: (project.sessions || []).length });
-		});
-	}
-	return modelSortProjects(projects, key, dir, options);
-};
-overviewModel.sortProjects = sortProjects;
+const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir, sortProjects } = require("./client-overview-model.cjs");
 const { fmtClock, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, pad, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
 const { localDayKey, modelNameOnly } = require("./client-data.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
@@ -273,11 +262,12 @@ function ProjectSessions(props) {
 	);
 	var rows = [];
 	var grouped = false;
-	var pageSubCount = window.rows.filter(function(session) { return session.subagent; }).length;
 	window.rows.forEach(function(session) {
 		if (session.subagent && !grouped) {
 			grouped = true;
-			rows.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + pageSubCount + ")"));
+			// 分组标题显示项目内全部子对话数，不随分页变化：这是 0.5.0 起的既有行为，
+			// 由 browser fixture 基线断言（scripts/browser-fixture-smoke.mjs）。
+			rows.push(e("div", { className: "dss-group", key: "subgroup" }, t("w.subagentGroup") + " (" + sub.length + ")"));
 		}
 		var title = session.title || t("w.untitled");
 		var model = modelNameOnly(session);

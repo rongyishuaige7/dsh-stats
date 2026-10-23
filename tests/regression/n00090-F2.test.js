@@ -1,7 +1,11 @@
-// Regression test promoted by night-evolver.
+// Regression test promoted by night-evolver, then rejected during release review.
 // Run: 20261021-130102-dsh-stats  Finding: [F2] 子代理分组标题显示全部子代理数，与当前分页实际渲染的行数不一致
 // Source: src/client-overview.cjs:268  Contract: —
-// Verified fixed by `recheck`; do not delete without checking the finding.
+//
+// 结论：不采纳。分组标题显示项目内全部子对话数是 0.5.0 起的既有行为，也是
+// browser fixture 的验收基线（scripts/browser-fixture-smoke.mjs 断言 205 个会话
+// 里 95 个子对话必须出现在标题里）。按当前页计数会让同一个标题随翻页变化，
+// 并且会直接让 smoke 失败，所以这里改为锁定既有契约。
 
 import { createRequire } from 'node:module';
 
@@ -10,7 +14,6 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 const mod = require('../../src/client-overview.cjs');
-const model = require('../../src/client-overview-model.cjs');
 
 function makeT(dict) {
 	return function t(key) {
@@ -19,9 +22,7 @@ function makeT(dict) {
 }
 
 describe('client-overview 契约', () => {
-	// [night-evolver] 这条发现还没修，测试暂不提升;
-
-	test('[F2] 子代理分组标题的数量应等于该页实际渲染的子代理行数', () => {
+	test('[F2] 子代理分组标题显示项目内全部子代理数，不随分页变化', () => {
 		const t = makeT({ 'w.subagentGroup': 'Subagents' });
 		const main = [];
 		for (let i = 0; i < 99; i++) {
@@ -32,14 +33,15 @@ describe('client-overview 契约', () => {
 			sub.push({ id: 's' + i, title: 'sub ' + i, subagent: true, stats: {}, updatedAt: 1700000000000 });
 		}
 		const project = { id: 'p1', name: 'P', stats: {}, sessions: main.concat(sub) };
-		const html = renderToStaticMarkup(React.createElement(mod.ProjectSessions, {
+		const render = (page) => renderToStaticMarkup(React.createElement(mod.ProjectSessions, {
 			project,
-			page: 0,
+			page,
 			onPage: function() {},
 			t,
 			dayMode: false,
 		}));
-		expect(html).toContain('Subagents (1)');
+		// 第 0 页有 1 个子对话，第 1 页有 2 个；标题始终是项目总数 3。
+		expect(render(0)).toContain('Subagents (3)');
+		expect(render(1)).toContain('Subagents (3)');
 	});
 });
-

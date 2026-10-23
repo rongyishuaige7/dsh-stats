@@ -130,7 +130,12 @@ function sortProjects(projects, key, dir, ctx) {
 		if (key === "cost") return compareProjectCost(a, b);
 		if (key === "name") return nameOf(a).localeCompare(nameOf(b), undefined, { numeric: true });
 		var va, vb;
-		if (key === "sessions") { va = a.sessionCount || 0; vb = b.sessionCount || 0; }
+		// 宿主下发的 project.sessionCount 与 sessions 等长；本地拼装的项目对象
+		// 可能没有这个字段，回退到会话数组长度，避免整列排序恒为 0。
+		if (key === "sessions") {
+			va = a.sessionCount != null ? a.sessionCount : (Array.isArray(a.sessions) ? a.sessions.length : 0);
+			vb = b.sessionCount != null ? b.sessionCount : (Array.isArray(b.sessions) ? b.sessions.length : 0);
+		}
 		else if (key === "tokens") { va = (a.stats && a.stats.inputTokens || 0) + (a.stats && a.stats.outputTokens || 0); vb = (b.stats && b.stats.inputTokens || 0) + (b.stats && b.stats.outputTokens || 0); }
 		else if (key === "hit") { va = a.stats && a.stats.cacheHitPct != null ? a.stats.cacheHitPct : -1; vb = b.stats && b.stats.cacheHitPct != null ? b.stats.cacheHitPct : -1; }
 		else if (key === "llm") { va = a.stats && a.stats.llmMs || 0; vb = b.stats && b.stats.llmMs || 0; }

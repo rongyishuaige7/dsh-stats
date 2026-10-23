@@ -2806,7 +2806,8 @@ try {
   await capture('readme-timeline-all');
   await click('[data-action=mode-day]');
   await until('document.querySelector(".dss-tl[data-mode=day]")');
-  await click('[data-action=date-prev]');
+  // 0.5.1: “全部”把离开时的日期存进 nav.date，“按日”据此恢复，不再回退到最新活动日，
+  // 所以这里已经停在 2026-09-07，无需再点一次“前一天”。
   await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: true });
   await evaluate('window.dispatchEvent(new Event("resize"))');
