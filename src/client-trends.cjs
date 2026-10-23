@@ -282,7 +282,7 @@ function DailyChart(props) {
 			e("span", { key: "out", className: "dss-tr-legend-grp" }, e("i", { className: "dss-tr-sw is-out" }), t("w.output"))
 		]
 		: [
-			e("span", { key: "avg", className: "dss-tr-legend-grp" }, e("i", { className: "dss-tr-sw is-dash" }), t("tr.avgLine")),
+			totals.activeDays >= 2 && top > 0 ? e("span", { key: "avg", className: "dss-tr-legend-grp" }, e("i", { className: "dss-tr-sw is-dash" }), t("tr.avgLine")) : null,
 			anyPartial ? e("span", { key: "partial", className: "dss-tr-legend-grp" }, e("i", { className: "dss-tr-sw is-part" }), t("tl.partial")) : null
 		];
 
@@ -603,7 +603,7 @@ function TrendsView(props) {
 	const metric = prefs.metric;
 	const projects = props.projects || [];
 	const rangeProjects = props.rangeProjects || [];
-	const hidden = props.hidden || {};
+	const hidden = Object.assign(Object.create(null), props.hidden || {});
 	const hiddenKey = props.hiddenKey || "";
 	const [barDate, setBarDate] = useState(null);
 	const [cellDate, setCellDate] = useState(null);
