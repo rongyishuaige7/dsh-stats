@@ -241,7 +241,7 @@ function resetParts(resetsAt, now) {
 // B3: sum readable, limited balance accounts by currency in integer cents.
 // CNY leads when present, otherwise the first currency seen leads.
 function balanceTotals(active) {
-	const cents = {};
+	const cents = Object.create(null);
 	const seen = [];
 	let balanceCount = 0;
 	let staleCount = 0;
