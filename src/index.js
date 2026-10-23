@@ -345,7 +345,12 @@ let StatsService = (() => {
 				let officialValues = null;
 				let cacheOnly = false;
 				const liveSession = contextService(hostCtx, "sessions")?.get?.(sessionId);
-				const revision = await officialReadRevision(hostCtx, sessionId, warnings);
+				let revision = null;
+				try {
+					revision = await officialReadRevision(hostCtx, sessionId, warnings);
+				} catch (error) {
+					warnings.push({ code: "OFFICIAL_REVISION_FAILED", sessionId, message: error?.message || String(error) });
+				}
 				const metadataKey = JSON.stringify([projectionDomainVersion, entry?.identity]);
 				const cachedRead = readCache.entries.get(sessionId);
 				const reuseRead = revision !== null && cachedRead?.revision === revision && cachedRead.metadataKey === metadataKey &&
@@ -426,6 +431,18 @@ let StatsService = (() => {
 							} })
 						});
 					}
+				}
+				if (officialSource && !info) {
+					const fallbackParent = firstString(entry?.identity?.parentSession);
+					const fallbackSeed = Number.isSafeInteger(entry?.identity?.seedLength) && entry.identity.seedLength >= 0 ? entry.identity.seedLength : null;
+					info = {
+						times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], slotStats: [],
+						origin: firstString(entry?.identity?.origin) ?? (fallbackParent ? "subagent" : null),
+						activityTimes: [],
+						parentSession: fallbackParent, seedLength: fallbackSeed, inheritedEventCount: 0,
+						stats: null, partial: false, stale: false, missing: false, unavailable: true
+					};
+					warnings.push({ code: "OFFICIAL_SESSION_DERIVE_EMPTY", sessionId, message: "official session events produced no derivable statistics; session was marked partial" });
 				}
 				if (!info && !officialSource && officialValues) {
 					info = infoFromProjectionValues(officialValues, entry, warnings, sessionId);
@@ -690,7 +707,7 @@ let StatsService = (() => {
 				const existing = projects.find((p) => p.path === cwd);
 				const target = existing ?? {
 					id: "cwd-" + cwd,
-					name: cwd === "(uncategorized)" ? cwd : basename(cwd),
+					name: cwd === "(uncategorized)" ? cwd : basename(cwd) || "?",
 					path: cwd,
 					sessionCount: 0,
 					subagentCount: 0,
@@ -730,16 +747,24 @@ let StatsService = (() => {
 				}
 				const projectSlots = new Map();
 				for (const [start, end] of merged) {
-					const first = Math.floor(start / SLOT_MS), last = Math.floor((end - 1) / SLOT_MS);
-					for (let slot = first; slot <= last; slot++) {
-						const overlap = Math.min(end, (slot + 1) * SLOT_MS) - Math.max(start, slot * SLOT_MS);
-						if (overlap > 0) projectSlots.set(slot, (projectSlots.get(slot) || 0) + overlap);
+					let cursor = start;
+					while (cursor < end) {
+						const date = localDayKey(cursor);
+						const slotOfDay = Math.floor(minutesOfDay(cursor) / SLOT_MINUTES);
+						let lo = cursor, hi = Math.min(end, cursor + SLOT_MS);
+						while (hi - lo > 1) {
+							const mid = Math.floor((lo + hi) / 2);
+							if (localDayKey(mid) === date && Math.floor(minutesOfDay(mid) / SLOT_MINUTES) === slotOfDay) lo = mid;
+							else hi = mid;
+						}
+						const key = date + "\u0000" + slotOfDay;
+						projectSlots.set(key, (projectSlots.get(key) || 0) + hi - cursor);
+						cursor = hi;
 					}
 				}
-				for (const [slot, ms] of projectSlots) {
-					const slotStartMs = slot * SLOT_MS;
-					const date = localDayKey(slotStartMs);
-					const slotOfDay = Math.floor(minutesOfDay(slotStartMs) / SLOT_MINUTES);
+				for (const [key, ms] of projectSlots) {
+					const [date, slotOfDayText] = key.split("\u0000");
+					const slotOfDay = Number(slotOfDayText);
 					let day = daysMap.get(date);
 					if (!day) { day = { date, dayTotalMs: 0, slotBlocks: [] }; daysMap.set(date, day); }
 					day.dayTotalMs += ms;
