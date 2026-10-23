@@ -25,7 +25,7 @@ function StatusIndicator({ state, remote, t, source }) {
 	return e("span", {
 		className: "dss-data-status " + state.kind,
 		"aria-live": "polite",
-		title: (source || t(remote ? "source.host" : "source.local")) + " · " + text
+		title: (source || t(state.kind === "fallback" || !remote ? "source.local" : "source.host")) + " · " + text
 	},
 		e("i", { className: "dss-status-dot", "aria-hidden": "true" }),
 		e("span", { className: "dss-status-text" }, text)
