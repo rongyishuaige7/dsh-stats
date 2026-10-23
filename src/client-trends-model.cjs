@@ -247,7 +247,7 @@ function heatLevel(value, sortedActiveValues) {
 	const max = sorted[count - 1];
 	if (!(max > 0)) return 1;
 	const quantile = function(fraction) { return sorted[Math.min(count - 1, Math.floor(fraction * count))]; };
-	if (count < 4) return ratioLevel(amount, max);
+	if (count <= 4) return ratioLevel(amount, max);
 	if (amount >= max) return 4;
 	const low = quantile(0.25);
 	const middle = quantile(0.5);
