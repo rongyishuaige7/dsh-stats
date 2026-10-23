@@ -156,7 +156,7 @@ function OverviewTools(props) {
 	};
 	return e("div", { className: "dss-tools" },
 		props.showMode ? e("div", { className: "dss-seg", role: "group", "aria-label": t("nav.day") },
-			e("button", { type: "button", className: mode === "day" ? "on" : "", "aria-pressed": mode === "day", "data-action": "mode-day", onClick: function() { setNav({ mode: "day", date: date }); } }, t("nav.day")),
+			e("button", { type: "button", className: mode === "day" ? "on" : "", "aria-pressed": mode === "day", "data-action": "mode-day", onClick: function() { setNav({ mode: "day", date: nav.date }); } }, t("nav.day")),
 			e("button", { type: "button", className: mode === "all" ? "on" : "", "aria-pressed": mode === "all", "data-action": "mode-all", onClick: function() { setNav({ mode: "all", date: date }); } }, t("nav.all"))
 		) : null,
 		mode === "day" ? e("div", { className: "dss-date-nav" },
