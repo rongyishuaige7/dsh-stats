@@ -102,7 +102,7 @@ function ruleHasConditions(rule) {
 function draftHasConditions(draft) {
   return !!(draft.from || draft.to || draft.threshold !== ''
     || fields.some(key => draft['long' + key[0].toUpperCase() + key.slice(1)].trim() !== '')
-    || ['priority', 'batch', 'flex'].some(key => draft[key].trim() !== '')
+    || ['priority', 'batch', 'flex'].some(key => draft[key].trim() !== '' && Number(draft[key]) !== 1)
     || draft.accountType !== 'api');
 }
 function rateTypeLabel(rule, t) {
