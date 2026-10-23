@@ -6,7 +6,7 @@ function engineFor(catalog) {
   if (!engine) { engine = pricing.createPricing(catalog); engineCache.set(catalog, engine); }
   return engine;
 }
-const groupKey = rule => JSON.stringify([rule.providerId || 'family:' + rule.family, rule.canonical]);
+const groupKey = rule => JSON.stringify([(rule.providerId || 'family:' + rule.family).toLowerCase(), rule.canonical]);
 const rateFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 8, useGrouping: false });
 function fmtRateValue(value, currency) {
   if (value == null || value === '') return '—';
@@ -58,7 +58,7 @@ function catalogGroups(catalog, used, at) {
         search: (rule.canonical + ' ' + (rule.providerId || rule.family)).toLowerCase() };
       groups.set(key, group);
     }
-    group.search += ' ' + rule.aliases.join(' ');
+    group.search += ' ' + rule.aliases.join(' ').toLowerCase();
     group.rules.push({ rule, phase: rulePhase(rule, at) });
   }
   return [...groups.values()].sort((a, b) => Number(b.isUsed) - Number(a.isUsed)
