@@ -97,6 +97,26 @@ function csvField(value) {
 	return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
+// 宿主已下发会话级权威费用且没有可拆分的明细行时，明细行沿用会话汇总口径，
+// 避免同一会话在项目汇总列与 CSV 明细行出现两个不同金额。
+function hostCostDetail(session) {
+	if (!session || !session.cost || !Array.isArray(session.cost.totals) || !session.cost.totals.length) return null;
+	var summary = sessionCostSummary(session);
+	var total = summary && Array.isArray(summary.totals) && summary.totals.length ? summary.totals[0] : null;
+	if (!total) return null;
+	return {
+		currency: total.currency || "",
+		amount: total.amount,
+		status: summary.status,
+		exactAmount: total.exactAmount,
+		estimatedAmount: total.estimatedAmount,
+		unpricedTokens: summary.unpricedTokens || 0,
+		ruleId: "",
+		sourceUrl: "",
+		retrievedAt: ""
+	};
+}
+
 function projectCsvTable(projects, t) {
 	var headers = [
 		t("th.project"), t("w.path"), t("w.sessionTotal"), t("th.sessions"), t("th.turns"), t("th.steps"), t("th.llm"), t("th.tool"),
@@ -119,9 +139,11 @@ function projectCsvTable(projects, t) {
 			return;
 		}
 		project.sessions.forEach(function (session) {
-			sessionExportUsages(session).forEach(function (usage) {
+			var usages = sessionExportUsages(session);
+			var hostCost = usages.length === 1 ? hostCostDetail(session) : null;
+			usages.forEach(function (usage) {
 				var identity = identityForUsage(usage, session.modelRaw || session.model, session.providerId, session.accountType);
-				var cost = usageCostDetail(usage, session.modelRaw || session.model, session.providerId, session.accountType);
+				var cost = hostCost || usageCostDetail(usage, session.modelRaw || session.model, session.providerId, session.accountType);
 				var updatedAt = session.updatedAt == null ? null : new Date(session.updatedAt);
 				rows.push(projectFields.concat([
 					session.id, session.title, updatedAt && !isNaN(updatedAt.getTime()) ? updatedAt.toISOString() : "", session.quality || "",
