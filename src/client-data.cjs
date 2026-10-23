@@ -78,7 +78,7 @@ function applyWindow(projects, startMs, endMs) {
 				ttftSteps: hasStatData ? timed.ttftSteps : fallbackStatsInWindow ? (st.ttftSteps || 0) : 0,
 				decodeMs: hasStatData ? timed.decodeMs : fallbackStatsInWindow ? (st.decodeMs || 0) : 0,
 				decodeTokens: hasStatData ? timed.decodeTokens : fallbackStatsInWindow ? (st.decodeTokens || 0) : 0,
-				uncached: hasUsageData ? tok.uncached : fallbackUsageInWindow ? (st.uncached || 0) : 0,
+				uncached: hasUsageData ? tok.uncached : fallbackUsageInWindow ? (st.uncached != null ? st.uncached : Math.max(0, (st.inputTokens || 0) - (st.cacheRead || 0) - (st.cacheWrite || 0))) : 0,
 				output: hasUsageData ? tok.output : fallbackUsageInWindow ? (st.output || st.outputTokens || 0) : 0,
 				cacheRead: hasUsageData ? tok.cacheRead : fallbackUsageInWindow ? (st.cacheRead || 0) : 0,
 				cacheWrite: hasUsageData ? tok.cacheWrite : fallbackUsageInWindow ? (st.cacheWrite || 0) : 0,
@@ -596,6 +596,8 @@ function sessionDayTokens(sessions) {
 				var legacy = getDay(localDayKey(legacyTs));
 				legacy.turns += st.turns || 0; legacy.steps += st.steps || 0;
 				legacy.llmMs += st.llmMs || 0; legacy.toolMs += st.toolMs || 0;
+				legacy.ttftMs += st.ttftMs || 0; legacy.ttftSteps += st.ttftSteps || 0;
+				legacy.decodeMs += st.decodeMs || 0; legacy.decodeTokens += st.decodeTokens || 0;
 			}
 		}
 		var ts = s.updatedAt || s.createdAt;
