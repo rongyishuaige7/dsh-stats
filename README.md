@@ -56,7 +56,7 @@ dsh plugin --profile web add -w @rongyi7/dsh-stats
 
 插件要求 Node.js 22 或更高；桌面端自带运行时，不需要另外安装 Node。
 
-npm 上的稳定版是 `0.5.0`（2026-10-21 发布），桌面端和 Web 都可以直接安装，下面的界面说明按这个版本写。`0.5.0` 在 DSH `0.2.1-rc.2` 上完成了模块契约、浏览器夹具和真实 Web 验证。`0.4.3` 声明的 Harness peer 范围虽然也覆盖 `0.2.1-rc.2`（宿主检查允许预发布版本参与，因此会被加载），但验证只做到 `0.2.0-rc.2`；升级到 `0.5.0` 才是已验证的组合。
+npm 上的稳定版是 `0.5.1`（2026-10-23 发布），桌面端和 Web 都可以直接安装，下面的界面说明按这个版本写。`0.5.1` 是 `0.5.0` 的修正版本：界面和价格目录不变，peer 范围不变，RPC 只新增一个可选字段（旧数据仍然合法），主要修的是统计、计价和状态判断里的边界错误。`0.4.3` 声明的 Harness peer 范围虽然也覆盖 `0.2.1-rc.2`（宿主检查允许预发布版本参与，因此会被加载），但验证只做到 `0.2.0-rc.2`；升级到 `0.5.1` 才是已验证的组合。
 
 固定版本、本地 tarball、注册验证、升级卸载和 pnpm 排错，见[使用指南的安装部分](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md#1-安装)。
 
@@ -171,7 +171,7 @@ npm test
 - [使用指南](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md)（中文）· [Usage guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md)（English）
 - [动态价格设计与维护](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/pricing-updates.md)
 - [兼容性矩阵](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/compatibility.md)
-- [0.5.0 发布说明](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/release-0.5.0.md)
+- [0.5.1 发布说明](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/release-0.5.1.md) · [0.5.0 发布说明](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/release-0.5.0.md)
 
 ## 🙌 参与与许可
 
