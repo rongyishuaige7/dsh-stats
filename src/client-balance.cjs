@@ -119,8 +119,9 @@ function QuotaMeter(props) {
 	const name = windowName(window.kind, t);
 	const percent = fmtQuotaPercent(window.remainingPercent);
 	const level = quotaLevel(window.remainingPercent);
-	const hasReset = window.resetsAt != null && Number.isFinite(window.resetsAt);
-	const reset = resetText(resetParts(window.resetsAt, props.now), t);
+	const now = Number.isFinite(props.now) ? props.now : Date.now();
+	const hasReset = window.resetsAt != null && Number.isFinite(window.resetsAt) && window.resetsAt >= now;
+	const reset = resetText(resetParts(window.resetsAt, now), t);
 	const label = hasReset
 		? fill(t("balance.meterLabelReset"), [name, percent.text, fmtClock(window.resetsAt)])
 		: fill(t("balance.meterLabel"), [name, percent.text]);
@@ -170,7 +171,9 @@ function AccountMain(props) {
 	const nodes = [];
 
 	if (account.mode === "subscription") {
-		const windows = Array.isArray(account.windows) ? account.windows : [];
+		const windows = (Array.isArray(account.windows) ? account.windows : []).filter(function(window) {
+			return window && typeof window === "object";
+		});
 		if (!windows.length) {
 			nodes.push(e("div", { className: "dss-bal-amt-line", key: "amt" },
 				e("span", { className: "dss-bal-amt is-none" }, "—")));
@@ -330,7 +333,7 @@ function BalanceAlert(props) {
 }
 
 function alertBell(account, props) {
-	if (account.mode !== "balance" || !account.balance) return null;
+	if (account.mode !== "balance" || !account.balance || account.balance.unlimited === true) return null;
 	const alert = alertFor(account, props.alerts);
 	const name = account.displayName || account.id;
 	const label = alert
