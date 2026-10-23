@@ -228,6 +228,13 @@ function projectionCheckpoint(entry, sessionId, header, warnings, domainVersion)
 			warnings.push({ code: "SESSION_CACHE_ROW_VERSION_UNSUPPORTED", sessionId, message: `projection row ${key} version ${row.ver} is not supported` });
 			continue;
 		}
+		if (key === "statsRoute") {
+			const lifecycleMismatch = projectionLifecycleMismatch(row.val, entry?.identity, header);
+			if (lifecycleMismatch) {
+				warnings.push({ code: "SESSION_CACHE_LIFECYCLE_MISMATCH", sessionId, message: `projection cache ${lifecycleMismatch} did not match the session lifecycle` });
+				continue;
+			}
+		}
 		checkpoint[key] = { ver: row.ver, seq: row.seq, val: row.val };
 	}
 	return checkpoint;
@@ -293,7 +300,7 @@ function routeProjectionSchema(value) {
 function routeProjectionStateSchema(value) {
 	const record = objectRecord(value);
 	if (!record || !objectRecord(record.routeTree) || !Number.isSafeInteger(record.inheritedEventCount) || record.inheritedEventCount < 0) throw new TypeError("invalid statsRoute state");
-	routeProjectionSchema(routeProjectionView(record));
+	routeProjectionSchema({ ...routeProjectionView(record), current: record.current });
 	if (record.last !== null) {
 		if (!objectRecord(record.last) || typeof record.last.key !== "string" || typeof record.last.routeKey !== "string") throw new TypeError("invalid statsRoute last sample");
 		for (const field of ["uncached", "output", "cacheRead", "cacheWrite", "reasoning"]) {
@@ -472,7 +479,9 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 		}
 	}
 	header = header || firstHeader;
-	const count = inheritedCount(header, quality.inheritedEventCount ?? seedMarker?.seq);
+	// The end-seed marker itself is declared inherited (data.inherited === true),
+	// so the inherited count is its sequence index plus one, not the index.
+	const count = inheritedCount(header, quality.inheritedEventCount ?? (seedMarker ? seedMarker.seq + 1 : undefined));
 	const unknownSeed = header?.isSeeded === true && quality.inheritedEventCount === undefined && !seedMarker && !Number.isSafeInteger(header.seedLength) && !Number.isSafeInteger(header.inheritedEventCount);
 	const times = [];
 	const activityTimes = [];
@@ -480,8 +489,8 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 	let currentProvider = "unknown";
 	let currentAccountType = "api";
 	let currentServiceTier = "standard";
-	let origin = typeof header?.origin === "string" ? header.origin : null;
-	let parentSession = typeof header?.parentSession === "string" ? header.parentSession : null;
+	let origin = firstString(header?.origin);
+	let parentSession = firstString(header?.parentSession);
 	let seedLength = Number.isSafeInteger(header?.seedLength) && header.seedLength >= 0 ? header.seedLength : null;
 	let firstOwnSeq = count;
 	const usageByStep = new Map();
@@ -553,8 +562,8 @@ function* deriveSessionInfoSteps(rawEvents, header = null, quality = {}, limits 
 		if (ev.type === "session") {
 			if ((ev.origin != null && typeof ev.origin !== "string") || (ev.parentSession != null && typeof ev.parentSession !== "string")
 				|| (ev.seedLength != null && (!Number.isSafeInteger(ev.seedLength) || ev.seedLength < 0))) malformedRecords++;
-			origin = typeof ev.origin === "string" ? ev.origin : origin;
-			parentSession = typeof ev.parentSession === "string" ? ev.parentSession : parentSession;
+			origin = firstString(ev.origin, origin);
+			parentSession = firstString(ev.parentSession, parentSession);
 			seedLength = Number.isSafeInteger(ev.seedLength) && ev.seedLength >= 0 ? ev.seedLength : seedLength;
 			firstOwnSeq = Math.max(firstOwnSeq, inheritedCount(ev));
 		} else if (ev.type === "request/header") {
@@ -763,7 +772,11 @@ async function officialProjectionValues(ctx, source, entry, warnings, sessionId,
 			const checkpoint = projectionCheckpoint(entry, sessionId, source?.header, warnings, domainVersion);
 			const floor = projections.restoreFloor(checkpoint);
 			if (floor !== undefined) {
-				const suffix = await persistence.readFrom(sessionId, floor);
+				let suffix;
+				try { suffix = await persistence.readFrom(sessionId, floor); }
+				catch (error) {
+					warnings.push({ code: "OFFICIAL_PROJECTION_FAILED", sessionId, message: error?.message || String(error) });
+				}
 				if (suffix && Array.isArray(suffix.events)) {
 					const header = source?.header || suffix.header || suffix.meta || suffix.session || entry?.identity;
 					const restored = projections.restore(checkpoint, suffix.events, floor, header, inheritedCount(header, suffix.inheritedEventCount ?? source?.inheritedEventCount));
