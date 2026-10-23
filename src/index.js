@@ -49,10 +49,8 @@ function finalizeWarnings(warnings) {
 		actionable.push(copy);
 	}
 	for (const warning of actionable) {
-		if (warning.count > 1) {
-			warning.message = `${warning.message} (${warning.count} occurrences)`;
-			delete warning.count;
-		}
+		if (warning.count > 1) warning.message = `${warning.message} (${warning.count} occurrences)`;
+		delete warning.count;
 	}
 	// A cache that is merely behind the log is expected: the log is authoritative
 	// and complete. An archived fork with no own usage has nothing attributable
