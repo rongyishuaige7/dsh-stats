@@ -525,7 +525,7 @@ async function hasCredential(credentials, ref) {
 	try {
 		return !!(await resolveCredential(credentials, ref));
 	} catch {
-		return "";
+		return false;
 	}
 }
 
