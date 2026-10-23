@@ -38,9 +38,11 @@ function rangeText(dates, today, t) {
 }
 
 // 摘要条日均：保留原摘要的 status，部分计价也带"*"。
-function averageText(totals, activeDays, t) {
+function averageText(totals, activeDays, metric, t) {
+	if (activeDays <= 0) return "—";
+	if (metric === "token") return fmtTokens(totals.tokens / activeDays);
 	const amount = amountOf(totals.cost);
-	if (activeDays <= 0 || amount == null) return "—";
+	if (amount == null) return "—";
 	return fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: amount / activeDays, exactAmount: 0, estimatedAmount: 0 }] }, t);
 }
 
@@ -104,7 +106,7 @@ function TrendsKpis(props) {
 	const sub = [];
 	const delta = costDelta(totals.cost, previous && previous.cost);
 	if (delta) {
-		const pct = Math.round(delta.ratio * 100);
+		const pct = Math.round(delta.ratio * 100 + Math.sign(delta.ratio) * 1e-9);
 		sub.push(e("span", { key: "delta", className: "dss-kpi-delta" },
 			pct === 0 ? t("kpi.flat") : t("tr.kpi.vs").replace("%d", String(range)) + " " + (pct > 0 ? "↑" : "↓") + Math.abs(pct) + "%"));
 	}
@@ -147,7 +149,7 @@ function TrendsKpis(props) {
 		),
 		e("div", { className: "dss-kpi" },
 			e("div", { className: "dss-kpi-k" }, t("tr.kpi.perDay")),
-			e("div", { className: "dss-kpi-v" }, averageText(totals, activeDays, t)),
+			e("div", { className: "dss-kpi-v" }, averageText(totals, activeDays, metric, t)),
 			e("div", { className: "dss-kpi-s" }, e("span", null, t("tr.kpi.active").replace("%d", String(activeDays)).replace("%d", String(totals.days))))
 		),
 		e("div", { className: "dss-kpi" },
@@ -422,7 +424,7 @@ function Heatmap(props) {
 					e("dt", null, t("tr.stat.longest")),
 					e("dd", null, t("tl.days").replace("%d", String(stats.longest)),
 						stats.longest > 0 && stats.longestStart && stats.longestEnd
-							? e("span", { className: "dss-tr-stat-sub" }, t("tl.rangeValue").replace("%s", stats.longestStart.slice(5)).replace("%s", stats.longestEnd.slice(5)))
+							? e("span", { className: "dss-tr-stat-sub" }, rangeText([stats.longestStart, stats.longestEnd], today, t))
 							: null)
 				)
 			)
