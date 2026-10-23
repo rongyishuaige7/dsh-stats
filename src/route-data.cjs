@@ -10,12 +10,13 @@ const rowCache = new WeakMap();
 const identityCache = new WeakMap();
 
 function compareRoutes(a, b) {
-	if (a.slot !== b.slot) return a.slot - b.slot;
+	const slotA = a.slot ?? 0, slotB = b.slot ?? 0;
+	if (slotA !== slotB) return slotA - slotB;
 	for (const field of ["providerId", "model", "accountType", "serviceTier"]) {
 		const left = String(a[field] ?? ""), right = String(b[field] ?? "");
 		if (left !== right) return left < right ? -1 : 1;
 	}
-	return a.contextTokens - b.contextTokens;
+	return (a.contextTokens ?? 0) - (b.contextTokens ?? 0);
 }
 
 function updateRoute(tree, key, update) {
@@ -24,11 +25,12 @@ function updateRoute(tree, key, update) {
 	function visit(node, depth) {
 		const next = { ...node };
 		if (depth === hash.length) {
-			previous = node?.[key];
+			previous = node && Object.prototype.hasOwnProperty.call(node, key) ? node[key] : undefined;
 			const value = update(previous);
-			replacement = value === null ? null : Object.freeze(value);
+			replacement = value === null ? null : Object.isFrozen(value) ? value : Object.freeze({ ...value });
 			if (value === null) delete next[key];
-			else next[key] = value;
+			else Object.defineProperty(next, key, { value: replacement, enumerable: true, configurable: true, writable: true });
+			if (!Object.prototype.hasOwnProperty.call(next, key)) replacement = null;
 		} else {
 			const child = visit(node?.[hash[depth]], depth + 1);
 			if (Object.keys(child).length) next[hash[depth]] = child;
