@@ -2,7 +2,7 @@
 const react = require("react");
 const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 const { fmtClock } = require("./client-format.cjs");
-const { MenuButton, MenuItem, useLayer } = require("./client-dialog.cjs");
+const { MenuButton, MenuItem, useLayer, trapTab } = require("./client-dialog.cjs");
 const { PricingPanel, PricingErrorBoundary } = require("./pricing-panel.cjs");
 const { IconDownload, IconChevronDown, IconInfo, IconWarning } = require("./client-icons.cjs");
 
@@ -101,7 +101,9 @@ function PricingDrawer({ open, focusModel, opener, gear, rootRef, onClose, remot
 		return function() {
 			if (!restoreRef.current) return;
 			restoreRef.current = false;
-			var next = opener && opener.isConnected ? opener : gear;
+			var body = typeof document !== "undefined" ? document.body : null;
+			var next = opener && opener !== body && opener.isConnected ? opener : gear;
+			if ((!next || !next.isConnected || typeof next.focus !== "function") && typeof document !== "undefined" && typeof document.querySelector === "function") next = document.querySelector(".dss-trigger");
 			if (next && next.isConnected && typeof next.focus === "function") next.focus();
 		};
 	}, [open, opener, gear]);
@@ -113,7 +115,8 @@ function PricingDrawer({ open, focusModel, opener, gear, rootRef, onClose, remot
 			role: "dialog",
 			"aria-modal": "true",
 			"aria-labelledby": "dss-drawer-title",
-			ref: asideRef
+			ref: asideRef,
+			onKeyDown: function(event) { trapTab(event, asideRef.current); }
 		},
 			e("div", { className: "dss-drawer-head" },
 				e("h3", { id: "dss-drawer-title" }, t("price.title")),
