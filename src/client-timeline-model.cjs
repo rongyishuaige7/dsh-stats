@@ -234,7 +234,7 @@ function sessionDaySlots(session, date) {
 			const slot = row.slot - base;
 			if (slot < 0 || slot >= 48) return;
 			const entry = usage.get(slot) || { tokens: 0, details: [], summaries: [] };
-			entry.tokens += (Number(row.uncached) || 0) + (Number(row.cacheRead) || 0) + (Number(row.cacheWrite) || 0) + (Number(row.output) || 0);
+			entry.tokens += Math.max(0, Number(row.uncached) || 0) + Math.max(0, Number(row.cacheRead) || 0) + Math.max(0, Number(row.cacheWrite) || 0) + Math.max(0, Number(row.output) || 0);
 			entry.details.push(usageCostDetail(row, session.modelRaw || session.model, session.providerId, session.accountType));
 			usage.set(slot, entry);
 		});
