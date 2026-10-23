@@ -107,8 +107,8 @@ function encodeSegment(raw) {
 }
 
 function* expandStorageRecord(record, remaining = Infinity, eventLimit = LEGACY_LOG_LIMITS.events) {
-	if (remaining < 1) throw logLimitError("expanded events", eventLimit);
 	if (!record || typeof record !== "object") { yield record; return; }
+	if (remaining < 1) throw logLimitError("expanded events", eventLimit);
 	const type = record.type;
 	if (type !== "text-chunks" && type !== "reasoning-chunks" && type !== "tool-call-chunks") { yield record; return; }
 	const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
@@ -325,6 +325,22 @@ function routeProjectionValueFromEntry(entry, sessionId, header, warnings, domai
 	if (versioned && !isSupportedRowVersion("statsRoute", row.ver)) {
 		warnings.push({ code: "SESSION_CACHE_ROW_VERSION_UNSUPPORTED", sessionId, message: `projection row statsRoute version ${String(row.ver)} is not supported` });
 		return null;
+	}
+	const identity = objectRecord(entry?.identity);
+	if (identity) {
+		if (identity.id !== undefined && identity.id !== sessionId) {
+			warnings.push({ code: "SESSION_CACHE_IDENTITY_MISMATCH", sessionId, message: "projection cache identity id did not match the requested session" });
+			return null;
+		}
+		if (header?.id && identity.id && identity.id !== header.id) return null;
+		if (header?.cwd !== undefined && identity.cwd !== undefined && identity.cwd !== header.cwd) {
+			warnings.push({ code: "SESSION_CACHE_CWD_MISMATCH", sessionId, message: "projection cache cwd did not match the session header" });
+			return null;
+		}
+		if (header?.createdAt !== undefined && identity.createdAt !== undefined && identity.createdAt !== header.createdAt) {
+			warnings.push({ code: "SESSION_CACHE_CREATED_AT_MISMATCH", sessionId, message: "projection cache createdAt did not match the session header" });
+			return null;
+		}
 	}
 	const value = row.val;
 	try {
@@ -820,6 +836,7 @@ function infoFromProjectionValues(values, entry, warnings = null, sessionId = nu
 	}
 	const routeTimes = routeRows.map((row) => row.time).filter((value) => Number.isFinite(value) && value >= 0);
 	const times = [createdAt, lastPromptAt, ...routeTimes].filter((value, index, list) => value !== null && list.indexOf(value) === index).sort((a, b) => a - b);
+	const activityTimes = [lastPromptAt, ...routeTimes].filter((value, index, list) => value !== null && list.indexOf(value) === index).sort((a, b) => a - b);
 	const usages = routeRows.map((row) => ({
 		time: row.time,
 		model: row.model,
@@ -841,7 +858,7 @@ function infoFromProjectionValues(values, entry, warnings = null, sessionId = nu
 	// are displayed under the same model as the event-based path.
 	const current = routeData.primaryRoute(usages, objectRecord(routeProjection?.current) || {});
 	return {
-		times, activityTimes: times,
+		times, activityTimes,
 		lastTime: times.length ? times.at(-1) : null,
 		model: firstString(current.model, metadata.model, identity.model),
 		providerId: firstString(current.providerId, metadata.providerId, identity.providerId) || "unknown",
@@ -897,7 +914,7 @@ const sessionInfoCache = new Map(); // filePath -> { mtimeMs, ctimeMs, size, ino
 const SESSION_CACHE_LIMITS = { entries: 300, bytes: 32 * 1024 * 1024 };
 let sessionCacheBytes = 0;
 function sessionInfoBytes(info) {
-	return 256 + info.times.length * 8 + info.usages.length * 200 + info.slotStats.length * 200 + (info.header ? 512 : 0);
+	return 256 + info.times.length * 8 + info.activityTimes.length * 8 + info.usages.length * 200 + info.slotStats.length * 200 + (info.header ? 512 : 0);
 }
 function forgetSessionInfo(file) {
 	const old = sessionInfoCache.get(file);
