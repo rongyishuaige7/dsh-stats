@@ -178,8 +178,8 @@ function ruleDetails(rule, t) {
     )),
     note ? e('p', { className: 'dss-price-note' }, note) : null,
     rule.timeOfUse ? e('p', { className: 'dss-price-note' }, 'Asia/Shanghai · ' + rule.timeOfUse.calendar.from + ' – ' + rule.timeOfUse.calendar.to, ' · ', e('a', { href: rule.timeOfUse.calendar.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗')) : null,
-    rule.contextThreshold ? e('p', { className: 'dss-price-note' }, t('price.threshold') + ': ' + (rule.contextThreshold >= 1000 ? (rule.contextThreshold / 1000) + 'k' : rule.contextThreshold)) : null,
-    rule.tierMultipliers ? e('p', { className: 'dss-price-note' }, Object.entries(rule.tierMultipliers).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
+    rule.contextThreshold != null ? e('p', { className: 'dss-price-note' }, t('price.threshold') + ': ' + (rule.contextThreshold >= 1000 ? (rule.contextThreshold / 1000) + 'k' : rule.contextThreshold)) : null,
+    rule.tierMultipliers && Object.values(rule.tierMultipliers).some(value => value !== 1) ? e('p', { className: 'dss-price-note' }, Object.entries(rule.tierMultipliers).filter(([, value]) => value !== 1).map(([k, v]) => k + ' ×' + v).join(' · ')) : null,
     rule.effectiveFrom ? e('p', { className: 'dss-price-note' }, t('price.from') + ': ' + fmtBeijing(rule.effectiveFrom) + ' ' + t('price.beijing')) : null,
     rule.effectiveTo ? e('p', { className: 'dss-price-note' }, t('price.to') + ': ' + fmtBeijing(rule.effectiveTo) + ' ' + t('price.beijing')) : null,
     rule.observedFrom ? e('p', { className: 'dss-price-note' }, t('price.observed') + ': ' + fmtBeijing(rule.observedFrom) + ' ' + t('price.beijing')) : null);
