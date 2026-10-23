@@ -1,6 +1,6 @@
 // Pure overview calculations shared by the React view and unit tests.
 // No React, DOM or browser storage belongs in this module.
-const { mergeCostSummaries, projectCostSummary, sessionCounts } = require("./client-format.cjs");
+const { mergeCostSummaries, projectCostSummary, sessionCounts, usageCostDetail } = require("./client-format.cjs");
 
 function overviewTotals(projects) {
 	var list = Array.isArray(projects) ? projects : [];
@@ -58,6 +58,7 @@ function costDelta(current, previous) {
 	var previousAmount = cnyAmount(previous);
 	if (currentAmount == null || previousAmount == null || previousAmount <= 0) return null;
 	var ratio = (currentAmount - previousAmount) / previousAmount;
+	if (Math.abs(ratio) < 1e-9) ratio = 0;
 	return { ratio, direction: ratio > 0 ? "up" : ratio < 0 ? "down" : "flat" };
 }
 
@@ -89,7 +90,7 @@ function activeDayCount(timeline, hidden) {
 	var days = (timeline && Array.isArray(timeline.days)) ? timeline.days : [];
 	var flags = hidden && typeof hidden === "object" ? hidden : {};
 	return days.filter(function(day) {
-		return ((day && day.slotBlocks) || []).some(function(block) { return block && !flags[block.projectId]; });
+		return ((day && day.slotBlocks) || []).some(function(block) { return block && !(Object.prototype.hasOwnProperty.call(flags, block.projectId) && flags[block.projectId]); });
 	}).length;
 }
 
@@ -152,11 +153,18 @@ function missingModels(projects) {
 	(Array.isArray(projects) ? projects : []).forEach(function(project) {
 		((project && project.sessions) || []).forEach(function(session) {
 			((session && session.slotUsage) || []).forEach(function(usage) {
-				if (!usage || !(usage.cost && usage.cost.unpricedTokens > 0) || usage.cost.status === "subscription") return;
+				if (!usage) return;
 				var model = usage.modelRaw || usage.model || (session && (session.modelRaw || session.model));
+				var cost = usageCostDetail(usage, {
+					providerId: usage.providerId || (session && session.providerId),
+					model: model,
+					serviceTier: usage.serviceTier || (session && session.serviceTier),
+					contextTokens: usage.contextTokens != null ? usage.contextTokens : (session && session.contextTokens)
+				});
+				if (!cost || !(cost.unpricedTokens > 0) || cost.status === "subscription") return;
 				var key = JSON.stringify([usage.providerId, model]);
 				var row = rows.get(key) || { provider: usage.providerId, model: model, tokens: 0 };
-				row.tokens += usage.cost.unpricedTokens;
+				row.tokens += cost.unpricedTokens;
 				rows.set(key, row);
 			});
 		});
