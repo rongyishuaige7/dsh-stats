@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101832,
-  "publishedAt": "2026-10-24T17:41:58.036Z",
+  "version": 2026101833,
+  "publishedAt": "2026-10-24T22:04:30.507Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -20032,7 +20032,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-24T11:20:08.524Z"
+      "effectiveFrom": "2026-10-24T11:20:08.524Z",
+      "effectiveTo": "2026-10-24T22:04:30.507Z"
     },
     {
       "id": "openrouter/deepseek/deepseek-v4-pro@2026-10-24T11:20:08.524Z",
@@ -20140,6 +20141,47 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-24T17:41:58.036Z"
+    },
+    {
+      "id": "openrouter/liquid/lfm-2.5-2.6b@2026-10-24T22:04:30.507Z",
+      "family": "openrouter",
+      "canonical": "liquid/lfm-2.5-2.6b",
+      "aliases": [
+        "liquid/lfm-2.5-2.6b"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-24",
+      "observedFrom": "2026-10-24T22:04:30.507Z",
+      "rates": {
+        "uncached": 0.35,
+        "output": 0.5,
+        "cacheRead": 0.04,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-24T22:04:30.507Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-24",
+      "observedFrom": "2026-10-24T22:04:30.507Z",
+      "rates": {
+        "uncached": 0.2261,
+        "output": 7.700099999999999,
+        "cacheRead": 0.22,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-24T22:04:30.507Z"
     }
   ],
   "fx": [
