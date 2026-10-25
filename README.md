@@ -17,6 +17,8 @@ DSH Usage 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness
 
 界面品牌叫 **DSH Usage**，安装包名仍是 **`@rongyi7/dsh-stats`**（沿用已安装 profile 的依赖名），两者是同一个插件。
 
+> **和其它用量插件的关系**：本项目只在侧边栏底部加一个「用量」入口，面板是独立浮层，不占用会话输入区、不改动会话界面。已经装了会话级费用挂件的用户可以直接叠加：它们回答「这一轮花了多少」，这里回答「这个月在各项目上花了多少」。
+
 <p align="center">
   <a href="https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/images/overview.png"><img src="https://raw.githubusercontent.com/rongyishuaige7/dsh-stats/main/docs/images/hero-overview.png" alt="浅色模式的项目总览：预估费用、Token 构成与项目表" width="100%"></a>
   <br>
