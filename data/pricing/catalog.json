@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101837,
-  "publishedAt": "2026-10-25T17:26:11.445Z",
+  "version": 2026101838,
+  "publishedAt": "2026-10-25T22:08:50.793Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -20335,7 +20335,29 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-25T17:26:11.445Z"
+      "effectiveFrom": "2026-10-25T17:26:11.445Z",
+      "effectiveTo": "2026-10-25T22:08:50.793Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-25T22:08:50.793Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-25",
+      "observedFrom": "2026-10-25T22:08:50.793Z",
+      "rates": {
+        "uncached": 0.15200000000000002,
+        "output": 16,
+        "cacheRead": 0.142,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-25T22:08:50.793Z"
     }
   ],
   "fx": [
