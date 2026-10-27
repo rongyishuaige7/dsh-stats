@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101847,
-  "publishedAt": "2026-10-27T16:57:34.100Z",
+  "version": 2026101848,
+  "publishedAt": "2026-10-27T21:05:08.951Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -21000,7 +21000,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-27T11:35:42.740Z"
+      "effectiveFrom": "2026-10-27T11:35:42.740Z",
+      "effectiveTo": "2026-10-27T21:05:08.951Z"
     },
     {
       "id": "openrouter/z-ai/glm-4.6v@2026-10-27T11:35:42.740Z",
@@ -21042,7 +21043,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-27T16:57:34.100Z"
+      "effectiveFrom": "2026-10-27T16:57:34.100Z",
+      "effectiveTo": "2026-10-27T21:05:08.951Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-27T16:57:34.100Z",
@@ -21063,7 +21065,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-27T16:57:34.100Z"
+      "effectiveFrom": "2026-10-27T16:57:34.100Z",
+      "effectiveTo": "2026-10-27T21:05:08.951Z"
     },
     {
       "id": "openrouter/deepseek/deepseek-v4-flash@2026-10-27T16:57:34.100Z",
@@ -21106,6 +21109,89 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-27T16:57:34.100Z"
+    },
+    {
+      "id": "openrouter/prism-ml/ternary-bonsai-2-9b@2026-10-27T21:05:08.951Z",
+      "family": "openrouter",
+      "canonical": "prism-ml/ternary-bonsai-2-9b",
+      "aliases": [
+        "prism-ml/ternary-bonsai-2-9b"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-27",
+      "observedFrom": "2026-10-27T21:05:08.951Z",
+      "rates": {
+        "uncached": 0.08,
+        "output": 0.13,
+        "cacheRead": 0.04,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k3@2026-10-27T21:05:08.951Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k3",
+      "aliases": [
+        "moonshotai/kimi-k3"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-27",
+      "observedFrom": "2026-10-27T21:05:08.951Z",
+      "rates": {
+        "uncached": 0.179,
+        "output": 11.5,
+        "cacheRead": 0.16899999999999998,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-27T21:05:08.951Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-27T21:05:08.951Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-27",
+      "observedFrom": "2026-10-27T21:05:08.951Z",
+      "rates": {
+        "uncached": 0.179,
+        "output": 11.5,
+        "cacheRead": 0.16899999999999998,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-27T21:05:08.951Z"
+    },
+    {
+      "id": "openrouter/google/gemma-4-26b-a4b-it@2026-10-27T21:05:08.951Z",
+      "family": "openrouter",
+      "canonical": "google/gemma-4-26b-a4b-it",
+      "aliases": [
+        "google/gemma-4-26b-a4b-it"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-27",
+      "observedFrom": "2026-10-27T21:05:08.951Z",
+      "rates": {
+        "uncached": 0.0765,
+        "output": 0.255,
+        "cacheRead": 0.042499999999999996,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-27T21:05:08.951Z"
     }
   ],
   "fx": [
