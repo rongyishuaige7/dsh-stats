@@ -29,9 +29,19 @@ DSH Usage 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness
 
 ## 📦 安装
 
-插件装进 DSH 的 profile。桌面端和 Web 是两个 profile（`desktop`、`web`），装到其中一个不会同时装到另一个。命令里的 `-w` 是 pnpm 的 workspace 安装选项，不是文件路径。
+插件装进 DSH 的 profile。桌面端和 Web 是两个 profile（`desktop`、`web`），装到其中一个不会同时装到另一个。
 
-### 桌面端
+### 推荐：插件市场（DSH 0.2.1 及以上）
+
+在「设置 → 插件市场」搜索 **`dsh-stats`**，一键安装。
+
+市场列表来自 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)，本插件已收录，[条目页在此](https://awesome-dsh-plugin.com/p/rongyishuaige7/dsh-stats/)。如果市场里一时搜不到，通常是本地还没同步到最新索引（索引每天更新一次），用下面的命令行方式安装即可。
+
+### 命令行安装
+
+两条命令里的 `-w` 是 pnpm 的 workspace 安装选项，不是文件路径。
+
+#### 桌面端
 
 用桌面应用自带的 CLI 安装（macOS 路径如下，其他系统用应用目录里对应的 `dsh`）：
 
@@ -44,7 +54,7 @@ DSH Usage 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness
 
 桌面 profile 由应用自己管理：用 npm 单独安装的 `dsh` 会直接拒绝操作 `desktop` profile。更多细节见[使用指南](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.md#11-桌面端)。
 
-### Web
+#### Web
 
 ```bash
 dsh plugin --profile web add -w @rongyi7/dsh-stats

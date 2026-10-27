@@ -27,9 +27,19 @@ The UI brand is **DSH Usage**; the install package is still **`@rongyi7/dsh-stat
 
 ## 📦 Installation
 
-The plugin installs into a DSH profile. The desktop app and Web are separate profiles (`desktop` and `web`); installing into one does not install into the other. The `-w` flag is pnpm's workspace install option, not a file path.
+The plugin installs into a DSH profile. The desktop app and Web are separate profiles (`desktop` and `web`); installing into one does not install into the other.
 
-### Desktop app
+### Recommended: plugin market (DSH 0.2.1+)
+
+Open **Settings → Plugin market**, search for **`dsh-stats`**, and install in one click.
+
+The market lists come from [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin), where this plugin is now listed ([entry](https://awesome-dsh-plugin.com/p/rongyishuaige7/dsh-stats/)). If the market does not show it yet, your local index has not synced (it updates once a day) — use the command line below instead.
+
+### Command line
+
+The `-w` flag in both commands is pnpm's workspace install option, not a file path.
+
+#### Desktop app
 
 Install with the CLI bundled with the desktop app (macOS path below; on other systems use the matching `dsh` inside the app directory):
 
@@ -42,7 +52,7 @@ Then quit DSH completely (Cmd+Q on macOS, not just closing the window) and open 
 
 The desktop profile is managed by the app itself: a `dsh` installed separately from npm refuses to operate on the `desktop` profile. See the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#11-desktop-app) for details.
 
-### Web
+#### Web
 
 ```bash
 dsh plugin --profile web add -w @rongyi7/dsh-stats
