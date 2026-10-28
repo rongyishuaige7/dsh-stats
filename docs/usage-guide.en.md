@@ -4,8 +4,7 @@ This guide covers installing `@rongyi7/dsh-stats` (UI brand **DSH Usage**), the 
 pricing, account queries, data sources and exports. For the introduction see the
 [README](../README.en.md); for architecture and data contracts see [DESIGN.md](../DESIGN.md).
 
-- Applies to: `0.5.1` (published 2026-10-23), on both the desktop app and Web.
-- `main` already carries `0.5.2` (pricing-update resilience, not yet published); npm still serves `0.5.1`, so the install commands below target npm.
+- Applies to: `0.5.2` (published 2026-10-28), on both the desktop app and Web.
 - Supported environments: the DSH desktop app and a DSH Web host.
 
 ## 1. Installation
@@ -69,14 +68,14 @@ dsh plugin --profile <name> add -w @rongyi7/dsh-stats
 Pin a published version (the current stable release in this example):
 
 ```bash
-dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.1
+dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.2
 ```
 
 Install a tarball built locally with `npm pack`. The desktop app uses its bundled CLI here too:
 
 ```bash
 "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
-  --profile desktop add -w ./rongyi7-dsh-stats-0.5.1.tgz
+  --profile desktop add -w ./rongyi7-dsh-stats-0.5.2.tgz
 ```
 
 The file name follows the version. For the desktop app, use the §1.1 command with the tarball path
@@ -130,23 +129,23 @@ Restart the host afterwards.
 
 | Item | Status (checked 2026-10-21) |
 | --- | --- |
-| npm stable | `0.5.1`, published 2026-10-23 |
+| npm stable | `0.5.2`, published 2026-10-28 |
 | Harness bundled in the desktop app | `0.2.1-rc.2` |
-| Plugin `0.5.1` declaration | `engines.dsh: >=0.1.0-rc.6 <0.3.0`, plus peer ranges |
+| Plugin `0.5.2` declaration | `engines.dsh: >=0.1.0-rc.6 <0.3.0`, plus peer ranges |
 | Plugin `0.4.3` declaration | No `engines.dsh`; peer ranges up to `^0.2.0-rc.2` |
 
 Before loading a plugin, the host checks compatibility: an own `engines.dsh` range decides alone, and
 only without one does it check every `@deepseek-ai/dsh*` peer range. Both checks let prereleases
 participate (`includePrerelease`). So:
 
-- `0.5.1` declares an `engines.dsh` range that covers `0.2.1-rc.2`, so it loads.
+- `0.5.2` declares an `engines.dsh` range that covers `0.2.1-rc.2`, so it loads.
 - `0.4.3` has no `engines.dsh`, and although its peers stop at `^0.2.0-rc.2`, prereleases participate
   in the comparison, so `0.2.1-rc.2` still falls inside the range and it is **allowed to load**.
 
 Loading is not acceptance. `0.4.3` was verified through `0.2.0-rc.2` by module contracts and browser
-fixtures; the plugin version with a real Web run on `0.2.1-rc.2` is `0.5.0`, and `0.5.1` reuses the
+fixtures; the plugin version with a real Web run on `0.2.1-rc.2` is `0.5.0`, and `0.5.2` reuses the
 same contract and browser-fixture checks. `0.4.3` still loads in the desktop app, but it is an
-unverified combination; upgrading to `0.5.1` is the verified path.
+unverified combination; upgrading to `0.5.2` is the verified path.
 
 Per-release real-host, module-contract and browser-fixture results are in the
 [compatibility matrix](compatibility.md). “Supports the desktop app” means the current release works
@@ -451,4 +450,4 @@ time (UTC+8), independent of the host machine's time zone.
 - [Pricing updates and maintenance](pricing-updates.md)
 - [Compatibility matrix](compatibility.md)
 - [Architecture and data contracts](../DESIGN.md)
-- [0.5.1 release notes](release-0.5.1.md) · [0.5.1 release notes](release-0.5.1.md) · [0.5.0 release notes](release-0.5.0.md)
+- [0.5.2 release notes](release-0.5.2.md) · [0.5.1 release notes](release-0.5.1.md) · [0.5.0 release notes](release-0.5.0.md)

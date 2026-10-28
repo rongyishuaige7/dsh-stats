@@ -1,10 +1,9 @@
 # 0.5.2 release
 
-Patch release, prepared 2026-10-28. Pricing-catalog update resilience only: no
+Patch release, 2026-10-28. Pricing-catalog update resilience only: no
 new models, no interface redesign, no peer-range change, no dependency change.
 
-**Status: prepared on `main`, not yet published.** npm `latest` remains `0.5.1`
-until `v0.5.2` is tagged; the upgrade commands at the end apply after that.
+**Status: published 2026-10-28 as `v0.5.2`; npm `latest` points at it.**
 
 ## Why
 
@@ -75,7 +74,7 @@ result gains five optional fields.
   release machine): envelope verifies and matches the shipped payload.
 - Built-in catalog: signed `2026101851` (979 rules), including `gpt-6.1-terra`.
 
-## Upgrade (after publishing)
+## Upgrade
 
 ```bash
 # Web

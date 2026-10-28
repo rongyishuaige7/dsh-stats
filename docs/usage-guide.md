@@ -4,8 +4,7 @@
 账户查询、数据来源与导出。入门介绍见 [README](../README.md)，架构与数据契约见
 [DESIGN.md](../DESIGN.md)。
 
-- 适用版本：`0.5.1`（2026-10-23 发布），桌面端和 Web 通用。
-- 主分支已包含 `0.5.2`（价格目录更新韧性，待发布）；npm 稳定版仍是 `0.5.1`，下面的安装命令按 npm 写。
+- 适用版本：`0.5.2`（2026-10-28 发布），桌面端和 Web 通用。
 - 支持环境：DSH 桌面端、DSH Web 宿主。
 
 ## 1. 安装
@@ -67,14 +66,14 @@ dsh plugin --profile <name> add -w @rongyi7/dsh-stats
 固定到已发布的版本（示例为当前稳定版）：
 
 ```bash
-dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.1
+dsh plugin --profile web add -w @rongyi7/dsh-stats@0.5.2
 ```
 
 安装本地构建的 tarball（`npm pack` 生成）。桌面端同样使用自带 CLI：
 
 ```bash
 "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin \
-  --profile desktop add -w ./rongyi7-dsh-stats-0.5.1.tgz
+  --profile desktop add -w ./rongyi7-dsh-stats-0.5.2.tgz
 ```
 
 上面的文件名随版本变化。桌面端安装时，把 §1.1 命令里的包名换成 tarball 路径即可。
@@ -124,21 +123,21 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 
 | 项目 | 当前状态（2026-10-28 核对） |
 | --- | --- |
-| npm 稳定版 | `0.5.1`，2026-10-23 发布 |
+| npm 稳定版 | `0.5.2`，2026-10-28 发布 |
 | 桌面版内置 Harness | `0.2.1-rc.2` |
-| 插件 `0.5.1` 的声明 | `engines.dsh: >=0.1.0-rc.6 <0.3.0`，另有 peer 范围 |
+| 插件 `0.5.2` 的声明 | `engines.dsh: >=0.1.0-rc.6 <0.3.0`，另有 peer 范围 |
 | 插件 `0.4.3` 的声明 | 无 `engines.dsh`；peer 范围写到 `^0.2.0-rc.2` |
 
 宿主加载插件前会检查兼容性：有 `engines.dsh` 时只看它，没有才逐条检查 `@deepseek-ai/dsh*`
 的 peer 范围，并且两者都允许预发布版本参与（`includePrerelease`）。因此：
 
-- `0.5.1` 的 `engines.dsh` 覆盖 `0.2.1-rc.2`，可以直接加载。
+- `0.5.2` 的 `engines.dsh` 覆盖 `0.2.1-rc.2`，可以直接加载。
 - `0.4.3` 没有 `engines.dsh`，peer 范围虽然只写到 `^0.2.0-rc.2`，但预发布版本参与比较，
   `0.2.1-rc.2` 仍落在范围内，所以也会被**允许加载**。
 
 允许加载不等于验收通过。`0.4.3` 的验证覆盖到 `0.2.0-rc.2`（模块契约与浏览器夹具）；
-在 `0.2.1-rc.2` 上完成真实 Web 验证的是 `0.5.0`；`0.5.1` 沿用同一组契约与浏览器夹具验证。
-`0.4.3` 在桌面端仍可加载，但属于未验收组合，建议升级到 `0.5.1`。
+在 `0.2.1-rc.2` 上完成真实 Web 验证的是 `0.5.0`；`0.5.2` 沿用同一组契约与浏览器夹具验证。
+`0.4.3` 在桌面端仍可加载，但属于未验收组合，建议升级到 `0.5.2`。
 
 逐版本的真机、模块契约与浏览器夹具结果见 [兼容性矩阵](compatibility.md)。
 “支持桌面端”指当前版本在桌面端可用，不代表所有历史版本和所有操作系统都做过真机验收。
@@ -405,4 +404,4 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 - [动态价格设计与维护](pricing-updates.md)
 - [兼容性矩阵](compatibility.md)
 - [架构与数据契约](../DESIGN.md)
-- [0.5.1 发布说明](release-0.5.1.md) · [0.5.1 发布说明](release-0.5.1.md) · [0.5.0 发布说明](release-0.5.0.md)
+- [0.5.2 发布说明](release-0.5.2.md) · [0.5.1 发布说明](release-0.5.1.md) · [0.5.0 发布说明](release-0.5.0.md)
