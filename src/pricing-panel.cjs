@@ -369,6 +369,23 @@ function CustomEditor({ draft, editingId, editorDirty, busy, conditionsOpen, t, 
         e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-cancel-editor', disabled: busy, onClick: onCancel }, t('price.cancelEditor')))));
 }
 
+// One place for the failure banner: the section body and the drawer header show the
+// same code, the underlying reason and when the next automatic attempt happens.
+function PricingError({ status, t }) {
+  if (!status || !status.error) return null;
+  const detail = status.errorDetail
+    ? e('div', { className: 'dss-price-error-row' }, t('price.errorDetail') + ': ' + status.errorDetail) : null;
+  const attempts = status.attempts > 0
+    ? e('div', { className: 'dss-price-error-row' }, fill(t, 'price.attempts', status.attempts)) : null;
+  const retry = status.nextCheckAt
+    ? e('div', { className: 'dss-price-error-row' }, fillText(t, 'price.retryScheduled', fmtBeijing(status.nextCheckAt) + ' ' + t('price.beijing'))) : null;
+  return e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
+    e('details', null,
+      e('summary', null, t('source.details')),
+      e('code', { className: 'dss-price-error-code' }, status.error),
+      detail, attempts, retry));
+}
+
 function UpdatesSection({ status, autoUpdate, busy, dirty, pinned, checking, snapshotLimit, t, historyRef, onAuto, onRefresh, onRollback, onShowMore }) {
   const snapshots = catalogSnapshotRows(status, snapshotLimit);
   const autoDirty = autoUpdate !== status.autoUpdate;
@@ -388,8 +405,7 @@ function UpdatesSection({ status, autoUpdate, busy, dirty, pinned, checking, sna
       e('div', { className: 'dss-price-sync-times' },
         e('span', null, t('price.lastCheck') + ': ' + lastCheck),
         e('span', null, t('price.lastSuccess') + ': ' + lastSuccess)),
-      status.error ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
-        e('details', null, e('summary', null, t('source.details')), status.error)) : null,
+      e(PricingError, { status, t }),
       e('label', { className: 'dss-price-auto' },
         e('input', { type: 'checkbox', 'data-action': 'price-auto', checked: autoUpdate, disabled: busy, onChange: ev => onAuto(ev.target.checked) }),
         ' ', t('price.auto'),
@@ -783,8 +799,7 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
       e('p', null, busy ? t('price.loading') : t('price.unavailable')),
       !busy && remote && error ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-retry-status', onClick: () => setStatusTick(n => n + 1) }, t('price.retry')) : null)
     : e(React.Fragment, null,
-      status.error && section !== 'updates' ? e('div', { className: 'dss-price-status-error', role: 'status' }, t('price.refreshFailed'),
-        e('details', null, e('summary', null, t('source.details')), status.error)) : null,
+      section !== 'updates' ? e(PricingError, { status, t }) : null,
       sectionContent);
   const commit = anyDirty ? e('div', { className: 'dss-price-commit' },
     e('p', { className: 'dss-price-commit-note' }, t('price.unsavedClose')),

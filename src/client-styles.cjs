@@ -199,6 +199,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-state p{margin:0 0 8px}
 	.dss-price-status-error{font-size:var(--dss-fs-sm);color:var(--dss-text-2);background:var(--dss-warn-soft);border:1px solid var(--dss-warn-line);border-radius:7px;padding:7px 9px;margin:0 0 10px;overflow-wrap:anywhere}
 	.dss-price-status-error details{margin:4px 0 0}
+	.dss-price-error-code{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--dss-fs-xs);color:var(--dss-text-3);margin:4px 0 0;overflow-wrap:anywhere}
+	.dss-price-error-row{font-size:var(--dss-fs-xs);color:var(--dss-text-3);margin:2px 0 0;overflow-wrap:anywhere}
 	.dss-price-detail-head{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding-bottom:10px;border-bottom:1px solid var(--dss-line-soft);margin-bottom:10px;min-width:0}
 	.dss-price-back{border:0;background:none;color:var(--dss-info);font-size:var(--dss-fs-sm);font-family:inherit;padding:0;cursor:pointer;white-space:nowrap}
 	.dss-price-back:hover{text-decoration:underline}

@@ -165,9 +165,13 @@ let StatsService = (() => {
 			if (typeof ctx?.effect === "function") ctx.effect(() => {
 				const store = pricingStore(this, dshHome());
 				this._pricingAuto = true;
-				void store.refresh();
-				const timer = setInterval(() => { void store.refresh(); }, 3600000); timer.unref?.();
-				return () => { this._pricingAuto = false; clearInterval(timer); store.close(); };
+				// The app's network stack is still warming up right after launch; wait a
+				// little so the first check is not wasted on a cold resolver.
+				const first = setTimeout(() => { void store.refresh(); }, 15000 + Math.floor(Math.random() * 10000)); first.unref?.();
+				// The store decides whether a check is due (hourly, or sooner after a
+				// failure); the timer only gives it a chance to notice.
+				const timer = setInterval(() => { void store.refresh(); }, 60000); timer.unref?.();
+				return () => { this._pricingAuto = false; clearTimeout(first); clearInterval(timer); store.close(); };
 			}, "dsh-stats: pricing updates");
 			// Register the route projection only when the host exposes the official
 			// registry. The registration is scoped to this service's Cordis fiber and

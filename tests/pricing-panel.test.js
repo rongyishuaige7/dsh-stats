@@ -130,3 +130,36 @@ test('updates section pages snapshots and shows pinned sync metadata', () => {
   expect(all).toContain('data-version="3"');
   expect(all).not.toContain('data-action="price-snapshots-more"');
 });
+
+test('a failed update shows its code, reason, attempt count and next retry', () => {
+  const status = {
+    version: 9, publishedAt: '2026-10-28T08:40:44Z', lastCheckAt: at, lastSuccessAt: at,
+    error: 'pricing-update-failed', errorDetail: 'fetch failed (ENOTFOUND)', errorAt: at,
+    attempts: 4, consecutiveFailures: 1, nextCheckAt: at + 300000,
+    autoUpdate: true, pinnedVersion: null, history: [9, 8],
+  };
+  const html = renderToStaticMarkup(React.createElement(UpdatesSection, {
+    status, autoUpdate: true, busy: false, dirty: false, pinned: false, checking: false, snapshotLimit: 5,
+    t, historyRef: React.createRef(), onAuto() {}, onRefresh() {}, onRollback() {}, onShowMore() {},
+  }));
+  expect(html).toContain(en['price.refreshFailed']);
+  expect(html).toContain('pricing-update-failed');
+  expect(html).toContain('fetch failed (ENOTFOUND)');
+  expect(html).toContain(en['price.attempts'].replace('%d', '4'));
+  expect(html).toContain(en['price.retryScheduled'].replace('%s', '').slice(0, 8));
+  expect(html).toContain('source.details');
+});
+
+test('a healthy update renders no failure banner', () => {
+  const status = {
+    version: 9, publishedAt: '2026-10-28T08:40:44Z', lastCheckAt: at, lastSuccessAt: at,
+    error: null, errorDetail: null, attempts: 1, consecutiveFailures: 0, nextCheckAt: at + 3600000,
+    autoUpdate: true, pinnedVersion: null, history: [9, 8],
+  };
+  const html = renderToStaticMarkup(React.createElement(UpdatesSection, {
+    status, autoUpdate: true, busy: false, dirty: false, pinned: false, checking: false, snapshotLimit: 5,
+    t, historyRef: React.createRef(), onAuto() {}, onRefresh() {}, onRollback() {}, onShowMore() {},
+  }));
+  expect(html).not.toContain(en['price.refreshFailed']);
+  expect(html).not.toContain('pricing-update-failed');
+});

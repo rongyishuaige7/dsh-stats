@@ -12,6 +12,17 @@ const { MAX_CATALOG_BYTES, MAX_OVERRIDES_BYTES, MAX_ENVELOPE_BYTES, MAX_CACHE_BY
 // Reclaim malformed locks only after a generous idle window so a live writer is
 // never stolen.
 const LOCK_STALE_MS = 10 * 60 * 1000;
+// One check may retry a transient failure. Automatic checks get three retries so
+// a cold network or a flaky link recovers on its own; a user-initiated check only
+// retries once so the button does not spin for a minute.
+const ATTEMPT_TIMEOUT_MS = 20000;
+const AUTO_RETRY_DELAYS = [3000, 10000, 30000];
+const MANUAL_RETRY_DELAYS = [2000];
+// After a failed check the next automatic attempt backs off instead of waiting a
+// full hour, then settles back into the hourly cadence once it succeeds.
+const RETRY_BACKOFF = [5 * 60000, 15 * 60000, 30 * 60000];
+const UNKNOWN_CHECK_INTERVAL = 15 * 60000;
+const RETRY_JITTER = 0.2;
 const stores = new WeakMap();
 function read(file, limit = MAX_CACHE_BYTES) {
   if (statSync(file).size > limit) throw new Error('pricing-file-too-large');
@@ -29,11 +40,51 @@ export function verifyEnvelope(envelope, publicKey = trust.publicKey) {
     || !verify(null, Buffer.from(envelope.payload), publicKey, Buffer.from(envelope.signature, 'base64'))) throw new Error('pricing-signature-invalid');
   return pricing.validateCatalog(JSON.parse(envelope.payload));
 }
+// Keep the diagnostic short and free of request details: the host name and the
+// low-level cause are enough to tell a DNS/offline failure from a bad payload.
+function describe(error) {
+  const message = String(error && error.message || error);
+  const cause = error && error.cause;
+  const reason = cause && (cause.code || cause.message);
+  const detail = reason ? message + ' (' + reason + ')' : message;
+  return detail.length > 200 ? detail.slice(0, 200) : detail;
+}
+// A transient failure is worth retrying; a rejected signature, a version
+// conflict or a 4xx will fail the same way again.
+function classify(error, timedOut, timeoutMs = ATTEMPT_TIMEOUT_MS) {
+  if (timedOut) return { code: 'pricing-timeout', retryable: true, detail: 'timeout after ' + timeoutMs / 1000 + 's' };
+  const code = String(error && error.message || error);
+  if (/^pricing-http-(\d{3})$/.test(code)) {
+    const status = Number(code.slice('pricing-http-'.length));
+    return { code, retryable: status >= 500 || status === 408 || status === 429, detail: 'HTTP ' + status };
+  }
+  if (/^pricing-[a-z0-9-]+$/.test(code)) return { code, retryable: false, detail: describe(error) };
+  const fsCode = error && error.code;
+  if (fsCode === 'EACCES' || fsCode === 'EPERM' || fsCode === 'ENOSPC' || fsCode === 'EROFS') return { code: 'pricing-update-failed', retryable: false, detail: describe(error) };
+  // fetch rejections (offline, DNS, reset) and truncated JSON are transient.
+  return { code: 'pricing-update-failed', retryable: true, detail: describe(error) };
+}
+function retryDelay(ms) {
+  const jitter = 1 + (Math.random() * 2 - 1) * RETRY_JITTER;
+  return Math.max(0, Math.round(ms * jitter));
+}
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new Error('pricing-aborted')); return; }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    timer.unref?.();
+    function onAbort() { clearTimeout(timer); reject(new Error('pricing-aborted')); }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 export class PricingStore {
-  constructor(home, { fetchImpl = (...args) => fetch(...args), now = () => Date.now(), publicKey = trust.publicKey, url = trust.url } = {}) {
+  constructor(home, { fetchImpl = (...args) => fetch(...args), now = () => Date.now(), publicKey = trust.publicKey, url = trust.url,
+    retryDelays = { auto: AUTO_RETRY_DELAYS, manual: MANUAL_RETRY_DELAYS }, attemptTimeoutMs = ATTEMPT_TIMEOUT_MS } = {}) {
     this.dir = join(home, 'plugins', 'dsh-stats', 'pricing');
     this.fetch = fetchImpl; this.now = now; this.publicKey = publicKey; this.url = url;
+    this.retryDelays = retryDelays; this.attemptTimeoutMs = attemptTimeoutMs;
     this.catalog = pricing.BUILTIN; this.envelope = publicKey === trust.publicKey ? builtinEnvelope : null; this.error = null; this.lastSuccessAt = null; this.lastCheckAt = null;
+    this.errorDetail = null; this.errorAt = null; this.attempts = 0; this.consecutiveFailures = 0;
     this.inflight = null; 
     this.history = [];
     this.historyStamp = null;
@@ -83,7 +134,7 @@ export class PricingStore {
         this.catalog = catalog; if (cached) this.envelope = cached.envelope;
         if (Number.isFinite(cached?.lastSuccessAt)) this.lastSuccessAt = cached.lastSuccessAt;
       }
-      this.rebuild(); this.diskStamp = stampKey; this.error = null;
+      this.rebuild(); this.diskStamp = stampKey; this.error = null; this.errorDetail = null; this.errorAt = null;
     } catch (error) { this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : 'pricing-cache-invalid'; }
   }
   withLock(fn) {
@@ -133,8 +184,20 @@ export class PricingStore {
     }
     return { version: this.catalog.version, publishedAt: this.catalog.publishedAt, fingerprint: this.fingerprint,
       lastCheckAt: this.lastCheckAt, lastSuccessAt: this.lastSuccessAt, error: this.error,
+      errorDetail: this.errorDetail, errorAt: this.errorAt, attempts: this.attempts,
+      consecutiveFailures: this.consecutiveFailures, nextCheckAt: this.nextCheckAt(),
       revision: this.settings.revision, autoUpdate: this.settings.autoUpdate, pinnedVersion: this.settings.pinnedVersion,
       catalogJson: this.catalogJson, overridesJson: this.overridesJson, history: [...history] };
+  }
+  checkInterval(unknown = false) {
+    if (unknown) return UNKNOWN_CHECK_INTERVAL;
+    if (!this.error) return HOUR;
+    const index = Math.min(Math.max(this.consecutiveFailures, 1) - 1, RETRY_BACKOFF.length - 1);
+    return RETRY_BACKOFF[index];
+  }
+  nextCheckAt() {
+    if (!this.settings.autoUpdate || this.settings.pinnedVersion !== null || this.settingsInvalid || this.lastCheckAt === null) return null;
+    return this.lastCheckAt + this.checkInterval(false);
   }
   async refresh({ force = false, unknown = false } = {}) {
     if (this.closed) return this.status();
@@ -146,17 +209,45 @@ export class PricingStore {
     this.syncDisk();
     const now = this.now();
     if (!force && (!this.settings.autoUpdate || this.settings.pinnedVersion !== null || this.settingsInvalid)) return this.status();
-    if (!force && this.lastCheckAt !== null && now - this.lastCheckAt < (unknown ? 15 * 60000 : HOUR)) return this.status();
+    if (!force && this.lastCheckAt !== null && now - this.lastCheckAt < this.checkInterval(unknown)) return this.status();
     this.lastCheckAt = now;
     this.inflightForce = false;
     this.inflight = this.download({ force, revision: this.settings.revision }).finally(() => { this.inflight = null; this.inflightForce = false; });
     return this.inflight;
   }
-  async download({ force, revision }) {
+  async download({ force }) {
     const controller = new AbortController(); this.controller = controller;
-    const timer = setTimeout(() => controller.abort(), 12000); timer.unref?.();
+    const delays = force ? this.retryDelays.manual : this.retryDelays.auto;
+    let attempts = 0;
+    let failure = null;
     try {
-      const response = await this.fetch(this.url, { signal: controller.signal, redirect: 'error', headers: { Accept: 'application/json' } });
+      for (;;) {
+        attempts += 1;
+        failure = await this.attempt(controller, { force });
+        if (!failure) {
+          if (!this.closed) {
+            this.error = null; this.errorDetail = null; this.errorAt = null;
+            this.consecutiveFailures = 0; this.attempts = attempts;
+          }
+          return this.status();
+        }
+        if (this.closed || !failure.retryable || attempts - 1 >= delays.length) break;
+        try { await wait(retryDelay(delays[attempts - 1]), controller.signal); } catch { break; }
+      }
+      if (!this.closed) {
+        this.error = failure.code; this.errorDetail = failure.detail; this.errorAt = this.now();
+        this.attempts = attempts; this.consecutiveFailures += 1;
+      }
+    } finally { this.controller = null; }
+    return this.status();
+  }
+  async attempt(controller, { force }) {
+    const timed = new AbortController();
+    const timer = setTimeout(() => timed.abort(), this.attemptTimeoutMs); timer.unref?.();
+    const onAbort = () => timed.abort();
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      const response = await this.fetch(this.url, { signal: timed.signal, redirect: 'error', headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('pricing-http-' + response.status);
       if (Number(response.headers.get('content-length')) > MAX_ENVELOPE_BYTES) { await response.body?.cancel(); throw new Error('pricing-response-too-large'); }
       const reader = response.body.getReader(); let length = 0; const chunks = [];
@@ -166,7 +257,7 @@ export class PricingStore {
       const envelope = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const catalog = verifyEnvelope(envelope, this.publicKey);
       if (Date.parse(catalog.publishedAt) > this.now() + 5 * 60000) throw new Error('pricing-future-version');
-      if (this.closed) return this.status();
+      if (this.closed) return null;
       this.withLock(() => {
         if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
         const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
@@ -185,10 +276,11 @@ export class PricingStore {
         this.lastSuccessAt = lastSuccessAt;
         this.envelope = envelope; this.catalog = catalog; this.error = null; this.rebuild();
       });
+      return null;
     } catch (error) {
-      if (!this.closed) this.error = /^pricing-[a-z0-9-]+$/.test(error.message) ? error.message : controller.signal.aborted ? 'pricing-timeout' : 'pricing-update-failed';
-    } finally { clearTimeout(timer); this.controller = null; }
-    return this.status();
+      if (this.closed) return { code: 'pricing-update-failed', retryable: false, detail: null };
+      return classify(error, timed.signal.aborted && !controller.signal.aborted, this.attemptTimeoutMs);
+    } finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); }
   }
   preview(overrides) { return pricing.createPricing(this.catalog, pricing.validateOverrides(overrides)); }
   persistSettings(settings) {

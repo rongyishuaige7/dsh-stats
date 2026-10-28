@@ -12,7 +12,7 @@ const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const now = Date.parse(pricing.BUILTIN.publishedAt) + 86400000;
 const base = structuredClone(pricing.BUILTIN);
 function envelope(catalog) { const payload = JSON.stringify(catalog); return { payload, signature: sign(null, Buffer.from(payload), privateKey).toString('base64') }; }
-function fixture(fetchImpl) { const home = mkdtempSync(join(tmpdir(), 'pricing-test-')); homes.push(home); return new PricingStore(home, { fetchImpl, now: () => now, publicKey }); }
+function fixture(fetchImpl) { const home = mkdtempSync(join(tmpdir(), 'pricing-test-')); homes.push(home); return new PricingStore(home, { fetchImpl, now: () => now, publicKey, retryDelays: { auto: [], manual: [] } }); }
 function custom(extra = {}) { return { id: 'custom-astra', providerId: 'yi-api', family: 'unknown', canonical: 'gpt-6-astra', aliases: ['gpt-6-astra'], currency: 'CNY', rates: { uncached: 1, output: 2, cacheRead: 0, cacheWrite: null }, sourceUrl: null, retrievedAt: '2026-09-17', confidence: 'estimated', reasoningIncludedInOutput: true, ...extra }; }
 function usage(extra = {}) { return { providerId: 'yi-api', model: 'gpt-6-astra', time: now, uncached: 1000, output: 100, ...extra }; }
 afterEach(() => { while (homes.length) rmSync(homes.pop(), { recursive: true, force: true }); });

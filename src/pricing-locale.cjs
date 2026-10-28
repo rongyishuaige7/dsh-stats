@@ -6,6 +6,7 @@ const pairs = {
   unavailable: ['计价设置暂不可用，请确认插件版本', 'Pricing settings unavailable. Check the plugin version.'], loading: ['加载中…', 'Loading…'],
   auto: ['自动更新价格', 'Update prices automatically'],
   refreshFailed: ['价格更新失败，继续使用上次有效版本', 'Price update failed. Previous valid prices are retained.'],
+  errorDetail: ['详情', 'Details'], attempts: ['第 %d 次尝试', 'Attempt %d'], retryScheduled: ['将在 %s 自动重试', 'Retries at %s'],
   missing: ['待计价模型', 'Models awaiting prices'], provisional: ['自动接入，待复核', 'Auto-added, pending review'], configure: ['设置价格', 'Set price'],
   invalid: ['请检查单价、模型、供应商及生效时间，规则时间不能重叠', 'Check rates, model, provider and dates. Rule periods must not overlap.'],
   provider: ['供应商 ID', 'Provider ID'], model: ['模型 ID', 'Model ID'], currency: ['币种', 'Currency'], uncached: ['非缓存输入', 'Uncached input'], cacheRead: ['缓存读取', 'Cache read'], cacheWrite: ['缓存写入', 'Cache write'], output: ['输出', 'Output'],
