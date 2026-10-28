@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101850,
-  "publishedAt": "2026-10-28T06:25:26.755Z",
+  "version": 2026101851,
+  "publishedAt": "2026-10-28T08:40:44.609Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -17744,6 +17744,44 @@
         "flex": 0.5
       },
       "note": "Standard, Fast/priority, Batch and Flex are modeled; Ultrafast 6x and regional +10% are not."
+    },
+    {
+      "id": "openai/gpt-6.1-terra@2026-10-28",
+      "family": "openai",
+      "canonical": "gpt-6.1-terra",
+      "aliases": [
+        "gpt-6.1-terra",
+        "openai/gpt-6.1-terra"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "retrievedAt": "2026-10-28",
+      "rates": null,
+      "reasoningIncludedInOutput": true,
+      "confidence": "exact",
+      "observedFrom": "2026-10-28T00:00:00Z",
+      "contextTiers": {
+        "short": {
+          "uncached": 1,
+          "cacheRead": 0.05,
+          "cacheWrite": 1.25,
+          "output": 5
+        },
+        "long": {
+          "uncached": 2,
+          "cacheRead": 0.1,
+          "cacheWrite": 2.5,
+          "output": 7.5
+        }
+      },
+      "contextThreshold": 272000,
+      "tierMultipliers": {
+        "standard": 1,
+        "priority": 2,
+        "batch": 0.5,
+        "flex": 0.5
+      },
+      "note": "Standard, Fast/priority, Batch and Flex are modeled; 12-hour cache writes and regional +10% are not."
     },
     {
       "id": "anthropic/claude-opus-5-5@2026-10-18",
