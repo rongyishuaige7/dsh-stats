@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101852,
-  "publishedAt": "2026-10-28T13:17:46.987Z",
+  "version": 2026101853,
+  "publishedAt": "2026-10-28T18:57:20.990Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -21474,7 +21474,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-28T13:17:46.987Z"
+      "effectiveFrom": "2026-10-28T13:17:46.987Z",
+      "effectiveTo": "2026-10-28T18:57:20.990Z"
     },
     {
       "id": "openrouter/moonshotai/kimi-k2.7-code@2026-10-28T13:17:46.987Z",
@@ -21495,7 +21496,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-28T13:17:46.987Z"
+      "effectiveFrom": "2026-10-28T13:17:46.987Z",
+      "effectiveTo": "2026-10-28T18:57:20.990Z"
     },
     {
       "id": "openrouter/~moonshotai/kimi-latest@2026-10-28T13:17:46.987Z",
@@ -21516,7 +21518,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-28T13:17:46.987Z"
+      "effectiveFrom": "2026-10-28T13:17:46.987Z",
+      "effectiveTo": "2026-10-28T18:57:20.990Z"
     },
     {
       "id": "openrouter/deepseek/deepseek-v4-flash@2026-10-28T13:17:46.987Z",
@@ -21538,6 +21541,69 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-28T13:17:46.987Z"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k3@2026-10-28T18:57:20.990Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k3",
+      "aliases": [
+        "moonshotai/kimi-k3"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-28",
+      "observedFrom": "2026-10-28T18:57:20.990Z",
+      "rates": {
+        "uncached": 0.192,
+        "output": 20,
+        "cacheRead": 0.182,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-28T18:57:20.990Z"
+    },
+    {
+      "id": "openrouter/moonshotai/kimi-k2.7-code@2026-10-28T18:57:20.990Z",
+      "family": "openrouter",
+      "canonical": "moonshotai/kimi-k2.7-code",
+      "aliases": [
+        "moonshotai/kimi-k2.7-code"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-28",
+      "observedFrom": "2026-10-28T18:57:20.990Z",
+      "rates": {
+        "uncached": 0.56,
+        "output": 3.1,
+        "cacheRead": 0.15,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-28T18:57:20.990Z"
+    },
+    {
+      "id": "openrouter/~moonshotai/kimi-latest@2026-10-28T18:57:20.990Z",
+      "family": "openrouter",
+      "canonical": "~moonshotai/kimi-latest",
+      "aliases": [
+        "~moonshotai/kimi-latest"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-28",
+      "observedFrom": "2026-10-28T18:57:20.990Z",
+      "rates": {
+        "uncached": 0.18239999999999998,
+        "output": 8.504,
+        "cacheRead": 0.18,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-28T18:57:20.990Z"
     }
   ],
   "fx": [
