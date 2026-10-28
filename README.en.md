@@ -66,7 +66,9 @@ For a custom profile, replace `desktop` / `web` with the real profile name.
 
 The plugin requires Node.js 22 or newer. The desktop app ships its own runtime, so no separate Node install is needed there.
 
-The npm stable release is `0.5.2` (published 2026-10-28); both the desktop app and Web can install it, and the interface notes below follow this release. `0.5.2` is a resilience patch for pricing-catalog updates: the interface, peer ranges and catalog format are unchanged, and the RPC only gained a few optional fields. The first automatic check waits 15–25 s after mount, transient failures retry with a 5/15/30-minute backoff, and the diagnostics show the actual cause (DNS, timeout, HTTP status or a malformed payload). `0.4.3` declares Harness peers up to `0.2.0-rc.2`; the host's compatibility check lets prereleases participate, so `0.2.1-rc.2` still allows it to load, but it was only verified through `0.2.0-rc.2` — upgrading to `0.5.2` is the verified path.
+The npm stable release is `0.5.1` (published 2026-10-23); both the desktop app and Web can install it, and the interface notes below follow this release. `0.5.1` is a correction release for `0.5.0`: the interface and the pricing catalog are unchanged, peer ranges are unchanged, and the RPC contract only gained one optional field (older payloads stay valid). It fixes boundary errors in aggregation, pricing and state handling. `0.4.3` declares Harness peers up to `0.2.0-rc.2`; the host's compatibility check lets prereleases participate, so `0.2.1-rc.2` still allows it to load, but it was only verified through `0.2.0-rc.2` — upgrading to `0.5.1` is the verified path.
+
+`main` already carries `0.5.2`, a pricing-update resilience patch; npm still serves `0.5.1` until that version is published. See the 0.5.2 release notes below.
 
 Pinned versions, local tarballs, registration checks, upgrades and pnpm troubleshooting are in the [installation section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#1-installation).
 

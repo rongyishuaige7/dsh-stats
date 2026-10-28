@@ -1573,3 +1573,37 @@ test.each(['save', 'rollback'])('an in-flight aggregate retains its price snapsh
 	expect(oldResult.cost.totals[0].amount).not.toBe(newResult.cost.totals[0].amount);
 	expect((await StatsService.prototype.aggregate.call(service)).cost).toEqual(newResult.cost);
 });
+
+test('unpriced usage during startup waits for the first-check gate', async () => {
+	const home = mkdtempSync(join(tmpdir(), 'dsh-stats-test-'));
+	createdHomes.push(home);
+	process.env.DSH_HOME = home;
+	const now = Date.parse('2026-10-27T12:00:00Z');
+	const header = { id: 's1', cwd: '/tmp/fixture', createdAt: now, version: 3 };
+	const service = {
+		_pricingAuto: true,
+		_pricingAutoAt: Date.now() + 20000,
+		ctx: {
+			workspaceRegistry: { list: () => [{ id: 'fixture', path: '/tmp/fixture', sessionIds: ['s1'] }] },
+			sessionQuery: {
+				listSessions: async () => [{ header }],
+				readSession: async () => ({ header, events: [{ type: 'assistant/message', seq: 0, time: now, data: {
+					turn: 0, step: 0, usage: { inputTokens: 1000000 }, message: { source: { provider: 'openai', model: 'gpt-9-unknown' } }
+				} }] }),
+			},
+		},
+	};
+	const store = pricingStore(service, home);
+	store.retryDelays = { auto: [], manual: [] };
+	const fetchSpy = vi.fn(async () => new Response('{}', { status: 500 }));
+	store.fetch = fetchSpy;
+
+	const first = await StatsService.prototype.aggregate.call(service);
+	expect(first.cost.unpricedTokens).toBeGreaterThan(0);
+	await new Promise(resolve => setTimeout(resolve, 20));
+	expect(fetchSpy).not.toHaveBeenCalled();
+
+	service._pricingAutoAt = Date.now() - 1;
+	await StatsService.prototype.aggregate.call(service);
+	await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+});

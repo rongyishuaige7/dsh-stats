@@ -166,12 +166,16 @@ let StatsService = (() => {
 				const store = pricingStore(this, dshHome());
 				this._pricingAuto = true;
 				// The app's network stack is still warming up right after launch; wait a
-				// little so the first check is not wasted on a cold resolver.
-				const first = setTimeout(() => { void store.refresh(); }, 15000 + Math.floor(Math.random() * 10000)); first.unref?.();
+				// little so the first check is not wasted on a cold resolver. Every
+				// automatic entry point (this timer, the minute tick and the unpriced
+				// usage path) shares the gate; a manual check still runs immediately.
+				const delay = 15000 + Math.floor(Math.random() * 10000);
+				this._pricingAutoAt = Date.now() + delay;
+				const first = setTimeout(() => { void store.refresh(); }, delay); first.unref?.();
 				// The store decides whether a check is due (hourly, or sooner after a
 				// failure); the timer only gives it a chance to notice.
 				const timer = setInterval(() => { void store.refresh(); }, 60000); timer.unref?.();
-				return () => { this._pricingAuto = false; clearTimeout(first); clearInterval(timer); store.close(); };
+				return () => { this._pricingAuto = false; this._pricingAutoAt = 0; clearTimeout(first); clearInterval(timer); store.close(); };
 			}, "dsh-stats: pricing updates");
 			// Register the route projection only when the host exposes the official
 			// registry. The registration is scoped to this service's Cordis fiber and
@@ -746,7 +750,9 @@ let StatsService = (() => {
 			});
 			projects.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 			const cost = mergeCostSummariesCny(projects.map((project) => project.cost));
-			if (!overridePricing && cost.unpricedTokens > 0 && this._pricingAuto) void priceStore.refresh({ unknown: true });
+			// Automatic checks share the startup gate: an early aggregate with unpriced
+			// usage must not download before the first-check delay has elapsed.
+			if (!overridePricing && cost.unpricedTokens > 0 && this._pricingAuto && Date.now() >= (this._pricingAutoAt || 0)) void priceStore.refresh({ unknown: true });
 
 			const projectIndex = new Map();
 			// Colors are assigned by stable project id order, not by activity order:

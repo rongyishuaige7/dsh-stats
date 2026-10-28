@@ -1,7 +1,10 @@
 # 0.5.2 release
 
-Patch release, 2026-10-28. Pricing-catalog update resilience only: no new
-models, no interface redesign, no peer-range change, no dependency change.
+Patch release, prepared 2026-10-28. Pricing-catalog update resilience only: no
+new models, no interface redesign, no peer-range change, no dependency change.
+
+**Status: prepared on `main`, not yet published.** npm `latest` remains `0.5.1`
+until `v0.5.2` is tagged; the upgrade commands at the end apply after that.
 
 ## Why
 
@@ -18,7 +21,9 @@ and the retry was an hour away.
 **Scheduling**
 
 - The first automatic check now waits 15–25 s after mount, so the host's network
-  stack is ready and the first attempt is not wasted on a cold resolver.
+  stack is ready and the first attempt is not wasted on a cold resolver. The
+  unpriced-usage trigger shares that gate, so an aggregate that runs during
+  startup cannot start a download early either.
 - A one-minute tick asks the store whether a check is due; the store answers.
   After a success the interval is one hour, after consecutive failures it backs
   off 5 → 15 → 30 minutes, and the unpriced-usage path keeps its 15-minute
@@ -30,7 +35,8 @@ and the retry was an hour away.
 - One check retries transient failures: automatic checks make four attempts
   (3 s, 10 s, 30 s, ±20% jitter), a user-initiated check makes two (2 s).
 - Rejected signatures, version regressions/conflicts, oversized payloads,
-  future-dated catalogs and 4xx responses are final and are not retried.
+  future-dated catalogs and 4xx responses other than 408/429 are final and are
+  not retried. 408 and 429 are treated as transient and retried.
 - The per-attempt timeout rose from 12 s to 20 s, and a timeout now reports
   `pricing-timeout` instead of the generic code.
 
@@ -57,18 +63,19 @@ result gains five optional fields.
 
 ## Verification
 
-- Full test suite: **664 tests / 153 files** pass in the default timezone and
+- Full test suite: **667 tests / 153 files** pass in the default timezone and
   `TZ=UTC` (up from 652 at `0.5.1`).
-- New coverage: transient retry and success, 4xx/5xx classification, signature
-  and version-regression finality, timeout classification, close during backoff,
-  the shorter manual ladder, backoff growth and reset, the automatic gate, and
-  the drawer's failure banner with its detail rows.
+- New coverage: transient retry and success, 4xx/5xx classification (including
+  408/429 retried versus other 4xx final), signature and version-regression
+  finality, timeout classification, close during backoff, the shorter manual
+  ladder, backoff growth and reset, the automatic gate, the startup gate for the
+  unpriced-usage trigger, and the drawer's failure banner with its detail rows.
 - Browser fixture: 50 check groups / 80 screenshots, 0 console errors.
 - Live download check against `data/pricing/latest.json` (743 KB, 2–5 s on the
   release machine): envelope verifies and matches the shipped payload.
 - Built-in catalog: signed `2026101851` (979 rules), including `gpt-6.1-terra`.
 
-## Upgrade
+## Upgrade (after publishing)
 
 ```bash
 # Web
@@ -88,3 +95,6 @@ independently of the plugin version.
   now with the reason and the next attempt time.
 - The catalog is a 743 KB download; a conditional request (`If-None-Match`) is
   planned for a later release and is not part of this patch.
+- A failed check never rolls the catalog back: the last valid version keeps
+  applying and the drawer reports the failure with its cause and the next
+  attempt time.

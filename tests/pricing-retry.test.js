@@ -148,3 +148,24 @@ test('the automatic gate honours the failure backoff before trying again', async
   // The unknown path keeps its shorter fifteen-minute interval.
   expect(subject.checkInterval(true)).toBe(15 * 60000);
 });
+
+test('408 and 429 are transient and are retried like a 5xx', async () => {
+  for (const status of [408, 429]) {
+    let calls = 0;
+    const subject = store(async () => { calls += 1; return new Response('busy', { status }); });
+    const result = await subject.refresh();
+    expect(calls).toBe(4);
+    expect(result.error).toBe('pricing-http-' + status);
+    expect(result.errorDetail).toBe('HTTP ' + status);
+  }
+});
+
+test('a 4xx other than 408/429 is final', async () => {
+  for (const status of [400, 401, 403, 404, 410]) {
+    let calls = 0;
+    const subject = store(async () => { calls += 1; return new Response('nope', { status }); });
+    const result = await subject.refresh();
+    expect(calls).toBe(1);
+    expect(result.error).toBe('pricing-http-' + status);
+  }
+});
