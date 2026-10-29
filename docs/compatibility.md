@@ -12,6 +12,7 @@
 | `0.1.7-rc.2` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v4 handles/live Session | full Web verified |
 | `0.2.0-rc.2` | tested on `22.22.0` | module boot verified | not rerun | service + schema verified | real cache/restore/v4 handles/per-record/live Session | fixture verified |
 | `0.2.1-rc.2` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | real cache/restore/v4 handles/per-record/live Session | full Web verified |
+| `0.2.1-rc.4` | tested on `22.22.0` | full Web boot verified | official plugin install verified | full Web + schema verified | not rerun | full Web verified |
 
 `0.1.2-rc.1` is intentionally excluded from the verified matrix: it contains a known projection defect. Use `0.1.3-alpha.2` or later as the minimum verified baseline. Older rows are retained as historical context.
 
@@ -97,6 +98,29 @@ Current pnpm requires `add -w` because the profile is a workspace root.
 Full Web runs for `0.1.5-rc.2` and `0.1.6-alpha.1` remain unverified; their module
 contract and independent UI fixture coverage is unchanged. See
 [0.3.1 release verification](release-0.3.1.md).
+
+## October 29, 2026 real Web verification (Harness 0.2.1-rc.4 + plugin 0.5.2)
+
+Harness `0.2.1-rc.4` is the npm `next` tag; the daily Harness watch ran the
+contract suite for it and then failed its "full Web verification" gate because
+the version was not listed. This run closes that gap:
+
+- Temporary prefix with `@deepseek-ai/dsh@0.2.1-rc.4` on Node `22.22.0`;
+  temporary `DSH_HOME` and `DSH_AGENTS_HOME`; the published `0.5.2` tarball
+  (`fad7616`) installed with the official `dsh plugin --profile web add -w`
+  command.
+- `npm run smoke:web` **passed**: plugin entry present, panel open, four tabs
+  reachable, pricing drawer and account tab rendered, 0 console errors,
+  0 runtime exceptions, 0 failed requests; screenshots at 1440 and 390 px.
+- `DSH_SMOKE_EXPECT_PRICING=1` opened the drawer: current catalog `2026101855`,
+  391 models and 992 rules rendered. The temporary home started without pricing
+  state, so the store fetched the catalog during the run — the first automatic
+  check waited for the new 15-25 s startup delay and then succeeded
+  (`last success 2026-10-29 15:55 Beijing time`).
+- Scope: no credentials were copied into the temporary home, so the balance page
+  rendered its empty state, and the workspace had no sessions.
+- The temporary host was stopped, its prefix and browser profile were deleted,
+  and no file under `~/.dsh` was changed.
 
 ## October 21, 2026 real Web verification (Harness 0.2.1-rc.2 + plugin 0.5.0 at `9611c25`)
 
