@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "version": 2026101854,
-  "publishedAt": "2026-10-28T22:55:47.882Z",
+  "version": 2026101855,
+  "publishedAt": "2026-10-29T02:00:02.351Z",
   "rules": [
     {
       "id": "openai/gpt-6-astra@2026-09-17",
@@ -18810,7 +18810,8 @@
       },
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
-      "effectiveFrom": "2026-10-19T13:43:34.432Z"
+      "effectiveFrom": "2026-10-19T13:43:34.432Z",
+      "effectiveTo": "2026-10-29T02:00:02.351Z"
     },
     {
       "id": "openrouter/inception/mercury-3@2026-10-19T19:33:09.079Z",
@@ -21712,6 +21713,27 @@
       "confidence": "estimated",
       "reasoningIncludedInOutput": true,
       "effectiveFrom": "2026-10-28T22:55:47.882Z"
+    },
+    {
+      "id": "openrouter/z-ai/glm-4.6@2026-10-29T02:00:02.351Z",
+      "family": "openrouter",
+      "canonical": "z-ai/glm-4.6",
+      "aliases": [
+        "z-ai/glm-4.6"
+      ],
+      "currency": "USD",
+      "sourceUrl": "https://openrouter.ai/api/v1/models",
+      "retrievedAt": "2026-10-29",
+      "observedFrom": "2026-10-29T02:00:02.351Z",
+      "rates": {
+        "uncached": 0.5,
+        "output": 2,
+        "cacheRead": 0.09999999999999999,
+        "cacheWrite": null
+      },
+      "confidence": "estimated",
+      "reasoningIncludedInOutput": true,
+      "effectiveFrom": "2026-10-29T02:00:02.351Z"
     }
   ],
   "fx": [
