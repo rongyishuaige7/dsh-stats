@@ -161,7 +161,7 @@ Run the install command for that profile again with the target version, then res
 
 ## ⚠️ Known limitations
 
-- The session projection cache can lag by a few seconds; the panel refreshes every 60 seconds.
+- The session projection cache can lag by a few seconds; the panel refreshes every 60 seconds, pauses while the window is hidden, and refreshes once on return if a full period has passed.
 - Ordinary archived sessions are marked “archived”; archived, logless forks backed only by inherited cache are excluded from statistics.
 - OpenRouter uses a dated model-catalog snapshot, so those amounts are `estimated`.
 - Overlapping sessions in one project merge into wall-clock timeline intervals; project LLM/tool durations remain cumulative work metrics.

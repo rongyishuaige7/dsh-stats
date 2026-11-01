@@ -392,7 +392,7 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 
 ## 6. 已知限制
 
-- 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新。
+- 当前会话的 projection cache 可能滞后几秒，面板每 60 秒自动刷新；窗口隐藏时暂停，回到前台时如已超过 60 秒会立即刷新一次。
 - 普通归档会话会标注「已归档」；归档、无日志且只有继承 cache 的 fork 会从统计中排除，
   并在告警中说明原因。
 - OpenRouter 使用带日期的模型目录快照，这类金额会标记为 `estimated`。

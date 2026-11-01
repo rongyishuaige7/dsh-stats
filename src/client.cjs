@@ -165,6 +165,27 @@ function exportCSV(projects, t) {
 	download("dsh-stats.csv", "\uFEFF" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
+// Periodic refresh re-reads every session and queries account providers. Skip
+// ticks while the window is hidden; on return, refresh once if a full period
+// passed, otherwise the next tick catches up.
+var AUTO_REFRESH_MS = 60000;
+function autoRefreshScheduler(refresh, doc, now) {
+	var last = now();
+	return {
+		tick: function() {
+			if (doc && doc.hidden) return;
+			last = now();
+			refresh();
+		},
+		visible: function() {
+			if (doc && doc.hidden) return;
+			if (now() - last < AUTO_REFRESH_MS) return;
+			last = now();
+			refresh();
+		}
+	};
+}
+
 function StatsPanel(props) {
 	var open = props.useStatsOpen((o) => o);
 	var isOpen = !!(open && open.open);
@@ -284,14 +305,20 @@ function StatsPanel(props) {
 		requestAggregate();
 	}, [refreshTick, open, requestAggregate]);
 
-	// 面板打开期间每 60 秒自动刷新一次
+	// 面板打开期间每 60 秒自动刷新一次；窗口隐藏时暂停，回到前台时按需补一次
 	useEffect(() => {
 		if (!open || !open.open || !aggregateRemote) return;
-		var id = setInterval(() => {
+		var doc = typeof document !== "undefined" ? document : null;
+		var scheduler = autoRefreshScheduler(function() {
 			requestAggregate();
 			setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: false }));
-		}, 60000);
-		return () => clearInterval(id);
+		}, doc, Date.now);
+		var id = setInterval(scheduler.tick, AUTO_REFRESH_MS);
+		if (doc) doc.addEventListener("visibilitychange", scheduler.visible);
+		return () => {
+			clearInterval(id);
+			if (doc) doc.removeEventListener("visibilitychange", scheduler.visible);
+		};
 	}, [open, aggregateRemote, requestAggregate]);
 
 	// Balance is a live snapshot shown only on its tab; other tabs do not query providers.
@@ -776,5 +803,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction
+	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction, autoRefreshScheduler, AUTO_REFRESH_MS
 };

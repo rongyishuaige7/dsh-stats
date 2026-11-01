@@ -168,3 +168,38 @@ test('providers RPC is optional, parses results and propagates failures', async 
 	const result = await readProvidersRemote({ providers: async () => ({ ok: true, value: { generatedAt: 1, providers: [] } }) });
 	expect(result).toEqual({ generatedAt: 1, providers: [] });
 });
+
+test('auto refresh pauses while the window is hidden and catches up once on return', () => {
+	const { autoRefreshScheduler, AUTO_REFRESH_MS } = require('../src/client.cjs').__test;
+	let now = 1000;
+	const doc = { hidden: false };
+	const refresh = vi.fn();
+	const scheduler = autoRefreshScheduler(refresh, doc, () => now);
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	expect(refresh).toHaveBeenCalledTimes(1);
+	doc.hidden = true;
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	expect(refresh).toHaveBeenCalledTimes(1);
+	scheduler.visible();
+	expect(refresh).toHaveBeenCalledTimes(1);
+	doc.hidden = false;
+	scheduler.visible();
+	expect(refresh).toHaveBeenCalledTimes(2);
+	// A quick hide/show inside one period does not add a request.
+	doc.hidden = true; scheduler.visible();
+	now += 1000; doc.hidden = false; scheduler.visible();
+	expect(refresh).toHaveBeenCalledTimes(2);
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	expect(refresh).toHaveBeenCalledTimes(3);
+});
+
+test('auto refresh keeps ticking when no document is available', () => {
+	const { autoRefreshScheduler, AUTO_REFRESH_MS } = require('../src/client.cjs').__test;
+	let now = 0;
+	const refresh = vi.fn();
+	const scheduler = autoRefreshScheduler(refresh, null, () => now);
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	now += AUTO_REFRESH_MS; scheduler.tick();
+	expect(refresh).toHaveBeenCalledTimes(2);
+});
