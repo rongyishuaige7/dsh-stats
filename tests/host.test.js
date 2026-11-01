@@ -502,6 +502,50 @@ test('cold projection accepts persisted statsRoute state objects and weights the
 	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
 });
 
+// rc6/0.1.x hosts expose coldSnapshot(id, signal), so every cold session takes
+// the projection-values path. Those values are complete at their watermark and
+// must not mark a healthy session, or the whole page, as incomplete.
+function rc6ColdCtx(id, values) {
+	return {
+		workspaceRegistry: { list: () => [{ id: 'fixture', title: 'Fixture', path: '/tmp/fixture', sessionIds: [id] }] },
+		sessionProjectionCache: { coldSnapshot: async function (sessionId, signal) { return { asOfSeq: 8, values }; } }
+	};
+}
+
+test('a cold session read from official route projections is exact, not partial', async () => {
+	const now = Date.parse('2026-08-17T12:30:00+08:00');
+	const result = await StatsService.prototype.aggregate.call({ ctx: rc6ColdCtx('coldRoute', {
+		sessionStats: { turns: 2, steps: 2, llmMs: 20, toolMs: 4, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+		tokenUsage: { totals: { uncachedInputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+		sessionListMetadata: { blank: false, lastPromptAt: now + 500 },
+		statsRoute: { origin: null, parentSession: null, seedLength: null,
+			current: { providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard' },
+			routes: [{ providerId: 'openai', model: 'gpt-5.6-luna', accountType: 'api', serviceTier: 'standard', slot: Math.floor(now / (30 * 60 * 1000)), time: now + 500, uncached: 1000, output: 100, cacheRead: 0, cacheWrite: 0, reasoning: 0 }]
+		}
+	}) });
+	const session = result.projects[0].sessions[0];
+	expect(session).toMatchObject({ quality: 'exact', model: 'gpt-5.6-luna', stats: { uncached: 1000, output: 100 } });
+	expect(result.meta.degraded).toBe(false);
+	expect(result.meta.warnings.map((row) => row.code)).not.toContain('SESSION_LOG_PARTIAL');
+	TYPERT.invocations.find((invocation) => invocation.method === 'aggregate').result.schema.parse(result);
+});
+
+test('official projection totals without route buckets stay partial without a log-partial warning', async () => {
+	const now = Date.parse('2026-08-17T13:00:00+08:00');
+	const result = await StatsService.prototype.aggregate.call({ ctx: rc6ColdCtx('coldTotals', {
+		sessionStats: { turns: 1, steps: 1, llmMs: 10, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
+		tokenUsage: { totals: { uncachedInputTokens: 30, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+		sessionListMetadata: { blank: false, lastPromptAt: now }
+	}) });
+	const session = result.projects[0].sessions[0];
+	// The totals are official, but without route buckets there is no model
+	// attribution to price, so the session remains partial.
+	expect(session).toMatchObject({ quality: 'partial', stats: { uncached: 30, output: 5 } });
+	const codes = result.meta.warnings.map((row) => row.code);
+	expect(codes).toContain('SESSION_USAGE_FALLBACK');
+	expect(codes).not.toContain('SESSION_LOG_PARTIAL');
+});
+
 function projection(createdAt, overrides = {}) {
 	const rows = {
 		title: { val: overrides.title || 'Fixture session' },

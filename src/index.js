@@ -395,8 +395,11 @@ let StatsService = (() => {
 					if (!liveSession && projectionValuesAvailable) {
 						// Official projection values are already cut at one validated
 						// watermark. Use them directly for cold sessions, including hosts
-						// where the optional route projection is not mounted.
-						info = infoFromProjectionValues(officialValues, entry, warnings, sessionId);
+						// where the optional route projection is not mounted. They are
+						// complete at that watermark, only coarser (no per-slot durations),
+						// so they are not a partial log read. Without route buckets the
+						// totals still take the projection usage fallback below.
+						info = { ...infoFromProjectionValues(officialValues, entry, warnings, sessionId), partial: false };
 						if (objectRecord(officialValues?.sessionStats)) statsRow = officialValues.sessionStats;
 						const officialUsage = normalizeProjectionUsage(officialValues?.tokenUsage);
 						if (officialUsage) usageTotals = {
@@ -672,7 +675,7 @@ let StatsService = (() => {
 					slots: slotDurations(info.activityTimes ?? info.times),
 					slotStats: info.slotStats || [],
 					slotUsage: perSlotUsage,
-						quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || info.cacheOnly || cacheOnly || usedProjectionUsage || projectionInvalid) ? "partial" : "exact",
+						quality: info.stale ? "stale" : (info.partial || info.missing || info.unavailable || usedProjectionUsage || projectionInvalid) ? "partial" : "exact",
 					cwd
 				};
 				Object.defineProperty(session, "_intervals", { value: activityIntervals(info.activityTimes ?? info.times), enumerable: false });
