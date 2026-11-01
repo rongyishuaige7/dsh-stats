@@ -347,6 +347,45 @@ test('failed refresh preserves the last successful account snapshot as stale', a
 	}
 });
 
+test('a failed account read expires sooner than a successful one', async () => {
+	let now = 25_000;
+	let calls = 0;
+	let status = 401;
+	const owner = {};
+	const ctx = context();
+	const deps = {
+		now: () => now,
+		cacheMs: 60_000,
+		errorCacheMs: 1000,
+		fetch: async () => {
+			calls++;
+			return status === 200
+				? jsonResponse({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '18.64' }] })
+				: jsonResponse({}, status);
+		},
+	};
+	expect((await collectAccounts(owner, ctx, { deps })).accounts[0].status).toBe('unauthorized');
+	now += 999;
+	await collectAccounts(owner, ctx, { deps });
+	expect(calls).toBe(1);
+	// The user fixed the key; the next read after the short TTL picks it up.
+	status = 200;
+	now += 1;
+	expect((await collectAccounts(owner, ctx, { deps })).accounts[0]).toMatchObject({ status: 'ok', balance: { remaining: 18.64 } });
+	expect(calls).toBe(2);
+	now += 30_000;
+	await collectAccounts(owner, ctx, { deps });
+	expect(calls).toBe(2);
+	// A stale snapshot after a failed refresh also uses the short TTL.
+	status = 503;
+	now += 30_000;
+	expect((await collectAccounts(owner, ctx, { deps })).accounts[0]).toMatchObject({ status: 'unavailable', stale: true });
+	expect(calls).toBe(3);
+	now += 1000;
+	await collectAccounts(owner, ctx, { deps });
+	expect(calls).toBe(4);
+});
+
 test('changing an account credential reference cannot reuse the previous snapshot', async () => {
 	let now = 30_000;
 	const owner = {};

@@ -9,6 +9,10 @@ import pricing from "./pricing.cjs";
 
 const { normalizeAccountType, providerFamilyOf } = pricing;
 const CACHE_MS = 5 * 60 * 1000;
+// Failed reads expire sooner. The cache signature describes the provider
+// config, not the credential value, so a fixed key or a provider that has
+// recovered should not wait out the full success TTL.
+const ERROR_CACHE_MS = 30 * 1000;
 const REQUEST_TIMEOUT_MS = 15 * 1000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -816,7 +820,10 @@ async function collectAccounts(owner, ctx, options = {}) {
 		const signature = JSON.stringify(spec);
 		const hit = state.cache.get(spec.id);
 		const age = now - (hit?.account?.fetchedAt || 0);
-		if (!options.force && hit?.signature === signature && age >= 0 && age < (deps.cacheMs ?? CACHE_MS)) return hit.account;
+		const settled = hit?.account?.status === "ok" || hit?.account?.status === "unsupported";
+		const successTtl = deps.cacheMs ?? CACHE_MS;
+		const ttl = settled ? successTtl : Math.min(successTtl, deps.errorCacheMs ?? ERROR_CACHE_MS);
+		if (!options.force && hit?.signature === signature && age >= 0 && age < ttl) return hit.account;
 		return refreshOne(state, spec, credentials, deps);
 	}));
 	const warnings = accounts.filter((account) => account.status !== "ok" && account.status !== "unsupported" && account.status !== "not-configured").map((account) => ({

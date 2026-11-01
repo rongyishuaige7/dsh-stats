@@ -313,7 +313,8 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 | MiniMax Coding Plan | [`/v1/token_plan/remains`](https://platform.minimaxi.com/subscribe/token-plan?tab=api-enterprise)（含官方兼容路径） | `MINIMAX_API_KEY` |
 
 - Provider 配置中的 `accountApiKeyEnv`（也接受 `accountApiKeyRef` 等写法）可以覆盖默认引用。
-- 查询结果缓存 5 分钟并合并并发请求；点刷新会明确绕过这层缓存。
+- 成功结果缓存 5 分钟，失败结果（凭证无效、限流、暂不可用等）只缓存 30 秒，改好凭证后很快就能看到新结果；
+  并发请求会合并，点刷新会明确绕过这层缓存。
 - 单个账户遇到网络错误、限流或异常响应时，会保留该账户上一次成功快照并标为「已过期」。
 - 整次查询失败时：已有上次成功结果则标题变「快照已过期」，上方出现可重试的横幅，账户行保持可见；
   首次失败则标题显示「读取失败」，重试在账户区里。
