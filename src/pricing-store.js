@@ -83,10 +83,14 @@ function wait(ms, signal) {
   });
 }
 export class PricingStore {
-  constructor(home, { fetchImpl = (...args) => fetch(...args), now = () => Date.now(), publicKey = trust.publicKey, url = trust.url,
+  constructor(home, { fetchImpl = (...args) => fetch(...args), now = () => Date.now(), publicKey = trust.publicKey, url = trust.url, mirrors = trust.mirrors || [],
     retryDelays = { auto: AUTO_RETRY_DELAYS, manual: MANUAL_RETRY_DELAYS }, attemptTimeoutMs = ATTEMPT_TIMEOUT_MS } = {}) {
     this.dir = join(home, 'plugins', 'dsh-stats', 'pricing');
     this.fetch = fetchImpl; this.now = now; this.publicKey = publicKey; this.url = url;
+    // Retries alternate between the primary URL and the mirrors, so a network
+    // that cannot reach the primary still updates within the same check.
+    this.sources = [url, ...mirrors];
+    this.checkSource = null;
     this.retryDelays = retryDelays; this.attemptTimeoutMs = attemptTimeoutMs;
     this.catalog = pricing.BUILTIN; this.envelope = publicKey === trust.publicKey ? builtinEnvelope : null; this.error = null; this.lastSuccessAt = null; this.lastCheckAt = null;
     this.errorDetail = null; this.errorAt = null; this.attempts = 0; this.consecutiveFailures = 0;
@@ -205,6 +209,7 @@ export class PricingStore {
       lastCheckAt: this.lastCheckAt, lastSuccessAt: this.lastSuccessAt, error: this.error,
       errorDetail: this.errorDetail, errorAt: this.errorAt, attempts: this.attempts,
       consecutiveFailures: this.consecutiveFailures, nextCheckAt: this.nextCheckAt(),
+      checkSource: this.checkSource,
       revision: this.settings.revision, autoUpdate: this.settings.autoUpdate, pinnedVersion: this.settings.pinnedVersion,
       catalogJson: this.catalogJson, overridesJson: this.overridesJson, history: [...history] };
   }
@@ -242,11 +247,13 @@ export class PricingStore {
     try {
       for (;;) {
         attempts += 1;
-        failure = await this.attempt(controller, { force });
+        const sourceIndex = (attempts - 1) % this.sources.length;
+        failure = await this.attempt(controller, { force, url: this.sources[sourceIndex], mirror: sourceIndex > 0 });
         if (!failure) {
           if (!this.closed) {
             this.error = null; this.errorDetail = null; this.errorAt = null;
             this.consecutiveFailures = 0; this.attempts = attempts;
+            this.checkSource = sourceIndex > 0 ? 'mirror' : 'primary';
           }
           return this.status();
         }
@@ -255,18 +262,18 @@ export class PricingStore {
       }
       if (!this.closed) {
         this.error = failure.code; this.errorDetail = failure.detail; this.errorAt = this.now();
-        this.attempts = attempts; this.consecutiveFailures += 1;
+        this.attempts = attempts; this.consecutiveFailures += 1; this.checkSource = null;
       }
     } finally { this.controller = null; }
     return this.status();
   }
-  async attempt(controller, { force }) {
+  async attempt(controller, { force, url = this.url, mirror = false }) {
     const timed = new AbortController();
     const timer = setTimeout(() => timed.abort(), this.attemptTimeoutMs); timer.unref?.();
     const onAbort = () => timed.abort();
     controller.signal.addEventListener('abort', onAbort, { once: true });
     try {
-      const response = await this.fetch(this.url, { signal: timed.signal, redirect: 'error', headers: { Accept: 'application/json' } });
+      const response = await this.fetch(url, { signal: timed.signal, redirect: 'error', headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('pricing-http-' + response.status);
       if (Number(response.headers.get('content-length')) > MAX_ENVELOPE_BYTES) { await response.body?.cancel(); throw new Error('pricing-response-too-large'); }
       const reader = response.body.getReader(); let length = 0; const chunks = [];
@@ -280,6 +287,10 @@ export class PricingStore {
       this.withLock(() => {
         if (this.settingsInvalid) throw new Error('pricing-settings-invalid');
         const highest = Math.max(pricing.BUILTIN.version, this.catalog.version, ...this.status().history);
+        // A CDN mirror caches the branch for hours, so an older signed version
+        // there is lag, not a replay: nothing newer is available from it. The
+        // last successful sync time is left unchanged.
+        if (catalog.version < highest && mirror) return;
         if (catalog.version < highest) throw new Error('pricing-version-regressed');
         let previous;
         try { previous = verifyEnvelope(read(join(this.dir, 'catalog-' + catalog.version + '.json'), MAX_ENVELOPE_BYTES), this.publicKey); }

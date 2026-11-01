@@ -5,6 +5,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, expect, test } from 'vitest';
 import pricing from '../src/pricing.cjs';
 import { PricingStore } from '../src/pricing-store.js';
+import { parsePricingResult } from '../src/rpc-client.js';
 
 const homes = [];
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -158,6 +159,54 @@ test('408 and 429 are transient and are retried like a 5xx', async () => {
     expect(result.error).toBe('pricing-http-' + status);
     expect(result.errorDetail).toBe('HTTP ' + status);
   }
+});
+
+const PRIMARY = 'https://primary.example/latest.json';
+const MIRROR = 'https://mirror.example/latest.json';
+const sources = { url: PRIMARY, mirrors: [MIRROR] };
+
+test('retries alternate to the mirror and the status records which source answered', async () => {
+  const urls = [];
+  const subject = store(async (url) => {
+    urls.push(url);
+    if (url === PRIMARY) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    return ok();
+  }, sources);
+  const status = await subject.refresh();
+  expect(urls).toEqual([PRIMARY, MIRROR]);
+  expect(status).toMatchObject({ error: null, attempts: 2, checkSource: 'mirror' });
+  expect(subject.catalog.version).toBe(base.version + 1);
+  expect(parsePricingResult(status).checkSource).toBe('mirror');
+
+  // Every check starts at the primary again, and a failed check clears the marker.
+  urls.length = 0;
+  subject.fetch = async (url) => { urls.push(url); throw new Error('offline'); };
+  const failed = await subject.refresh({ force: true });
+  expect(urls).toEqual([PRIMARY, MIRROR]);
+  expect(failed).toMatchObject({ error: 'pricing-update-failed', checkSource: null });
+});
+
+test('an older signed catalog on a lagging mirror is not a regression', async () => {
+  let now = NOW;
+  const newer = nextCatalog();
+  const subject = store(async () => ok(newer), { ...sources, now: () => now });
+  await subject.refresh();
+  const syncedAt = subject.lastSuccessAt;
+  now += 2 * 3600000;
+  subject.fetch = async (url) => {
+    if (url === PRIMARY) throw new Error('offline');
+    return ok(base);
+  };
+  const status = await subject.refresh({ force: true });
+  expect(status).toMatchObject({ error: null, checkSource: 'mirror', lastCheckAt: now, lastSuccessAt: syncedAt });
+  expect(subject.catalog.version).toBe(newer.version);
+  expect(status.history).not.toContain(base.version);
+});
+
+test('the primary still rejects an older catalog as a regression', async () => {
+  const subject = store(async () => ok({ ...base, version: base.version - 1 }), sources);
+  const status = await subject.refresh();
+  expect(status).toMatchObject({ error: 'pricing-version-regressed', attempts: 1, checkSource: null });
 });
 
 test('a 4xx other than 408/429 is final', async () => {

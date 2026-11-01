@@ -35,6 +35,7 @@ const pairs = {
   addRule: ['添加规则', 'Add rule'],
   syncTitle: ['同步与自动更新', 'Sync and automatic updates'], publishedAt: ['发布时间', 'Published'], lastCheck: ['上次检查', 'Last checked'], lastSuccess: ['上次成功同步', 'Last successful sync'],
   neverChecked: ['尚未检查', 'Not checked yet'], builtinNoSync: ['内置目录，尚未成功同步', 'Bundled catalog; no successful sync yet'],
+  viaMirror: ['经镜像', 'via mirror'], viaMirrorHint: ['主地址连接失败，本次从镜像获取。镜像可能比主地址晚几个小时，下次检查仍先尝试主地址。', 'The primary address failed, so this check used a mirror. The mirror can lag by a few hours; the next check tries the primary first.'],
   pinnedVersion: ['固定版本', 'Pinned version'], notPinned: ['未固定', 'Not pinned'], pinnedShort: ['已固定', 'Pinned'],
   autoHint: ['修改后预览并保存才会生效。', 'Changes apply after preview and save.'], manualHint: ['自动更新只控制后台更新；未固定时仍可手动检查更新。', 'Automatic updates control background checks; manual checks remain available when not pinned.'],
   pinnedHint: ['当前已固定版本；开启自动更新并保存后可检查更新。', 'This catalog is pinned. Enable automatic updates and save before checking again.'],

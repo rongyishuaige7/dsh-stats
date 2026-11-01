@@ -290,6 +290,8 @@ dsh plugin --profile web remove @rongyi7/dsh-stats
 ### 3.7 自动更新
 
 - 宿主启动时及之后每小时检查经过签名的价格目录。
+- 连不上 GitHub 时，重试会改从 jsDelivr 镜像获取，签名校验不变。镜像可能比 GitHub 晚几个小时；
+  这次检查由镜像应答时，「上次检查」后会标注「经镜像」。
 - 遇到缺价模型会触发一次有冷却时间的检查。
 - 自动更新只下载公共目录，不上传会话或凭证。
 - 本地目录位于 `$DSH_HOME/plugins/dsh-stats/pricing/`（默认 `~/.dsh/plugins/dsh-stats/pricing/`），

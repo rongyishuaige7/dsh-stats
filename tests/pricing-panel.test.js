@@ -105,6 +105,18 @@ test('updates section disables restore while settings are dirty', () => {
   expect(render(true)).toContain('data-action="price-rollback" disabled=""');
 });
 
+test('updates section marks a check that was answered by the mirror', () => {
+  const render = checkSource => renderToStaticMarkup(React.createElement(UpdatesSection, {
+    status: { version: 5, history: [], lastCheckAt: Date.parse('2026-10-17T01:00:00Z'), lastSuccessAt: Date.parse('2026-10-17T00:00:00Z'), checkSource },
+    autoUpdate: true, busy: false, dirty: false, pinned: false, checking: false, snapshotLimit: 5,
+    t, historyRef: React.createRef(), onAuto() {}, onRefresh() {}, onRollback() {}, onShowMore() {},
+  }));
+  expect(render('mirror')).toContain(' · ' + en['price.viaMirror']);
+  expect(render('mirror')).toContain('title="' + en['price.viaMirrorHint'].replace(/'/g, '&#x27;') + '"');
+  expect(render('primary')).not.toContain(en['price.viaMirror']);
+  expect(render(null)).not.toContain(en['price.viaMirror']);
+});
+
 test('updates section pages snapshots and shows pinned sync metadata', () => {
   const status = {
     version: 10, publishedAt: '2026-10-18T00:00:00Z', lastCheckAt: Date.parse('2026-10-18T01:00:00Z'),
