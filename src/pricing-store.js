@@ -23,6 +23,11 @@ const MANUAL_RETRY_DELAYS = [2000];
 const RETRY_BACKOFF = [5 * 60000, 15 * 60000, 30 * 60000];
 const UNKNOWN_CHECK_INTERVAL = 15 * 60000;
 const RETRY_JITTER = 0.2;
+// Every new catalog version leaves a ~640 KB snapshot and every save leaves a
+// settings revision. Keep enough for rollback and audit instead of growing
+// without bound; the active and pinned catalogs are always kept.
+const KEEP_CATALOG_SNAPSHOTS = 20;
+const KEEP_SETTINGS_REVISIONS = 10;
 const stores = new WeakMap();
 function read(file, limit = MAX_CACHE_BYTES) {
   if (statSync(file).size > limit) throw new Error('pricing-file-too-large');
@@ -164,6 +169,20 @@ export class PricingStore {
     try { writeFileSync(fd, JSON.stringify({ pid: process.pid })); this.syncDisk(); return fn(); }
     finally { closeSync(fd); unlinkSync(lock); }
   }
+  // Call only inside withLock, after the new files are written. Cleanup is
+  // best effort: a failed unlink must never fail the update or the save.
+  prune() {
+    let names;
+    try { names = readdirSync(this.dir); } catch { return; }
+    const versions = (pattern, prefix) => names.filter(name => pattern.test(name)).map(name => Number(name.slice(prefix, -5))).sort((a, b) => b - a);
+    const keep = new Set([this.catalog.version, this.settings.pinnedVersion]);
+    for (const version of versions(/^catalog-\d+\.json$/, 8).slice(KEEP_CATALOG_SNAPSHOTS)) {
+      if (!keep.has(version)) try { unlinkSync(join(this.dir, 'catalog-' + version + '.json')); } catch {}
+    }
+    for (const revision of versions(/^settings-\d+\.json$/, 9).slice(KEEP_SETTINGS_REVISIONS)) {
+      if (revision !== this.settings.revision) try { unlinkSync(join(this.dir, 'settings-' + revision + '.json')); } catch {}
+    }
+  }
   close() { this.closed = true; this.controller?.abort(); }
   snapshot() { this.syncDisk(); return this.engine; }
   status() {
@@ -270,11 +289,12 @@ export class PricingStore {
         if (this.envelope) atomic(join(this.dir, 'catalog-' + this.catalog.version + '.json'), this.envelope);
         atomic(join(this.dir, 'catalog-' + catalog.version + '.json'), envelope);
         // A restore always wins over a download that was already in flight.
-        if (this.settings.pinnedVersion !== null || !force && !this.inflightForce && !this.settings.autoUpdate) return;
+        if (this.settings.pinnedVersion !== null || !force && !this.inflightForce && !this.settings.autoUpdate) { this.prune(); return; }
         const lastSuccessAt = this.now();
         atomic(join(this.dir, 'current.json'), { envelope, lastSuccessAt });
         this.lastSuccessAt = lastSuccessAt;
         this.envelope = envelope; this.catalog = catalog; this.error = null; this.rebuild();
+        this.prune();
       });
       return null;
     } catch (error) {
@@ -288,6 +308,7 @@ export class PricingStore {
     atomic(join(this.dir, 'settings-' + settings.revision + '.json'), settings);
     atomic(join(this.dir, 'settings.json'), settings);
     this.settings = settings;
+    this.prune();
   }
   save({ revision, autoUpdate, overrides, fingerprint }) {
     return this.withLock(() => {

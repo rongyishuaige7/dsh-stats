@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPairSync, sign } from 'node:crypto';
@@ -182,6 +182,48 @@ test('status reuses the catalog history until the directory changes', () => {
   const future = new Date(Date.now() + 2000);
   utimesSync(store.dir, future, future);
   expect(store.status().history).toEqual([3, 2]);
+});
+
+const versionsOf = (dir, prefix) => readdirSync(dir).filter(name => new RegExp('^' + prefix + '-\\d+\\.json$').test(name))
+  .map(name => Number(name.slice(prefix.length + 1, -5))).sort((a, b) => b - a);
+
+test('catalog snapshots are pruned to the newest 20 but the pinned and active versions survive', async () => {
+  let value = { ...base, version: base.version + 1 };
+  const store = fixture(async () => new Response(JSON.stringify(envelope(value))));
+  await store.refresh();
+  store.rollback(base.version + 1, 0);
+  for (let v = base.version + 2; v <= base.version + 25; v++) writeFileSync(join(store.dir, 'catalog-' + v + '.json'), '{}');
+  value = { ...base, version: base.version + 50 };
+  expect((await store.refresh({ force: true })).error).toBeNull();
+  const kept = Array.from({ length: 19 }, (_, i) => base.version + 25 - i);
+  expect(versionsOf(store.dir, 'catalog')).toEqual([base.version + 50, ...kept, base.version + 1]);
+  expect(store.catalog.version).toBe(base.version + 1);
+  expect(new PricingStore(homes[0], { publicKey }).catalog.version).toBe(base.version + 1);
+  // Unpinning makes the newest download active; the old pin is then ordinary history.
+  store.save({ revision: 1, autoUpdate: true, overrides: [] });
+  value = { ...base, version: base.version + 51 };
+  await store.refresh({ force: true });
+  expect(store.catalog.version).toBe(base.version + 51);
+  expect(versionsOf(store.dir, 'catalog')).toHaveLength(20);
+  expect(versionsOf(store.dir, 'catalog')).not.toContain(base.version + 1);
+});
+
+test('a snapshot that cannot be removed does not fail the update', async () => {
+  const store = fixture(async () => new Response(JSON.stringify(envelope({ ...base, version: base.version + 30 }))));
+  mkdirSync(join(store.dir, 'catalog-1.json'), { recursive: true });
+  for (let v = base.version + 2; v <= base.version + 21; v++) writeFileSync(join(store.dir, 'catalog-' + v + '.json'), '{}');
+  expect((await store.refresh()).error).toBeNull();
+  expect(store.catalog.version).toBe(base.version + 30);
+  const kept = Array.from({ length: 19 }, (_, i) => base.version + 21 - i);
+  expect(versionsOf(store.dir, 'catalog')).toEqual([base.version + 30, ...kept, 1]);
+});
+
+test('settings revisions are pruned to the newest 10 and the store reopens from the latest', () => {
+  const store = fixture(vi.fn());
+  for (let revision = 0; revision < 12; revision++) store.save({ revision, autoUpdate: revision % 2 === 0, overrides: [] });
+  expect(versionsOf(store.dir, 'settings')).toEqual(Array.from({ length: 10 }, (_, i) => 12 - i));
+  const reopened = new PricingStore(homes[0], { publicKey });
+  expect(reopened.settings).toMatchObject({ revision: 12, autoUpdate: false });
 });
 
 test('large escaped catalogs survive download, disk restart, rollback and browser RPC', { timeout: 20000 }, async () => {
