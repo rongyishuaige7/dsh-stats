@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { LEGACY_LOG_LIMITS, readSessionRecords, readStable } from '../src/host-log.js';
-import { deriveSessionInfoAsync, deriveSessionInfoFromEvents, SESSION_CACHE_LIMITS, sessionInfo } from '../src/host-sessions.js';
+import { beginSessionScans, deriveSessionInfoAsync, deriveSessionInfoFromEvents, SESSION_CACHE_LIMITS, sessionInfo } from '../src/host-sessions.js';
 
 const homes = [];
 afterEach(() => {
@@ -176,7 +176,14 @@ test('invalid packed timestamps reject the whole batch without emitting a partia
 	expect(result).toMatchObject({ times: [], malformedRecords: 1, partial: true });
 });
 
-test('legacy caches evict by estimated retained bytes and reuse entries that still fit', { timeout: 20000 }, async () => {
+// The legacy cache is module-wide. Two walks age every row an earlier test
+// left behind, so each test starts from an evictable cache.
+function freshScan() {
+	beginSessionScans();
+	beginSessionScans();
+}
+
+test('legacy caches budget estimated bytes and evict only rows the previous walk skipped', { timeout: 20000 }, async () => {
 	const home = tempHome();
 	const payload = Array.from({ length: 51000 }, (_, seq) => JSON.stringify({ type: 'event', seq, time: 1000 + seq })).join('\n') + '\n';
 	for (const id of ['first', 'second']) {
@@ -189,14 +196,53 @@ test('legacy caches evict by estimated retained bytes and reuse entries that sti
 	const originalBytes = SESSION_CACHE_LIMITS.bytes;
 	SESSION_CACHE_LIMITS.bytes = 500 * 1024;
 	try {
+		freshScan();
 		expect((await sessionInfo(home, 'first')).times).toHaveLength(51000);
-		expect((await sessionInfo(home, 'second')).times).toHaveLength(51000);
-		const reads = opened.mock.calls.length;
-		await sessionInfo(home, 'second');
-		expect(opened).toHaveBeenCalledTimes(reads);
+		const afterFirst = opened.mock.calls.length;
 		await sessionInfo(home, 'first');
-		expect(opened).toHaveBeenCalledTimes(reads + 1);
+		expect(opened).toHaveBeenCalledTimes(afterFirst);
+		// Both rows do not fit. The one this walk already cached is kept.
+		expect((await sessionInfo(home, 'second')).times).toHaveLength(51000);
+		const afterSecond = opened.mock.calls.length;
+		await sessionInfo(home, 'second');
+		expect(opened.mock.calls.length).toBeGreaterThan(afterSecond);
+		// Once a whole walk skips `first`, `second` may replace it.
+		freshScan();
+		await sessionInfo(home, 'second');
+		const replaced = opened.mock.calls.length;
+		await sessionInfo(home, 'second');
+		expect(opened).toHaveBeenCalledTimes(replaced);
+		await sessionInfo(home, 'first');
+		expect(opened.mock.calls.length).toBeGreaterThan(replaced);
 	} finally { SESSION_CACHE_LIMITS.bytes = originalBytes; }
+});
+
+test('a walk larger than the legacy cache keeps a stable cached subset instead of thrashing', { timeout: 20000 }, async () => {
+	const home = tempHome();
+	const payload = Array.from({ length: 20 }, (_, seq) => JSON.stringify({ type: 'request/header', seq, time: 1000 + seq * 1000 })).join('\n') + '\n';
+	for (let index = 0; index < 15; index++) {
+		const dir = join(home, 'sessions', 'workspace', 'w' + index);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'session.jsonl'), payload);
+	}
+	const opened = vi.spyOn(fs, 'open');
+	syncBuiltinESMExports();
+	const originalEntries = SESSION_CACHE_LIMITS.entries;
+	SESSION_CACHE_LIMITS.entries = 10;
+	try {
+		freshScan();
+		const walk = async () => {
+			beginSessionScans();
+			const before = opened.mock.calls.length;
+			for (let index = 0; index < 15; index++) expect((await sessionInfo(home, 'w' + index)).times).toHaveLength(20);
+			return opened.mock.calls.length - before;
+		};
+		const cold = await walk();
+		// A plain LRU with 10 slots re-reads all 15 sessions on every walk.
+		const warm = await walk();
+		expect(warm).toBeLessThan(cold);
+		expect(await walk()).toBe(warm);
+	} finally { SESSION_CACHE_LIMITS.entries = originalEntries; }
 });
 
 test('legacy cache retains a working set larger than the old unit cap', { timeout: 20000 }, async () => {
@@ -210,8 +256,10 @@ test('legacy cache retains a working set larger than the old unit cap', { timeou
 	const opened = vi.spyOn(fs, 'open');
 	syncBuiltinESMExports();
 	const scan = async () => {
+		beginSessionScans();
 		for (let index = 0; index < 130; index++) expect((await sessionInfo(home, 's' + index)).times).toHaveLength(800);
 	};
+	freshScan();
 	await scan();
 	const reads = opened.mock.calls.length;
 	await scan();

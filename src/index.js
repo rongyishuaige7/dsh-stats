@@ -66,7 +66,7 @@ function finalizeWarnings(warnings) {
 	return { warnings: output, unique: actionableFinal };
 }
 import { BALANCE_CACHE_MS, balanceErrorCode, balanceState, fetchDeepSeekBalance, normalizeBalanceInfo, staleBalancePayload, unavailableBalancePayload } from "./host-balance.js";
-import { STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo } from "./host-sessions.js";
+import { STATS_ROUTE_PROJECTION, beginSessionScans, contextService, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo, sessionInfoBytes, touchOfficialRead } from "./host-sessions.js";
 import { addRaw, emptyRaw, modelUsages, projectionSlotUsage, repriceSnapshot, slotDurations, slotUsages } from "./host-usage.js";
 // ES decorators 运行时（与官方编译产物一致）
 var __runInitializers = function (thisArg, initializers, value) {
@@ -213,6 +213,7 @@ let StatsService = (() => {
 			const sessionProjections = contextService(hostCtx, "sessionProjections");
 			const projectionCache = contextService(hostCtx, "sessionProjectionCache");
 			const readCache = officialReadCache(this);
+			if (!overridePricing) beginSessionScans(readCache);
 			const readServices = [persistence, sessionQuery, sessionProjections, projectionCache];
 			const officialWorkspaceAvailable = typeof workspaceRegistry?.list === "function";
 			const officialProjectionAvailable = typeof projectionCache?.coldSnapshot === "function"
@@ -370,6 +371,7 @@ let StatsService = (() => {
 					// `value` is a deep snapshot taken when it was cached and is never
 					// mutated by the aggregation path; reuse it instead of cloning it
 					// again on every refresh.
+					touchOfficialRead(readCache, sessionId);
 					({ info, officialSource, officialValues } = cachedRead.value);
 					warnings.push(...cachedRead.warnings);
 				} else {
@@ -433,11 +435,18 @@ let StatsService = (() => {
 					if (revision !== null && officialSource && info && !info.partial && !info.stale &&
 						warnings.slice(warningStart).every(row => row.code.startsWith("OFFICIAL_") && row.code.endsWith("_USED"))) {
 						const afterRevision = await officialReadRevision(hostCtx, sessionId, warnings);
+						// Keep only the projection fields this aggregate reads: a host
+						// may mount other projections whose values are much larger.
+						const cachedValues = officialValues && {
+							sessionStats: officialValues.sessionStats, tokenUsage: officialValues.tokenUsage,
+							statsRoute: officialValues.statsRoute, sessionListMetadata: officialValues.sessionListMetadata,
+							title: officialValues.title
+						};
 						if (afterRevision === revision) rememberOfficialRead(readCache, sessionId, {
 							revision, metadataKey, services: readServices,
-							weight: 1 + info.usages.length * 2 + info.times.length + info.slotStats.length,
+							bytes: sessionInfoBytes(info) + (JSON.stringify(cachedValues) || "").length + 512,
 							warnings: warnings.slice(warningStart).map(row => ({ ...row })),
-							value: structuredClone({ info, officialValues, officialSource: {
+							value: structuredClone({ info, officialValues: cachedValues, officialSource: {
 								header: officialSource.header, source: officialSource.source, inheritedEventCount: officialSource.inheritedEventCount
 							} })
 						});

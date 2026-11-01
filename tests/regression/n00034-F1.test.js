@@ -72,6 +72,7 @@ vi.mock('../../src/host-util.js', async () => {
 
 vi.mock('../../src/host-sessions.js', () => ({
 	STATS_ROUTE_PROJECTION: {},
+	beginSessionScans: () => {},
 	contextService: (ctx, name) => ctx?.[name],
 	deriveSessionInfoFromEvents: () => null,
 	forgetOfficialRead: () => {},
@@ -85,6 +86,8 @@ vi.mock('../../src/host-sessions.js', () => ({
 	projectionCheckpoint: () => ({}),
 	rememberOfficialRead: () => {},
 	routeProjectionValueFromEntry: () => null,
+	sessionInfoBytes: () => 0,
+	touchOfficialRead: () => {},
 	sessionInfo: async () => ({
 		times: [], lastTime: null, model: null, providerId: 'unknown', accountType: 'api',
 		usages: [], slotStats: [], activityTimes: [], origin: null, parentSession: null,

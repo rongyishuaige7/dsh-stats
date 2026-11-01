@@ -21,8 +21,11 @@ vi.mock('../../src/host-sessions.js', () => ({
 		if (!cache) { cache = { entries: new Map() }; state.caches.set(service, cache); }
 		return cache;
 	},
+	beginSessionScans: () => {},
 	forgetOfficialRead: (cache, sessionId) => { cache.entries.delete(sessionId); },
 	rememberOfficialRead: (cache, sessionId, value) => { cache.entries.set(sessionId, value); },
+	touchOfficialRead: () => {},
+	sessionInfoBytes: () => 0,
 	officialReadRevision: async () => state.config.revision,
 	officialSessionSource: async () => null,
 	officialProjectionValues: async () => null,

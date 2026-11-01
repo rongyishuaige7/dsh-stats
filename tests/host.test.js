@@ -8,7 +8,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import pricing from '../src/pricing.cjs';
 import { pricingStore } from '../src/pricing-store.js';
 import { StatsService, fetchDeepSeekBalance } from '../src/index.js';
-import { infoFromProjectionValues, sessionInfo } from '../src/host-sessions.js';
+import { OFFICIAL_READ_LIMITS, infoFromProjectionValues, sessionInfo } from '../src/host-sessions.js';
 import { readJson, readSessionProjcache, scanZstdFrames } from '../src/host-util.js';
 import { LEGACY_LOG_LIMITS } from '../src/host-log.js';
 import { TYPERT } from '../src/typert-host.js';
@@ -1182,6 +1182,46 @@ test('revision cache reuses official reads and invalidates replacements, failure
 	input = 40;
 	expect((await read()).projects[0].sessions[0].stats.uncached).toBe(40);
 	expect(readSession).toHaveBeenCalledTimes(4);
+});
+
+function officialScanOwner(count) {
+	const now = Date.parse('2026-09-17T02:00:00Z');
+	const ids = Array.from({ length: count }, (_, index) => 'scan' + index);
+	fixture(Object.fromEntries(ids.map((id) => [id, projection(now)])));
+	const headerOf = (id) => ({ id, version: 3, createdAt: now, cwd: '/tmp/fixture', isSeeded: false });
+	const readSession = vi.fn(async (id) => ({ header: headerOf(id), inheritedEventCount: 0, events: [{ type: 'assistant/message', seq: 0, time: now, data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 2 }, message: { source: { provider: 'deepseek', model: 'deepseek-v4-flash' } } } }] }));
+	// Without a live-session registry a query service may serve logs this
+	// context cannot version, so the revision cache stays off.
+	const owner = { ctx: {
+		sessions: { get: () => undefined },
+		sessionQuery: { readSession },
+		sessionPersistence: { stat: async (id) => ({ header: headerOf(id), revision: 'r1' }) },
+	} };
+	return { readSession, read: () => StatsService.prototype.aggregate.call(owner) };
+}
+
+test('official reads stay cached for a working set larger than the old 128-entry cap', async () => {
+	const { readSession, read } = officialScanOwner(150);
+	const first = await read();
+	expect(first.projects[0].sessions).toHaveLength(150);
+	expect(readSession).toHaveBeenCalledTimes(150);
+	await read();
+	expect(readSession).toHaveBeenCalledTimes(150);
+});
+
+test('an official working set over the cache budget keeps a stable cached subset', async () => {
+	const originalEntries = OFFICIAL_READ_LIMITS.entries;
+	OFFICIAL_READ_LIMITS.entries = 50;
+	try {
+		const { readSession, read } = officialScanOwner(150);
+		await read();
+		expect(readSession).toHaveBeenCalledTimes(150);
+		// A plain LRU would re-read all 150 sessions on every refresh.
+		await read();
+		expect(readSession).toHaveBeenCalledTimes(250);
+		await read();
+		expect(readSession).toHaveBeenCalledTimes(350);
+	} finally { OFFICIAL_READ_LIMITS.entries = originalEntries; }
 });
 
 test('a revision changed during the official read is never cached', async () => {

@@ -661,26 +661,66 @@ async function deriveSessionInfoAsync(rawEvents, header = null, quality = {}, li
 	return step.value;
 }
 
+// Every aggregate visits every session in the same order. A plain LRU smaller
+// than that walk evicts each entry just before the next walk reaches it, so
+// one session over the cap drops the hit rate to zero. Instead, only evict
+// rows the previous walk did not touch (removed or archived sessions) and
+// refuse a new row when the rest of the budget is in use: a working set over
+// the budget keeps a stable cached subset and degrades gracefully.
+function createScanCache(limits) {
+	return { entries: new Map(), bytes: 0, generation: 0, limits };
+}
+function beginCacheScan(cache) {
+	cache.generation += 1;
+}
+function touchCacheEntry(cache, key) {
+	const entry = cache.entries.get(key);
+	if (entry) entry.seenAt = cache.generation;
+	return entry;
+}
+function forgetCacheEntry(cache, key) {
+	const old = cache.entries.get(key);
+	if (old) cache.bytes -= old.bytes;
+	cache.entries.delete(key);
+}
+function admitCacheEntry(cache, key, entry) {
+	forgetCacheEntry(cache, key);
+	const { entries: maxEntries, bytes: maxBytes } = cache.limits;
+	if (entry.bytes > maxBytes) return false;
+	const over = () => cache.entries.size + 1 > maxEntries || cache.bytes + entry.bytes > maxBytes;
+	if (over()) {
+		for (const [oldKey, old] of cache.entries) {
+			if (old.seenAt >= cache.generation - 1) continue;
+			forgetCacheEntry(cache, oldKey);
+			if (!over()) break;
+		}
+		if (over()) return false;
+	}
+	entry.seenAt = cache.generation;
+	cache.entries.set(key, entry);
+	cache.bytes += entry.bytes;
+	return true;
+}
+
 // Cache normalized statistics, never raw conversation bodies. A persistence
 // revision must be observed before and after the read; live/unversioned sources
 // always use their authoritative services. Weak ownership follows StatsService.
+// Tests may lower the limits to exercise eviction without huge fixtures.
+const OFFICIAL_READ_LIMITS = { entries: 4096, bytes: 32 * 1024 * 1024 };
 const officialReadCaches = new WeakMap();
 function officialReadCache(owner) {
 	let cache = officialReadCaches.get(owner);
-	if (!cache) { cache = { entries: new Map(), weight: 0 }; officialReadCaches.set(owner, cache); }
+	if (!cache) { cache = createScanCache(OFFICIAL_READ_LIMITS); officialReadCaches.set(owner, cache); }
 	return cache;
 }
 function forgetOfficialRead(cache, id) {
-	const old = cache.entries.get(id);
-	if (old) cache.weight -= old.weight;
-	cache.entries.delete(id);
+	forgetCacheEntry(cache, id);
 }
 function rememberOfficialRead(cache, id, entry) {
-	forgetOfficialRead(cache, id);
-	if (entry.weight > 100000) return;
-	cache.entries.set(id, entry);
-	cache.weight += entry.weight;
-	while (cache.entries.size > 128 || cache.weight > 100000) forgetOfficialRead(cache, cache.entries.keys().next().value);
+	return admitCacheEntry(cache, id, entry);
+}
+function touchOfficialRead(cache, id) {
+	touchCacheEntry(cache, id);
 }
 async function officialReadRevision(ctx, id, warnings) {
 	const sessions = contextService(ctx, "sessions");
@@ -905,36 +945,36 @@ function streamFirstTokenTime(stream) {
 // 解码一个会话：返回时间戳、模型、按 (turn,step) 去重的 usage 样本和逐槽统计。
 // seedLength fork 边界：fork 子代理日志前 N 条是父继承上下文，seq < seedLength 的事件丢弃。
 // 读取使用 stat/read/stat 稳定快照，并只消费完整 zstd frame；活跃尾部会标记 partial。
-const sessionInfoCache = new Map(); // filePath -> { mtimeMs, ctimeMs, size, ino, info }
 // Bound retained arrays by an estimated byte size rather than array counts:
 // timestamps (8 B), usage samples (200 B) and slot rows (200 B) have very
-// different costs. Keep the budget larger than a typical working set so a
-// stable scan does not evict the oldest session before it is revisited.
-// Tests may lower `bytes` to exercise eviction without huge fixtures.
-const SESSION_CACHE_LIMITS = { entries: 300, bytes: 32 * 1024 * 1024 };
-let sessionCacheBytes = 0;
+// different costs. Keep the budget larger than a typical working set; the
+// scan-aware policy above handles a working set that is still larger.
+// Tests may lower the limits to exercise eviction without huge fixtures.
+const SESSION_CACHE_LIMITS = { entries: 4096, bytes: 32 * 1024 * 1024 };
+const sessionInfoCache = createScanCache(SESSION_CACHE_LIMITS); // filePath -> { mtimeMs, ctimeMs, size, ino, info }
 function sessionInfoBytes(info) {
-	return 256 + info.times.length * 8 + info.activityTimes.length * 8 + info.usages.length * 200 + info.slotStats.length * 200 + (info.header ? 512 : 0);
+	return 256 + (info.times?.length || 0) * 8 + (info.activityTimes?.length || 0) * 8 + (info.usages?.length || 0) * 200 + (info.slotStats?.length || 0) * 200 + (info.header ? 512 : 0);
 }
 function forgetSessionInfo(file) {
-	const old = sessionInfoCache.get(file);
-	if (old) sessionCacheBytes -= old.bytes;
-	sessionInfoCache.delete(file);
+	forgetCacheEntry(sessionInfoCache, file);
+}
+// Called once at the start of each aggregate walk (not for price previews,
+// which overlap a regular walk and would age its rows twice).
+function beginSessionScans(officialCache) {
+	beginCacheScan(sessionInfoCache);
+	if (officialCache) beginCacheScan(officialCache);
 }
 async function sessionInfo(home, sessionId) {
 	const file = findSessionFile(home, sessionId);
 	if (!file) return { times: [], lastTime: null, model: null, providerId: "unknown", accountType: "api", usages: [], origin: null, parentSession: null, seedLength: null, stats: null, slotStats: [], partial: false, stale: false, missing: true, seqGap: false, futureVersion: false, header: null };
-	const cached = sessionInfoCache.get(file);
+	const cached = sessionInfoCache.entries.get(file);
 	let snapshot;
 	try {
 		const observed = await stat(file);
 		if (cached?.stable && ["mtimeMs", "ctimeMs", "size", "ino"].every((key) => cached[key] === observed[key])) {
 			// Another asynchronous read may have evicted or replaced this entry
-			// while stat was pending. Do not resurrect it outside the weight cap.
-			if (sessionInfoCache.get(file) === cached) {
-				sessionInfoCache.delete(file);
-				sessionInfoCache.set(file, cached);
-			}
+			// while stat was pending. Do not resurrect it outside the budget.
+			if (sessionInfoCache.entries.get(file) === cached) touchCacheEntry(sessionInfoCache, file);
 			return cached.info;
 		}
 		snapshot = await readStable(file);
@@ -954,16 +994,8 @@ async function sessionInfo(home, sessionId) {
 		if (error.code === "SESSION_LOG_BUDGET_EXCEEDED") forgetSessionInfo(file);
 		throw error;
 	}
-	const bytes = sessionInfoBytes(info);
-	forgetSessionInfo(file);
-	if (bytes <= SESSION_CACHE_LIMITS.bytes) {
-		sessionInfoCache.set(file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info, bytes });
-		sessionCacheBytes += bytes;
-	}
-	while (sessionInfoCache.size > SESSION_CACHE_LIMITS.entries || sessionCacheBytes > SESSION_CACHE_LIMITS.bytes) {
-		forgetSessionInfo(sessionInfoCache.keys().next().value);
-	}
+	admitCacheEntry(sessionInfoCache, file, { mtimeMs, ctimeMs, size, ino, stable: snapshot.stable, info, bytes: sessionInfoBytes(info) });
 	return info;
 }
 
-export { SESSION_CACHE_LIMITS, STATS_ROUTE_PROJECTION, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo };
+export { OFFICIAL_READ_LIMITS, SESSION_CACHE_LIMITS, STATS_ROUTE_PROJECTION, beginSessionScans, contextService, deriveSessionInfoAsync, deriveSessionInfoFromEvents, forgetOfficialRead, infoFromProjectionValues, isLegacyDescriptorError, normalizeProjectionUsage, officialProjectionValues, officialReadCache, officialReadRevision, officialSessionSource, projectionCheckpoint, rememberOfficialRead, routeProjectionValueFromEntry, sessionInfo, sessionInfoBytes, touchOfficialRead };
