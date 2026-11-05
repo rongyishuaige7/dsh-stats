@@ -284,7 +284,15 @@ width on narrow screens. It always has three sections.
   (25 per page).
 - Opening a model shows the full provider/model, current rules, source (official pricing) and a
   collapsed “Other periods” section.
-- Simple prices show an input/output summary; complex prices show “Tiered pricing · N current rules”.
+- Simple prices show an input/output summary. A tiered model with one current rule shows the range
+  a standard-tier request can be billed at, such as “In ¥1–2 / Out ¥4–8”, and the line below names
+  what the price depends on: time of day, a context threshold (“Higher above 272k context”), or
+  other service tiers and their multipliers (“priority ×2 · batch / flex ×0.5”). Several current
+  rules still show “Tiered pricing · N current rules”.
+- The “In use” tag appears only under “All models”; under “Used models” every row is in use.
+- The catalog line shows when the current catalog was published (“Current catalog · published
+  10-21 06:00”, Beijing time); hover it for the catalog version.
+- The foot of the list shows the plugin version and the project repository link.
 - Pending models offer “Set price”, prefilled with the provider and model.
 
 **Custom rules**

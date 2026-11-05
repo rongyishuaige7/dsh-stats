@@ -25,8 +25,6 @@ var useRef = react.useRef;
 var useCallback = react.useCallback;
 var Fragment = react.Fragment;
 var TAB_NAMES = ["overview", "timeline", "trends", "balance"];
-// Project repository entry in the panel title. Keep the fixed HTTPS URL in one place.
-var REPOSITORY_URL = "https://github.com/rongyishuaige7/dsh-stats";
 // Harness 0.1.7 primitives dropped the size-suffixed icons; Regular takes the same size prop.
 var IconDataOutline16 = primitives.IconDataOutline16 || primitives.IconDataOutlineRegular;
 var IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
@@ -542,17 +540,7 @@ function StatsPanel(props) {
 				onKeyDown: onPanelKeyDown
 			},
 				e("div", { className: "dss-head" },
-					e("h2", { id: "dss-title" },
-						e("a", {
-							className: "dss-title-link",
-							href: REPOSITORY_URL,
-							target: "_blank",
-							rel: "noopener noreferrer",
-							"data-action": "project-repository",
-							title: t("title.repository"),
-							"aria-label": t("title.repository")
-						}, e("span", { id: "dss-title-text" }, t("title")))
-					),
+					e("h2", { id: "dss-title" }, e("span", { id: "dss-title-text" }, t("title"))),
 					e("div", {
 						className: "dss-tabs",
 						role: "tablist",

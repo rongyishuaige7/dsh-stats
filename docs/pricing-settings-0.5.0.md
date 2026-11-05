@@ -125,7 +125,11 @@
 
 从上到下：紧凑同步摘要 → 待计价提示（有则显示）→ 搜索 → 已用/全部切换与数量 → 模型列表 → 分页。
 
-- 同步摘要只占一至两行，展示当前目录版本、上次成功同步时间和“检查更新”。详细更新设置放第三分区。
+- 同步摘要只占一至两行，展示当前目录、上次成功同步时间和“检查更新”。详细更新设置放第三分区。
+  0.5.x 起目录行写发布时间「当前目录 · MM-DD HH:mm 发布」（北京时间），目录编号和完整发布时间放进悬停提示；
+  `publishedAt` 无法解析时退回「当前目录 <版本号>」。完整版本号仍在「更新与版本」分区。
+- 0.5.x 起模型列表底部有一行「DSH 用量 <插件版本> · 项目仓库 · GitHub ↗」，只在模型列表视图显示（详情、自定义规则、更新与版本不显示）。
+  链接固定为 `https://github.com/rongyishuaige7/dsh-stats`，新窗口打开；插件版本由 `scripts/build.mjs` 以 `__DSS_VERSION__` 注入，客户端不引入 `package.json`。
 - 待计价提示显示模型数与可操作条目；超过 3 个时先展示前 3 个，加“展开其余 N 个”，展开后仍由抽屉正文滚动。每条显示 Provider、模型和“设置价格”。
 - 已用筛选至少匹配到一个目录模型时，初始选“已用模型”；否则选“全部模型”，显示“暂无已用模型记录，可浏览全部价格”。刷新后不强制改用户已选筛选。
 - 筛选范围只作用于价格目录；搜索时仍受已用/全部约束。无结果时给清空搜索或切到全部的明确入口，不静默扩大搜索范围。
@@ -137,8 +141,18 @@
 - 复用 `groupKey`：`[providerId || 'family:'+family, canonical]`。不同 Provider、canonical 和真实 thinking 变体不能因名称相近合并。
 - 保留 `catalogGroups()` 现有“已用优先 → DeepSeek 优先 → Provider → canonical”顺序，搜索覆盖模型 canonical、Provider 与 aliases。
 - 每行是可聚焦的详情入口，展示模型名、Provider、已用标记、价格摘要；provisional 继续显示“自动接入，待复核”。不再一段价格规则占一行。
+  0.5.x 起“已使用”标记只在「全部模型」范围显示；「已用模型」范围里每行都是已用模型，不再重复标记。
 - **简单价**：只有一条当前规则，费率模式为 `rates`，且没有非 1 的服务档倍率时，显示“输入 ¥X / 输出 ¥Y”，同时显示币种与适用账户类型；规则未限定账户类型时不能擅自标为 api。完整四项价格在详情。
-- **复杂价**：多条当前规则、上下文分档、服务档、时段、legacy 模式或非 1 倍率，一律显示“分档价格 · N 条当前规则”，不调用 `primaryRates()` 把其中一档当通用价。
+- **复杂价（0.5.x 修订）**：只有一条当前规则时，主行显示标准服务档下可能出现的非缓存输入与输出单价范围，
+  例如“输入 ¥1–2 / 输出 ¥4–8”；两端相等时只写一个数。次行依次写币种、限定的账户类型（未限定时省略）和分档依据：
+  - 分时段或 legacy：「分时段（高峰 / 非高峰）」，范围取非高峰到高峰；
+  - 上下文分档：「超过 272k 上下文加价」，阈值取规则的 `contextThreshold`；服务档规则取引擎的 512k；
+  - 非 1 的服务档倍率：按倍率合并档位，例如「priority ×2 · batch / flex ×0.5」，倍率四舍五入到两位小数；
+  - 服务档费率：「另有 priority 档」。
+  依据只在长档或高峰确实更贵时显示。范围不含 priority、batch 等其他服务档，这些档只列在次行，
+  不调用 `primaryRates()` 把其中一档当通用价。规则缺 `standard` 倍率时标准档没有价格，主行显示“未知”。
+  多条当前规则仍显示“分档价格 · N 条当前规则”。
+  原型里的「输入 $2.5 起」没有采用：同一行还写着 batch ×0.5，“起”会和更便宜的档位矛盾，所以统一写范围。
 - **没有当前规则**：显示“暂无当前价格”，附历史/尚未生效数量。
 - 简单价中的未知值显示“未知”，免费显示 `¥0/$0`。保留 `fmtRateValue()` 的 8 位有效数字与极小价格行为，不能统一 `toFixed(2)`。
 - 模型名在宽处可省略；详情必须完整可复制，窄屏与长 Provider 可自然换行，不能依赖横向滚动或 title 才读得到身份。
@@ -290,16 +304,17 @@
 ┌ 计价设置                                      关闭 ┐
 │ [模型价格]  [自定义规则]  [更新与版本]              │
 ├───────────────────────────────────────────────────┤
-│ 当前目录 2026101816 · 上次同步 …      [检查更新]   │
+│ 当前目录 · 10-21 06:00 发布 · 上次同步 … [检查更新]│
 │ 待计价 2 个模型                                   │
 │ provider / model-a                    [设置价格]  │
 │ provider / model-b                    [设置价格]  │
 │ [搜索模型或供应商                              ] │
 │ [已用模型] [全部模型]     X 个模型 · Y 条价格规则  │
 │ model-a · provider                  输入 ¥X/输出¥Y│
-│ model-b · provider                  分档价格       │
+│ model-b · provider               输入 $2.5–5 / …  │
 │ model-c · provider                  暂无当前价格   │
 │                       [上一页] 1/N [下一页]       │
+│ DSH 用量 0.5.2 · 项目仓库 · GitHub ↗              │
 └───────────────────────────────────────────────────┘
 ```
 
@@ -382,7 +397,7 @@
 
 | 函数 | 输入 → 输出 | 约束 |
 | --- | --- | --- |
-| `modelPriceSummary(group)` | 已分阶段的 group → `{kind, currentCount, historicalCount, upcomingCount, rule?}` | kind 为 flat/tiered/none；flat 才携带唯一当前规则，UI 再按 locale 格式化 |
+| `modelPriceSummary(group)` | 已分阶段的 group → `{kind, currentCount, historicalCount, upcomingCount, rule?, span?}` | kind 为 flat/tiered/none；flat 才携带唯一当前规则；只有一条当前规则的 tiered 携带 `span = {currency, accountType, input, output, timeOfDay, contextThreshold, multipliers, serviceTiers}`（`input`/`output` 为标准档 `{min, max}` 或 null），UI 再按 locale 格式化 |
 | `selectModelGroups(groups, {search, scope, page, pageSize})` | 已排序 groups → `{rows, modelCount, ruleCount, page, pageCount}` | scope 为 used/all；按组分页，规则数包含所有时期，页码裁到有效范围；空结果 page=0/pageCount=1 |
 | `catalogSnapshotRows(status, limit)` | 状态＋显示上限 → `{versions, total, hasMore}` | 过滤、去重、数值倒序、排除 current，不推测元数据；默认 limit=5 |
 

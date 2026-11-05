@@ -41,6 +41,8 @@ const client = await build({
   // Keep multiline literals intact when the module-loader wrapper indents code.
   supported: { "template-literal": false },
   external: CLIENT_EXTERNALS,
+  // Only the version string reaches the client; the rest of package.json stays out of the bundle.
+  define: { __DSS_VERSION__: JSON.stringify(pkg.version) },
   write: false,
   minify: true,
   legalComments: "none",

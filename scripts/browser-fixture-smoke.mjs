@@ -271,7 +271,7 @@ async function capture(name) {
 }
 async function layout(name) {
   const issues = await evaluate(`(() => {
-    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-tr-mtable','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle','.dss-price-nav','.dss-price-sync','.dss-price-pending','.dss-price-model-row','.dss-price-detail-head','.dss-price-rule-detail','.dss-price-commit'];
+    const selectors = ['.dss-head','.dss-tabs','.dss-data-status','.dss-status-banner','.dss-tools','.dss-kpis','.dss-tr-kpis','.dss-tr-tools','.dss-tr-chart','.dss-tr-heat','.dss-tr-mtable','.dss-strip','.dss-ptable','.dss-bal-kpis','.dss-bal-row','.dss-bal-meter','.dss-bal-idle','.dss-price-nav','.dss-price-sync','.dss-price-pending','.dss-price-model-row','.dss-price-detail-head','.dss-price-rule-detail','.dss-price-commit','.dss-price-repo'];
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(node => {
       if (!node.getClientRects().length || node.scrollWidth <= node.clientWidth + 2) return [];
       // The tablist is intentionally horizontally scrollable below 860px.
@@ -451,58 +451,80 @@ try {
   await evaluate('window.__fixture.releaseStats()').catch(() => {});
   report.checks.push('dialog semantics: focus starts on the current tab, Tab/Shift+Tab loop, arrows move focus only, Enter activates, export-menu and panel Escape order, IME-safe Escape restores focus');
 
-  // R2: the panel title links to the project repository without changing dialog naming.
+  // Item 23: the panel title is plain text; the repository entry sits at the foot of the pricing model list.
   const REPO_URL = 'https://github.com/rongyishuaige7/dsh-stats';
   const REPO_LINK = '[data-action=project-repository]';
+  const PLUGIN_VERSION = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
   async function axTree() {
     await command('Accessibility.enable');
     const result = await command('Accessibility.getFullAXTree');
     return result.nodes;
   }
+  async function openRepoDrawer() {
+    await click('[data-action=pricing]');
+    await until('document.querySelector(".dss-drawer") && document.querySelector(".dss-price-count")');
+    await until(`document.querySelector(${JSON.stringify(REPO_LINK)})`);
+    await evaluate(`document.querySelector(${JSON.stringify(REPO_LINK)}).scrollIntoView({ block: 'nearest' })`);
+  }
   await navigate('/?lang=zh');
   await click('.dss-trigger');
   await until('document.querySelector(".dss-data-status.exact")');
   assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'opening the panel still focuses the current tab');
-  const repoAttrs = await evaluate(`(() => { const a = document.querySelector(${JSON.stringify(REPO_LINK)}); return a && {
-    href: a.getAttribute('href'), resolved: a.href, target: a.target, rel: a.rel, title: a.title,
-    aria: a.getAttribute('aria-label'), text: a.textContent, visible: a.querySelector('#dss-title-text')?.textContent,
-    heading: a.closest('h2')?.id, tag: a.tagName }; })()`);
-  assert(repoAttrs, 'panel title exposes the repository link');
+  const titleAttrs = await evaluate(`(() => { const h2 = document.querySelector('#dss-title'); return { text: h2.textContent, links: h2.querySelectorAll('a').length,
+    span: h2.querySelector('#dss-title-text')?.textContent, labelledby: document.querySelector('.dss-panel').getAttribute('aria-labelledby'),
+    repoInPanel: !!document.querySelector('.dss-panel ${REPO_LINK}') }; })()`);
+  assert.deepEqual(titleAttrs, { text: 'DSH 用量', links: 0, span: 'DSH 用量', labelledby: 'dss-title-text', repoInPanel: false }, 'panel title is plain text and keeps the dialog name target');
+  let ax = await axTree();
+  const dialogAx = ax.find(node => node.role?.value === 'dialog' && !node.ignored);
+  assert.equal(dialogAx?.name?.value, 'DSH 用量', 'dialog name stays the visible title: ' + JSON.stringify(dialogAx?.name));
+  assert(!ax.some(node => node.role?.value === 'link' && String(node.name?.value || '').includes('GitHub') && !node.ignored), 'the panel exposes no repository link outside the drawer');
+  assert(await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; return nodes.length > 0 && nodes[0].id === 'dss-tab-overview'; })()`), 'the active tab is the first focusable in the panel');
+  report.checks.push('panel title: plain text without a link, dialog name stays 用量, initial focus and first Tab stop are the current tab');
+
+  await openRepoDrawer();
+  const repoAttrs = await evaluate(`(() => { const a = document.querySelector(${JSON.stringify(REPO_LINK)}); const line = a.closest('.dss-price-repo'); return {
+    href: a.getAttribute('href'), resolved: a.href, target: a.target, rel: a.rel, title: a.title, aria: a.getAttribute('aria-label'),
+    text: a.textContent, line: line && line.textContent, tag: a.tagName, inDrawer: !!a.closest('.dss-drawer-body'),
+    afterList: !!line && !!line.previousElementSibling && line.previousElementSibling.matches('.dss-price-model-list,.dss-price-pagination,.dss-price-empty-state'),
+    count: document.querySelectorAll(${JSON.stringify(REPO_LINK)}).length }; })()`);
   assert.equal(repoAttrs.tag, 'A', 'repository entry is a native link');
   assert.equal(repoAttrs.href, REPO_URL, 'repository link uses the fixed HTTPS URL');
   assert.equal(repoAttrs.resolved, REPO_URL, 'repository link resolves to the fixed URL');
   assert.equal(repoAttrs.target, '_blank', 'repository link opens in a new window');
   assert.equal(repoAttrs.rel, 'noopener noreferrer', 'repository link drops opener and referrer');
-  assert.equal(repoAttrs.heading, 'dss-title', 'link stays inside h2#dss-title');
-  assert.equal(repoAttrs.visible, 'DSH 用量', 'visible title text is unchanged');
-  assert(repoAttrs.title.includes('DSH 用量') && repoAttrs.title.includes('GitHub') && repoAttrs.title.includes('新窗口'), 'hover hint names the repository and the new window: ' + repoAttrs.title);
-  assert(repoAttrs.aria.includes('DSH 用量') && repoAttrs.aria.includes('GitHub') && repoAttrs.aria.includes('新窗口'), 'accessible name includes the visible title and new-window behavior: ' + repoAttrs.aria);
-  assert.equal(await evaluate('document.querySelectorAll(' + JSON.stringify(REPO_LINK) + ').length'), 1, 'one repository entry per panel');
-  let ax = await axTree();
-  const dialogAx = ax.find(node => node.role?.value === 'dialog' && !node.ignored);
-  assert.equal(dialogAx?.name?.value, 'DSH 用量', 'dialog name stays the visible title: ' + JSON.stringify(dialogAx?.name));
-  const linkAx = ax.find(node => node.role?.value === 'link' && String(node.name?.value || '').includes('GitHub'));
-  assert(linkAx, 'accessibility tree exposes the repository link');
-  assert(String(linkAx.name.value).includes('DSH 用量') && String(linkAx.name.value).includes('新窗口'), 'link name keeps the visible title and new-window wording: ' + linkAx.name.value);
-  assert(!String(dialogAx.name.value).includes('GitHub'), 'link wording does not leak into the dialog name');
-  report.checks.push('repository link: fixed HTTPS href, new-window target, noopener noreferrer, data-action, unchanged title text, dialog name stays 用量');
+  assert(repoAttrs.inDrawer && repoAttrs.afterList, 'repository line follows the model list inside the drawer body: ' + JSON.stringify(repoAttrs));
+  assert.equal(repoAttrs.count, 1, 'one repository entry per page');
+  assert.equal(repoAttrs.line, 'DSH 用量 ' + PLUGIN_VERSION + ' · 项目仓库 · GitHub ↗', 'repository line names the built package version');
+  assert(repoAttrs.title.includes('GitHub') && repoAttrs.title.includes('新窗口'), 'hover hint names the repository and the new window: ' + repoAttrs.title);
+  assert(repoAttrs.aria.includes('项目仓库 · GitHub') && repoAttrs.aria.includes('新窗口'), 'accessible name contains the visible words and the new-window behavior: ' + repoAttrs.aria);
+  ax = await axTree();
+  const linkAx = ax.find(node => node.role?.value === 'link' && String(node.name?.value || '').includes('GitHub') && !node.ignored);
+  assert(linkAx && String(linkAx.name.value).includes('新窗口'), 'accessibility tree exposes the repository link: ' + JSON.stringify(linkAx?.name));
+  report.checks.push('repository link: drawer model list foot, fixed HTTPS href, new-window target, noopener noreferrer, data-action, package version ' + PLUGIN_VERSION);
 
-  // Keyboard order: link sits before the tabs, and every tab can reach it.
+  // Keyboard: the link is the drawer's last stop, the trap wraps both ways, and the panel behind stays unreachable.
   await focus(REPO_LINK);
   await press('Tab');
-  assert.equal(await evaluate('document.activeElement.id'), 'dss-tab-overview', 'Tab moves from the title link to the active tab');
+  assert.equal(await evaluate('document.activeElement.getAttribute("data-action")'), 'drawer-close', 'Tab from the repository link wraps to the drawer close button');
   await press('Tab', 8);
-  assert(await evaluate(`document.activeElement.matches(${JSON.stringify(REPO_LINK)})`), 'Shift+Tab moves from the active tab back to the title link');
-  for (const index of [1, 2, 3, 4]) {
-    await tab(index);
-    if (index === 4) await until('document.querySelector(".dss-bal-row")');
-    await focus(REPO_LINK);
-    assert(await evaluate(`document.activeElement.matches(${JSON.stringify(REPO_LINK)})`), 'title link is reachable on tab ' + index);
+  assert(await evaluate(`document.activeElement.matches(${JSON.stringify(REPO_LINK)})`), 'Shift+Tab from the close button wraps back to the repository link');
+  let escapedDrawer = false;
+  for (let index = 0; index < 30; index++) {
+    await press('Tab');
+    if (await evaluate('!document.activeElement.closest(".dss-drawer")')) { escapedDrawer = true; break; }
   }
-  await tab(1);
-  assert(await evaluate(`(() => { const nodes = ${PANEL_FOCUSABLES}; return nodes.length > 0 && nodes[0].matches(${JSON.stringify(REPO_LINK)}); })()`), 'title link is the first focusable in the panel');
-  report.checks.push('repository link: initial focus unchanged, first in Tab order, reachable from all four tabs');
-
+  assert.equal(escapedDrawer, false, 'focus stays inside the pricing drawer');
+  await openPricingModel(await evaluate('document.querySelector(".dss-price-model-row").dataset.modelKey'));
+  assert.equal(await evaluate(`document.querySelectorAll(${JSON.stringify(REPO_LINK)}).length`), 0, 'model detail hides the repository line');
+  await click('[data-action=price-back-models]');
+  await until(`document.querySelector(${JSON.stringify(REPO_LINK)})`);
+  for (const name of ['custom', 'updates']) {
+    await pricingSection(name);
+    assert.equal(await evaluate(`document.querySelectorAll(${JSON.stringify(REPO_LINK)}).length`), 0, name + ' section hides the repository line');
+  }
+  await pricingSection('models');
+  await until(`document.querySelector(${JSON.stringify(REPO_LINK)})`);
+  report.checks.push('repository link: last drawer stop, Tab/Shift+Tab wrap with the close button, focus stays in the drawer, only the model list shows it');
   // Activation and request boundary. Intercept the new-window navigation and record the target.
   await evaluate(`(() => {
     window.__repoOpen = [];
@@ -510,114 +532,96 @@ try {
       const link = event.target.closest && event.target.closest('[data-action=project-repository]');
       if (!link) return;
       event.preventDefault();
-      window.__repoOpen.push({ href: link.href, target: link.target, rel: link.rel, panel: !!document.querySelector('.dss-panel') });
+      window.__repoOpen.push({ href: link.href, target: link.target, rel: link.rel, drawer: !!document.querySelector('.dss-drawer') });
     }, { capture: true });
   })()`);
   const callsBeforeLink = await evaluate('JSON.stringify(window.__fixture.calls)');
+  const repoTarget = { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', drawer: true };
   await click(REPO_LINK);
   await delay(150);
-  assert.equal(await evaluate('window.__repoOpen.length'), 1, 'clicking the title link requests the repository target');
-  assert.deepEqual(await evaluate('window.__repoOpen[0]'), { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', panel: true }, 'click targets the repository in a new window');
-  assert.equal(await evaluate('JSON.stringify(window.__fixture.calls)'), callsBeforeLink, 'clicking the title link issues no aggregate, account or pricing call');
-  assert(await evaluate('!!document.querySelector(".dss-panel")'), 'clicking the title link keeps the panel open');
-  assert.equal(await evaluate('document.querySelector(".dss-panel").getAttribute("aria-labelledby")'), 'dss-title-text', 'dialog name association points at the title text');
+  assert.equal(await evaluate('window.__repoOpen.length'), 1, 'clicking the repository link requests the repository target');
+  assert.deepEqual(await evaluate('window.__repoOpen[0]'), repoTarget, 'click targets the repository in a new window');
+  assert.equal(await evaluate('JSON.stringify(window.__fixture.calls)'), callsBeforeLink, 'clicking the repository link issues no aggregate, account or pricing call');
+  assert(await evaluate('!!document.querySelector(".dss-drawer") && !!document.querySelector(".dss-panel")'), 'clicking the repository link keeps the drawer and panel open');
   await focus(REPO_LINK);
   await press('Enter');
-  assert.equal(await evaluate('window.__repoOpen.length'), 2, 'Enter on the focused title link opens the repository target');
-  assert.deepEqual(await evaluate('window.__repoOpen[1]'), { href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', panel: true }, 'Enter targets the repository in a new window');
-  assert.equal(await evaluate('JSON.stringify(window.__fixture.calls)'), callsBeforeLink, 'Enter on the title link issues no aggregate, account or pricing call');
+  assert.equal(await evaluate('window.__repoOpen.length'), 2, 'Enter on the focused repository link opens the repository target');
+  assert.deepEqual(await evaluate('window.__repoOpen[1]'), repoTarget, 'Enter targets the repository in a new window');
+  assert.equal(await evaluate('JSON.stringify(window.__fixture.calls)'), callsBeforeLink, 'Enter on the repository link issues no aggregate, account or pricing call');
   const hoverBox = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(REPO_LINK)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverBox.x, y: hoverBox.y });
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(REPO_LINK)})).textDecorationLine`), 'underline', 'hover underlines the title link');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(REPO_LINK)})).textDecorationLine`), 'underline', 'hover underlines the repository link');
   await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
-  report.checks.push('repository link: click and Enter request the fixed new-window target, hover underlines, panel and request counts stay unchanged');
-
-  // Focus ring in light and dark themes.
-  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
-  await focus(REPO_LINK);
-  const lightFocus = await evaluate(`(() => { const s = getComputedStyle(document.querySelector(${JSON.stringify(REPO_LINK)})); return { style: s.outlineStyle, width: s.outlineWidth, offset: s.outlineOffset, color: s.outlineColor }; })()`);
-  assert.equal(lightFocus.style, 'solid', 'light focus ring uses a solid outline: ' + JSON.stringify(lightFocus));
-  assert.equal(lightFocus.width, '2px', 'light focus ring is 2px: ' + JSON.stringify(lightFocus));
-  await capture('title-link-focus-light');
-  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-  await navigate('/?theme=dark&lang=zh');
-  await click('.dss-trigger');
-  await until('document.querySelector(".dss-data-status.exact")');
-  await focus(REPO_LINK);
-  const darkFocus = await evaluate(`(() => { const s = getComputedStyle(document.querySelector(${JSON.stringify(REPO_LINK)})); return { style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor, link: s.color, heading: getComputedStyle(document.querySelector('.dss-head h2')).color }; })()`);
-  assert.equal(darkFocus.style, 'solid', 'dark focus ring uses a solid outline: ' + JSON.stringify(darkFocus));
-  assert.equal(darkFocus.width, '2px', 'dark focus ring is 2px: ' + JSON.stringify(darkFocus));
-  assert.equal(darkFocus.link, darkFocus.heading, 'link keeps the heading color in dark theme');
-  await capture('title-link-focus-dark');
-  await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
-  report.checks.push('repository link: light and dark focus rings use the accent token at 2px, link keeps heading color');
-
-  // English at 320px plus the full width/language matrix.
-  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
-  await navigate('/?lang=en');
-  await click('.dss-trigger');
-  await until('document.querySelector(".dss-data-status.exact")');
-  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
-  await focus(REPO_LINK);
-  const narrowEn = await evaluate(`(() => { const a = document.querySelector(${JSON.stringify(REPO_LINK)}); const head = document.querySelector('.dss-head'); return { lines: new Set([...a.getClientRects()].map(r => Math.round(r.top))).size, overflow: head.scrollWidth - head.clientWidth, name: a.getAttribute('aria-label') }; })()`);
-  assert.equal(narrowEn.lines, 1, 'English title link stays on one line at 320px: ' + JSON.stringify(narrowEn));
-  assert(narrowEn.overflow <= 1, 'English header does not overflow at 320px: ' + narrowEn.overflow);
-  assert(narrowEn.name.includes('DSH Usage') && narrowEn.name.includes('opens in a new window'), 'English accessible name: ' + narrowEn.name);
-  await capture('title-link-320-en');
-  await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
-  for (const width of [320, 390, 641, 700, 768, 1024, 1440]) {
-    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
-    for (const lang of ['zh', 'en']) {
-      await navigate('/?lang=' + lang);
-      await click('.dss-trigger');
-      await until('document.querySelector(".dss-data-status.exact")');
-      const metrics = await evaluate(`(() => {
-        const head = document.querySelector('.dss-head');
-        const h2 = head.querySelector('h2');
-        const link = h2.querySelector('[data-action=project-repository]');
-        const tabs = document.querySelector('.dss-tabs');
-        const hb = head.getBoundingClientRect(), lb = link.getBoundingClientRect(), tb = tabs.getBoundingClientRect();
-        return {
-          overflow: head.scrollWidth - head.clientWidth,
-          lines: new Set([...link.getClientRects()].map(r => Math.round(r.top))).size,
-          inside: lb.left >= hb.left - 0.5 && lb.right <= hb.right + 0.5 && lb.top >= hb.top - 0.5 && lb.bottom <= hb.bottom + 0.5,
-          overlap: !(lb.right <= tb.left + 0.5 || lb.bottom <= tb.top + 0.5 || tb.right <= lb.left + 0.5 || tb.bottom <= lb.top + 0.5),
-          fontSize: parseFloat(getComputedStyle(link).fontSize)
-        };
-      })()`);
-      assert.equal(metrics.lines, 1, 'title link stays on one line at ' + width + 'px ' + lang);
-      assert(metrics.overflow <= 1, 'header does not overflow at ' + width + 'px ' + lang + ': ' + metrics.overflow);
-      assert(metrics.inside, 'title link stays inside the header at ' + width + 'px ' + lang);
-      assert(!metrics.overlap, 'title link does not overlap the tabs at ' + width + 'px ' + lang);
-      assert(metrics.fontSize >= 11, 'title link keeps the text floor at ' + width + 'px ' + lang);
-      await layout('title-link-' + width + '-' + lang);
-    }
-  }
-  report.checks.push('repository link: seven widths in Chinese and English stay on one line without header overflow, overlap or a smaller font');
-
-  // The pricing drawer keeps its own focus trap; the title link is unreachable behind it.
-  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await navigate('/?lang=zh');
-  await click('.dss-trigger');
-  await until('document.querySelector(".dss-data-status.exact")');
-  await click('[data-action=pricing]');
-  await until('document.querySelector(".dss-drawer")');
-  await focus('[data-action=drawer-close]');
-  let reachedBehindDrawer = false;
-  for (let index = 0; index < 30; index++) {
-    await press('Tab');
-    if (await evaluate(`document.activeElement.matches(${JSON.stringify(REPO_LINK)})`)) { reachedBehindDrawer = true; break; }
-  }
-  assert.equal(reachedBehindDrawer, false, 'title link is unreachable while the pricing drawer is open');
-  assert(await evaluate('document.activeElement.closest(".dss-drawer") !== null'), 'focus stays inside the pricing drawer');
   await press('Escape');
   await until('!document.querySelector(".dss-drawer")');
   assert(await evaluate('!!document.querySelector(".dss-panel")'), 'closing the drawer keeps the panel open');
   await press('Escape');
   await until('!document.querySelector(".dss-panel")');
   assert(await evaluate('document.activeElement === document.querySelector(".dss-trigger")'), 'Escape still returns focus to the sidebar trigger');
-  report.checks.push('repository link: pricing drawer trap blocks the title link, Escape order and trigger focus unchanged');
+  report.checks.push('repository link: click and Enter request the fixed new-window target, hover underlines, drawer and request counts stay unchanged, Escape order unchanged');
+
+  // Focus ring in light and dark themes uses the shared accent outline.
+  const focusRing = `(() => { const s = getComputedStyle(document.querySelector(${JSON.stringify(REPO_LINK)}));
+    const probe = document.createElement('span'); probe.style.color = 'var(--dss-accent)'; document.querySelector('.dss-drawer').appendChild(probe);
+    const accent = getComputedStyle(probe).color; probe.remove();
+    return { style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor, accent, size: parseFloat(s.fontSize) }; })()`;
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  try {
+    for (const theme of ['light', 'dark']) {
+      await navigate(theme === 'dark' ? '/?theme=dark&lang=zh' : '/?lang=zh');
+      await click('.dss-trigger');
+      await until('document.querySelector(".dss-data-status.exact")');
+      await openRepoDrawer();
+      await focus(REPO_LINK);
+      const ring = await evaluate(focusRing);
+      assert.equal(ring.style, 'solid', theme + ' focus ring uses a solid outline: ' + JSON.stringify(ring));
+      assert.equal(ring.width, '2px', theme + ' focus ring is 2px: ' + JSON.stringify(ring));
+      assert.equal(ring.color, ring.accent, theme + ' focus ring uses the accent token: ' + JSON.stringify(ring));
+      assert(ring.size >= 11, theme + ' repository link keeps the text floor: ' + ring.size);
+      await capture('repo-link-focus-' + theme);
+    }
+  } finally {
+    await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+  }
+  report.checks.push('repository link: light and dark focus rings use the accent token at 2px and keep the 11px floor');
+
+  // Seven widths in Chinese and English: the plain title fits the header and the repository line fits the drawer.
+  for (const width of [320, 390, 641, 700, 768, 1024, 1440]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
+    for (const lang of ['zh', 'en']) {
+      await navigate('/?lang=' + lang);
+      await click('.dss-trigger');
+      await until('document.querySelector(".dss-data-status.exact")');
+      const head = await evaluate(`(() => {
+        const head = document.querySelector('.dss-head'), title = head.querySelector('#dss-title-text'), tabs = document.querySelector('.dss-tabs');
+        const hb = head.getBoundingClientRect(), lb = title.getBoundingClientRect(), tb = tabs.getBoundingClientRect();
+        return {
+          overflow: head.scrollWidth - head.clientWidth,
+          lines: new Set([...title.getClientRects()].map(r => Math.round(r.top))).size,
+          inside: lb.left >= hb.left - 0.5 && lb.right <= hb.right + 0.5 && lb.top >= hb.top - 0.5 && lb.bottom <= hb.bottom + 0.5,
+          overlap: !(lb.right <= tb.left + 0.5 || lb.bottom <= tb.top + 0.5 || tb.right <= lb.left + 0.5 || tb.bottom <= lb.top + 0.5)
+        };
+      })()`);
+      assert.equal(head.lines, 1, 'title stays on one line at ' + width + 'px ' + lang);
+      assert(head.overflow <= 1, 'header does not overflow at ' + width + 'px ' + lang + ': ' + head.overflow);
+      assert(head.inside && !head.overlap, 'title stays inside the header without touching the tabs at ' + width + 'px ' + lang);
+      await openRepoDrawer();
+      const foot = await evaluate(`(() => {
+        const a = document.querySelector(${JSON.stringify(REPO_LINK)}), body = document.querySelector('.dss-drawer-body');
+        const ab = a.getBoundingClientRect(), bb = body.getBoundingClientRect();
+        return { lines: new Set([...a.getClientRects()].map(r => Math.round(r.top))).size, inside: ab.left >= bb.left - 0.5 && ab.right <= bb.right + 0.5,
+          size: parseFloat(getComputedStyle(a).fontSize), name: a.getAttribute('aria-label') };
+      })()`);
+      assert.equal(foot.lines, 1, 'repository link stays on one line at ' + width + 'px ' + lang);
+      assert(foot.inside, 'repository link stays inside the drawer body at ' + width + 'px ' + lang);
+      assert(foot.size >= 11, 'repository link keeps the text floor at ' + width + 'px ' + lang);
+      if (lang === 'en') assert(foot.name.includes('project repository') && foot.name.includes('opens in a new window'), 'English accessible name: ' + foot.name);
+      await layout('repo-link-' + width + '-' + lang);
+      if (width === 320 && lang === 'en') await capture('repo-link-320-en');
+    }
+  }
+  report.checks.push('panel title and repository link: seven widths in Chinese and English, title on one line without header overflow or overlap, repository link inside the drawer at 11px or more');
   for (const mode of ['stats=error', 'hold=1']) {
     await navigate('/?' + mode + '&lang=zh'); await click('.dss-trigger');
     await until('document.querySelector(".dss-kpis")');
@@ -1160,6 +1164,13 @@ try {
   await until(`document.querySelector('.dss-price-count')?.textContent === ${JSON.stringify(usedCountText)}`);
   assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row").length'), fixtureUsedSelection.rows.length, 'used model page is bounded by group pagination');
   assert.equal(await evaluate('document.querySelectorAll(".dss-price-rule-detail").length'), 0, 'model list keeps rule details lazy');
+  // Item 19: the used scope drops the redundant tag; the catalog line names its publish time.
+  assert(fixtureUsedSelection.rows.length > 0, 'fixture has used models');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row .dss-price-used-tag").length'), 0, 'used scope shows no used tags');
+  const publishedShort = new Date(Date.parse(signedCatalog.publishedAt) + 8 * 3600000).toISOString().slice(5, 16).replace('T', ' ');
+  const catalogLine = await evaluate('(() => { const node = document.querySelector(".dss-price-sync-line strong"); return { text: node.textContent, title: node.title }; })()');
+  assert.equal(catalogLine.text, (await evaluate('window.__fixture.t("price.catalogPublished")')).replace('%s', publishedShort), 'catalog line shows the publish time: ' + JSON.stringify(catalogLine));
+  assert(catalogLine.title.includes(String(signedCatalog.version)), 'catalog version stays in the hover title: ' + catalogLine.title);
   await layout('pricing-models'); await assertDrawerSingleScroll('pricing-models'); await assertTextFloor('pricing-models');
   await capture('desktop-pricing-models');
   await evaluate(`(() => { const nodes = ${DRAWER_FOCUSABLES}; if (!nodes.length) return false; nodes[nodes.length - 1].focus(); return true; })()`);
@@ -1172,6 +1183,7 @@ try {
     + fillTemplate(await evaluate('window.__fixture.t("price.pricingRuleCount")'), fixtureAllSelection.ruleCount);
   await until(`document.querySelector('.dss-price-count')?.textContent === ${JSON.stringify(allCountText)}`);
   assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row").length'), 25, 'all-model page holds 25 groups');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-price-model-row .dss-price-used-tag").length'), fixtureAllSelection.rows.filter(group => group.isUsed).length, 'all scope tags every used model');
   assert.equal(await evaluate('document.querySelector(".dss-price-pagination span").textContent'), '1 / ' + fixtureAllSelection.pageCount, 'group pagination starts at page one');
   await pricingSearch(flatModel.canonical);
   await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(flatModel.key)})`);
@@ -1197,7 +1209,16 @@ try {
   await pricingSearch(tieredModel.canonical);
   await until(`[...document.querySelectorAll('.dss-price-model-row')].some(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)})`);
   const tieredRowText = await evaluate(`[...document.querySelectorAll('.dss-price-model-row')].find(node => node.dataset.modelKey === ${JSON.stringify(tieredModel.key)}).textContent`);
-  assert(tieredRowText.includes((await evaluate('window.__fixture.t("price.tieredPrice")')).split('%d')[0]), 'complex model shows tiered summary');
+  const tieredSpan = summariesByKey.get(tieredModel.key).span;
+  if (tieredSpan && tieredSpan.input) {
+    const range = tieredSpan.input.min === tieredSpan.input.max ? view.fmtRateValue(tieredSpan.input.min, tieredSpan.currency)
+      : view.fmtRateValue(tieredSpan.input.min, tieredSpan.currency) + '–' + view.fmtRateValue(tieredSpan.input.max, '');
+    assert(tieredRowText.includes(range), 'complex model shows its standard-tier input range ' + range + ': ' + tieredRowText);
+    assert(!tieredRowText.includes((await evaluate('window.__fixture.t("price.tieredPrice")')).split('%d')[0]), 'single-rule tiered model shows numbers instead of a rule count');
+  } else {
+    assert(tieredRowText.includes((await evaluate('window.__fixture.t("price.tieredPrice")')).split('%d')[0]), 'complex model shows tiered summary');
+  }
+  report.checks.push('pricing summaries: catalog line shows the publish time with the version in its title, used tags only in the all scope, single-rule tiered models show the standard-tier range');
   await openPricingModel(tieredModel.key);
   assert(await evaluate('document.activeElement === document.querySelector(".dss-price-detail-title")'), 'detail focuses its title');
   const tieredSummary = summariesByKey.get(tieredModel.key);

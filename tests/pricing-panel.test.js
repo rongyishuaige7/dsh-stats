@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { ModelList, ModelDetail, UpdatesSection } = require('../src/pricing-panel.cjs');
+const { ModelList, ModelDetail, UpdatesSection, SyncSummary, RepositoryLine, REPOSITORY_URL } = require('../src/pricing-panel.cjs');
 const { catalogGroups, selectModelGroups } = require('../src/pricing-view.cjs');
 const { en } = require('../src/pricing-locale.cjs');
 const t = key => en[key] ?? key;
@@ -31,6 +31,67 @@ test('model list shows the no-used note and a flat price summary', () => {
   expect(html).toContain('data-model-key="[&quot;one&quot;,&quot;demo&quot;]"');
   expect(html).toContain('In ¥1 / Out ¥4');
   expect(html).toContain('CNY · Any account type');
+});
+
+const listHtml = (rules, scope, used = new Set()) => {
+  const list = catalogGroups({ rules }, used, at);
+  return renderToStaticMarkup(React.createElement(ModelList, {
+    selection: selectModelGroups(list, { scope, page: 0, pageSize: 25 }), scope, search: '', t, hasUsed: used.size > 0,
+    onScope() {}, onSearch() {}, onPage() {}, onOpen() {}, onClearSearch() {}, onShowAll() {},
+    listRef: React.createRef(), titleRef: React.createRef(), notice: '',
+  }));
+};
+
+test('tiered rows show the standard-tier range and name what the price depends on', () => {
+  const html = listHtml([rule('ctx', { currency: 'USD', rates: null, contextThreshold: 272000,
+    contextTiers: { short: { uncached: 2.5, cacheRead: 0.25, cacheWrite: 2.5, output: 15 }, long: { uncached: 5, cacheRead: 0.5, cacheWrite: 5, output: 22.5 } },
+    tierMultipliers: { standard: 1, priority: 2, batch: 0.5, flex: 0.5 } })], 'all');
+  expect(html).toContain('In $2.5–5 / Out $15–22.5');
+  expect(html).toContain('USD · Higher above 272k context · priority ×2 · batch / flex ×0.5');
+  expect(html).not.toContain('Tiered pricing');
+  const time = listHtml([rule('tou', { rates: null, timeOfUse: { peak: { uncached: 2, cacheRead: 0.04, cacheWrite: null, output: 8 },
+    offPeak: { uncached: 1, cacheRead: 0.02, cacheWrite: null, output: 4 }, calendar: { from: '2026-01-01', to: '2026-12-31', holidays: [], sourceUrl: 'https://example.com/c' } } })], 'all');
+  expect(time).toContain('In ¥1–2 / Out ¥4–8');
+  expect(time).toContain('CNY · Time of day (peak / off-peak)');
+  const service = listHtml([rule('svc', { rates: null, serviceTiers: { standard: { short: { uncached: 2.1, cacheRead: 0.42, cacheWrite: 2.1, output: 8.4 }, long: { uncached: 4.2, cacheRead: 0.84, cacheWrite: 4.2, output: 16.8 } },
+    priority: { short: { uncached: 3.15, cacheRead: 0.63, cacheWrite: 3.15, output: 12.6 }, long: { uncached: 6.3, cacheRead: 1.26, cacheWrite: 6.3, output: 25.2 } } } })], 'all');
+  expect(service).toContain('In ¥2.1–4.2 / Out ¥8.4–16.8');
+  expect(service).toContain('CNY · Higher above 512k context · Also priority tier');
+  const two = listHtml([rule('first'), rule('second')], 'all');
+  expect(two).toContain('Tiered pricing · 2 current rule(s)');
+});
+
+test('the used tag only marks rows in the all-models scope', () => {
+  const used = new Set([groups[0].key]);
+  expect(listHtml([rule('now')], 'all', used)).toContain('dss-price-used-tag');
+  expect(listHtml([rule('now')], 'used', used)).not.toContain('dss-price-used-tag');
+});
+
+test('the catalog line shows the publish time and keeps the version in the hover title', () => {
+  const status = { version: 2026101867, publishedAt: '2026-10-20T22:00:00Z', lastSuccessAt: null };
+  const props = { busy: false, dirty: false, checking: false, t, onRefresh() {} };
+  const html = renderToStaticMarkup(React.createElement(SyncSummary, { ...props, status, pinned: false }));
+  expect(html).toContain('>Current catalog · published 10-21 06:00</strong>');
+  expect(html).toContain('title="Catalog version 2026101867 · 2026-10-21 06:00 Beijing time"');
+  const pinned = renderToStaticMarkup(React.createElement(SyncSummary, { ...props, status, pinned: true }));
+  expect(pinned).toContain('published 10-21 06:00 · ' + en['price.pinnedShort'] + '</strong>');
+  const bare = renderToStaticMarkup(React.createElement(SyncSummary, { ...props, status: { ...status, publishedAt: '' }, pinned: false }));
+  expect(bare).toContain('>Current catalog 2026101867</strong>');
+  expect(bare).not.toContain('title="Catalog version');
+});
+
+test('the repository line names the plugin version and opens the fixed URL in a new window', () => {
+  const tt = key => key === 'title.repository' ? 'DSH Usage project repository · GitHub (opens in a new window)' : t(key);
+  const html = renderToStaticMarkup(React.createElement(RepositoryLine, { t: tt, version: '0.5.2' }));
+  expect(html).toContain('DSH Usage 0.5.2 · <a');
+  expect(html).toContain('href="' + REPOSITORY_URL + '"');
+  expect(REPOSITORY_URL).toBe('https://github.com/rongyishuaige7/dsh-stats');
+  expect(html).toContain('target="_blank" rel="noopener noreferrer" data-action="project-repository"');
+  expect(html).toContain('aria-label="DSH Usage project repository · GitHub (opens in a new window)"');
+  expect(html).toContain('>Project repository · GitHub ↗</a>');
+  // Unbundled source has no injected version, so the line keeps only the link.
+  const plain = renderToStaticMarkup(React.createElement(RepositoryLine, { t: tt }));
+  expect(plain.startsWith('<p class="dss-price-muted dss-price-repo"><a')).toBe(true);
 });
 
 test('empty catalog shows its own state instead of the no-used note', () => {

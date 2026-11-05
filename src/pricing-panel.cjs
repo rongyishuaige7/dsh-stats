@@ -5,6 +5,10 @@ const { missingModels } = require('./client-overview-model.cjs');
 const e = React.createElement;
 const fields = ['uncached', 'cacheRead', 'cacheWrite', 'output'];
 const PAGE_SIZE = 25;
+// Project repository entry at the foot of the model list. Keep the fixed HTTPS URL in one place.
+const REPOSITORY_URL = 'https://github.com/rongyishuaige7/dsh-stats';
+// scripts/build.mjs injects only the package version; unbundled tests have none.
+const PLUGIN_VERSION = typeof __DSS_VERSION__ === 'string' ? __DSS_VERSION__ : '';
 // The commit bar falls back to 'pricing.pending'; keep that key resolvable in the
 // shared locale so the raw key name is never rendered to the user.
 const localeEn = require('./pricing-locale.cjs').en;
@@ -204,6 +208,19 @@ function RuleBlock({ row, t }) {
       e('span', null, rule.currency + ' · ' + t('price.unitShort') + ' · ' + rule.retrievedAt),
       rule.sourceUrl ? e('a', { href: rule.sourceUrl, target: '_blank', rel: 'noreferrer', className: 'dss-price-source-link' }, t('price.source') + ' ↗') : null));
 }
+function rangeText(range, currency, t) {
+  if (!range) return t('price.unknown');
+  return fmtRateValue(range.min, currency) + (range.max > range.min ? '–' + fmtRateValue(range.max, '') : '');
+}
+function spanSummary(span, t) {
+  const basis = [span.currency];
+  if (span.accountType) basis.push(span.accountType);
+  if (span.timeOfDay) basis.push(t('price.basisTime'));
+  if (span.contextThreshold != null) basis.push(fillText(t, 'price.basisContext', thresholdLabel(span.contextThreshold)));
+  for (const group of span.multipliers) basis.push(group.tiers.join(' / ') + ' ×' + group.value);
+  if (span.serviceTiers.length) basis.push(fillText(t, 'price.basisServiceTiers', span.serviceTiers.join(' / ')));
+  return { main: formatQuickRates(t, rangeText(span.input, span.currency, t), rangeText(span.output, span.currency, t)), meta: basis.join(' · ') };
+}
 function summaryFor(group, t) {
   const summary = modelPriceSummary(group);
   if (summary.kind === 'flat') {
@@ -211,18 +228,20 @@ function summaryFor(group, t) {
     return { main: formatQuickRates(t, rateText(rule.rates.uncached, rule.currency, t), rateText(rule.rates.output, rule.currency, t)),
       meta: rule.currency + ' · ' + (rule.accountType || t('price.accountUnspecified')) };
   }
+  if (summary.span) return spanSummary(summary.span, t);
   if (summary.kind === 'tiered') return { main: fill(t, 'price.tieredPrice', summary.currentCount), meta: '' };
   return { main: t('price.noCurrentPrice'),
     meta: summary.historicalCount || summary.upcomingCount ? fill(t, 'price.otherPeriodsCount', summary.historicalCount, summary.upcomingCount) : '' };
 }
-function ModelRow({ group, t, onOpen }) {
+// The used tag only separates rows in the all-models scope; the used scope lists nothing else.
+function ModelRow({ group, t, onOpen, showUsed = true }) {
   const summary = summaryFor(group, t);
   const provisional = group.rules.some(row => isProvisional(row.rule));
   return e('button', { type: 'button', className: 'dss-price-model-row', 'data-model-key': group.key, onClick: () => onOpen(group.key) },
     e('span', { className: 'dss-price-model-identity' },
       e('span', { className: 'dss-price-model-line' },
         e('span', { className: 'dss-price-model-name' }, group.canonical),
-        group.isUsed ? e('span', { className: 'dss-price-used-tag' }, t('price.inUse')) : null,
+        showUsed && group.isUsed ? e('span', { className: 'dss-price-used-tag' }, t('price.inUse')) : null,
         provisional ? e('span', { className: 'dss-price-provisional' }, t('price.provisional')) : null),
       e('span', { className: 'dss-price-model-provider' }, group.provider)),
     e('span', { className: 'dss-price-model-summary' },
@@ -246,9 +265,13 @@ function PendingPanel({ missing, t, busy, onConfigure }) {
 function SyncSummary({ status, busy, dirty, pinned, checking, t, onRefresh }) {
   const last = status.lastSuccessAt ? timeText(status.lastSuccessAt, t, t('price.builtinNoSync')) : t('price.builtinNoSync');
   const title = pinned ? t('price.pinnedHint') : dirty ? t('price.saveFirst') : undefined;
+  // The publish time reads better than the internal catalog number, which stays in the hover title.
+  const published = fmtBeijing(status.publishedAt);
+  const catalog = published ? fillText(t, 'price.catalogPublished', published.slice(5)) : t('price.currentCatalog') + ' ' + status.version;
   return e('div', { className: 'dss-price-sync' },
     e('div', { className: 'dss-price-sync-line' },
-      e('strong', null, t('price.currentCatalog') + ' ' + status.version + (pinned ? ' · ' + t('price.pinnedShort') : '')),
+      e('strong', { title: published ? fillText(t, 'price.catalogVersionTitle', status.version) + ' · ' + published + ' ' + t('price.beijing') : undefined },
+        catalog + (pinned ? ' · ' + t('price.pinnedShort') : '')),
       e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-refresh', disabled: busy || dirty || pinned,
         title, onClick: onRefresh }, checking ? t('price.checking') : t('price.checkUpdates'))),
     e('span', { className: 'dss-price-sync-last' }, t('price.lastSuccess') + ': ' + last));
@@ -273,11 +296,17 @@ function ModelList({ selection, scope, search, t, onScope, onSearch, onPage, onO
       search.trim() ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-clear-search', onClick: onClearSearch }, t('price.clearSearch')) : null,
       scope === 'used' ? e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-scope-all', onClick: onShowAll }, t('price.showAllModels')) : null)
       : e('div', { className: 'dss-price-model-list', ref: listRef },
-        selection.rows.map(group => e(ModelRow, { key: group.key, group, t, onOpen }))),
+        selection.rows.map(group => e(ModelRow, { key: group.key, group, t, onOpen, showUsed: scope === 'all' }))),
     selection.pageCount > 1 ? e('nav', { className: 'dss-price-pagination', 'aria-label': t('price.pages') },
       e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-prev-page', disabled: selection.page === 0, onClick: () => onPage(selection.page - 1) }, t('price.previous')),
       e('span', null, (selection.page + 1) + ' / ' + selection.pageCount),
       e('button', { type: 'button', className: 'dss-export', 'data-action': 'price-next-page', disabled: selection.page + 1 >= selection.pageCount, onClick: () => onPage(selection.page + 1) }, t('price.next'))) : null);
+}
+function RepositoryLine({ t, version = PLUGIN_VERSION }) {
+  return e('p', { className: 'dss-price-muted dss-price-repo' },
+    version ? fillText(t, 'price.pluginVersion', version) + ' · ' : null,
+    e('a', { className: 'dss-price-source-link', href: REPOSITORY_URL, target: '_blank', rel: 'noopener noreferrer',
+      'data-action': 'project-repository', title: t('title.repository'), 'aria-label': t('title.repository') }, t('price.repository')));
 }
 function ModelDetail({ group, savedOverrides, t, busy, onBack, onAddCustom, onEditOverride, titleRef, otherOpen, onOtherToggle }) {
   const ordered = orderedRules(group);
@@ -785,7 +814,8 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
         e(SyncSummary, { status, busy, dirty: anyDirty, pinned, checking, t, onRefresh: () => call({ action: 'refresh' }) }),
         e(PendingPanel, { missing, t, busy, onConfigure: requestFocus }),
         e(ModelList, { selection, scope: effectiveScope, search, t, onScope: changeScope, onSearch: changeSearch, onPage: changePage,
-          onOpen: openModel, onClearSearch: () => changeSearch(''), onShowAll: () => changeScope('all'), listRef, titleRef: listTitleRef, notice: modelNotice, hasUsed: used.size > 0, catalogEmpty: groups.length === 0 })))
+          onOpen: openModel, onClearSearch: () => changeSearch(''), onShowAll: () => changeScope('all'), listRef, titleRef: listTitleRef, notice: modelNotice, hasUsed: used.size > 0, catalogEmpty: groups.length === 0 }),
+        e(RepositoryLine, { t })))
     : section === 'custom'
       ? (editorOpen
         ? e(CustomEditor, { draft, editingId, editorDirty, busy, conditionsOpen, t, formRef, onChange: editField, onStage: stageRule, onCancel: cancelEditor, onBack: backToCustomList, onConditionsToggle: setConditionsOpen })
@@ -822,6 +852,6 @@ function PricingPanel({ remote, projects, onChanged, t, focusModel }) {
 }
 
 module.exports = { PricingPanel, PricingErrorBoundary, ModelList, ModelDetail, CustomList, CustomEditor, UpdatesSection,
-  draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing,
+  SyncSummary, RepositoryLine, REPOSITORY_URL, draftRule, draftForFocus, missingModels, blankDraft, ruleDraft, fmtBeijing,
   draftEqual, rulesEqual, ruleHasConditions, draftHasConditions, workingForSaved, customRuleRows,
   settingsSignature, previewMatchesDraft, buildPreviewRequest, buildSaveRequest };

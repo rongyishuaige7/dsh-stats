@@ -80,6 +80,31 @@ test('model price summary keeps complex prices tiered and never promotes one tie
   expect(modelPriceSummary({ rules: [] })).toEqual({ kind: 'none', currentCount: 0, historicalCount: 0, upcomingCount: 0 });
 });
 
+test('tiered summary spans standard-tier rates and lists the other tiers beside them', () => {
+  const high = { uncached: 2, cacheRead: 1, cacheWrite: 4, output: 8 };
+  const context = modelPriceSummary(groupsOf([ruleOf('context', 'one', 'demo', { currency: 'USD', rates: null, contextThreshold: 272000,
+    contextTiers: { short: rates, long: high }, tierMultipliers: { standard: 1, priority: 2, batch: 0.5, flex: 0.5 } })])[0]);
+  expect(context.rule).toBeUndefined();
+  expect(context.span).toEqual({ currency: 'USD', accountType: null, input: { min: 1, max: 2 }, output: { min: 4, max: 8 },
+    timeOfDay: false, contextThreshold: 272000, multipliers: [{ tiers: ['priority'], value: 2 }, { tiers: ['batch', 'flex'], value: 0.5 }], serviceTiers: [] });
+  const time = modelPriceSummary(groupsOf([ruleOf('time', 'deepseek', 'deepseek-chat', { rates: null, timeOfUse: { peak: high, offPeak: rates,
+    calendar: { from: '2026-01-01', to: '2026-12-31', holidays: [], sourceUrl: 'https://example.com/calendar' } } })])[0]);
+  expect(time.span).toMatchObject({ input: { min: 1, max: 2 }, output: { min: 4, max: 8 }, timeOfDay: true, contextThreshold: null });
+  const service = modelPriceSummary(groupsOf([ruleOf('service', 'one', 'demo', { rates: null, accountType: 'api',
+    serviceTiers: { standard: { short: rates, long: high }, priority: { short: high, long: high } } })])[0]);
+  expect(service.span).toMatchObject({ accountType: 'api', input: { min: 1, max: 2 }, contextThreshold: 512000, serviceTiers: ['priority'] });
+  // Plain rates with tier multipliers keep one standard price; float noise in a ratio is rounded.
+  const scaled = modelPriceSummary(groupsOf([ruleOf('scaled', 'one', 'demo', { tierMultipliers: { standard: 1, priority: 1.7499999999999998 } })])[0]);
+  expect(scaled.span).toMatchObject({ input: { min: 1, max: 1 }, output: { min: 4, max: 4 }, multipliers: [{ tiers: ['priority'], value: 1.75 }] });
+  // Equal tiers name no basis, and a missing standard multiplier has no standard price at all.
+  const same = modelPriceSummary(groupsOf([ruleOf('same', 'one', 'demo', { rates: null, contextThreshold: 128000, contextTiers: { short: rates, long: rates } })])[0]);
+  expect(same.span).toMatchObject({ input: { min: 1, max: 1 }, contextThreshold: null });
+  const noStandard = modelPriceSummary(groupsOf([ruleOf('batch-only', 'one', 'demo', { tierMultipliers: { batch: 0.5 } })])[0]);
+  expect(noStandard.span).toMatchObject({ input: null, output: null, multipliers: [{ tiers: ['batch'], value: 0.5 }] });
+  // Several current rules keep the rule count instead of one merged range.
+  expect(modelPriceSummary(groupsOf([ruleOf('first', 'one', 'demo'), ruleOf('second', 'one', 'demo')])[0]).span).toBeUndefined();
+});
+
 test('flat summary preserves unknown, zero and tiny prices without rounding', () => {
   const tiny = ruleOf('tiny', 'one', 'tiny', { currency: 'USD',
     rates: { uncached: null, cacheRead: 0, cacheWrite: 0.00000000012345678, output: 0 } });

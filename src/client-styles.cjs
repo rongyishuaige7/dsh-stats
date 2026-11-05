@@ -227,6 +227,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 	.dss-price-rule-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);padding-top:5px;border-top:1px dashed var(--dss-meta-line)}
 	.dss-price-source-link{color:var(--dss-info);text-decoration:none;font-size:var(--dss-fs-xs);white-space:nowrap}
 	.dss-price-source-link:hover{text-decoration:underline}
+	.dss-price-repo{margin-top:14px;font-size:var(--dss-fs-xs)}
+	.dss-price-repo .dss-price-source-link{border-radius:3px}
 	.dss-price-other-periods{margin-top:10px;border-top:1px solid var(--dss-line-soft);padding-top:8px}
 	.dss-price-other-periods>summary{font-weight:600;color:var(--dss-text)}
 	.dss-price-detail-actions{margin-top:12px}
@@ -291,9 +293,6 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-panel{position:relative;container:dss-panel / inline-size}
 .dss-head{flex:none;flex-wrap:nowrap;gap:16px;padding:12px 16px 12px 20px}
 .dss-head h2{flex:0 0 auto;min-width:0}
-.dss-head h2 .dss-title-link{color:inherit;text-decoration:none;font:inherit;border-radius:4px}
-.dss-head h2 .dss-title-link:hover{text-decoration:underline;text-underline-offset:3px}
-.dss-head h2 .dss-title-link:focus-visible{outline:2px solid var(--dss-accent);outline-offset:2px}
 .dss-head-actions{margin-left:auto}
 .dss-tabs{gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .dss-tabs::-webkit-scrollbar{display:none}

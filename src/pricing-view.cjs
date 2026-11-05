@@ -73,6 +73,42 @@ function hasComplexPrice(rule) {
   if (rule.contextTiers != null || rule.contextThreshold != null || rule.serviceTiers != null || rule.timeOfUse != null || rule.legacy != null) return true;
   return rule.tierMultipliers != null && Object.values(rule.tierMultipliers).some(value => value !== 1);
 }
+// Mirrors ratesFor() in pricing.cjs: service tiers switch to long rates above 512k context.
+const SERVICE_LONG_CONTEXT = 512000;
+function bounds(values) {
+  const known = values.filter(Number.isFinite);
+  return known.length ? { min: Math.min(...known), max: Math.max(...known) } : null;
+}
+const raises = (from, to) => !!from && !!to && (to.uncached > from.uncached || to.output > from.output);
+// A tiered rule shows the range a standard-tier request can be billed at today.
+// Priority, batch and other service tiers are listed beside it, never folded in.
+function standardSpan(rule) {
+  const multiplier = rule.tierMultipliers ? rule.tierMultipliers.standard : 1;
+  let low = null, high = null, threshold = null;
+  if (rule.timeOfUse) { low = rule.timeOfUse.offPeak; high = rule.timeOfUse.peak; }
+  else if (rule.legacy) { low = rule.offPeak || rule.legacy; high = rule.peak || rule.legacy; }
+  else if (rule.serviceTiers) {
+    const standard = rule.serviceTiers.standard;
+    low = standard?.short || null; high = standard?.long || null; threshold = SERVICE_LONG_CONTEXT;
+  } else if (rule.contextTiers) {
+    low = rule.contextTiers.short; high = rule.contextTiers.long; threshold = rule.contextThreshold ?? null;
+  } else low = rule.rates;
+  const variants = Number.isFinite(multiplier) ? [low, high].filter(Boolean) : [];
+  const scaled = key => variants.map(rates => rates[key] == null ? null : rates[key] * multiplier);
+  const multipliers = new Map();
+  for (const [tier, value] of Object.entries(rule.tierMultipliers || {})) {
+    const ratio = Math.round(value / (Number.isFinite(multiplier) ? multiplier : 1) * 100) / 100;
+    if (tier !== 'standard' && ratio !== 1) multipliers.set(ratio, [...(multipliers.get(ratio) || []), tier]);
+  }
+  return {
+    currency: rule.currency, accountType: rule.accountType || null,
+    input: bounds(scaled('uncached')), output: bounds(scaled('output')),
+    timeOfDay: !!(rule.timeOfUse || rule.legacy) && raises(low, high),
+    contextThreshold: threshold != null && raises(low, high) ? threshold : null,
+    multipliers: [...multipliers].sort((a, b) => b[0] - a[0]).map(([value, tiers]) => ({ tiers, value })),
+    serviceTiers: Object.keys(rule.serviceTiers || {}).filter(tier => tier !== 'standard'),
+  };
+}
 function modelPriceSummary(group) {
   let currentCount = 0, historicalCount = 0, upcomingCount = 0, currentRule = null;
   for (const row of group?.rules || []) {
@@ -81,8 +117,9 @@ function modelPriceSummary(group) {
     else if (row.phase === 'upcoming') upcomingCount++;
   }
   const flat = currentCount === 1 && currentRule.rates != null && !hasComplexPrice(currentRule);
+  const span = !flat && currentCount === 1 ? standardSpan(currentRule) : null;
   return { kind: currentCount === 0 ? 'none' : flat ? 'flat' : 'tiered',
-    currentCount, historicalCount, upcomingCount, ...(flat ? { rule: currentRule } : {}) };
+    currentCount, historicalCount, upcomingCount, ...(flat ? { rule: currentRule } : {}), ...(span ? { span } : {}) };
 }
 function positiveInteger(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : null;

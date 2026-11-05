@@ -1,5 +1,12 @@
 # README 整理与项目仓库入口实施文档
 
+> 0.5.x 更新（简化方案第 23 条）：面板标题改回纯文字，仓库入口移到计价设置抽屉的模型列表底部，
+> 形式为「DSH 用量 <插件版本> · 项目仓库 · GitHub ↗」。原因是标题位置常被误点，仓库是低频入口。
+> 固定 URL、`target="_blank"`、`rel="noopener noreferrer"`、`data-action="project-repository"` 和无障碍名称（沿用 `title.repository`）不变；
+> 插件版本由 `scripts/build.mjs` 注入 `__DSS_VERSION__`，客户端仍不引入 `package.json`。
+> 对话框名称仍由 `aria-labelledby="dss-title-text"` 提供。下文 §3 与 R2 记录保留为当时的方案与验收历史。
+> 新的验收在浏览器 smoke 的「panel title」与「repository link」检查组中。
+
 - 日期：2026-10-21。
 - 状态：R1、R2 均已通过 Codex 审核（R1 收口 `1ac6a43`，R2 实现 `31e7368`）。由 DeepSeek 分片实施。
 - 代码基线：`6654c52`；开工时重新确认工作树、远端进度与发布状态。
