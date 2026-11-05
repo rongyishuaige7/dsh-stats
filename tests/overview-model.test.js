@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares,
-	projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus,
+	activeDayCount, sortProjects, defaultSortDir, pendingFocus,
 	compareProjectCost, missingModels,
 } = require('../src/client-overview-model.cjs');
 
@@ -84,15 +84,6 @@ test('costShares uses visible project CNY totals and maps unpriced projects to n
 	expect([...costShares([c]).values()]).toEqual([null]);
 });
 
-test('projectDaySpans keeps exclusive end slots and merges per-project blocks', () => {
-	const spans = projectDaySpans({ slotBlocks: [
-		{ slot: 2, projectId: 'a' }, { slot: 3, projectId: 'a' }, { slot: 5, projectId: 'a' }, { slot: 4, projectId: 'b' },
-	] });
-	expect(spans.get('a')).toEqual({ startSlot: 2, endSlot: 6 });
-	expect(spans.get('b')).toEqual({ startSlot: 4, endSlot: 5 });
-	expect(projectDaySpans(null).size).toBe(0);
-});
-
 test('activeDayCount counts days with at least one visible project block', () => {
 	const timeline = { days: [
 		{ date: '2026-09-01', slotBlocks: [{ projectId: 'b' }] },
@@ -120,8 +111,8 @@ test('sortProjects covers every key, direction and stable name tie-break', () =>
 	expect(names(sortProjects([a, b, c], 'hit', -1))).toEqual(['Alpha', 'Charlie', 'Beta']);
 	expect(names(sortProjects([a, b, c], 'llm', -1))).toEqual(['Alpha', 'Beta', 'Charlie']);
 	expect(names(sortProjects([a, b, c], 'last', -1))).toEqual(['Beta', 'Charlie', 'Alpha']);
-	const spans = new Map([['a', { endSlot: 10 }], ['b', { endSlot: 5 }]]);
-	expect(names(sortProjects([a, b, c], 'last', -1, { dayMode: true, spans }))).toEqual(['Alpha', 'Beta', 'Charlie']);
+	const durations = new Map([['a', 5 * 60000], ['b', 50 * 60000]]);
+	expect(names(sortProjects([a, b, c], 'last', -1, { dayMode: true, durations }))).toEqual(['Beta', 'Alpha', 'Charlie']);
 	const tieA = project('a', 'Alpha', projectStats(1, 0, 0, 0), [session(2)]);
 	const tieB = project('b', 'Beta', projectStats(1, 0, 0, 0), [session(2)]);
 	expect(names(sortProjects([tieB, tieA], 'cost', -1))).toEqual(['Alpha', 'Beta']);

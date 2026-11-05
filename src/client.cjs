@@ -9,7 +9,7 @@ const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./
 const { BalanceView } = require("./client-balance.cjs");
 const { balanceHeaderState, normalizeBalanceAlerts } = require("./client-balance-model.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
-const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
+const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
 const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
 const { TRENDS_PREF_DEFAULTS, normalizeTrendsPrefs } = require("./client-trends-model.cjs");
@@ -418,15 +418,12 @@ function StatsPanel(props) {
 		var previousProjects = applyDate(data.projects, prevDate).filter(function(project) { return hasTokenUsage(project) && !hidden[project.id]; });
 		return overviewTotals(previousProjects).cost;
 	}, [data.projects, prevDate, hiddenKey]);
-	var spans = useMemo(function() {
-		if (!effectiveDate) return null;
-		var day = (data.timeline.days || []).find(function(item) { return item.date === effectiveDate; });
-		return day ? projectDaySpans(day) : new Map();
-	}, [data.timeline, effectiveDate]);
 	var activeDays = useMemo(function() { return activeDayCount(data.timeline, hidden); }, [data.timeline, hiddenKey]);
 	var totals = useMemo(function() { return overviewTotals(visibleProjects); }, [visibleProjects]);
+	// Development time per project, shared by the overview and the timeline so
+	// both pages show the same number for the same day.
 	var timelineDurations = useMemo(function() {
-		if (tab !== "timeline") return null;
+		if (tab !== "timeline" && tab !== "overview") return null;
 		if (effectiveDate) {
 			var day = (data.timeline.days || []).find(function(item) { return item.date === effectiveDate; });
 			return projectDurations(day ? [day] : []);
@@ -652,7 +649,7 @@ function StatsPanel(props) {
 								onPending: openPricing,
 								t
 							}) : null,
-							visibleProjects.length ? e(OverviewStrip, { totals, activeDays, spans, projects: visibleProjects, dayMode: effectiveDate != null, t }) : null,
+							visibleProjects.length ? e(OverviewStrip, { durations: timelineDurations, hidden, t }) : null,
 							activityOnly ? e("div", { className: "dss-activity-only", role: "status" },
 								e("span", null, t("overview.activityOnly")),
 								e("button", {
@@ -668,7 +665,7 @@ function StatsPanel(props) {
 								shares,
 								colorIndexes,
 								dayMode: effectiveDate != null,
-								spans,
+								durations: timelineDurations,
 								filterKey: effectiveDate,
 								onOpenSession,
 								onOpenPricing: openPricing,
@@ -814,7 +811,7 @@ module.exports = { apply, inject };
 // 测试钩子：暴露纯函数供 vitest 直接验证真实实现（生产运行不读取）
 module.exports.__test = {
 	StatusIndicator, StatusBanner, BalanceView, readAccountRemote, STATS_REMOTE_CONTRIBUTION, IconDataOutline16, IconCloseOutline16,
-	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus, missingModels,
+	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, activeDayCount, sortProjects, defaultSortDir, pendingFocus, missingModels,
 	localDayKey, emptyBucket, addBucket, sessionDayTokens,
 	monthlyFromDays, weeklyFromDays, modelAgg, streakAndActive,
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,

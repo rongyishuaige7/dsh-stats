@@ -99,6 +99,19 @@ function projectDurations(days, hidden) {
 	return durations;
 }
 
+// A session's development time: activity slots merged by slot and capped at
+// SLOT_MS, as the timeline does. Sessions without activity slots have none.
+function sessionActiveMs(session) {
+	const slots = new Map();
+	(session && Array.isArray(session.slots) ? session.slots : []).forEach(function(row) {
+		if (!row || !Number.isFinite(row.slot)) return;
+		slots.set(row.slot, Math.min(SLOT_MS, (slots.get(row.slot) || 0) + Math.max(0, Number(row.ms) || 0)));
+	});
+	let total = 0;
+	slots.forEach(function(ms) { total += ms; });
+	return total;
+}
+
 function timelineWindow(first, last, axis) {
 	if (axis === "full" || !Number.isFinite(first) || !Number.isFinite(last) || first < 0 || last < 0 || last < first) {
 		return { start: 0, end: 48 };
@@ -772,6 +785,7 @@ module.exports = {
 	calendarDates,
 	projectSlotMs,
 	projectDurations,
+	sessionActiveMs,
 	timelineWindow,
 	timelineTicks,
 	timelineGrid,

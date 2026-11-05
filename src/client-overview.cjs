@@ -2,14 +2,17 @@
 const react = require("react");
 const { Popover } = require("./client-dialog.cjs");
 const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir, sortProjects } = require("./client-overview-model.cjs");
-const { fmtClock, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, pad, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
+const { fmtClock, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
 const { localDayKey, modelNameOnly } = require("./client-data.cjs");
+const { sessionActiveMs } = require("./client-timeline-model.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
 
 const e = react.createElement;
 const { useState, useEffect, useMemo } = react;
 const PROJECT_PAGE = 50;
 const SESSION_PAGE = 100;
+// Cache hit below this is flagged next to the project's tokens.
+const LOW_HIT_PCT = 85;
 
 function pageRows(rows, page, size) {
 	rows = Array.isArray(rows) ? rows : [];
@@ -26,11 +29,6 @@ function PageControls({ window, onPage, t, name }) {
 		e("span", { "aria-live": "polite" }, t("w.page").replace("%d", String(window.currentPage + 1)).replace("%d", String(window.pageCount))),
 		e("button", { type: "button", className: "dss-export", disabled: window.currentPage === window.pageCount - 1, onClick: () => onPage(window.currentPage + 1) }, t("w.nextPage"))
 	);
-}
-
-function clock(slot) {
-	var minutes = slot * 30;
-	return pad(Math.floor(minutes / 60)) + ":" + pad(minutes % 60);
 }
 
 function colorIndex(project, indexes) {
@@ -121,24 +119,16 @@ function OverviewKpis(props) {
 	);
 }
 
+// Development time of the visible projects, the same total the timeline shows.
+// Turns, first token and speed live in the project detail head.
 function OverviewStrip(props) {
-	var totals = props.totals, t = props.t;
-	var parts = [];
-	parts.push(e("span", { key: "turns" }, t("card.turnsSteps") + t("strip.sep"), e("b", null, fmtN(totals.turns) + " / " + fmtN(totals.steps))));
-	if (totals.ttftAvgMs != null) parts.push(e("span", { key: "ttft" }, t("strip.ttft") + t("strip.sep"), e("b", null, fmtLatency(totals.ttftAvgMs))));
-	if (totals.tps != null) parts.push(e("span", { key: "tps" }, t("strip.speed") + t("strip.sep"), e("b", null, fmtTps(totals.tps) + " tok/s")));
-	if (props.dayMode) {
-		var start = Infinity, end = -Infinity;
-		var visible = new Set((props.projects || []).map(function(project) { return project.id; }));
-		(props.spans || new Map()).forEach(function(span, id) {
-			if (!visible.has(id) || !span) return;
-			start = Math.min(start, span.startSlot); end = Math.max(end, span.endSlot);
-		});
-		if (Number.isFinite(start) && Number.isFinite(end)) parts.push(e("span", { key: "span" }, t("strip.span") + t("strip.sep"), e("b", null, clock(start) + "–" + clock(end))));
-	} else {
-		parts.push(e("span", { key: "active-days" }, t("strip.activeDays") + t("strip.sep"), e("b", null, fmtN(props.activeDays))));
-	}
-	return e("div", { className: "dss-strip" }, parts);
+	var t = props.t, hidden = props.hidden || {}, total = 0;
+	(props.durations || new Map()).forEach(function(ms, id) {
+		if (!(Object.prototype.hasOwnProperty.call(hidden, id) && hidden[id])) total += ms;
+	});
+	return e("div", { className: "dss-strip" },
+		e("span", null, t("w.duration") + t("strip.sep"), e("b", null, fmtDuration(total)))
+	);
 }
 
 function OverviewTools(props) {
@@ -234,13 +224,29 @@ function sessionStamp(value, dayMode) {
 	return { short: dayMode ? full.slice(11) : full.slice(5), full: full };
 }
 
-function sessionMeta(session, stamp, model, t) {
+// Session rows show title, time, development time, tokens and cost. The other
+// metrics move to the row's tooltip; the model gets a column only when the
+// project used more than one.
+function sessionTip(session, model, t) {
 	var stats = session.stats || {};
-	var turns = fmtN(stats.turns || 0) + "/" + fmtN(stats.steps || 0);
-	var llm = fmtDuration(stats.llmMs || 0), tool = fmtDuration(stats.toolMs || 0);
-	var hit = stats.cacheHitPct == null ? "—" : fmtPct(stats.cacheHitPct);
-	var tokens = fmtTokens(stats.inputTokens || 0) + " / " + fmtTokens(stats.outputTokens || 0);
-	return stamp.short + " · " + turns + " · LLM " + llm + " · " + t("w.tool") + " " + tool + " · " + t("kpi.hit") + " " + hit + " · " + t("sess.inOut") + " " + tokens + " · " + (model || "—");
+	var lines = [
+		t("sess.turnsSteps") + " " + fmtN(stats.turns || 0) + " · " + fmtN(stats.steps || 0),
+		t("th.llm") + " " + fmtDuration(stats.llmMs || 0) + " · " + t("w.tool") + " " + fmtDuration(stats.toolMs || 0),
+		t("kpi.hit") + " " + (stats.cacheHitPct == null ? "—" : fmtPct(stats.cacheHitPct)),
+		t("w.input") + " " + fmtTokens(stats.inputTokens || 0) + " · " + t("w.output") + " " + fmtTokens(stats.outputTokens || 0)
+	];
+	if (model) lines.push(t("sess.model") + " " + model);
+	return lines.join("\n");
+}
+
+function sessionMeta(stamp, dev, tokens, model) {
+	return [stamp.short, dev, tokens].concat(model ? [model] : []).join(" · ");
+}
+
+function projectModels(project) {
+	var names = new Set();
+	(project.sessions || []).forEach(function(session) { names.add(modelNameOnly(session)); });
+	return Array.from(names);
 }
 
 function ProjectSessions(props) {
@@ -250,14 +256,14 @@ function ProjectSessions(props) {
 	var main = all.filter(function(session) { return !session.subagent; });
 	var sub = all.filter(function(session) { return session.subagent; });
 	var window = pageRows(main.concat(sub), props.page || 0, SESSION_PAGE);
-	var header = e("div", { className: "dss-sess dss-sess-h", "aria-hidden": "true" },
+	var multi = projectModels(project).length > 1;
+	var rowClass = "dss-sess" + (multi ? " has-model" : "");
+	var header = e("div", { className: rowClass + " dss-sess-h", "aria-hidden": "true" },
 		e("span", null, t("th.sessions")),
 		e("span", { className: "dss-sess-time" }, dayMode ? t("sess.time") : t("sess.updated")),
-		e("span", { className: "dss-sess-turns" }, t("sess.turnsSteps")),
-		e("span", { className: "dss-sess-llm" }, t("th.llm") + " / " + t("th.tool")),
-		e("span", { className: "dss-sess-hit" }, t("sess.hit")),
-		e("span", { className: "dss-sess-token" }, t("sess.tokenInOut")),
-		e("span", { className: "dss-sess-model" }, t("sess.model")),
+		e("span", { className: "dss-sess-dur" }, t("sess.duration")),
+		e("span", { className: "dss-sess-token" }, t("kpi.tokens")),
+		multi ? e("span", { className: "dss-sess-model" }, t("sess.model")) : null,
 		e("span", { className: "dss-sess-cost" }, t("sess.cost"))
 	);
 	var rows = [];
@@ -274,10 +280,8 @@ function ProjectSessions(props) {
 		var stats = session.stats || {};
 		var stamp = sessionStamp(session.updatedAt, dayMode);
 		var cost = fmtCostSummary(sessionCostSummary(session), t);
-		var turns = fmtN(stats.turns || 0) + " · " + fmtN(stats.steps || 0);
-		var llm = fmtDuration(stats.llmMs || 0), tool = fmtDuration(stats.toolMs || 0);
-		var hit = stats.cacheHitPct == null ? "—" : fmtPct(stats.cacheHitPct);
-		var tokens = fmtTokens(stats.inputTokens || 0) + " / " + fmtTokens(stats.outputTokens || 0);
+		var dev = fmtDuration(sessionActiveMs(session));
+		var tokens = fmtTokens((stats.inputTokens || 0) + (stats.outputTokens || 0));
 		var tags = [
 			session.subagent ? e("span", { className: "dss-tag", key: "subagent" }, t("w.subagentTag")) : null,
 			session.archived ? e("span", { className: "dss-tag", key: "archived" }, t("w.archivedTag")) : null,
@@ -290,22 +294,35 @@ function ProjectSessions(props) {
 			"aria-label": t("openSession") + ": " + title,
 			onClick: function(ev) { ev.stopPropagation(); props.onOpenSession(session); }
 		}, title, tags) : e("span", { className: "ti dss-sess-title", title: title }, title, tags);
-		rows.push(e("div", { className: "dss-sess" + (session.subagent ? " sub" : ""), key: session.id, "data-session-id": session.id },
+		rows.push(e("div", { className: rowClass + (session.subagent ? " sub" : ""), key: session.id, "data-session-id": session.id, title: sessionTip(session, multi ? null : model, t) },
 			titleNode,
 			e("span", { className: "st dss-sess-time", title: stamp.full }, stamp.short),
-			e("span", { className: "st dss-sess-turns" }, turns),
-			e("span", { className: "st dss-sess-llm", title: "LLM " + llm + " · " + t("w.tool") + " " + tool }, llm + " / " + tool),
-			e("span", { className: "st dss-sess-hit" }, hit),
+			e("span", { className: "st dss-sess-dur" }, dev),
 			e("span", { className: "st dss-sess-token" }, tokens),
-			e("span", { className: "st dss-sess-model", title: model || "" }, model || "—"),
+			multi ? e("span", { className: "st dss-sess-model", title: model }, model) : null,
 			e("span", { className: "st dss-cost dss-sess-cost", title: cost }, cost),
-			e("span", { className: "dss-sess-meta" }, sessionMeta(session, stamp, model, t))
+			e("span", { className: "dss-sess-meta" }, sessionMeta(stamp, dev, tokens, multi ? model : null))
 		));
 	});
 	return e("div", { className: "dss-sessions" },
 		e(PageControls, { window: window, onPage: props.onPage, t: t, name: "sessions" }),
 		header,
 		rows.length ? rows : e("div", { className: "dss-empty" }, t("empty"))
+	);
+}
+
+// Project detail head: cache hit first (it left the table), the per-project
+// performance metrics, and the model when every session used the same one.
+function ProjectDetailMeta({ project, t }) {
+	var stats = project.stats || {};
+	var models = projectModels(project);
+	return e("div", { className: "dss-pdetail-meta" },
+		e("span", null, t("th.cacheHit") + " ", e("b", null, fmtPct(stats.cacheHitPct))),
+		e("span", null, t("card.turnsSteps") + " ", e("b", null, fmtN(stats.turns || 0) + " / " + fmtN(stats.steps || 0))),
+		e("span", null, t("w.tool") + " ", e("b", null, fmtDuration(stats.toolMs || 0))),
+		e("span", null, t("th.ttft") + " ", e("b", null, stats.ttftAvgMs != null ? fmtLatency(stats.ttftAvgMs) : "—")),
+		e("span", null, t("th.tps") + " ", e("b", null, stats.tps != null ? fmtTps(stats.tps) : "—")),
+		models.length === 1 ? e("span", { className: "dss-pdetail-model" }, t("sess.model") + " ", e("b", null, models[0])) : null
 	);
 }
 
@@ -330,8 +347,8 @@ function ProjectTable(props) {
 	}, [projects, expandedId]);
 	var shares = props.shares || costShares(projects);
 	var sorted = useMemo(function() {
-		return sortProjects(projects, sort.key, sort.dir, { dayMode: props.dayMode, spans: props.spans });
-	}, [projects, sort.key, sort.dir, props.dayMode, props.spans]);
+		return sortProjects(projects, sort.key, sort.dir, { dayMode: props.dayMode, durations: props.durations });
+	}, [projects, sort.key, sort.dir, props.dayMode, props.durations]);
 	var window = pageRows(sorted, projectPage, PROJECT_PAGE);
 	var changeSort = function(key) {
 		setSort(function(current) { return current.key === key ? { key: key, dir: -current.dir } : { key: key, dir: defaultSortDir(key) }; });
@@ -348,10 +365,9 @@ function ProjectTable(props) {
 		{ key: "name", label: t("th.project"), cls: "c-proj" },
 		{ key: "sessions", label: t("th.sessions") },
 		{ key: "tokens", label: t("kpi.tokens") },
-		{ key: "hit", label: t("th.cacheHit") },
 		{ key: "llm", label: t("th.llm") },
 		{ key: "cost", label: t("th.cost"), cls: "c-cost" },
-		{ key: "last", label: props.dayMode ? t("strip.span") : t("th.lastActive"), cls: "c-last" }
+		{ key: "last", label: props.dayMode ? t("w.duration") : t("th.lastActive"), cls: "c-last" }
 	];
 	var head = e("div", { className: "dss-proj-head" },
 		e("h3", { id: "dss-proj-title" }, t("th.project")),
@@ -380,16 +396,20 @@ function ProjectTable(props) {
 		var stats = project.stats || {};
 		var summary = projectCostSummary(project);
 		var share = shares.get(project.id);
-		var span = props.spans ? props.spans.get(project.id) : null;
-		var lastText = props.dayMode ? (span ? clock(span.startSlot) + "–" + clock(span.endSlot) : "—") : fmtClock(project.lastActiveAt);
+		var lastText = props.dayMode ? fmtDuration(props.durations ? props.durations.get(project.id) || 0 : 0) : fmtClock(project.lastActiveAt);
 		var totalTokens = (stats.inputTokens || 0) + (stats.outputTokens || 0);
 		var pending = pendingFocus([project]);
+		// Cache hit stays out of the table unless it is unusually low.
+		var lowHit = stats.cacheHitPct != null && stats.cacheHitPct < LOW_HIT_PCT;
+		var hitText = t("kpi.hit") + " " + Math.round(stats.cacheHitPct) + "%";
+		var costText = fmtCostSummary(summary, t);
+		var chipOnly = summary.unpricedTokens > 0 && costText === t("pricing.pending");
 		var meta = e("span", null,
 			t("th.sessions") + " " + fmtSessionCounts(sessionCounts(project.sessions)),
 			" · ", t("kpi.tokens") + " " + fmtTokens(totalTokens),
-			" · ", t("th.cacheHit") + " " + fmtPct(stats.cacheHitPct),
+			lowHit ? " · " + hitText : null,
 			" · ", t("th.llm") + " " + fmtDuration(stats.llmMs),
-			" · ", (props.dayMode ? t("strip.span") : t("th.lastActive")) + " " + lastText
+			" · ", (props.dayMode ? t("w.duration") : t("th.lastActive")) + " " + lastText
 		);
 		body.push(e("tr", {
 			key: project.id,
@@ -418,10 +438,9 @@ function ProjectTable(props) {
 			),
 			e("td", null, e("span", { title: t("th.sessions") + " " + fmtSessionCounts(sessionCounts(project.sessions)) }, fmtSessionCounts(sessionCounts(project.sessions)))),
 			e("td", null,
-				e("div", null, fmtTokens(totalTokens)),
-				e("div", { className: "dss-cell-sub" }, t("w.input") + " " + fmtTokens(stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(stats.outputTokens))
+				e("span", { title: t("w.input") + " " + fmtTokens(stats.inputTokens) + " · " + t("w.output") + " " + fmtTokens(stats.outputTokens) }, fmtTokens(totalTokens)),
+				lowHit ? e("span", { className: "dss-hit-flag" }, hitText) : null
 			),
-			e("td", null, fmtPct(stats.cacheHitPct)),
 			e("td", null, fmtDuration(stats.llmMs)),
 			e("td", { className: "c-cost" },
 				e("div", { className: "dss-cost-line" },
@@ -431,7 +450,7 @@ function ProjectTable(props) {
 						onOpen: props.onOpenPricing,
 						compact: true
 					}) : null,
-					e("span", { className: "dss-cost-amt" }, fmtCostSummary(summary, t))
+					chipOnly ? null : e("span", { className: "dss-cost-amt" }, costText)
 				),
 				e("div", { className: "dss-share", title: t("table.share").replace("%s", share == null ? "—" : fmtSharePct(share * 100)) },
 					e("span", { className: "dss-share-bar" }, e("i", { style: { width: (share == null ? 0 : share * 100) + "%" } })),
@@ -442,15 +461,9 @@ function ProjectTable(props) {
 			e("td", { className: "c-meta" }, meta)
 		));
 		if (isOpen) {
-			var detailStats = project.stats || {};
 			body.push(e("tr", { key: project.id + "-detail", className: "dss-pdetail" },
-				e("td", { colSpan: 8 },
-					e("div", { className: "dss-pdetail-meta" },
-						e("span", null, t("card.turnsSteps") + " ", e("b", null, fmtN(detailStats.turns || 0) + " / " + fmtN(detailStats.steps || 0))),
-						e("span", null, t("w.tool") + " ", e("b", null, fmtDuration(detailStats.toolMs || 0))),
-						e("span", null, t("th.ttft") + " ", e("b", null, detailStats.ttftAvgMs != null ? fmtLatency(detailStats.ttftAvgMs) : "—")),
-						e("span", null, t("th.tps") + " ", e("b", null, detailStats.tps != null ? fmtTps(detailStats.tps) : "—"))
-					),
+				e("td", { colSpan: 7 },
+					e(ProjectDetailMeta, { project: project, t: t }),
 					e(ProjectSessions, {
 						project: project,
 						page: sessionPage.id === project.id ? sessionPage.page : 0,
@@ -492,4 +505,4 @@ function ProjectTable(props) {
 	);
 }
 
-module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, pageRows, PageControls, PendingChip, InfoTip };
+module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, ProjectDetailMeta, pageRows, PageControls, PendingChip, InfoTip };

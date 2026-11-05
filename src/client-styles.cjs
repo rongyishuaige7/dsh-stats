@@ -429,6 +429,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dss-ppath{font-size:var(--dss-fs-xs);color:var(--dss-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dss-cell-sub{font-size:var(--dss-fs-xs);color:var(--dss-text-3)}
+.dss-hit-flag{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:var(--dss-fs-xs);line-height:16px;font-weight:600;color:var(--dss-warn);background:var(--dss-warn-soft);white-space:nowrap}
 .dss-cost-line{display:flex;align-items:center;justify-content:flex-end;gap:6px}
 .dss-cost-amt{color:var(--dss-cost);font-weight:650}
 .dss-share{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:3px}
@@ -441,8 +442,10 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pdetail-meta{display:flex;flex-wrap:wrap;gap:4px 16px;padding:8px 0 2px 10px;border-bottom:1px dashed var(--dss-line);margin-bottom:4px;font-size:var(--dss-fs-xs);color:var(--dss-text-3);font-variant-numeric:tabular-nums}
 .dss-pdetail-meta b{color:var(--dss-text-2);font-weight:600}
 .dss-sessions{display:flex;flex-direction:column;min-width:0}
-.dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 74px 62px 104px 36px 92px minmax(110px,150px) 68px;gap:6px;padding:6px 8px;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm);align-items:center;width:100%;box-sizing:border-box;min-width:0}
+.dss-ptable .dss-sess{--dss-data-shift:0;grid-template-columns:minmax(0,1fr) 74px 62px 62px 92px;gap:6px;padding:6px 8px;border-top:1px solid var(--dss-line-soft);border-bottom:0;font-size:var(--dss-fs-sm);align-items:center;width:100%;box-sizing:border-box;min-width:0}
 .dss-ptable .dss-sess>:nth-child(n+2){transform:none}
+.dss-ptable .dss-sess.has-model{grid-template-columns:minmax(0,1fr) 74px 62px 62px minmax(110px,150px) 92px}
+.dss-ptable .dss-sess.has-model>.dss-sess-model{padding-left:14px}
 .dss-ptable .dss-sess .dss-sess-model{transform:none!important;text-align:left!important}
 .dss-ptable .dss-sess>.dss-sess-title{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;width:100%;border:0;background:none;color:var(--dss-text);font:inherit;font-size:var(--dss-fs-sm);font-weight:600;line-height:1.4;text-align:left;cursor:pointer;padding:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 .dss-ptable .dss-sess>.dss-sess-title .dss-tag{margin-left:0}

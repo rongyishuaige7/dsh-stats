@@ -74,18 +74,6 @@ function costShares(projects) {
 	return shares;
 }
 
-function projectDaySpans(timelineDay) {
-	var spans = new Map();
-	((timelineDay && timelineDay.slotBlocks) || []).forEach(function(block) {
-		if (!block || !Number.isFinite(block.slot)) return;
-		var span = spans.get(block.projectId);
-		var start = block.slot, end = block.slot + 1;
-		if (!span) spans.set(block.projectId, { startSlot: start, endSlot: end });
-		else { span.startSlot = Math.min(span.startSlot, start); span.endSlot = Math.max(span.endSlot, end); }
-	});
-	return spans;
-}
-
 function activeDayCount(timeline, hidden) {
 	var days = (timeline && Array.isArray(timeline.days)) ? timeline.days : [];
 	var flags = hidden && typeof hidden === "object" ? hidden : {};
@@ -140,9 +128,10 @@ function sortProjects(projects, key, dir, ctx) {
 		else if (key === "hit") { va = a.stats && a.stats.cacheHitPct != null ? a.stats.cacheHitPct : -1; vb = b.stats && b.stats.cacheHitPct != null ? b.stats.cacheHitPct : -1; }
 		else if (key === "llm") { va = a.stats && a.stats.llmMs || 0; vb = b.stats && b.stats.llmMs || 0; }
 		else if (key === "last") {
-			var spans = context.spans;
-			va = context.dayMode ? (spans && spans.get(a.id) ? spans.get(a.id).endSlot : 0) : (a.lastActiveAt || 0);
-			vb = context.dayMode ? (spans && spans.get(b.id) ? spans.get(b.id).endSlot : 0) : (b.lastActiveAt || 0);
+			// Day mode sorts by development time, the column shown for that day.
+			var durations = context.durations;
+			va = context.dayMode ? (durations && durations.get(a.id)) || 0 : (a.lastActiveAt || 0);
+			vb = context.dayMode ? (durations && durations.get(b.id)) || 0 : (b.lastActiveAt || 0);
 		} else { va = 0; vb = 0; }
 		return va > vb ? 1 : va < vb ? -1 : 0;
 	}
@@ -184,6 +173,6 @@ function pendingFocus(projects) {
 
 module.exports = {
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares,
-	projectDaySpans, activeDayCount, sortProjects, defaultSortDir, pendingFocus,
+	activeDayCount, sortProjects, defaultSortDir, pendingFocus,
 	compareProjectCost, missingModels, createSingleFlight
 };

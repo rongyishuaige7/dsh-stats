@@ -2134,12 +2134,13 @@ try {
   const daySession = await evaluate(`(() => {
     const header = document.querySelector('.dss-sess-h');
     const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
-    return { header: header?.textContent || '', time: row?.querySelector('.dss-sess-time')?.textContent || '', title: row?.querySelector('.dss-sess-time')?.getAttribute('title') || '', llm: row?.querySelector('.dss-sess-llm')?.textContent || '' };
+    return { header: header?.textContent || '', time: row?.querySelector('.dss-sess-time')?.textContent || '', title: row?.querySelector('.dss-sess-time')?.getAttribute('title') || '', dur: row?.querySelector('.dss-sess-dur')?.textContent || '', tip: row?.getAttribute('title') || '' };
   })()`);
   assert(daySession.header.includes('时间'), 'day session header says time: ' + daySession.header);
   assert(/^\d{2}:\d{2}$/.test(daySession.time), 'day time is HH:MM: ' + daySession.time);
   assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(daySession.title), 'session time title is full: ' + daySession.title);
-  assert(daySession.llm.includes(' / '), 'day session row shows LLM and tool: ' + daySession.llm);
+  assert(/^(\d+h\d+m|\d+m(\d+s)?|\d+s|—)$/.test(daySession.dur), 'day session row shows its development time: ' + daySession.dur);
+  assert(daySession.tip.includes('LLM ') && daySession.tip.includes('工具 ') && daySession.tip.includes('命中 '), 'day session row keeps LLM, tool and hit in its tooltip: ' + daySession.tip);
   await click('.dss-prow [data-action=expand]');
   await until('!document.querySelector(".dss-pdetail")');
   while (!(await evaluate('document.querySelector("[data-action=date-prev]").disabled'))) {
@@ -2215,7 +2216,7 @@ try {
       const rect = node.getBoundingClientRect();
       return { display: getComputedStyle(node).display, text: node.textContent, sw: node.scrollWidth, cw: node.clientWidth, w: rect.width };
     })()`);
-    assert(meta && meta.display !== 'none' && meta.text.includes('工具') && meta.text.includes('LLM') && meta.text.includes('命中') && meta.text.includes('入/出'), 'narrow session meta exists: ' + JSON.stringify(meta));
+    assert(meta && meta.display !== 'none' && meta.text.split(' · ').length >= 3, 'narrow session meta shows time, duration and tokens: ' + JSON.stringify(meta));
     assert(meta.sw <= meta.cw + 1, 'narrow session meta must not truncate: ' + JSON.stringify(meta));
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-sess-h")).display'), 'none', 'narrow session header must be hidden');
   }
@@ -2249,10 +2250,10 @@ try {
   assert(await evaluate('!document.querySelector(".dss-strip").hasAttribute("aria-label")'), 'strip must not carry an aria-label');
   const strip = await evaluate('document.querySelector(".dss-strip").textContent');
   assert(!strip.startsWith('项目') && !strip.includes('项目 '), 'strip must not repeat the project count: ' + strip);
-  assert(/轮 \/ 步\d/.test(strip), 'strip keeps turns/steps flush with the label: ' + strip);
-  if (strip.includes('首 token')) assert(/首 token 均值\d/.test(strip), 'strip names the first-token average: ' + strip);
-  if (strip.includes('输出速度')) assert(/输出速度\d/.test(strip) && strip.includes(' tok/s'), 'strip names output speed with its unit: ' + strip);
-  assert(/活跃时段\d{2}:\d{2}/.test(strip) || /活跃日\d/.test(strip), 'strip keeps the active span or active days flush with its label: ' + strip);
+  assert(/^开发时长(\d|—)/.test(strip), 'strip shows only the development time, flush with its label: ' + strip);
+  assert(!strip.includes('轮 / 步') && !strip.includes('首 token') && !strip.includes('输出速度'), 'performance metrics stay in the project detail head: ' + strip);
+  const stripGap = await evaluate('parseFloat(getComputedStyle(document.querySelector(".dss-strip b")).marginLeft)');
+  assert.equal(stripGap, 5, 'strip value keeps a 5px gap from its label');
   await evaluate('document.querySelector(".dss-body").scrollTop = 400');
   await delay(80);
   const sticky = await evaluate(`(() => {
@@ -2334,10 +2335,10 @@ try {
   const wideSession = await evaluate(`(() => {
     const header = document.querySelector('.dss-sess-h');
     const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
-    return { header: header?.textContent || '', hidden: header?.getAttribute('aria-hidden'), time: row?.querySelector('.dss-sess-time')?.textContent || '', llm: row?.querySelector('.dss-sess-llm')?.textContent || '' };
+    return { header: header?.textContent || '', hidden: header?.getAttribute('aria-hidden'), time: row?.querySelector('.dss-sess-time')?.textContent || '', dur: row?.querySelector('.dss-sess-dur')?.textContent || '', tip: row?.getAttribute('title') || '' };
   })()`);
   assert.equal(wideSession.hidden, 'true');
-  assert(wideSession.header.includes('会话') && wideSession.header.includes('更新') && wideSession.header.includes('轮 · 步') && wideSession.header.includes('LLM / 工具') && wideSession.header.includes('Token 入 / 出'), 'wide session header labels: ' + wideSession.header);
+  assert(wideSession.header.includes('会话') && wideSession.header.includes('更新') && wideSession.header.includes('时长') && wideSession.header.includes('Token') && !wideSession.header.includes('LLM'), 'wide session header labels: ' + wideSession.header);
   assert(/^\d{2}-\d{2} \d{2}:\d{2}$/.test(wideSession.time), 'all-mode time shows MM-DD HH:MM: ' + wideSession.time);
   const expectedSessionTime = await evaluate(`(() => {
     const row = document.querySelector('.dss-pdetail .dss-sess:not(.dss-sess-h)');
@@ -2356,10 +2357,10 @@ try {
     return { header: header ? getComputedStyle(header).color : null, cost: cost ? getComputedStyle(cost).color : null };
   })()`);
   assert(headerColors.header && headerColors.cost === headerColors.header, 'session cost header uses the normal header color: ' + JSON.stringify(headerColors));
-  assert(wideSession.llm.includes(' / '), 'session row shows LLM and tool: ' + wideSession.llm);
+  assert(wideSession.dur && wideSession.tip.includes('轮 · 步 ') && wideSession.tip.includes('输入 '), 'session row shows duration and keeps the rest in its tooltip: ' + JSON.stringify(wideSession));
   assert(await evaluate('!!document.querySelector(".dss-pdetail-meta")'), 'expanded row exposes project detail metrics');
   const detailMeta = await evaluate('document.querySelector(".dss-pdetail-meta").textContent');
-  assert(detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta keeps turns/steps, tool, ttft and tps: ' + detailMeta);
+  assert(detailMeta.startsWith('缓存命中') && detailMeta.includes('轮 / 步') && detailMeta.includes('工具') && detailMeta.includes('首 token') && detailMeta.includes('tok/s'), 'detail meta leads with cache hit and keeps turns/steps, tool, ttft and tps: ' + detailMeta);
   assert(!detailMeta.includes('/fixture/large-0'), 'detail meta does not repeat the project path: ' + detailMeta);
   await focus('[data-project-id=large-0] [data-action=expand]');
   await press('Enter');
@@ -2419,11 +2420,11 @@ try {
       const detailLayout = await evaluate(`(() => {
         const meta = document.querySelector('.dss-pdetail-meta');
         const items = [...meta.children].filter(node => node.getClientRects().length);
-        const tps = items.find(node => node.textContent.startsWith('tok/s'));
+        const tool = items.find(node => node.textContent.startsWith('工具'));
         const ttft = items.find(node => node.textContent.startsWith('首 token'));
-        return { display: getComputedStyle(meta).display, tpsTop: tps?.getBoundingClientRect().top, ttftTop: ttft?.getBoundingClientRect().top };
+        return { display: getComputedStyle(meta).display, toolTop: tool?.getBoundingClientRect().top, ttftTop: ttft?.getBoundingClientRect().top };
       })()`);
-      assert(detailLayout.display === 'grid' && Math.abs(detailLayout.tpsTop - detailLayout.ttftTop) <= 1, '320 detail metrics align on a grid: ' + JSON.stringify(detailLayout));
+      assert(detailLayout.display === 'grid' && Math.abs(detailLayout.toolTop - detailLayout.ttftTop) <= 1, '320 detail metrics align on a grid: ' + JSON.stringify(detailLayout));
     }
     if (width === 1440) await assertSessionCellsFit('large en 1440');
     await layout('large-sessions-' + width);
