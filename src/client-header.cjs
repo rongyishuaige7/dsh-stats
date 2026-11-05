@@ -1,7 +1,7 @@
 // Header status, export menu and the pricing drawer.
 const react = require("react");
 const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-const { fmtClock } = require("./client-format.cjs");
+const { fmtClock, fmtSyncClock } = require("./client-format.cjs");
 const { MenuButton, MenuItem, useLayer, trapTab } = require("./client-dialog.cjs");
 const { PricingPanel, PricingErrorBoundary } = require("./pricing-panel.cjs");
 const { IconDownload, IconChevronDown, IconInfo, IconWarning } = require("./client-icons.cjs");
@@ -9,8 +9,9 @@ const { IconDownload, IconChevronDown, IconInfo, IconWarning } = require("./clie
 const e = react.createElement;
 const IconCloseOutline16 = primitives.IconCloseOutline16 || primitives.IconCloseOutlineRegular;
 
-function statusText(state, remote, t) {
-	var at = Number.isFinite(state.at) ? " · " + fmtClock(state.at) : "";
+// The visible text drops the date on the day of the sync; the title keeps it.
+function statusText(state, t, clock) {
+	var at = Number.isFinite(state.at) ? " · " + clock(state.at) : "";
 	if (state.kind === "exact") return t("source.exact") + at;
 	if (state.kind === "loading") return t("source.loading");
 	if (state.kind === "refreshing") return t("source.refreshing");
@@ -21,11 +22,11 @@ function statusText(state, remote, t) {
 }
 
 function StatusIndicator({ state, remote, t, source }) {
-	var text = statusText(state, remote, t);
+	var text = statusText(state, t, fmtSyncClock);
 	return e("span", {
 		className: "dss-data-status " + state.kind,
 		"aria-live": "polite",
-		title: (source || t(state.kind === "fallback" || !remote ? "source.local" : "source.host")) + " · " + text
+		title: (source || t(state.kind === "fallback" || !remote ? "source.local" : "source.host")) + " · " + statusText(state, t, fmtClock)
 	},
 		e("i", { className: "dss-status-dot", "aria-hidden": "true" }),
 		e("span", { className: "dss-status-text" }, text)

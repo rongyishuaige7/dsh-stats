@@ -2,7 +2,7 @@
 const react = require("react");
 const { Popover } = require("./client-dialog.cjs");
 const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir, sortProjects } = require("./client-overview-model.cjs");
-const { fmtClock, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, pad, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
+const { fmtClock, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, pad, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
 const { localDayKey, modelNameOnly } = require("./client-data.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
 
@@ -125,7 +125,7 @@ function OverviewStrip(props) {
 	var totals = props.totals, t = props.t;
 	var parts = [];
 	parts.push(e("span", { key: "turns" }, t("card.turnsSteps") + t("strip.sep"), e("b", null, fmtN(totals.turns) + " / " + fmtN(totals.steps))));
-	if (totals.ttftAvgMs != null) parts.push(e("span", { key: "ttft" }, t("strip.ttft") + t("strip.sep"), e("b", null, fmtDuration(totals.ttftAvgMs))));
+	if (totals.ttftAvgMs != null) parts.push(e("span", { key: "ttft" }, t("strip.ttft") + t("strip.sep"), e("b", null, fmtLatency(totals.ttftAvgMs))));
 	if (totals.tps != null) parts.push(e("span", { key: "tps" }, t("strip.speed") + t("strip.sep"), e("b", null, fmtTps(totals.tps) + " tok/s")));
 	if (props.dayMode) {
 		var start = Infinity, end = -Infinity;
@@ -448,7 +448,7 @@ function ProjectTable(props) {
 					e("div", { className: "dss-pdetail-meta" },
 						e("span", null, t("card.turnsSteps") + " ", e("b", null, fmtN(detailStats.turns || 0) + " / " + fmtN(detailStats.steps || 0))),
 						e("span", null, t("w.tool") + " ", e("b", null, fmtDuration(detailStats.toolMs || 0))),
-						e("span", null, t("th.ttft") + " ", e("b", null, detailStats.ttftAvgMs != null ? fmtDuration(detailStats.ttftAvgMs) : "—")),
+						e("span", null, t("th.ttft") + " ", e("b", null, detailStats.ttftAvgMs != null ? fmtLatency(detailStats.ttftAvgMs) : "—")),
 						e("span", null, t("th.tps") + " ", e("b", null, detailStats.tps != null ? fmtTps(detailStats.tps) : "—"))
 					),
 					e(ProjectSessions, {

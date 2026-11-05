@@ -128,7 +128,7 @@ The gear icon opens the pricing settings drawer with three fixed sections: model
 - **The banner above the content** uses different wording: “Snapshot expired” pairs with “Refresh failed; last snapshot”, and “Local summaries · bundled prices” pairs with “Fallback data; may be incomplete”. Data diagnostics appear only when an error is available, and retry appears only for expired or fallback states while the matching RPC still exists.
 - **Data source and price certainty are different things.** The status describes where the data came from; amounts carry their own `exact` / `estimated` / `free` / `partial` / `unsupported` status.
 - **Credentials stay on the host.** Account queries resolve credentials in the DSH host and call each provider's official endpoint; credentials never enter the client bundle, RPC logs or CSV/JSON exports.
-- **Export scope.** Overview, Timeline and Usage Trends support CSV/JSON and export the projects selected by the current date or range; Account Balance is a live snapshot and has no export.
+- **Export scope.** Overview, Timeline and Trends support CSV/JSON and export the projects selected by the current date or range; Balance is a live snapshot and has no export.
 - **Time zone.** Timeline slots, peak/off-peak windows and pricing rule times use Beijing time (UTC+8), independent of the host machine.
 
 Full pricing statuses, provider matching, custom rules and catalog updates are in the [pricing section of the guide](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/usage-guide.en.md#3-pricing); catalog collection and signing are described in the [pricing design](https://github.com/rongyishuaige7/dsh-stats/blob/main/docs/pricing-updates.md).

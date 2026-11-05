@@ -169,6 +169,11 @@ function exportCSV(projects, t) {
 // ticks while the window is hidden; on return, refresh once if a full period
 // passed, otherwise the next tick catches up.
 var AUTO_REFRESH_MS = 60000;
+// Header state when a request starts. Returning prev leaves it untouched.
+function requestStartState(prev, hasData, background) {
+	if (background && hasData) return prev;
+	return { kind: hasData ? "refreshing" : "loading", error: null, at: prev.at };
+}
 function autoRefreshScheduler(refresh, doc, now) {
 	var last = now();
 	return {
@@ -247,9 +252,12 @@ function StatsPanel(props) {
 	var navMode = storedNav.mode === "all" ? "all" : "day";
 	var nav = { mode: navMode, date: storedNav.date || null };
 	var [sourceState, setSourceState] = useState({ kind: aggregateRemote ? "loading" : "fallback", error: remoteMountError || null, at: null });
+	// Background refreshes keep the header state and only spin the refresh icon.
+	var [sourceSyncing, setSourceSyncing] = useState(false);
 	var [refreshTick, setRefreshTick] = useState(0);
 	var [balanceData, setBalanceData] = useState(null);
 	var [balanceState, setBalanceState] = useState({ kind: balanceRemote ? "loading" : "unavailable", error: null });
+	var [balanceSyncing, setBalanceSyncing] = useState(false);
 	var [balanceRefreshRequest, setBalanceRefreshRequest] = useState({ tick: 0, force: false });
 	var [balanceProviders, setBalanceProviders] = useState(null);
 	var providersAskedRef = useRef(false);
@@ -274,20 +282,24 @@ function StatsPanel(props) {
 		});
 	}, [isOpen]);
 
-	var requestAggregate = useCallback(function() {
+	// A background request leaves the header as it is while data exists. A
+	// manual one that joins a running background request still shows its state.
+	var requestAggregate = useCallback(function(background) {
 		if (!aggregateRemote) {
 			setSourceState({ kind: "fallback", error: remoteMountError || null, at: null });
 			return null;
 		}
+		var hasData = !!remoteDataRef.current;
+		setSourceState(function(prev) { return requestStartState(prev, hasData, background); });
 		return aggregateFlightRef.current(function() {
-			setSourceState(function(prev) { return { kind: remoteDataRef.current ? "refreshing" : "loading", error: null, at: prev.at }; });
+			setSourceSyncing(true);
 			return aggregateRemote().then((r) => {
 				setRemoteData(r);
 				setSourceState({ kind: r.meta?.degraded ? "partial" : "exact", error: r.meta?.warnings?.filter(function(w) { return !/^OFFICIAL_.*_USED$/.test(w.code) && w.code !== "OFFICIAL_LEGACY_DESCRIPTOR" && w.code !== "SESSION_CACHE_STALE" && w.code !== "SESSION_ORPHAN_FORK_DISCARDED"; }).map(function(w) { return w.message; }).join("; ") || null, at: r.meta?.generatedAt ?? Date.now() });
 			}).catch((err) => {
 				console.warn("[dsh-stats] aggregate 调用失败:", err);
 				setSourceState({ kind: remoteDataRef.current ? "stale" : "fallback", error: err?.message || String(err), at: remoteDataRef.current?.meta?.generatedAt || null });
-			});
+			}).finally(function() { setSourceSyncing(false); });
 		});
 	}, [aggregateRemote, remoteMountError]);
 
@@ -310,7 +322,7 @@ function StatsPanel(props) {
 		if (!open || !open.open || !aggregateRemote) return;
 		var doc = typeof document !== "undefined" ? document : null;
 		var scheduler = autoRefreshScheduler(function() {
-			requestAggregate();
+			requestAggregate(true);
 			setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: false }));
 		}, doc, Date.now);
 		var id = setInterval(scheduler.tick, AUTO_REFRESH_MS);
@@ -330,7 +342,9 @@ function StatsPanel(props) {
 		var force = balanceRefreshRequest.force;
 		// A manual refresh bypasses the host cache once; re-entering the tab uses it again.
 		if (force) setBalanceRefreshRequest(function(request) { return { tick: request.tick, force: false }; });
-		setBalanceState(function(prev) { return { kind: balanceData ? "refreshing" : "loading", error: null }; });
+		// Timer ticks and tab re-entry refresh in the background once rows exist.
+		setBalanceState(function(prev) { return requestStartState(prev, !!balanceData, !force); });
+		setBalanceSyncing(true);
 		balanceRemote(force).then(function(result) {
 			if (cancelled) return;
 			setBalanceData(result);
@@ -338,8 +352,10 @@ function StatsPanel(props) {
 		}).catch(function(error) {
 			if (cancelled) return;
 			setBalanceState({ kind: balanceData ? "stale" : "error", error: error?.message || String(error) });
+		}).finally(function() {
+			if (!cancelled) setBalanceSyncing(false);
 		});
-		return function() { cancelled = true; };
+		return function() { cancelled = true; setBalanceSyncing(false); };
 	}, [balanceActive, balanceRemote, balanceRefreshRequest.tick]);
 
 	// The first-load skeleton asks the host for its configured providers once per
@@ -461,6 +477,7 @@ function StatsPanel(props) {
 	var isRefreshing = tab === "balance"
 		? balanceState.kind === "loading" || balanceState.kind === "refreshing"
 		: sourceState.kind === "loading" || sourceState.kind === "refreshing";
+	var isSyncing = isRefreshing || (tab === "balance" ? balanceSyncing : sourceSyncing);
 	var balanceHeader = balanceHeaderState(balanceState, balanceData, !!balanceRemote);
 	var refreshCurrent = function() {
 		if (tab === "balance") setBalanceRefreshRequest((request) => ({ tick: request.tick + 1, force: true }));
@@ -561,7 +578,7 @@ function StatsPanel(props) {
 						e("div", { className: "dss-act-group" },
 							e("button", {
 								type: "button",
-								className: "dss-icon-btn",
+								className: "dss-icon-btn" + (isSyncing ? " is-syncing" : ""),
 								"data-action": "refresh",
 								"aria-label": t("refresh"),
 								title: t("refresh"),
@@ -803,5 +820,5 @@ module.exports.__test = {
 	costOf, usageCost, sessionCost, identityForUsage, fmtN, fmtTokens, fmtCost, fmtDuration, fmtTps, fmtSharePct,
 	applyDate, applyRange, activityDates, fmtDateCN, buildTimeline, aggregate, projectionIdentityOf, projectionSlotUsageOf, enrichSessionProjection, parseAggregateResult, parseBalanceResult, parseAccountResult, parseProvidersResult, hasTokenUsage,
 	sessionCostSummary, projectCostSummary, compareProjectCost, fmtCostSummary, modelNameOnly, modelDisplayName, projectCsvTable, csvField, sessionExportUsages,
-	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction, autoRefreshScheduler, AUTO_REFRESH_MS
+	subagentAddressFor, openStatsSession, projectColorIndexes, projectColorIndex, pageRows, escapeAction, autoRefreshScheduler, AUTO_REFRESH_MS, requestStartState
 };

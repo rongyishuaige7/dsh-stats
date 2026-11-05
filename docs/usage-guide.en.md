@@ -153,7 +153,7 @@ there; it does not mean every historical release and operating system has real-d
 
 ## 2. The four tabs
 
-The panel has four tabs: Overview, Timeline, Usage Trends and Account Balance. The header always
+The panel has four tabs: Overview, Timeline, Trends and Balance. The header always
 shows the current data-source status, refresh, export, pricing settings (gear) and close.
 
 ### 2.1 Overview
@@ -165,7 +165,7 @@ shows the current data-source status, refresh, export, pricing settings (gear) a
 - “Filter projects” in the top-right searches projects or paths and hides the ones you don't want.
   Hidden projects are excluded from metrics, the table and the trends page.
 - Projects page 50 at a time and sessions 100 at a time; paging never changes the top summary.
-- Overview, Timeline and Usage Trends share the project filter; Account Balance is not affected.
+- Overview, Timeline and Trends share the project filter; Balance is not affected.
 
 ### 2.2 Timeline
 
@@ -407,9 +407,9 @@ time (UTC+8), independent of the host machine's time zone.
 
 ### 5.3 Exports
 
-- Overview, Timeline and Usage Trends support CSV and JSON.
+- Overview, Timeline and Trends support CSV and JSON.
 - Exports contain the projects **selected by the current scope**: the current date on Overview and
-  Timeline (all projects when “All” is selected), and the current range on Usage Trends. Hidden
+  Timeline (all projects when “All” is selected), and the current range on Trends. Hidden
   projects are included.
 - JSON is an array of those projects, not the complete RPC response, so `meta` and `meta.warnings`
   are not part of it. Each project's session usage rows keep the `cost` object returned by the host.
@@ -422,7 +422,7 @@ time (UTC+8), independent of the host machine's time zone.
   `pricingSource` is the rule's source URL (the JSON `cost.sourceUrl`). CSV has columns such as
   `currency`, `costAmount`, `exactAmount` and `estimatedAmount`, and no original-currency column.
 - Neither export contains the exclusion-reason text; the reason is in the panel's session details.
-- Account Balance has no export: balances are a live snapshot, not historical statistics.
+- Balance has no export: balances are a live snapshot, not historical statistics.
 - Credentials never appear in CSV/JSON exports.
 
 ### 5.4 Keyboard

@@ -194,6 +194,29 @@ test('auto refresh pauses while the window is hidden and catches up once on retu
 	expect(refresh).toHaveBeenCalledTimes(3);
 });
 
+test('background refresh keeps the header state; manual refresh and first load show progress', () => {
+	const { requestStartState } = require('../src/client.cjs').__test;
+	const synced = { kind: 'exact', error: null, at: 1000 };
+	expect(requestStartState(synced, true, true)).toBe(synced);
+	const stale = { kind: 'stale', error: 'Connection lost', at: 1000 };
+	expect(requestStartState(stale, true, true)).toBe(stale);
+	expect(requestStartState(synced, true, false)).toEqual({ kind: 'refreshing', error: null, at: 1000 });
+	expect(requestStartState({ kind: 'loading', error: null, at: null }, false, true)).toEqual({ kind: 'loading', error: null, at: null });
+});
+
+test('header shows only the time for a same-day sync and keeps the date in its title', () => {
+	vi.useFakeTimers({ toFake: ['Date'] });
+	try {
+		vi.setSystemTime(Date.UTC(2026, 9, 21, 12, 0));
+		const at = Date.UTC(2026, 9, 21, 10, 42);
+		const html = renderToStaticMarkup(React.createElement(StatusIndicator, { state: { kind: 'exact', at }, remote: true, t: key => key }));
+		expect(html).toContain('>source.exact · 18:42<');
+		expect(html).toContain('title="source.host · source.exact · 2026-10-21 18:42"');
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 test('auto refresh keeps ticking when no document is available', () => {
 	const { autoRefreshScheduler, AUTO_REFRESH_MS } = require('../src/client.cjs').__test;
 	let now = 0;

@@ -307,6 +307,8 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-icon-btn{width:32px;height:32px;border-radius:8px;border:0;background:none;color:var(--dss-text-2);display:inline-grid;place-items:center;flex:none;cursor:pointer}
 .dss-icon-btn:hover:not(:disabled){background:var(--dss-hover);color:var(--dss-text)}
 .dss-icon-btn:disabled{opacity:.35;cursor:default;background:none}
+.dss-icon-btn.is-syncing svg{animation:dss-spin .9s linear infinite}
+@keyframes dss-spin{to{transform:rotate(360deg)}}
 .dss-icon-btn[aria-expanded="true"]{background:var(--dss-accent-soft);color:var(--dss-text)}
 .dss-export-btn{height:32px;padding:0 8px 0 9px;border-radius:8px;border:0;background:none;color:var(--dss-text-2);display:inline-flex;align-items:center;gap:5px;font-size:var(--dss-fs-md);cursor:pointer}
 .dss-export-btn:hover:not(:disabled),.dss-export-btn[aria-expanded="true"]{background:var(--dss-hover);color:var(--dss-text)}
@@ -397,7 +399,7 @@ body:not([data-ds-dark-theme]) :is(.dss-overlay, .dss-trigger, .dss-tt) {
 .dss-pending-chip.sm{font-size:var(--dss-fs-xs);padding:0 6px}
 .dss-pending-chip:hover{border-style:solid}
 .dss-strip{display:flex;flex-wrap:wrap;gap:4px 22px;font-size:var(--dss-fs-sm);color:var(--dss-text-3);padding:0 4px;margin-bottom:10px;font-variant-numeric:tabular-nums}
-.dss-strip b{color:var(--dss-text);font-weight:600}
+.dss-strip b{color:var(--dss-text);font-weight:600;margin-left:5px}
 .dss-projects{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .dss-proj-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dss-proj-head h3{margin:0;font-size:var(--dss-fs-lg);font-weight:650;display:inline-flex;align-items:center}

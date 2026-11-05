@@ -15,21 +15,35 @@ function fmtTokens(n) {
 	if (n < 1e6) return `${scaled(n / 1e3)}K`;
 	return `${scaled(n / 1e6)}M`;
 }
+// One rule for every duration column: whole seconds under a minute, seconds
+// dropped from 10 minutes on, so values in one column line up.
 function fmtDuration(ms) {
 	if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
-	var s = ms / 1000;
-	if (s < 60) return `${Math.round(s * 10) / 10}s`;
-	var whole = Math.round(s);
+	var whole = Math.max(1, Math.round(ms / 1000));
+	if (whole < 60) return `${whole}s`;
 	var h = Math.floor(whole / 3600);
 	var m = Math.floor((whole % 3600) / 60);
 	var sec = whole % 60;
 	if (h > 0) return `${h}h${m}m`;
+	if (m >= 10) return `${m}m`;
 	return `${m}m${sec}s`;
+}
+// Latency (time to first token) keeps a tenth of a second: 2.1s and 2.4s differ.
+function fmtLatency(ms) {
+	if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
+	if (ms < 60000) return `${Math.round(ms / 100) / 10}s`;
+	return fmtDuration(ms);
 }
 function fmtClock(ms) {
 	if (ms == null || !Number.isFinite(ms)) return "—";
 	var d = new Date(ms + BEIJING_OFFSET_MS);
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+// Same Beijing day as now: HH:MM only; otherwise the full date.
+function fmtSyncClock(ms, now) {
+	var full = fmtClock(ms);
+	if (full === "—") return full;
+	return full.slice(0, 10) === fmtClock(now == null ? Date.now() : now).slice(0, 10) ? full.slice(11) : full;
 }
 function pad(n) { return String(n).padStart(2, "0"); }
 function fmtTps(tps) { return tps == null || !Number.isFinite(tps) ? "—" : String(tps >= 100 ? Math.round(tps) : Number(tps.toFixed(1))); }
@@ -171,4 +185,4 @@ function sessionExportUsages(session) {
 	return [usage];
 }
 
-module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };
+module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtSyncClock, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };

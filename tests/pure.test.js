@@ -495,13 +495,37 @@ test('fmtCost formats RMB correctly', () => {
 
 test('fmtDuration formats ms to h/m/s', () => {
 	expect(fmtDuration(0)).toBe('—');
-	expect(fmtDuration(500)).toBe('0.5s');
+	expect(fmtDuration(200)).toBe('1s');
+	expect(fmtDuration(500)).toBe('1s');
+	expect(fmtDuration(38300)).toBe('38s');
 	expect(fmtDuration(59000)).toBe('59s');
+	expect(fmtDuration(59600)).toBe('1m0s');
 	expect(fmtDuration(60000)).toBe('1m0s');
 	expect(fmtDuration(90000)).toBe('1m30s');
+	expect(fmtDuration(9 * 60000 + 59000)).toBe('9m59s');
+	expect(fmtDuration(10 * 60000)).toBe('10m');
+	expect(fmtDuration(58 * 60000 + 44000)).toBe('58m');
 	expect(fmtDuration(3661000)).toBe('1h1m');
 	expect(fmtDuration(36000000)).toBe('10h0m');
 	expect(fmtDuration(NaN)).toBe('—');
+});
+
+test('fmtLatency keeps a tenth of a second below a minute', () => {
+	const { fmtLatency } = require('../src/client-format.cjs');
+	expect(fmtLatency(null)).toBe('—');
+	expect(fmtLatency(2140)).toBe('2.1s');
+	expect(fmtLatency(380)).toBe('0.4s');
+	expect(fmtLatency(90000)).toBe('1m30s');
+});
+
+test('fmtSyncClock drops the date only on the same Beijing day', () => {
+	const { fmtSyncClock } = require('../src/client-format.cjs');
+	// 2026-10-21 18:42 Beijing = 10:42 UTC.
+	const at = Date.UTC(2026, 9, 21, 10, 42);
+	expect(fmtSyncClock(at, Date.UTC(2026, 9, 21, 15, 0))).toBe('18:42');
+	// 16:30 UTC is already 10-22 00:30 in Beijing.
+	expect(fmtSyncClock(at, Date.UTC(2026, 9, 21, 16, 30))).toBe('2026-10-21 18:42');
+	expect(fmtSyncClock(null, at)).toBe('—');
 });
 
 // ---------------------------------------------------------------------------

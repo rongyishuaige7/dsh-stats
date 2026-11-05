@@ -276,7 +276,7 @@ try {
 	result.panelText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 1_500) || "";
 	result.summaryCards = await page.evaluate("[...document.querySelectorAll('.dss-kpi')].map(node => ({ label: node.querySelector('.dss-kpi-k')?.textContent, value: node.querySelector('.dss-kpi-v')?.textContent }))");
 	await capture("overview");
-	for (const texts of [["开发时间线", "Timeline"], ["用量趋势", "Usage Trends"], ["项目总览", "Overview"]]) {
+	for (const texts of [["开发时间线", "Timeline"], ["用量趋势", "Trends"], ["项目总览", "Overview"]]) {
 		if (!await page.clickText(texts, ".dss-panel button")) throw new Error("stats tab not found: " + texts[1]);
 		await delay(150);
 		await capture(texts[1].toLowerCase().replaceAll(" ", "-"));
@@ -294,8 +294,8 @@ try {
 		await page.evaluate("(() => { const button = document.querySelector('[data-action=drawer-close]'); if (!button) return false; button.click(); return true; })()");
 	}
 
-	const accountClicked = (await page.clickText(["账户余额", "Account Balance"], ".dss-panel button"));
-	if (!accountClicked) throw new Error("账户余额/Account Balance tab not found");
+	const accountClicked = (await page.clickText(["账户余额", "Balance"], ".dss-panel button"));
+	if (!accountClicked) throw new Error("账户余额/Balance tab not found");
 	await waitForPage(page, "Boolean(document.querySelector('.dss-bal-row, .dss-bal-failed, .dss-bal .dss-empty'))", deadline, "account balance view");
 	result.accountTab = true;
 	result.accountText = (await page.evaluate("document.querySelector('.dss-panel')?.innerText || ''"))?.slice(0, 2_000) || "";
