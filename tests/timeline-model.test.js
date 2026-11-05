@@ -471,7 +471,7 @@ test('timelineRangeModel marks the first row of each calendar week and the first
 	expect(active.rows.find(row => row.date === '2026-10-11').newWeek).toBe(true);
 });
 
-test('timelineRangeModel activeOnly keeps calendar streaks broken by skipped idle days', () => {
+test('timelineRangeModel activeOnly hides empty rows but the summary still spans the calendar', () => {
 	const today = '2026-10-19';
 	const days = [
 		{ date: '2026-10-12', slotBlocks: [block(0, 'a', SLOT_MS)] },
@@ -480,16 +480,41 @@ test('timelineRangeModel activeOnly keeps calendar streaks broken by skipped idl
 	const model = timelineRangeModel({ days, hidden: {}, today, page: 0, activeOnly: true, columns: 48 });
 	expect(model.rows.map(row => row.date)).toEqual(['2026-10-14', '2026-10-12']);
 	expect(model.summary).toMatchObject({
-		from: '2026-10-12', to: '2026-10-14', rowCount: 2, spanDays: 3,
+		from: '2026-10-12', to: today, rowCount: 2, spanDays: 8,
 		activeDays: 2, total: 2 * SLOT_MS, avg: SLOT_MS, streak: 1,
 	});
-	expect(model.summary.spanDays).toBeGreaterThan(model.summary.rowCount);
+	const calendar = timelineRangeModel({ days, hidden: {}, today, page: 0, activeOnly: false, columns: 48 });
+	expect({ ...calendar.summary, rowCount: 0 }).toEqual({ ...model.summary, rowCount: 0 });
 	const hiddenModel = timelineRangeModel({ days, hidden: { a: true }, today, page: 0, activeOnly: true, columns: 48 });
 	expect(hiddenModel.rows).toEqual([]);
 	expect(hiddenModel.summary).toMatchObject({
 		from: '', to: '', rowCount: 0, spanDays: 0,
 		activeDays: 0, total: 0, avg: 0, streak: 0,
 	});
+});
+
+test('timelineRangeModel counts token days over the whole history and flags tool-only rows', () => {
+	const today = '2026-10-19';
+	const days = [];
+	for (let offset = 34; offset >= 0; offset--) days.push({ date: addDays(today, -offset), slotBlocks: [block(0, 'a', SLOT_MS)] });
+	// Every day has activity; two days (one on each page) have no tokens.
+	const toolOnly = [addDays(today, -3), addDays(today, -32)];
+	const tokenDays = new Set(days.map(day => day.date).filter(date => !toolOnly.includes(date)));
+	const first = timelineRangeModel({ days, hidden: {}, today, page: 0, activeOnly: false, columns: 48, tokenDays });
+	const second = timelineRangeModel({ days, hidden: {}, today, page: 1, activeOnly: false, columns: 48, tokenDays });
+	expect(first.pageCount).toBe(2);
+	expect(first.summary).toMatchObject({
+		from: addDays(today, -34), to: today, spanDays: 35,
+		activeDays: 33, total: 35 * SLOT_MS, avg: 35 * SLOT_MS / 33, streak: 28,
+	});
+	expect({ ...second.summary, rowCount: 0 }).toEqual({ ...first.summary, rowCount: 0 });
+	expect(first.rows.filter(row => row.toolOnly).map(row => row.date)).toEqual([toolOnly[0]]);
+	expect(second.rows.filter(row => row.toolOnly).map(row => row.date)).toEqual([toolOnly[1]]);
+	expect(first.rows.find(row => row.date === toolOnly[0]).idle).toBe(false);
+	// Without tokenDays any visible activity still counts as active.
+	const legacy = timelineRangeModel({ days, hidden: {}, today, page: 0, activeOnly: false, columns: 48 });
+	expect(legacy.summary).toMatchObject({ activeDays: 35, streak: 35 });
+	expect(legacy.rows.some(row => row.toolOnly)).toBe(false);
 });
 
 test('timelineRangeModel returns a null peak for a page with no profile activity', () => {

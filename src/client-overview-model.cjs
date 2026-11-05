@@ -1,6 +1,7 @@
 // Pure overview calculations shared by the React view and unit tests.
 // No React, DOM or browser storage belongs in this module.
 const { mergeCostSummaries, projectCostSummary, sessionCounts, usageCostDetail } = require("./client-format.cjs");
+const { sessionDayTokens } = require("./client-data.cjs");
 
 function overviewTotals(projects) {
 	var list = Array.isArray(projects) ? projects : [];
@@ -74,12 +75,30 @@ function costShares(projects) {
 	return shares;
 }
 
+// Days with any visible activity, tool-only days included. The panel counts
+// active days with tokenDates instead; this stays for callers of the old rule.
 function activeDayCount(timeline, hidden) {
 	var days = (timeline && Array.isArray(timeline.days)) ? timeline.days : [];
 	var flags = hidden && typeof hidden === "object" ? hidden : {};
 	return days.filter(function(day) {
 		return ((day && day.slotBlocks) || []).some(function(block) { return block && !(Object.prototype.hasOwnProperty.call(flags, block.projectId) && flags[block.projectId]); });
 	}).length;
+}
+
+// Dates on which the visible projects used tokens: the "active day" rule the
+// trends page, the timeline summary and the overview share.
+function tokenDates(projects, hidden) {
+	var flags = hidden && typeof hidden === "object" ? hidden : {};
+	var sessions = [];
+	(Array.isArray(projects) ? projects : []).forEach(function(project) {
+		if (!project || (Object.prototype.hasOwnProperty.call(flags, project.id) && flags[project.id])) return;
+		(project.sessions || []).forEach(function(session) { sessions.push(session); });
+	});
+	var dates = new Set();
+	sessionDayTokens(sessions).forEach(function(bucket, date) {
+		if ((bucket.input || 0) + (bucket.output || 0) > 0) dates.add(date);
+	});
+	return dates;
 }
 
 function projectCostSortData(project) {
@@ -173,6 +192,6 @@ function pendingFocus(projects) {
 
 module.exports = {
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares,
-	activeDayCount, sortProjects, defaultSortDir, pendingFocus,
+	activeDayCount, tokenDates, sortProjects, defaultSortDir, pendingFocus,
 	compareProjectCost, missingModels, createSingleFlight
 };

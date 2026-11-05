@@ -3,9 +3,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const { ProjectSessions, ProjectTable, ProjectDetailMeta } = require('../src/client-overview.cjs');
+const { CostText, ProjectSessions, ProjectTable, ProjectDetailMeta } = require('../src/client-overview.cjs');
 const { sessionActiveMs } = require('../src/client-timeline-model.cjs');
-const { SLOT_MS } = require('../src/client-format.cjs');
+const { SLOT_MS, costIsPartial, fmtCostSummary } = require('../src/client-format.cjs');
 const { zh } = require('../src/client-locale.cjs');
 
 const t = key => zh[key] ?? key;
@@ -91,4 +91,18 @@ test('the detail head leads with cache hit and names a single model', () => {
 		.toBe('缓存命中 96.4% 轮 / 步 3 / 12 工具 1m0s 首 token 2.1s tok/s 61 模型 deepseek-v4-flash');
 	const two = { ...one, sessions: [session('a', 'deepseek-v4-flash'), session('b', 'MiniMax-M3')] };
 	expect(renderToStaticMarkup(React.createElement(ProjectDetailMeta, { project: two, t }))).not.toContain('模型');
+});
+
+test('CostText explains a partial "*" unless a pending chip already does', () => {
+	const partial = { status: 'partial', totals: [{ currency: 'CNY', amount: 2.5 }], unpricedTokens: 900, unknownRows: 1 };
+	const exact = { status: 'exact', totals: [{ currency: 'CNY', amount: 2.5 }], unpricedTokens: 0, unknownRows: 0 };
+	const html = props => renderToStaticMarkup(React.createElement(CostText, { t, ...props }));
+	expect(costIsPartial(partial)).toBe(true);
+	expect(costIsPartial(exact)).toBe(false);
+	expect(fmtCostSummary(partial, t)).toBe('¥2.50*');
+	expect(fmtCostSummary(partial, t, { mark: false })).toBe('¥2.50');
+	expect(html({ summary: partial })).toBe('¥2.50<span class="dss-cost-mark" role="img" aria-label="' + zh['cost.partialTip'] + '" tabindex="0">*</span>');
+	expect(html({ summary: partial, focusable: false })).not.toContain('tabindex');
+	expect(html({ summary: partial, mark: false })).toBe('¥2.50');
+	expect(html({ summary: exact })).toBe('¥2.50');
 });

@@ -2,9 +2,10 @@
 const react = require("react");
 const { Popover } = require("./client-dialog.cjs");
 const { costShares, cnyAmount, costDelta, pendingFocus, defaultSortDir, sortProjects } = require("./client-overview-model.cjs");
-const { fmtClock, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
+const { costIsPartial, fmtClock, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtTokens, fmtTps, projectCostSummary, sessionCostSummary, sessionCounts } = require("./client-format.cjs");
 const { localDayKey, modelNameOnly } = require("./client-data.cjs");
 const { sessionActiveMs } = require("./client-timeline-model.cjs");
+const { tipProps, tipRows } = require("./client-tip.cjs");
 const { IconChevronDown, IconFilter, IconInfo } = require("./client-icons.cjs");
 
 const e = react.createElement;
@@ -53,6 +54,21 @@ function InfoTip({ id, label, text }) {
 	);
 }
 
+// A cost amount whose partial "*" explains itself on hover and focus. Pass
+// mark: false where a pending chip already says the same thing.
+function CostText({ summary, t, mark, focusable }) {
+	var text = fmtCostSummary(summary, t, { mark: false });
+	if (mark === false || !costIsPartial(summary)) return text;
+	var tip = t("cost.partialTip");
+	return e(react.Fragment, null, text, e("span", {
+		className: "dss-cost-mark",
+		role: "img",
+		"aria-label": tip,
+		tabIndex: focusable === false ? undefined : 0,
+		...tipProps(function() { return tipRows(tip, []); })
+	}, "*"));
+}
+
 function formatDelta(delta, prevDate, t) {
 	if (!delta) return null;
 	var pct = Math.round(delta.ratio * 100 + Math.sign(delta.ratio) * 1e-9);
@@ -74,7 +90,8 @@ function OverviewKpis(props) {
 		var amount = cnyAmount(totals.cost);
 		var perDay = amount != null && props.activeDays > 0 ? amount / props.activeDays : null;
 		if (perDay != null) {
-			var perDayText = fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: perDay }] }, t);
+			// The card's main amount already carries the partial marker.
+			var perDayText = fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: perDay }] }, t, { mark: false });
 			sub.push(e("span", { key: "per-day" }, t("kpi.perDay").replace("%s", perDayText)));
 		}
 	}
@@ -89,7 +106,7 @@ function OverviewKpis(props) {
 	return e("section", { className: "dss-kpis", "aria-label": t("tab.overview") },
 		e("div", { className: "dss-kpi cost" },
 			e("div", { className: "dss-kpi-k" }, t("card.cost"), e(InfoTip, { id: "dss-cost-tip", label: t("kpi.costInfo"), text: t("w.estimatedHint") })),
-			e("div", { className: "dss-kpi-v dss-cost" }, fmtCostSummary(totals.cost, t)),
+			e("div", { className: "dss-kpi-v dss-cost" }, e(CostText, { summary: totals.cost, t: t, mark: !(totals.cost.unpricedTokens > 0) })),
 			sub.length ? e("div", { className: "dss-kpi-s" }, sub) : null
 		),
 		e("div", { className: "dss-kpi" },
@@ -208,7 +225,7 @@ function ProjectFilterMenu(props) {
 					e("span", { className: "dss-filter-name" }, project.name),
 					valueOf
 						? e("span", { className: "dss-filter-val" }, valueOf(project))
-						: e("span", { className: "dss-filter-cost" }, fmtCostSummary(projectCostSummary(project), t))
+						: e("span", { className: "dss-filter-cost" }, e(CostText, { summary: projectCostSummary(project), t: t, focusable: false }))
 				);
 			}) : e("div", { className: "dss-empty" }, t("empty"))
 		),
@@ -236,6 +253,8 @@ function sessionTip(session, model, t) {
 		t("w.input") + " " + fmtTokens(stats.inputTokens || 0) + " · " + t("w.output") + " " + fmtTokens(stats.outputTokens || 0)
 	];
 	if (model) lines.push(t("sess.model") + " " + model);
+	// The row title is the only tooltip here, so it also explains the cost "*".
+	if (costIsPartial(sessionCostSummary(session))) lines.push("* " + t("cost.partialTip"));
 	return lines.join("\n");
 }
 
@@ -450,7 +469,7 @@ function ProjectTable(props) {
 						onOpen: props.onOpenPricing,
 						compact: true
 					}) : null,
-					chipOnly ? null : e("span", { className: "dss-cost-amt" }, costText)
+					chipOnly ? null : e("span", { className: "dss-cost-amt" }, e(CostText, { summary: summary, t: t, mark: !(summary.unpricedTokens > 0) }))
 				),
 				e("div", { className: "dss-share", title: t("table.share").replace("%s", share == null ? "—" : fmtSharePct(share * 100)) },
 					e("span", { className: "dss-share-bar" }, e("i", { style: { width: (share == null ? 0 : share * 100) + "%" } })),
@@ -505,4 +524,4 @@ function ProjectTable(props) {
 	);
 }
 
-module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, ProjectDetailMeta, pageRows, PageControls, PendingChip, InfoTip };
+module.exports = { OverviewTools, OverviewKpis, OverviewStrip, ProjectFilterMenu, ProjectTable, ProjectSessions, ProjectDetailMeta, pageRows, PageControls, PendingChip, InfoTip, CostText };

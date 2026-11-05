@@ -1040,7 +1040,8 @@ try {
   await until('document.querySelector(".dss-status-banner.partial")');
   assert(await evaluate('!document.querySelector("[data-action=retry]")'), 'partial banner has no retry');
   assert(await evaluate('!!document.querySelector(".dss-status-banner .dss-data-diagnostics div")'), 'partial banner exposes diagnostics');
-  await until('document.querySelector(".dss-kpis")?.textContent.includes("*")');
+  await until('!!document.querySelector(".dss-kpis [data-action=pricing-pending]")');
+  assert(!(await evaluate('document.querySelector(".dss-kpi.cost .dss-kpi-v").textContent')).includes('*'), 'the pending chip replaces the "*" on the overview cost');
   await click('[data-action=pricing-pending]');
   await until('document.querySelector(".dss-drawer")');
   await until(`(() => { const input = [...document.querySelectorAll('.dss-pricing input')].find(node => node.getAttribute('aria-label') === window.__fixture.t('price.model')); return input && input.value === 'fixture-unpriced'; })()`);
@@ -2603,8 +2604,18 @@ try {
   await until('document.querySelector(".dss-tl[data-mode=day]")');
   await click('[data-action=tl-metric-cost]');
   const partialTotal = await evaluate('document.querySelector(".dss-tl-hist-total").textContent');
-  assert.equal(partialTotal, partialKpi, 'partial day timeline cost matches the overview KPI');
-  assert(partialTotal.includes('*'), 'partial day cost keeps the unpriced marker: ' + partialTotal);
+  assert.equal(partialTotal.replace(/\*$/, ''), partialKpi, 'partial day timeline cost matches the overview KPI');
+  assert(partialTotal.endsWith('*'), 'partial day cost keeps the unpriced marker: ' + partialTotal);
+  // Without page focus, focus() moves activeElement but fires no focus event.
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  try {
+    await focus('.dss-tl-hist-total .dss-cost-mark');
+    await until('document.querySelector(".dss-tt.show")');
+    assert((await evaluate('document.querySelector(".dss-tt").textContent')).includes('部分用量还没有价格'), 'the "*" explains itself on focus');
+    await evaluate('document.activeElement.blur()');
+  } finally {
+    await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+  }
   report.checks.push('day timeline: filter project set and duration values, persisted axis/metric preferences, partial cost marker, lane pagination');
   await navigate('/?stats=large&lang=zh');
   await click('.dss-trigger'); await tab(2); await until('document.querySelector(".dss-data-status.exact")');
@@ -2757,11 +2768,13 @@ try {
   await focus('#dss-tl-active-only');
   await press(' ');
   await until('document.querySelectorAll(".dss-mx-row.is-day").length === 1');
-  assert(await evaluate('document.querySelector(".dss-tl-pager span").textContent.includes("1/1")'), 'active-only collapses to one page');
+  assert(await evaluate('!document.querySelector(".dss-tl-pager")'), 'a single page hides the pager');
+  assert.equal(await evaluate('document.querySelector("label.dss-tl-check").textContent'), '隐藏空白日期', 'checkbox reads 隐藏空白日期');
   await focus('#dss-tl-active-only');
   await press(' ');
   await until('document.querySelectorAll(".dss-mx-row.is-day").length === 30');
   assert(await evaluate('document.querySelector(".dss-tl-pager span").textContent.includes("1/3")'), 'unchecking active-only restores calendar paging');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".dss-tl-pager button")].map(node => node.textContent)'), ['较新', '较早', '回到最新'], 'pager labels read 较新 / 较早');
   const columnsAt = async width => {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     await evaluate('window.dispatchEvent(new Event("resize"))');
@@ -2771,18 +2784,30 @@ try {
   assert.equal(await columnsAt(1440), 48, '1440 uses 48 matrix columns');
   assert.equal(await columnsAt(390), 24, '390 uses 24 matrix columns');
   assert.equal(await columnsAt(320), 24, '320 uses 24 matrix columns');
+  for (const selector of ['#dss-tl-matrix-tip', '#dss-tl-active-tip']) {
+    await focus(`.dss-info[aria-describedby="${selector.slice(1)}"]`);
+    await delay(50);
+    const tipBox = await evaluate(`(() => {
+      const node = document.querySelector('${selector}');
+      const body = document.querySelector('.dss-body').getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return { display: getComputedStyle(node).display, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, bodyLeft: body.left, bodyRight: body.right, bodyTop: body.top, bodyBottom: body.bottom };
+    })()`);
+    assert(tipBox.display !== 'none' && tipBox.left >= tipBox.bodyLeft - 1 && tipBox.right <= tipBox.bodyRight + 1 && tipBox.top >= tipBox.bodyTop - 1 && tipBox.bottom <= tipBox.bodyBottom + 1, selector + ' stays inside the body at 320: ' + JSON.stringify(tipBox));
+    await evaluate('document.activeElement.blur()');
+  }
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await delay(200);
   await click('.dss-mx-row.is-day:not(.is-idle) .dss-mx-cell:not([data-level="0"])');
   await until('document.querySelector(".dss-tl[data-mode=day]")');
   await until('document.querySelector(".dss-tl-pop[role=dialog]")');
   assert((await evaluate('document.querySelector(".dss-date-label").textContent')).includes('2026-09-08'), 'cell jump selects the row date');
-  assert.equal(await evaluate('document.querySelector(".dss-tl-lane[data-project-id] .dss-tl-chev").getAttribute("aria-expanded")'), 'true', 'cell jump opens the first lane');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tl-chev[aria-expanded=true]").length'), 0, 'cell jump leaves the lanes collapsed');
   await press('Escape');
   await until('!document.querySelector(".dss-tl-pop")');
   assert(await evaluate('document.activeElement === document.querySelector(".dss-tl-day")'), 'closing a jumped slot detail focuses the day');
   await press('Escape');
-  report.checks.push('all-mode timeline: single scroll, >=11px text, legend/cell colors, cell and daily tooltips, now outline, calendar pages, idle rows and week gaps, active-only paging, project legend, 24/48 columns, cell jump');
+  report.checks.push('all-mode timeline: single scroll, >=11px text, legend/cell colors, cell and daily tooltips, now outline, calendar pages, idle rows and week gaps, hide-empty paging and single-page pager, project legend, 24/48 columns, cell jump');
 
   // 4e: deterministic showcase screenshots for the README
   await evaluate('localStorage.removeItem("dsh-stats.timeline"); localStorage.removeItem("dsh-stats.hidden"); localStorage.setItem("dsh-stats.nav", JSON.stringify({ mode: "day", date: null }))');
@@ -2794,6 +2819,10 @@ try {
   await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
   const showcaseLanes = await evaluate('document.querySelectorAll(".dss-tl-lane").length');
   assert(showcaseLanes >= 4, 'showcase 09-07 has at least four lanes: ' + showcaseLanes);
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tl-sess").length'), 0, 'lanes start collapsed');
+  const firstLane = await evaluate('document.querySelector(".dss-tl-lane .dss-tl-chev").closest(".dss-tl-lane").dataset.projectId');
+  await click('.dss-tl-lane .dss-tl-chev');
+  await until('document.querySelector(".dss-tl-sess.is-sub")');
   const subTagHeight = await evaluate('document.querySelector(".dss-tl-sess.is-sub .dss-tag").getBoundingClientRect().height');
   assert(subTagHeight <= 20, 'subagent tag stays on one line at 1440: ' + subTagHeight);
   await layout('readme-timeline-day');
@@ -2810,6 +2839,7 @@ try {
   // 0.5.1: “全部”把离开时的日期存进 nav.date，“按日”据此恢复，不再回退到最新活动日，
   // 所以这里已经停在 2026-09-07，无需再点一次“前一天”。
   await until('document.querySelector(".dss-date-label").textContent.includes("2026-09-07")');
+  assert.equal(await evaluate(`document.querySelector('.dss-tl-lane[data-project-id="${firstLane}"] .dss-tl-chev').getAttribute('aria-expanded')`), 'true', 'a lane the user opened stays open across the all/day round trip');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: true });
   await evaluate('window.dispatchEvent(new Event("resize"))');
   await delay(200);
@@ -2820,7 +2850,11 @@ try {
   const popTagHeight = await evaluate('document.querySelector(".dss-tl-pop-s .dss-tag").getBoundingClientRect().height');
   assert(popTagHeight <= 20, 'popover subagent tag stays on one line at 320: ' + popTagHeight);
   await press('Escape'); await press('Escape');
-  report.checks.push('showcase timeline: 09-07 lanes, first-page active days and one-line subagent tags (unchanged with 26 weeks of history)');
+  await until('!document.querySelector(".dss-panel")');
+  await click('.dss-trigger'); await until('document.querySelector(".dss-tl[data-mode=day]")');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tl-chev[aria-expanded=true]").length'), 0, 'closing the panel collapses the lanes again');
+  await press('Escape'); await until('!document.querySelector(".dss-panel")');
+  report.checks.push('showcase timeline: 09-07 lanes start collapsed, an opened lane survives all/day and resets on close, first-page active days and one-line subagent tags');
 
   // §9.3 第 23 条：展示夹具的趋势页，用作 README 截图。
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -2988,7 +3022,8 @@ try {
   await click('.dss-trigger'); await tab(3);
   await until('document.querySelector(".dss-tr-kpis")');
   assert(await evaluate('document.querySelectorAll(".dss-tr-bar.is-partial").length > 0'), 'partial days use the striped bar');
-  assert((await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent')).endsWith('*'), 'partial cost ends with *');
+  assert(!(await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi.cost .dss-kpi-v").textContent')).includes('*'), 'partial cost relies on its pending chip, not "*"');
+  assert.equal(await evaluate('document.querySelector(".dss-tr-kpis .dss-kpi:nth-child(3) .dss-kpi-v .dss-cost-mark")?.getAttribute("aria-label")'), '部分用量还没有价格，没算进这个金额', 'the daily average keeps an explained "*"');
   await layout('desktop-trends-partial'); await capture('desktop-trends-partial');
   await evaluate('document.querySelector(".dss-body").scrollTop = 10000');
   await layout('desktop-trends-partial-bottom'); await capture('desktop-trends-partial-bottom');

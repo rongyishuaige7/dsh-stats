@@ -80,7 +80,8 @@ test('[F1] 会话数超过一页时，第一页渲染的最后一行也应带 is
 			sessions,
 		};
 
-		const html = render({ projects: [project] });
+		// Lanes start collapsed since 0.5.3; open this one so its session page renders.
+		const html = render({ projects: [project], expanded: new Set(['p']) });
 		const rows = [...html.matchAll(/class="(dss-tl-row dss-tl-sess[^"]*)"/g)].map(m => m[1]);
 
 		// 分页生效：第一页只渲染 TIMELINE_SESSION_PAGE 行

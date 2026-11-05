@@ -105,14 +105,22 @@ function fmtCurrencyAmount(value, currency) {
 	var amount = value <= 0 ? "0" : value >= 1000 ? value.toFixed(0) : value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
 	return "¥" + amount;
 }
-function fmtCostSummary(summary, t) {
+// options.mark === false drops the partial "*" (CostText draws its own).
+function fmtCostSummary(summary, t, options) {
 	if (!summary || !Array.isArray(summary.totals)) return "—";
 	var display = convertCostSummaryToCny(summary);
 	if (!display || !Array.isArray(display.totals)) return "—";
 	if (display.totals.length === 0) return display.status === "free" ? "¥0" : t ? t("pricing.pending") : "待计价";
 	// 主汇总只展示已纳入统计的 CNY 金额。未计价会话及其原因通过
 	// meta.warnings/详情呈现，避免在金额旁混入“？”造成误导。
-	return display.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ") + (display.status === "partial" ? "*" : "");
+	var mark = display.status === "partial" && !(options && options.mark === false) ? "*" : "";
+	return display.totals.map(function(total) { return fmtCurrencyAmount(total.amount, total.currency); }).join(" + ") + mark;
+}
+// True when fmtCostSummary would append "*": an amount exists but part of the usage has no price.
+function costIsPartial(summary) {
+	if (!summary || !Array.isArray(summary.totals)) return false;
+	var display = convertCostSummaryToCny(summary);
+	return !!display && Array.isArray(display.totals) && display.totals.length > 0 && display.status === "partial";
 }
 function fmtBalanceAmount(value, currency) {
 	if (value == null || !Number.isFinite(value)) return "—";
@@ -185,4 +193,4 @@ function sessionExportUsages(session) {
 	return [usage];
 }
 
-module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtSyncClock, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };
+module.exports = { BEIJING_OFFSET_MS, EMPTY_VIEW, MAX_VISIBLE_PROJECTS, SLOT_MS, addCounts, costIsPartial, costOf, esc, fmtBalanceAmount, fmtClock, fmtCost, fmtCostSummary, fmtDuration, fmtLatency, fmtN, fmtPct, fmtSessionCounts, fmtSharePct, fmtSyncClock, fmtTokens, fmtTps, identityForUsage, mergeCostSummaries, pad, projectCostSummary, sessionCost, sessionCostSummary, sessionCounts, sessionExportUsages, summarizeCosts, usageCost, usageCostDetail };

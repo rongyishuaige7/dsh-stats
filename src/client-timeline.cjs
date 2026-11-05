@@ -20,7 +20,7 @@ const {
 	timelineJumpSlot,
 	dayCostSummaries
 } = require("./client-timeline-model.cjs");
-const { PageControls, pageRows } = require("./client-overview.cjs");
+const { CostText, InfoTip, PageControls, pageRows } = require("./client-overview.cjs");
 const { useLayer } = require("./client-dialog.cjs");
 const { tipRows, tipProps, showTipRaw, hideTip } = require("./client-tip.cjs");
 const { IconChevronDown } = require("./client-icons.cjs");
@@ -44,6 +44,13 @@ function costAmount(summary) {
 function dayLabel(date, t) {
 	const weekday = t("w.weekdays").split(",")[new Date(date + "T00:00:00Z").getUTCDay()];
 	return date.slice(5) + " " + t("w.dayPrefix") + weekday;
+}
+
+function toggledSet(current, id) {
+	const next = new Set(current);
+	if (next.has(id)) next.delete(id);
+	else next.add(id);
+	return next;
 }
 
 
@@ -83,9 +90,11 @@ function TimelineDay(props) {
 	const grid = useMemo(function() { return timelineGrid(win); }, [win.start, win.end]);
 
 	const [lanePage, setLanePage] = useState(0);
-	const [expanded, setExpanded] = useState(function() {
-		return new Set(model.lanes.length ? [model.lanes[0].projectId] : []);
-	});
+	// Lanes start collapsed. The panel owns the set so lanes the user opened
+	// stay open across dates until the panel closes; the local set is a
+	// fallback for standalone renders.
+	const [localExpanded, setLocalExpanded] = useState(function() { return new Set(); });
+	const expanded = props.expanded || localExpanded;
 	const [sessionPages, setSessionPages] = useState({});
 	const [pop, setPop] = useState(null);
 	const [barFocus, setBarFocus] = useState(null);
@@ -94,39 +103,17 @@ function TimelineDay(props) {
 	const popRef = useRef(pop);
 	popRef.current = pop;
 
-	const firstLaneId = model.lanes.length ? model.lanes[0].projectId : null;
 	useEffect(function() {
-		setExpanded(new Set(firstLaneId == null ? [] : [firstLaneId]));
 		setLanePage(0);
 		setSessionPages({});
 		setPop(null);
-	}, [date]);
-	useEffect(function() {
-		setExpanded(function(current) {
-			const next = new Set();
-			current.forEach(function(id) {
-				if (model.lanes.some(function(lane) { return lane.projectId === id; })) next.add(id);
-			});
-			return next;
-		});
-		setLanePage(0);
-		setSessionPages({});
-		setPop(null);
-	}, [hiddenKey]);
+	}, [date, hiddenKey]);
 
 	useEffect(function() {
 		if (!props.jump || props.jump.date !== date) return;
-		if (firstLaneId != null) {
-			setExpanded(function(current) {
-				if (current.has(firstLaneId)) return current;
-				const next = new Set(current);
-				next.add(firstLaneId);
-				return next;
-			});
-		}
 		setPop({ slot: props.jump.slot, opener: null });
 		if (props.onJumpConsumed) props.onJumpConsumed();
-	}, [props.jump, date, firstLaneId]);
+	}, [props.jump, date]);
 
 	const closeDetail = useCallback(function(restoreFocus) {
 		const opener = popRef.current && popRef.current.opener;
@@ -139,12 +126,8 @@ function TimelineDay(props) {
 	}, []);
 
 	const toggleLane = function(projectId) {
-		setExpanded(function(current) {
-			const next = new Set(current);
-			if (next.has(projectId)) next.delete(projectId);
-			else next.add(projectId);
-			return next;
-		});
+		if (props.onToggleLane) { props.onToggleLane(projectId); return; }
+		setLocalExpanded(function(current) { return toggledSet(current, projectId); });
 	};
 
 	const openDetail = function(slot, opener) {
@@ -260,7 +243,7 @@ function TimelineDay(props) {
 	const hist = e("div", { className: "dss-tl-row dss-tl-hist" + (isCost ? "" : " is-token") },
 		e("div", { className: "dss-tl-hist-lab" },
 			e("span", null, isCost ? t("tl.dayCost") : t("tl.dayToken")),
-			e("b", { className: "dss-tl-hist-total" }, isCost ? fmtCostSummary(props.dayCost, t) : fmtTokens(props.dayTokens))
+			e("b", { className: "dss-tl-hist-total" }, isCost ? e(CostText, { summary: props.dayCost, t: t }) : fmtTokens(props.dayTokens))
 		),
 		e("div", { className: "dss-tl-track", role: "group", "aria-label": isCost ? t("tl.metricCost") : t("tl.metricToken") },
 			peak ? e("i", { className: "dss-tl-ref", "aria-hidden": "true" }) : null,
@@ -299,7 +282,7 @@ function TimelineDay(props) {
 		),
 		e("div", { className: "dss-tl-peak" },
 			peak ? e("span", null, t("tl.peak").replace("%s", clock(peak.slot))) : null,
-			peak ? e("b", null, isCost ? fmtCostSummary(model.slotCost[peak.slot], t) : fmtTokens(peak.value)) : null
+			peak ? e("b", null, isCost ? e(CostText, { summary: model.slotCost[peak.slot], t: t }) : fmtTokens(peak.value)) : null
 		)
 	);
 
@@ -442,8 +425,7 @@ function TimelineDay(props) {
 			}),
 			e("span", null, t("tl.legendFull"))
 		),
-		e("span", null, t("tl.legendUnit")),
-		e("span", null, t("tl.legendClick"))
+		e(InfoTip, { id: "dss-tl-day-tip", label: t("tl.legendInfo"), text: t("tl.dayInfo") })
 	);
 
 	const top = e("div", { className: "dss-tl-top" },
@@ -587,12 +569,10 @@ function SlotPopover(props) {
 	const detail = timelineSlotDetail(props.model, props.slot);
 	const title = clock(props.slot) + "–" + clock(props.slot + 1);
 	const footer = [
-		t("tl.total"),
-		fmtDuration(detail.total.ms),
-		fmtTokens(detail.total.tokens) + " Token",
-		fmtCostSummary(detail.total.cost, t)
+		t("tl.total") + " · " + fmtDuration(detail.total.ms) + " · " + fmtTokens(detail.total.tokens) + " Token · ",
+		e(CostText, { key: "cost", summary: detail.total.cost, t: t })
 	];
-	if (detail.parallel > 1) footer.push(t("tl.parallel").replace("%d", String(detail.parallel)));
+	if (detail.parallel > 1) footer.push(" · " + t("tl.parallel").replace("%d", String(detail.parallel)));
 
 	return e("div", {
 		ref: rootRef,
@@ -619,7 +599,7 @@ function SlotPopover(props) {
 					e("i", { className: "dss-pdot", "data-color": String(group.colorIndex) }),
 					e("span", { className: "dss-tl-name", title: group.name }, group.name),
 					e("span", { className: "dss-tl-v" }, fmtDuration(group.ms)),
-					e("span", { className: "dss-tl-v is-cost" }, fmtCostSummary(group.cost, t))
+					e("span", { className: "dss-tl-v is-cost" }, e(CostText, { summary: group.cost, t: t }))
 				),
 				group.sessions.map(function(row) {
 					const name = row.title || t("w.untitled");
@@ -646,7 +626,7 @@ function SlotPopover(props) {
 			);
 		}),
 		detail.moreProjects > 0 ? e("div", { className: "dss-tl-more" }, t("tl.moreProjects").replace("%d", String(detail.moreProjects))) : null,
-		e("div", { className: "dss-tl-pop-f" }, footer.join(" · "))
+		e("div", { className: "dss-tl-pop-f" }, footer)
 	);
 }
 
@@ -703,9 +683,10 @@ function TimelineRange(props) {
 			activeOnly: prefs.activeOnly,
 			columns: columns,
 			dayCosts: dayCosts,
+			tokenDays: props.tokenDays,
 			colorIndexes: props.colorIndexes
 		});
-	}, [props.timeline, props.hidden, today, page, prefs.activeOnly, columns, dayCosts, props.colorIndexes]);
+	}, [props.timeline, props.hidden, today, page, prefs.activeOnly, columns, dayCosts, props.tokenDays, props.colorIndexes]);
 	useEffect(function() { setPage(0); }, [prefs.activeOnly]);
 	useEffect(function() {
 		setPage(function(current) { return Math.min(current, model.pageCount - 1); });
@@ -748,7 +729,8 @@ function TimelineRange(props) {
 			const rest = projects.slice(8).reduce(function(total, project) { return total + project.ms; }, 0);
 			rows.push([t("tl.moreProjects").replace("%d", String(projects.length - 8)), fmtDuration(rest)]);
 		}
-		return tipRows(row.date + " " + t("w.dayPrefix") + weekdayOf(row.date), rows);
+		const title = row.date + " " + t("w.dayPrefix") + weekdayOf(row.date);
+		return tipRows(row.toolOnly ? title + " · " + t("tl.toolOnly") : title, rows);
 	};
 	const cellTip = function(row, cell, index) {
 		const start = index * per;
@@ -790,13 +772,13 @@ function TimelineRange(props) {
 		const dateText = row.date + " " + t("w.dayPrefix") + weekday;
 		const aria = row.idle
 			? dateText + " " + t("tl.noActivity")
-			: dateText + " " + t("tl.openDay").replace("%s", fmtDuration(row.total));
+			: dateText + " " + t("tl.openDay").replace("%s", fmtDuration(row.total)) + (row.toolOnly ? " · " + t("tl.toolOnly") : "");
 		const colors = new Map(row.projects.map(function(project) { return [project.projectId, project.colorIndex]; }));
 		const tip = tipProps(function() { return dailyTip(row); });
 		const barWidth = row.idle ? "0" : "max(3px, " + (model.maxDay ? (row.total / model.maxDay * 100).toFixed(1) : "0") + "%)";
 		return e("div", {
 			key: row.date,
-			className: "dss-mx-row is-day" + (row.idle ? " is-idle" : "") + (row.newWeek ? " is-week" : ""),
+			className: "dss-mx-row is-day" + (row.idle ? " is-idle" : "") + (row.toolOnly ? " is-tool-only" : "") + (row.newWeek ? " is-week" : ""),
 			"data-date": row.date
 		},
 			e("button", {
@@ -844,13 +826,15 @@ function TimelineRange(props) {
 	const summary = model.summary;
 	const summaryNode = e("div", { className: "dss-tl-sum" },
 		e("span", null, t("tl.range"), e("b", null, rangeText(summary, t))),
-		e("span", null, t("tl.activeOf"), e("b", null, t("tl.activeValue").replace("%d", String(summary.activeDays)).replace("%d", String(summary.spanDays)))),
+		e("span", null, t("tl.activeOf"), e("b", null, t("tl.activeValue").replace("%d", String(summary.activeDays)).replace("%d", String(summary.spanDays))),
+			e(InfoTip, { id: "dss-tl-active-tip", label: t("tl.activeInfoLabel"), text: t("tl.activeInfo") })),
 		e("span", null, t("w.duration"), e("b", null, fmtDuration(summary.total))),
 		e("span", null, t("tl.avg"), e("b", null, fmtDuration(summary.avg))),
-		e("span", null, t("tl.cost"), e("b", { className: "dss-tl-sum-cost" }, fmtCostSummary(summary.cost, t))),
+		e("span", null, t("tl.cost"), e("b", { className: "dss-tl-sum-cost" }, e(CostText, { summary: summary.cost, t: t }))),
 		e("span", null, t("tl.streak"), e("b", null, t("tl.days").replace("%d", String(summary.streak))))
 	);
-	const pager = e("div", { className: "dss-tl-pager" },
+	// A single page has nothing to page through.
+	const pager = model.pageCount <= 1 ? null : e("div", { className: "dss-tl-pager" },
 		e("span", { "aria-live": "polite" }, t("hint.timeline.page").replace("%d", String(model.currentPage + 1)).replace("%d", String(model.pageCount))),
 		e("button", {
 			type: "button",
@@ -923,8 +907,7 @@ function TimelineRange(props) {
 				[1, 2, 3, 4].map(function(level) { return e("i", { key: level, className: "dss-mx-lg", "data-level": level }); }),
 				e("span", null, t("trends.more"))
 			),
-			e("span", null, t("tl.cellUnit").replace("%s", columns === 24 ? t("tl.hour") : t("tl.halfHour"))),
-			e("span", null, t("tl.clickDate"))
+			e(InfoTip, { id: "dss-tl-matrix-tip", label: t("tl.legendInfo"), text: t("tl.matrixInfo").replace("%s", columns === 24 ? t("tl.hour") : t("tl.halfHour")) })
 		)
 		: e("div", { className: "dss-tl-legend" },
 			legendProjects.slice(0, 8).map(function(project) {
@@ -934,8 +917,7 @@ function TimelineRange(props) {
 				);
 			}),
 			legendProjects.length > 8 ? e("span", null, t("tl.moreProjects").replace("%d", String(legendProjects.length - 8))) : null,
-			e("span", null, t("tl.cellDominant")),
-			e("span", null, t("tl.clickDate"))
+			e(InfoTip, { id: "dss-tl-matrix-tip", label: t("tl.legendInfo"), text: t("tl.matrixProjectInfo") })
 		);
 
 	const head = e("div", { className: "dss-mx-row is-head" },

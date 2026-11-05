@@ -113,7 +113,7 @@ Token 口径和总览一致：`uncached + cacheRead + cacheWrite + output`（`ou
 **T5 会话行。** 点泳道左侧的箭头展开该项目当天的会话，每个会话一行，色条来自 `session.slots`。
 - 主会话按第一个活跃槽排序；子对话紧跟在它的 `parentSession` 后面，缩进并带 `w.subagentTag`（"子对话"，沿用总览术语，不用原型里的"子代理"）；找不到父会话的子对话排在最后。
 - 点标题调用 `onOpenSession(session)`，规则和总览一致：面板关闭，焦点交给宿主。
-- 切换日期后，默认只展开第一条泳道。隐藏一个项目时，同时收起它。
+- 泳道默认全部收起。展开状态由面板（`StatsPanel` 的 `timelineLanes`）持有，在按日和全部之间切换、换日期时都保留，关闭面板后清空。
 - 本地近似模式（会话没有 `slots`）不显示箭头。
 - 单条泳道的会话超过 50 个时，用 `PageControls`（`data-pages="tl-sessions"`）。
 
@@ -132,8 +132,8 @@ Token 口径和总览一致：`uncached + cacheRead + cacheWrite + output`（`ou
 
 **T8 全部模式分页。** 按日历分页，每页 30 天，最新在上。
 - 日期范围从 `timeline.days` 的最早日期到 `max(今天, 最晚日期)`，没活动的日期也占一行。范围取自未筛选的 timeline，隐藏项目不改变分页边界。
-- "只看活跃日期"勾选框默认不勾。勾选后只列有可见活动的日期，每页 30 个，并回到第 1 页。
-- 分页条显示"第 X/Y 页"和"更新 / 更早 / 回到最新"三个按钮。
+- "隐藏空白日期"勾选框默认不勾。勾选后只列有可见活动的日期，每页 30 个，并回到第 1 页。
+- 分页条显示"第 X/Y 页"和"较新 / 较早 / 回到最新"三个按钮；只有一页时整个分页条不显示。
 
 **T9 矩阵。** 一天一行：行高 14px，格子高 12px，因此行距和格距都是 2px。
 - 周一到周日为一组，组与组之间多留 8px。
@@ -144,24 +144,26 @@ Token 口径和总览一致：`uncached + cacheRead + cacheWrite + output`（`ou
 - 今天的日期用强调色；"现在"所在的格子加描边。
 
 **T10 全部模式摘要与辅助图。**
-- 摘要只统计本页的行，和下面的矩阵对应；全部历史的合计已经在总览的"全部"模式里，工具栏也写了"全部历史 · 首日起"。
+- 摘要统计全部历史，不随翻页和"隐藏空白日期"变化，和工具栏的"全部历史 · 首日起"对应。
+- "活跃"的口径和用量趋势一致：有 Token 消耗（input + output > 0）的日子，由 `tokenDates(projects, hidden)` 算出后以 `tokenDays` 传入。只有工具活动的日子仍显示在矩阵里，日期和时长改用次要文字色、每日条变淡，原因写在行的 tooltip 里，不计入活跃、日均和最长连续。没传 `tokenDays` 时退回"有任何活动"。
 - 依次是：
-  - 范围：本页最早到最晚的日期，MM-DD 至 MM-DD，跨年时用完整日期；
-  - 活跃："N / M 天"，N 是本页有可见活动的天数，M 是范围内的日历天数（按日历分页时 M 等于行数，只看活跃日期时 M ≥ 行数，所以这个数不会恒等于 30）；
-  - 开发时长；
+  - 范围：从第一个有活动的日子到今天，MM-DD 至 MM-DD，跨年时用完整日期；
+  - 活跃："N / M 天"，N 是活跃天数，M 是范围内的日历天数；旁边的 ⓘ 解释口径；
+  - 开发时长：范围内全部可见活动；
   - 日均：开发时长 ÷ N；
   - 费用；
-  - 最长连续天数：在本页内按日历相邻计算，只看活跃日期时被跳过的日子同样断开。
+  - 最长连续天数：按日历相邻的活跃日计算。
 - 矩阵上方是"时段分布"：把本页每列的时长累加，最高的一列加深，右侧写"高峰 HH:MM"。
 - 每行右侧是每日条：长度按本页最长的一天缩放，按项目颜色分段，后面是当天时长。
 
-**T11 跳转。** 点日期按钮切到按日并选中该日。点有活动的格子，除了切到该日，还会展开第一条泳道，并打开这个半小时的明细；每格 1 小时时取两个半小时里活跃时长更长的那个，相同取前一个。
+**T11 跳转。** 点日期按钮切到按日并选中该日。点有活动的格子，除了切到该日，还会打开这个半小时的明细（不再自动展开泳道）；每格 1 小时时取两个半小时里活跃时长更长的那个，相同取前一个。
 
 **T12 筛选接线。** 时间线标签页的"筛选项目"列出 `dateProjects`，即当天（或全部历史）有任何活动的项目，包括只有工具活动的项目。条目右侧的值在这里显示开发时长，不显示费用：按日为当天时长，全部模式为全部历史时长。总览标签页不变。
 
 **T13 单一滚动与图例。** 时间线内部不再有任何 `overflow` 滚动容器。删除顶部 `hint.timeline.*` 说明行，图例常驻底部：
-- 按日：活跃比例色阶、"每节色条、每根柱 = 半小时"、"点色条或柱子查看这半小时的明细"。
-- 全部："少 → 多"色阶（或项目颜色列表）、"每格 = 半小时 / 1 小时内的活跃时长，并行项目按满格计"、"点日期或格子进入当天"。
+- 按日：活跃比例色阶，后面一个 ⓘ（`tl.dayInfo`）："每节色条、每根柱 = 半小时。点色条或柱子查看这半小时的明细。"
+- 全部："少 → 多"色阶（或项目颜色列表），后面一个 ⓘ：强度着色时是 `tl.matrixInfo`（"每格 = 半小时 / 1 小时内的活跃时长，并行项目按满格计。点日期或格子进入当天。"），项目着色时是 `tl.matrixProjectInfo`。
+- ⓘ 的说明向上弹出，宽度不超过图例行；在 320px 宽时也不越出 `.dss-body`。
 
 **T14 命名规则。** 时间线的类名一律以 `dss-tl-` 或 `dss-mx-` 开头。状态修饰符用 `is-*`，并且在 CSS 里只能和带前缀的类复合书写（`.dss-mx-row.is-idle`），不能单独成为选择器。原型里 `.mx-row.empty` 撞上通用的 `.empty{padding:40px 0}`，空日期行被撑到 80px，规则就是为了避免这类问题。§9.4 的样式测试会检查这一条。
 
@@ -298,7 +300,7 @@ div.dss-tl[data-mode=all]
 | `timelinePeak(values, win)` | → `{slot, value}` 或 `null` | 窗口内最大值，相同时取最早的槽 |
 | `timelineSlotDetail(model, slot)` | → `{projects[], moreProjects, total: {ms, tokens, cost}, parallel}` | 见 T6；`cost` 是 summary，用 `fmtCostSummary` 显示 |
 | `dayCostSummaries(projects, hidden)` | 全量项目 → `Map<date, summary>` | 对每个可见会话：有 `slotUsage` 时按 `localDayKey(u.slot * SLOT_MS)` 分天，每个"会话 × 天"先 `summarizeCosts`；没有时整段 `sessionCostSummary(s)` 归到 `updatedAt ?? createdAt` 那天。最后每天 `mergeCostSummaries`。只遍历一次，用 `useMemo` 缓存 |
-| `timelineRangeModel({days, hidden, today, page, activeOnly, columns, dayCosts, colorIndexes})` | → `{rows, pageCount, currentPage, profile, peak, maxDay, summary}` | 见 T8–T10。`rows` 最新在上；行字段为 `date`、`idle`、`newWeek`、`weekend`、`today`、`cells[{level, dominant, by, ms}]`、`total`、`projects[]`、`cost`。`dominant` 取 `ms` 最大的项目，相同时按项目 id 排序取第一个。`projects[].colorIndex` 与按日模型规则相同（取 `colorIndexes`，归一到 0–15）。`page` 越界时夹到最后一页。`peak` 在本页时段分布全为 0 时为 `null`。`summary = {from, to, rowCount, spanDays, activeDays, total, avg, cost, streak}`，只统计本页（T10） |
+| `timelineRangeModel({days, hidden, today, page, activeOnly, columns, dayCosts, colorIndexes, tokenDays})` | → `{rows, pageCount, currentPage, profile, peak, maxDay, summary}` | 见 T8–T10。`rows` 最新在上；行字段为 `date`、`idle`、`toolOnly`、`newWeek`、`weekend`、`today`、`cells[{level, dominant, by, ms}]`、`total`、`projects[]`、`cost`。`dominant` 取 `ms` 最大的项目，相同时按项目 id 排序取第一个。`projects[].colorIndex` 与按日模型规则相同（取 `colorIndexes`，归一到 0–15）。`page` 越界时夹到最后一页。`peak` 在本页时段分布全为 0 时为 `null`。`summary = {from, to, rowCount, spanDays, activeDays, total, avg, cost, streak}`，统计全部历史（T10），`rowCount` 仍是本页行数 |
 | `timelineJumpSlot(day, hidden, col, per)` | → 当天槽号 | 见 T11 |
 
 ### 7.2 新增组件文件 `src/client-timeline.cjs`
@@ -306,7 +308,7 @@ div.dss-tl[data-mode=all]
 | 组件 | 职责 |
 | --- | --- |
 | `TimelineView(props)` | 入口。`date` 为 `null` 时渲染 `TimelineRange`，否则渲染 `TimelineDay`。持有跳转状态 `jump = {date, slot, nonce}`：矩阵格子点击时先 `setJump`，再调用 `props.onSelectDate(date)`；`TimelineDay` 在 `jump.date === date` 时消费并清空它 |
-| `TimelineDay` | 用 `useMemo` 计算 `timelineDayModel`，持有展开集合、泳道页码和弹层状态。泳道页码在日期、隐藏集合变化时归零。柱图组用 roving tabindex：只有一根柱 `tabIndex=0`（默认峰值柱），←/→ 移动，Home/End 跳到两端，Enter/Space 打开明细 |
+| `TimelineDay` | 用 `useMemo` 计算 `timelineDayModel`，持有泳道页码和弹层状态。展开集合优先用 `props.expanded` / `props.onToggleLane`（面板持有），没传时退回组件内部的集合。泳道页码在日期、隐藏集合变化时归零。柱图组用 roving tabindex：只有一根柱 `tabIndex=0`（默认峰值柱），←/→ 移动，Home/End 跳到两端，Enter/Space 打开明细 |
 | `SlotPopover` | T6。定位：以触发元素（或高亮带）在 `.dss-tl-day` 中的位置为锚点，默认在下方 12px，越过 `.dss-body` 可视区底部且上方放得下时翻到上方；水平夹在 `.dss-tl-day` 内左右各留 8px。挂载后用 `useLayoutEffect` 测量自身尺寸再定位 |
 | `TimelineRange` | 持有页码；`activeOnly` 改变或从按日切回全部时页码归零，隐藏集合变化时把页码夹到有效范围，数据刷新不重置。列数来自 `useTimelineColumns(ref)`：用 `ResizeObserver` 观察 `.dss-panel` 宽度，≤640px 为 24 列，其余为 48 列；不支持时固定 48 列 |
 | `tipProps(getHtml)` | 返回 `onMouseEnter`、`onMouseMove`、`onMouseLeave`、`onFocus`、`onBlur`。鼠标事件用指针坐标，焦点事件用元素底边中点，调用现有的 `showTipRaw(tipRows(...), point)` 和 `hideTip()`。弹层打开时先 `hideTip()` |
@@ -362,7 +364,7 @@ div.dss-tl[data-mode=all]
 | `tl.active` | 活跃 %s | Active %s |
 | `tl.openDetail` | 查看明细 | Show details |
 | `tl.legendShare` / `tl.legendFull` | 活跃比例 / 满 30 分钟 | Active share / Full 30 min |
-| `tl.legendUnit` / `tl.legendClick` | 每节色条、每根柱 = 半小时 / 点色条或柱子查看这半小时的明细 | Each segment and bar = 30 min / Click a segment or bar for that half hour |
+| `tl.legendInfo` / `tl.dayInfo` | 图例说明 / 每节色条、每根柱 = 半小时。点色条或柱子查看这半小时的明细。 | About this chart / Each segment and bar = 30 min. Click a segment or bar for that half hour. |
 | `tl.emptyVisible` | 这一天没有可见项目的活动。 | No visible project activity on this day. |
 | `tl.detail` / `tl.closeDetail` | %s 明细 / 关闭明细 | %s details / Close details |
 | `tl.total` / `tl.parallel` | 合计 / %d 个项目并行 | Total / %d projects in parallel |
@@ -371,17 +373,18 @@ div.dss-tl[data-mode=all]
 | `tl.activeOf` / `tl.activeValue` / `tl.days` | 活跃 / %d / %d 天 / %d 天 | Active / %d of %d days / %d days |
 | `tl.avg` / `tl.cost` / `tl.streak` | 日均 / 费用 / 最长连续 | Daily avg / Cost / Longest streak |
 | `tl.color` / `tl.colorLevel` / `tl.colorProject` | 着色 / 强度 / 项目 | Color / Intensity / Project |
-| `tl.activeOnly` | 只看活跃日期 | Active dates only |
+| `tl.activeOnly` | 隐藏空白日期 | Hide empty dates |
+| `tl.activeInfoLabel` / `tl.activeInfo` | 活跃口径 / 活跃 = 有 Token 消耗的日子，和用量趋势一致。只有工具活动的日子仍显示在下方，但不计入活跃、日均和最长连续。 | Active days / Active = a day with token usage, the same rule as Trends. Days with only tool activity still show below but do not count toward active days, the daily average or the longest streak. |
+| `tl.toolOnly` | 只有工具活动，不计入活跃天数 | Tool activity only; not an active day |
 | `tl.profile` / `tl.profilePeak` / `tl.dayTotal` | 时段分布 / 高峰 %s / 当日时长 | Time of day / Peak %s / Day total |
-| `tl.cellUnit` | 每格 = %s内的活跃时长，并行项目按满格计 | Each cell = active time in %s; parallel projects cap at full |
+| `tl.matrixInfo` | 每格 = %s内的活跃时长，并行项目按满格计。点日期或格子进入当天。 | Each cell = active time in %s; parallel projects cap at full. Click a date or cell to open that day. |
 | `tl.halfHour` / `tl.hour` | 半小时 / 1 小时 | 30 min / 1 hour |
-| `tl.cellDominant` | 每格取占比最高的项目 | Each cell shows the top project |
-| `tl.clickDate` | 点日期或格子进入当天 | Click a date or cell to open that day |
+| `tl.matrixProjectInfo` | 每格取占比最高的项目。点日期或格子进入当天。 | Each cell shows the top project. Click a date or cell to open that day. |
 | `tl.noActivity` / `tl.openDay` | 没有活动 / 开发 %s，查看当天 | No activity / %s of work, open day |
 
-复用：`w.duration`（开发时长）、`strip.span`（活跃时段）、`w.subagentTag`（子对话）、`w.untitled`、`w.weekdays`、`w.dayPrefix`、`trends.less` / `trends.more`、`hint.timeline.page` / `newer` / `older` / `showRecent`（分页条）、`hint.rangeEmpty`（没有任何数据时）。
+复用：`w.duration`（开发时长）、`strip.span`（活跃时段）、`w.subagentTag`（子对话）、`w.untitled`、`w.weekdays`、`w.dayPrefix`、`trends.less` / `trends.more`、`hint.timeline.page` / `newer` / `older` / `showRecent`（分页条，`newer` / `older` 改为"较新 / 较早"）、`hint.rangeEmpty`（没有任何数据时）、`cost.partialTip`（费用后 "*" 的说明）。
 
-删除：`hint.timeline.day`、`hint.timeline.all`。
+删除：`hint.timeline.day`、`hint.timeline.all`、`tl.legendUnit`、`tl.legendClick`、`tl.cellUnit`、`tl.cellDominant`、`tl.clickDate`。
 
 ## 8. 切片计划
 
@@ -410,7 +413,7 @@ div.dss-tl[data-mode=all]
      - 时段分布峰值；
      - 最新在上的分页切片，页码越界时夹紧；
      - `idle` 行；
-     - `newWeek`：按日历分页时只出现在周日行；只看活跃日期时出现在跨周后的第一行；
+     - `newWeek`：按日历分页时只出现在周日行；隐藏空白日期时出现在跨周后的第一行；
      - `activeOnly` 下跨过空日期时连续天数断开；
    - `timelineJumpSlot`：`per` 为 1 和 2；两个半小时相同时取前一个。
 3. 本片不改任何 UI。`lib/` 只会因 `dayStartMs` 导出而变化，照常构建后提交。
@@ -503,9 +506,9 @@ div.dss-tl[data-mode=all]
 12. **日历分页**：沿用 `:823-842` 的流程，75 个日期都能翻到、不重复，每页 ≤30 行。
 13. **空行**：隐藏 `large-0` 后，第一页的 `.dss-mx-row.is-day.is-idle` 有 29 行，它们的 `getBoundingClientRect().height` 都等于今天那一行（相差 ≤0.5px），日期按钮全部 `disabled`。
 14. **周间距**：相邻两行的顶部间距只有两种取值。日期 `weekOf` 不同的一对，比同周的一对多 8px（±1px）。
-15. **只看活跃日期**：在第 14 条的状态下勾选 `#dss-tl-active-only`，只剩 1 行，页码回到"第 1/1 页"；取消勾选后恢复 75 天的分页。
+15. **隐藏空白日期**：在第 14 条的状态下勾选 `#dss-tl-active-only`（标签"隐藏空白日期"），只剩 1 行，分页条不显示；取消勾选后恢复 75 天的分页，按钮为"较新 / 较早 / 回到最新"。
 16. **列数**：1440px 时每行 `.dss-mx-cells` 有 48 个子元素，390px 和 320px 时有 24 个。
-17. **跳转**：点今天那一行第一个 `[data-level]:not([data-level="0"])` 格子，断言模式变为按日、日期标签是今天、`.dss-tl-pop` 已打开，并且第一条泳道 `aria-expanded=true`。
+17. **跳转**：点今天那一行第一个 `[data-level]:not([data-level="0"])` 格子，断言模式变为按日、日期标签是今天、`.dss-tl-pop` 已打开，并且没有泳道是 `aria-expanded=true`。
 
 两个时区的 `innerText` 比较（`:318-334`）不用改，它会自动覆盖新时间线。如果比较失败，说明有代码用了本地时区。
 
@@ -560,8 +563,8 @@ npm pack --dry-run
 | 活跃时段最小跨度 | 6 小时 |
 | 每页天数 / 泳道 / 会话 | 30 / 50 / 50 |
 | 时段明细上限 | 20 个项目，每个项目 10 个会话 |
-| 偏好默认 | 活跃时段 · 费用 · 强度 · 不勾选"只看活跃日期" |
+| 偏好默认 | 活跃时段 · 费用 · 强度 · 不勾选"隐藏空白日期" |
 | 全部模式筛选条目的时长 | 全部历史时长（原型写的是"本页时长"；按页统计需要把页码提升到 `StatsPanel`，暂不做） |
-| 默认展开 | 第一条泳道 |
+| 默认展开 | 全部收起；展开状态在面板打开期间保留 |
 | "现在"线 | 渲染时取一次，不开定时器 |
 | 发布归属 | 并入 0.5.0 发布说明（尚未打 tag）；由维护者在发布前确认 |

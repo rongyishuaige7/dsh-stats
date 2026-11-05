@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
 	overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares,
-	activeDayCount, sortProjects, defaultSortDir, pendingFocus,
+	activeDayCount, tokenDates, sortProjects, defaultSortDir, pendingFocus,
 	compareProjectCost, missingModels,
 } = require('../src/client-overview-model.cjs');
 
@@ -94,6 +94,22 @@ test('activeDayCount counts days with at least one visible project block', () =>
 	expect(activeDayCount(timeline)).toBe(3);
 	expect(activeDayCount(timeline, { b: true })).toBe(2);
 	expect(activeDayCount({ days: [] }, { a: true })).toBe(0);
+});
+
+test('tokenDates keeps days with visible token usage and skips tool-only sessions', () => {
+	const on = (date, input, output) => ({
+		id: date + input, subagent: false,
+		updatedAt: Date.parse(date + 'T12:00:00+08:00'),
+		stats: { inputTokens: input, outputTokens: output, uncached: input, output },
+	});
+	const projects = [
+		project('a', 'A', {}, [on('2026-09-01', 100, 10), on('2026-09-02', 0, 0)]),
+		project('toString', 'T', {}, [on('2026-09-03', 50, 5)]),
+		project('b', 'B', {}, [on('2026-09-04', 20, 2)]),
+	];
+	expect([...tokenDates(projects)].sort()).toEqual(['2026-09-01', '2026-09-03', '2026-09-04']);
+	expect([...tokenDates(projects, { b: true })].sort()).toEqual(['2026-09-01', '2026-09-03']);
+	expect(tokenDates([], {}).size).toBe(0);
 });
 
 test('sortProjects covers every key, direction and stable name tie-break', () => {

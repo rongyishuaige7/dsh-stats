@@ -633,6 +633,12 @@ function timelineRangeModel(input) {
 		});
 		dayModels.set(date, { slots: slots, perProject: perProject, total: total });
 	});
+	// Active = the date has token usage, the same rule as the trends page.
+	// Without tokenDays any visible activity counts.
+	const tokenDays = options.tokenDays instanceof Set ? options.tokenDays : null;
+	const isActive = function(date) {
+		return tokenDays ? tokenDays.has(date) : !!dayModels.get(date) && dayModels.get(date).total > 0;
+	};
 	const list = activeOnly ? allDates.filter(function(date) { return dayModels.get(date).total > 0; }) : allDates;
 	const pageCount = Math.max(1, Math.ceil(list.length / TIMELINE_PAGE_DAYS));
 	const requested = Number.isFinite(options.page) ? Math.floor(options.page) : 0;
@@ -684,6 +690,7 @@ function timelineRangeModel(input) {
 		return {
 			date: date,
 			idle: data.total <= 0,
+			toolOnly: data.total > 0 && !isActive(date),
 			newWeek: rowIndex > 0 && weekOf(date) !== weekOf(pageDates[rowIndex - 1]),
 			weekend: dow === 0 || dow === 6,
 			today: date === today,
@@ -705,33 +712,31 @@ function timelineRangeModel(input) {
 		if (profile[index] > 0 && (peak == null || profile[index] > profile[peak])) peak = index;
 	}
 
-	// T10: the summary describes the rows on this page, not the full history.
+	// The summary covers the whole visible history, from the first day with
+	// activity or tokens to the calendar end, so paging and "hide empty days"
+	// do not change it. Tool-only days add development time but are not active.
+	const firstIndex = allDates.findIndex(function(date) { return dayModels.get(date).total > 0 || isActive(date); });
+	const summaryDates = firstIndex < 0 ? [] : allDates.slice(firstIndex);
 	let activeDays = 0;
 	let total = 0;
 	let streak = 0;
 	let longestStreak = 0;
-	let previousActive = false;
-	let previousDate = null;
 	const costSummaries = [];
-	rows.slice().reverse().forEach(function(row) {
-		if (!row.idle) {
+	summaryDates.forEach(function(date) {
+		if (isActive(date)) {
 			activeDays++;
-			streak = previousActive && previousDate && addDays(previousDate, 1) === row.date ? streak + 1 : 1;
+			streak++;
 			longestStreak = Math.max(longestStreak, streak);
-			previousActive = true;
 		} else {
 			streak = 0;
-			previousActive = false;
 		}
-		previousDate = row.date;
-		total += row.total;
-		if (row.cost) costSummaries.push(row.cost);
+		total += dayModels.get(date).total;
+		const cost = dayCostOf(dayCosts, date);
+		if (cost) costSummaries.push(cost);
 	});
-	const from = pageDates.length ? pageDates[pageDates.length - 1] : "";
-	const to = pageDates.length ? pageDates[0] : "";
-	const spanDays = pageDates.length
-		? Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 864e5) + 1
-		: 0;
+	const from = summaryDates.length ? summaryDates[0] : "";
+	const to = summaryDates.length ? summaryDates[summaryDates.length - 1] : "";
+	const spanDays = summaryDates.length;
 
 	return {
 		rows: rows,

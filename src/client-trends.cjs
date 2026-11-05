@@ -1,6 +1,6 @@
 // 趋势页组件：工具栏、摘要条、每日柱图、26 周热力图和模型区（5g–5i）。
 const react = require("react");
-const { PendingChip, InfoTip, ProjectFilterMenu } = require("./client-overview.cjs");
+const { PendingChip, InfoTip, ProjectFilterMenu, CostText } = require("./client-overview.cjs");
 const { fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
 const { hasTokenUsage, modelAgg, modelDisplayName, modelNameOnly, sessionDayTokens } = require("./client-data.cjs");
 const { costDelta, defaultSortDir, pendingFocus } = require("./client-overview-model.cjs");
@@ -37,13 +37,13 @@ function rangeText(dates, today, t) {
 	return t("tl.rangeValue").replace("%s", sameYear ? start.slice(5) : start).replace("%s", sameYear ? end.slice(5) : end);
 }
 
-// 摘要条日均：保留原摘要的 status，部分计价也带"*"。
+// 摘要条日均：保留原摘要的 status，部分计价也带"*"（悬停说明原因）。
 function averageText(totals, activeDays, metric, t) {
 	if (activeDays <= 0) return "—";
 	if (metric === "token") return fmtTokens(totals.tokens / activeDays);
 	const amount = amountOf(totals.cost);
 	if (amount == null) return "—";
-	return fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: amount / activeDays, exactAmount: 0, estimatedAmount: 0 }] }, t);
+	return e(CostText, { summary: { ...totals.cost, totals: [{ currency: "CNY", amount: amount / activeDays, exactAmount: 0, estimatedAmount: 0 }] }, t });
 }
 
 function TrendsTools(props) {
@@ -130,7 +130,7 @@ function TrendsKpis(props) {
 	return e("section", { className: "dss-tr-kpis", "aria-label": t("tr.kpiLabel") },
 		e("div", { className: "dss-kpi cost" },
 			e("div", { className: "dss-kpi-k" }, t("card.cost"), e(InfoTip, { id: "dss-tr-cost-tip", label: t("kpi.costInfo"), text: t("w.estimatedHint") })),
-			e("div", { className: "dss-kpi-v dss-cost" }, fmtCostSummary(totals.cost, t)),
+			e("div", { className: "dss-kpi-v dss-cost" }, e(CostText, { summary: totals.cost, t, mark: !(totals.cost.unpricedTokens > 0) })),
 			sub.length ? e("div", { className: "dss-kpi-s" }, sub) : null
 		),
 		e("div", { className: "dss-kpi" },
@@ -215,13 +215,20 @@ function DailyChart(props) {
 		return isToken ? fmtTokens(metricValue(point, "token")) : fmtCostSummary(point.cost, t);
 	};
 	const average = totals.activeDays > 0 ? (isToken ? totals.tokens : amountOf(totals.cost)) / totals.activeDays : 0;
-	const averageLabel = isToken
+	const averageNode = isToken
 		? fmtTokens(average)
-		: fmtCostSummary({ ...totals.cost, totals: [{ currency: "CNY", amount: average, exactAmount: 0, estimatedAmount: 0 }] }, t);
+		: e(CostText, { summary: { ...totals.cost, totals: [{ currency: "CNY", amount: average, exactAmount: 0, estimatedAmount: 0 }] }, t });
 	const title = isToken ? t("tr.daily.token") : t("tr.daily.cost");
-	const note = t("tr.recent").replace("%d", String(count)) + (peak
-		? " · " + t("tl.peak").replace("%s", peak.date.slice(5) + " " + valueText(peak)) + " · " + t("kpi.perDay").replace("%s", averageLabel)
-		: "");
+	// Fill a "%s" template with a node so a partial "*" keeps its tooltip.
+	const fill = function(template, node) {
+		const at = template.indexOf("%s");
+		return at < 0 ? [template] : [template.slice(0, at), node, template.slice(at + 2)];
+	};
+	const note = [t("tr.recent").replace("%d", String(count))];
+	if (peak) {
+		const peakNode = isToken ? valueText(peak) : e(CostText, { summary: peak.cost, t });
+		note.push(" · ", ...fill(t("tl.peak"), e(react.Fragment, null, peak.date.slice(5) + " ", peakNode)), " · ", ...fill(t("kpi.perDay"), averageNode));
+	}
 
 	const moveTo = function(date) {
 		setBarDate(date);
@@ -289,7 +296,7 @@ function DailyChart(props) {
 	return e("section", { className: "dss-tr-sec dss-tr-daily" },
 		e("div", { className: "dss-tr-sec-head" },
 			e("h3", null, title),
-			e("span", { className: "dss-tr-sec-note" }, note)
+			e("span", { className: "dss-tr-sec-note" }, ...note)
 		),
 		e("div", { className: "dss-tr-chart" },
 			e("div", { className: "dss-tr-y", "aria-hidden": "true" },
@@ -540,7 +547,7 @@ function ModelSection(props) {
 						focus: { provider: row.providerId, model: row.modelRaw, tokens: unpriced },
 						onOpen: onOpenPricing
 					}) : null,
-					chipOnly ? null : e("span", { className: "dss-cost-amt" }, costText)
+					chipOnly ? null : e("span", { className: "dss-cost-amt" }, e(CostText, { summary: row.costSummary, t, mark: !(unpriced > 0) }))
 				)
 			),
 			e("td", { className: "c-share" },

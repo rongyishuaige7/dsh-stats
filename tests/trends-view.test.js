@@ -144,8 +144,11 @@ test('partial pricing marks the cost and offers the pending chip', () => {
 	const html = render({ projects });
 	const cost = html.match(/<div class="dss-kpi-v dss-cost">([^<]*)<\/div>/);
 	expect(cost).not.toBeNull();
-	expect(cost[1].endsWith('*')).toBe(true);
+	// The pending chip next to the total already says part of it is unpriced.
+	expect(cost[1].endsWith('*')).toBe(false);
 	expect(html).toContain('data-action="pricing-pending"');
+	// Amounts without a chip keep the "*" and explain it.
+	expect(html).toContain('<span class="dss-cost-mark" role="img" aria-label="部分用量还没有价格，没算进这个金额" tabindex="0">*</span>');
 	// 模型表里未计价的模型也有自己的紧凑 chip。
 	expect(html.slice(html.indexOf('<tbody>'))).toContain('data-action="pricing-pending"');
 });
@@ -163,7 +166,7 @@ test('renders the model ring and a sortable table', () => {
 	expect(html).not.toContain('dss-ring');
 });
 
-test('a partially priced model row shows a starred cost and a pending chip', () => {
+test('a partially priced model row shows the amount without "*" next to its pending chip', () => {
 	const key = 'deepseek\u0000deepseek-v4-pro\u0000api';
 	const row = {
 		key, model: 'deepseek-v4-pro', modelRaw: 'deepseek-v4-pro', providerId: 'deepseek', accountType: 'api',
@@ -184,7 +187,8 @@ test('a partially priced model row shows a starred cost and a pending chip', () 
 	}));
 	const cost = html.match(/<span class="dss-cost-amt">([^<]*)<\/span>/);
 	expect(cost).not.toBeNull();
-	expect(cost[1].endsWith('*')).toBe(true);
+	expect(cost[1]).toBe('¥1.50');
+	expect(html).not.toContain('dss-cost-mark');
 	expect(html).toContain('data-action="pricing-pending"');
 	expect(html).toContain('待计价');
 	expect(html).toContain('data-model-key="deepseek|deepseek-v4-pro|api"');

@@ -70,13 +70,27 @@ test('TimelineDay omits the lane chevron when sessions have no activity slots', 
 	expect(html).toContain(fmtDuration(SLOT_MS));
 });
 
+test('TimelineDay starts with every lane collapsed', () => {
+	const project = {
+		id: 'p', name: 'Project P', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: null,
+		stats: stats(),
+		sessions: [{ id: 's', title: 'Session S', subagent: false, slots: [{ slot: 10, ms: SLOT_MS }], stats: stats() }],
+	};
+	const html = render({ projects: [project] });
+	expect(html).toContain('data-action="tl-lane" aria-expanded="false"');
+	expect(html).not.toContain('dss-tl-sess');
+	const open = render({ projects: [project], expanded: new Set(['p']), onToggleLane: () => {} });
+	expect(open).toContain('data-action="tl-lane" aria-expanded="true"');
+	expect(open).toContain('Session S');
+});
+
 test('TimelineDay marks archived sessions', () => {
 	const project = {
 		id: 'p', name: 'Project P', path: '/p', sessionCount: 1, subagentCount: 0, lastActiveAt: null,
 		stats: stats(),
 		sessions: [{ id: 's', title: 'Archived session', archived: true, subagent: false, slots: [{ slot: 10, ms: SLOT_MS }], stats: stats() }],
 	};
-	const html = render({ projects: [project] });
+	const html = render({ projects: [project], expanded: new Set(['p']) });
 	expect(html).toContain('dss-tag is-archived');
 	expect(html).toContain(zh['w.archivedTag']);
 	expect(html).toContain('Archived session');
@@ -173,6 +187,49 @@ test('TimelineRange has no missing zh/en timeline keys', () => {
 			const html = renderRange({ lang });
 			expect(html).not.toMatch(/\btl\.[a-zA-Z]+/);
 		}
+	} finally {
+		Date.now = original;
+	}
+});
+
+test('TimelineRange hides the pager on a single page and labels multi-page buttons 较新 / 较早', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		const single = renderRange();
+		expect(single).not.toContain('dss-tl-pager');
+		expect(single).toContain('隐藏空白日期');
+		const days = [];
+		for (let offset = 34; offset >= 0; offset--) {
+			const date = new Date(Date.parse('2026-10-14T00:00:00Z') - offset * 864e5).toISOString().slice(0, 10);
+			days.push({ date, slotBlocks: [{ slot: 10, projectId: 'p', name: 'Project P', colorIndex: 0, ms: SLOT_MS }] });
+		}
+		const multi = renderRange({ days });
+		expect(multi).toContain('dss-tl-pager');
+		expect(multi).toContain('>较新</button>');
+		expect(multi).toContain('>较早</button>');
+	} finally {
+		Date.now = original;
+	}
+});
+
+test('TimelineRange mutes tool-only days and keeps hints in the ⓘ tips', () => {
+	const original = Date.now;
+	Date.now = () => Date.parse('2026-10-14T12:00:00+08:00');
+	try {
+		const html = renderRange({ tokenDays: new Set() });
+		expect(html).toContain('dss-mx-row is-day is-tool-only');
+		expect(html).toMatch(/aria-label="2026-10-14 周三 [^"]*只有工具活动，不计入活跃天数"/);
+		// The summary starts at the first day with activity (10-14).
+		expect(html).toContain('<b>0 / 1 天</b>');
+		expect(html).toContain('id="dss-tl-active-tip"');
+		expect(html).toContain('id="dss-tl-matrix-tip"');
+		expect(html).toContain(zh['tl.activeInfo']);
+		// The click hint lives only in the tip, not as a separate legend line.
+		expect(html.split('点日期或格子进入当天').length - 1).toBe(1);
+		const counted = renderRange({ tokenDays: new Set(['2026-10-14']) });
+		expect(counted).not.toContain('is-tool-only');
+		expect(counted).toContain('<b>1 / 1 天</b>');
 	} finally {
 		Date.now = original;
 	}

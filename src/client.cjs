@@ -9,7 +9,7 @@ const { StatusIndicator, StatusBanner, ExportMenu, PricingDrawer } = require("./
 const { BalanceView } = require("./client-balance.cjs");
 const { balanceHeaderState, normalizeBalanceAlerts } = require("./client-balance-model.cjs");
 const { IconRefresh, IconGear } = require("./client-icons.cjs");
-const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, activeDayCount, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
+const { overviewTotals, previousActiveDate, cnyAmount, costDelta, costShares, activeDayCount, tokenDates, sortProjects, defaultSortDir, pendingFocus, compareProjectCost, missingModels, createSingleFlight } = require("./client-overview-model.cjs");
 const { OverviewTools, OverviewKpis, OverviewStrip, ProjectTable, pageRows } = require("./client-overview.cjs");
 const { TIMELINE_PREF_DEFAULTS, normalizeTimelinePrefs, projectDurations } = require("./client-timeline-model.cjs");
 const { TRENDS_PREF_DEFAULTS, normalizeTrendsPrefs } = require("./client-trends-model.cjs");
@@ -273,6 +273,15 @@ function StatsPanel(props) {
 		pendingNonceRef.current += 1;
 		openDrawer({ provider: focus.provider, model: focus.model, nonce: pendingNonceRef.current }, opener || gearRef.current);
 	};
+	// Timeline lanes the user expanded; kept across dates while the panel is open.
+	var [timelineLanes, setTimelineLanes] = useState(function() { return new Set(); });
+	var toggleTimelineLane = useCallback(function(id) {
+		setTimelineLanes(function(current) {
+			var next = new Set(current);
+			if (next.has(id)) next.delete(id); else next.add(id);
+			return next;
+		});
+	}, []);
 	useEffect(function() { if (isOpen) setFocusedTab(tab); }, [isOpen, tab]);
 	useEffect(function() {
 		if (isOpen) return;
@@ -280,6 +289,7 @@ function StatsPanel(props) {
 		setDrawer(function(current) {
 			return current.open || current.focusModel ? { open: false, focusModel: null } : current;
 		});
+		setTimelineLanes(function(current) { return current.size ? new Set() : current; });
 	}, [isOpen]);
 
 	// A background request leaves the header as it is while data exists. A
@@ -418,7 +428,13 @@ function StatsPanel(props) {
 		var previousProjects = applyDate(data.projects, prevDate).filter(function(project) { return hasTokenUsage(project) && !hidden[project.id]; });
 		return overviewTotals(previousProjects).cost;
 	}, [data.projects, prevDate, hiddenKey]);
-	var activeDays = useMemo(function() { return activeDayCount(data.timeline, hidden); }, [data.timeline, hiddenKey]);
+	// Active days = days with token usage (the trends rule); only the all-history
+	// overview card and the timeline summary read it.
+	var tokenDays = useMemo(function() {
+		if (navMode !== "all" || (tab !== "overview" && tab !== "timeline")) return null;
+		return tokenDates(data.projects, hidden);
+	}, [navMode, tab, data.projects, hiddenKey]);
+	var activeDays = tokenDays ? tokenDays.size : 0;
 	var totals = useMemo(function() { return overviewTotals(visibleProjects); }, [visibleProjects]);
 	// Development time per project, shared by the overview and the timeline so
 	// both pages show the same number for the same day.
@@ -677,6 +693,9 @@ function StatsPanel(props) {
 							date: effectiveDate,
 							projects: dateProjects,
 							allProjects: data.projects,
+							tokenDays,
+							expanded: timelineLanes,
+							onToggleLane: toggleTimelineLane,
 							hidden,
 							hiddenKey,
 							colorIndexes,
