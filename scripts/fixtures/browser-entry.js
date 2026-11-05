@@ -29,6 +29,14 @@ window.__ModuleLoader__ = { async load({ factory }) {
       const openrouter = value.accounts.find(account => account.id === 'openrouter');
       Object.assign(openrouter, { status: 'unauthorized', errorCode: 'unauthorized', lastSuccessAt: null, balance: null });
     }
+    // The common setup: official DeepSeek plus custom relays without a usage endpoint.
+    if (fixture.accountSet === 'custom') {
+      const anthropic = value.accounts.find(account => account.id === 'anthropic');
+      value.accounts = [value.accounts.find(account => account.id === 'deepseek-official'),
+        ...[['relay-local', 'relay-local', null], ['team-gateway', 'team-gateway', null], ['yi-relay', 'yi-relay', 'generic-usage']].map(([id, displayName, adapter]) => ({
+          ...anthropic, id, displayName, providerFamily: 'unknown', mode: adapter ? 'balance' : 'unsupported', adapter
+        }))];
+    }
     if (fixture.omit.length) value.accounts = value.accounts.filter(account => !fixture.omit.includes(account.id));
     return value;
   };

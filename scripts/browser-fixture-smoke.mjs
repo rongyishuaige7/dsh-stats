@@ -699,7 +699,7 @@ try {
       assert.deepEqual(rowIds, ['kimi-coding', 'minimax-coding', 'moonshotai-cn', 'deepseek-official', 'openrouter', 'yi-api'], 'balance rows follow B2 order');
       assert(await evaluate('!document.querySelector(".dss-panel select")'), 'balance page has no provider select');
       const chips = await evaluate(`[...document.querySelectorAll('.dss-bal-row')].slice(0, 3).map(node => { const chip = node.querySelector('.dss-bal-chip'); return { text: chip?.textContent || '', cls: chip?.className || '' }; })`);
-      assert.deepEqual(chips.map(row => row.text), ['额度将用完', '额度紧张', '已过期'], 'balance chips follow B7');
+      assert.deepEqual(chips.map(row => row.text), ['额度将用完', '额度紧张', '数据过期'], 'balance chips follow B7');
       assert(chips[0].cls.includes('is-danger') && chips[1].cls.includes('is-warn') && chips[2].cls.includes('is-warn'), 'balance chip tones');
       assert(await evaluate(`[...document.querySelectorAll('.dss-bal-row')].slice(3).every(node => !node.querySelector('.dss-bal-chip') && node.querySelector('.dss-sr')?.textContent === '状态正常')`), 'ok rows expose only a screen-reader status');
       const metas = await evaluate(`Object.fromEntries([...document.querySelectorAll('.dss-bal-row')].map(node => [node.dataset.accountId, node.querySelector('.dss-bal-meta')?.textContent || '']))`);
@@ -739,7 +739,7 @@ try {
       const moonshot = await evaluate(`(() => { const row = document.querySelector('[data-account-id="moonshotai-cn"]'); return { amount: row.querySelector('.dss-bal-amt').textContent, cls: row.querySelector('.dss-bal-amt').className, reason: row.querySelector('.dss-bal-reason')?.textContent || '' }; })()`);
       assert.equal(moonshot.amount, '¥36.20');
       assert(moonshot.cls.includes('is-stale'));
-      assert.equal(moonshot.reason, '刷新失败，显示的是 2026-09-08 09:34 的结果');
+      assert.equal(moonshot.reason, '刷新失败，显示的是 09:34 的结果', 'a snapshot from today shows the time only');
       const idle = await evaluate(`(() => { const details = document.querySelector('.dss-bal-idle'); return { open: details.open, summary: details.querySelector('summary').textContent }; })()`);
       assert.equal(idle.open, false);
       assert.equal(idle.summary, '未接入 2 个：Z.ai Coding Plan · Anthropic');
@@ -775,10 +775,24 @@ try {
   assert.equal(attentionRows[0].chip, '余额已用完');
   assert.equal(attentionRows[0].amount, '¥0.00');
   assert(attentionRows[0].cls.includes('is-zero'));
-  assert.equal(attentionRows[0].reason, '余额为 0，充值后才能继续调用');
+  // Item 18: a reason that only restates the chip moves into the chip's tip.
+  assert.equal(attentionRows[0].reason, '');
   assert.equal(attentionRows[1].chip, '凭证无效');
   assert.equal(attentionRows[1].amount, '—');
-  assert.equal(attentionRows[1].reason, '凭证无效或没有查询权限');
+  assert.equal(attentionRows[1].reason, '');
+  const chipTips = await evaluate(`['deepseek-official', 'openrouter'].map(id => { const chip = document.querySelector('[data-account-id="' + id + '"] .dss-bal-chip'); return { tab: chip.tabIndex, tip: document.getElementById(chip.getAttribute('aria-describedby'))?.textContent || '' }; })`);
+  assert.deepEqual(chipTips, [{ tab: 0, tip: '余额为 0，充值后才能继续调用' }, { tab: 0, tip: '凭证无效或没有查询权限' }], 'chips describe themselves');
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  try {
+    await focus('[data-account-id="openrouter"] .dss-bal-chip');
+    assert.equal(await evaluate('document.querySelector("#dss-tooltip.show")?.textContent || ""'), '凭证无效或没有查询权限', 'a focused chip shows its tip');
+    await evaluate('document.activeElement.blur()');
+  } finally {
+    await command('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+  }
+  const dsSkin = await evaluate(`[...document.querySelectorAll('.dss-bal-row')].map(row => { const style = getComputedStyle(row); return { id: row.dataset.accountId, skin: style.backgroundImage.includes('linear-gradient') && style.boxShadow.includes('inset') }; })`);
+  assert.deepEqual(dsSkin.filter(row => row.skin).map(row => row.id), ['deepseek-official'], 'only the official DeepSeek row wears the blue skin: ' + JSON.stringify(dsSkin));
+  assert(await evaluate(`(() => { const row = document.querySelector('[data-account-id="deepseek-official"]'); return row.querySelector('.dss-bal-dot').getBoundingClientRect().left - row.getBoundingClientRect().left >= 9; })()`), 'the DeepSeek status dot clears the blue stripe');
   await layout('desktop-balance-attention'); await capture('desktop-balance-attention');
   await navigate('/?lang=zh');
   await evaluate('window.__fixture.accountMode = "error"');
@@ -794,6 +808,47 @@ try {
   await until('document.querySelectorAll(".dss-bal-row").length === 6');
   assert.equal(await evaluate('window.__fixture.calls.filter(row => row[0] === "account").at(-1)[1]'), true, 'balance retry forces a host refresh');
   report.checks.push('balance: attention fixture and first-load failure retry');
+
+  // Slice 5: labelled bells, the data note behind an ⓘ and grouped custom routes.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?lang=zh');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 6');
+  assert.deepEqual(await evaluate(`[...new Set([...document.querySelectorAll('[data-action=balance-alert]')].map(node => node.textContent))]`), ['提醒'], 'every bell says what it does');
+  const balanceTip = async (selector, label) => {
+    await focus(`.dss-info[aria-describedby="${selector.slice(1)}"]`);
+    const box = await evaluate(`(() => {
+      const node = document.querySelector('${selector}');
+      const body = document.querySelector('.dss-body').getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return { display: getComputedStyle(node).display, text: node.textContent, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, bodyLeft: body.left, bodyRight: body.right, bodyTop: body.top, bodyBottom: body.bottom };
+    })()`);
+    await evaluate('document.activeElement.blur()');
+    assert(box.display !== 'none' && box.text.startsWith('数据来自各 Provider 的官方账户接口'), label + ' opens the data note: ' + JSON.stringify(box));
+    assert(box.left >= box.bodyLeft - 1 && box.right <= box.bodyRight + 1 && box.top >= box.bodyTop - 1 && box.bottom <= box.bodyBottom + 1, label + ' stays inside the body: ' + JSON.stringify(box));
+  };
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-bal-foot")).display'), 'none', 'wide panels keep the data note behind the column header');
+  await balanceTip('#dss-bal-cols-tip', 'column header ⓘ');
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate('window.dispatchEvent(new Event("resize"))');
+  await delay(200);
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-bal-cols")).display'), 'none');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-foot.is-tip").firstChild.textContent'), '数据说明');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-bal-foot.is-tip")).display'), 'flex', 'narrow panels show the 数据说明 twin');
+  await balanceTip('#dss-bal-foot-tip', 'narrow 数据说明 ⓘ');
+  const dsNarrow = await evaluate(`(() => { const row = document.querySelector('[data-account-id="deepseek-official"]'); const left = row.getBoundingClientRect().left; return { dot: row.querySelector('.dss-bal-dot').getBoundingClientRect().left - left, amount: row.querySelector('.dss-bal-amt').getBoundingClientRect().left - left }; })()`);
+  assert(dsNarrow.dot >= 6 && dsNarrow.amount >= 6, 'the DeepSeek dot and amount clear the stripe on narrow panels: ' + JSON.stringify(dsNarrow));
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await navigate('/?lang=zh&accountSet=custom');
+  await click('.dss-trigger'); await tab(4);
+  await until('document.querySelectorAll(".dss-bal-row").length === 1');
+  assert.equal(await evaluate('document.querySelector(".dss-bal-idle-sum").textContent'), '未接入 3 个：relay-local · team-gateway · yi-relay');
+  await click('.dss-bal-idle-sum');
+  await until('document.querySelector(".dss-bal-idle").open');
+  const customIdle = await evaluate(`[...document.querySelectorAll('.dss-bal-idle-row')].map(node => ({ ids: node.dataset.accountIds || node.dataset.accountId, text: node.textContent }))`);
+  assert.deepEqual(customIdle, [{ ids: 'relay-local team-gateway yi-relay', text: '自定义路由未提供 HTTPS 的 /v1/usage 余额接口，不影响 Token 统计' }], 'custom routes share one idle line');
+  await layout('desktop-balance-custom'); await capture('desktop-balance-custom');
+  report.checks.push('slice 5 balance: chips carry their restated reasons, today-only stale time, the DeepSeek skin, labelled bells, the data note behind an ⓘ at 1440 and 390, grouped custom routes');
 
   // 5c: per-account balance alerts.
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });

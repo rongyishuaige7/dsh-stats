@@ -359,7 +359,10 @@ to paste into a README or chat.
   `accountType: api` is not queried as a subscription.
 - Providers without a public balance endpoint still contribute token usage and are listed in the
   “not connected” group with a reason; an account with an endpoint but no credential shows the
-  missing variable name.
+  missing variable name. Accounts with the same reason share one line.
+- A custom route reports a balance only when its baseURL is HTTPS and the relay implements
+  `/v1/usage`. Local `http://127.0.0.1` relays and relays without that endpoint are listed as
+  “Custom route without an HTTPS /v1/usage balance endpoint”.
 
 ## 5. Data sources, exports and input
 

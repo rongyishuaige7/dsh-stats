@@ -237,6 +237,65 @@ test('English count wording reads naturally', () => {
 	expect(skeleton).toContain('Reading accounts (6)…');
 });
 
+function rowHtml(html, id) {
+	const start = html.indexOf(`data-account-id="${id}"`);
+	return html.slice(start, html.indexOf('</li>', start));
+}
+
+test('chips carry the reasons they restate; only new information keeps a reason line', () => {
+	const accounts = defaultAccounts();
+	Object.assign(accounts[0], { balance: { ...accounts[0].balance, remaining: 0, toppedUp: 0, granted: 0 } });
+	Object.assign(accounts[2], { status: 'unauthorized', errorCode: 'unauthorized', lastSuccessAt: null, balance: null });
+	const html = render({ data: { generatedAt: NOW, accounts, warnings: [] } });
+	const deepseek = rowHtml(html, 'deepseek-official');
+	expect(deepseek).toContain('<span class="dss-bal-chip is-danger has-tip" tabindex="0" aria-describedby="dss-bal-chip-tip-deepseek-official">余额已用完</span>');
+	expect(deepseek).toContain('<span class="dss-sr" id="dss-bal-chip-tip-deepseek-official">余额为 0，充值后才能继续调用</span>');
+	expect(deepseek).not.toContain('dss-bal-reason');
+	const openrouter = rowHtml(html, 'openrouter');
+	expect(openrouter).toContain('>凭证无效</span><span class="dss-sr" id="dss-bal-chip-tip-openrouter">凭证无效或没有查询权限</span>');
+	expect(openrouter).not.toContain('dss-bal-reason');
+	// Moonshot's snapshot is from today, so the reason shows the time only.
+	const moonshot = rowHtml(html, 'moonshotai-cn');
+	expect(moonshot).toContain('<span class="dss-bal-chip is-warn">数据过期</span>');
+	expect(moonshot).toContain('<div class="dss-bal-reason">刷新失败，显示的是 09:34 的结果</div>');
+	expect(rowHtml(html, 'kimi-coding')).toContain('<span class="dss-bal-chip is-danger">额度将用完</span>');
+	const odd = render({ data: { generatedAt: NOW, accounts: [account({ id: 'my relay.cn', status: 'unauthorized', balance: null })], warnings: [] } });
+	expect(odd).toContain('aria-describedby="dss-bal-chip-tip-my_relay_cn"');
+	expect(odd).toContain('id="dss-bal-chip-tip-my_relay_cn"');
+});
+
+test('only the official DeepSeek row wears the DeepSeek skin, and bells say what they do', () => {
+	const html = render();
+	expect(html.match(/ is-ds"/g)).toHaveLength(1);
+	expect(html).toContain('<li class="dss-bal-row is-ds" data-account-id="deepseek-official"');
+	expect(rowHtml(html, 'deepseek-official')).toMatch(/<button[^>]*class="dss-bal-bell"[^>]*><svg[^]*?<\/svg><span>提醒<\/span><\/button>/);
+	expect(rowHtml(render({ lang: 'en' }), 'openrouter')).toContain('<span>Alert</span></button>');
+});
+
+test('the data note sits behind the column header ⓘ, with a narrow-screen twin below the list', () => {
+	const html = render();
+	expect(html).toContain('<div class="dss-bal-cols"><span aria-hidden="true">账户</span><span class="dss-bal-col-v"><span aria-hidden="true">余额 / 剩余额度</span><span class="dss-info-wrap"><button type="button" class="dss-info" aria-label="数据说明" aria-describedby="dss-bal-cols-tip">');
+	expect(html).toMatch(/<span class="dss-info-tip" role="tooltip" id="dss-bal-cols-tip">数据来自各 Provider 的官方账户接口/);
+	expect(html).toMatch(/<p class="dss-bal-foot is-tip">数据说明<span class="dss-info-wrap"><button[^>]*aria-describedby="dss-bal-foot-tip"/);
+	const idleOnly = render({ data: { generatedAt: NOW, accounts: defaultAccounts().filter(item => item.status === 'unsupported'), warnings: [] } });
+	expect(idleOnly).toContain('<p class="dss-bal-foot">数据来自各 Provider 的官方账户接口');
+	expect(idleOnly).not.toContain('dss-bal-cols');
+});
+
+test('custom routes without a usage endpoint share one idle line', () => {
+	const relay = (id, adapter = null) => account({ id, displayName: id, providerFamily: 'unknown', mode: adapter ? 'balance' : 'unsupported', adapter,
+		status: 'unsupported', errorCode: 'unsupported', lastSuccessAt: null, balance: null, actionUrl: null });
+	const only = render({ data: { generatedAt: NOW, accounts: [account(), relay('cpa'), relay('workbuddy'), relay('rongyiwb', 'generic-usage')], warnings: [] } });
+	expect(only).toContain('未接入 3 个：cpa · workbuddy · rongyiwb');
+	// One reason covers every idle account, so the line skips the names the summary already lists.
+	expect(only).toContain('<div class="dss-bal-idle-row is-group" data-account-ids="cpa workbuddy rongyiwb"><span class="dss-bal-reason">自定义路由未提供 HTTPS 的 /v1/usage 余额接口，不影响 Token 统计</span></div>');
+	expect(only.match(/dss-bal-idle-row/g)).toHaveLength(1);
+	const mixed = render({ data: { generatedAt: NOW, accounts: [...defaultAccounts(), relay('cpa'), relay('workbuddy')], warnings: [] } });
+	expect(mixed).toContain('<div class="dss-bal-idle-row is-group" data-account-ids="cpa workbuddy"><b>cpa · workbuddy</b><span class="dss-bal-reason">自定义路由未提供');
+	expect(mixed).toContain('<div class="dss-bal-idle-row" data-account-id="anthropic"><b>Anthropic</b><span class="dss-bal-reason">没有可用的官方账户查询接口，不影响 Token 统计</span></div>');
+	expect(mixed).toMatch(/<div class="dss-bal-idle-row" data-account-id="zai-coding-cn"><b>Z\.ai Coding Plan<\/b><span class="dss-bal-reason">未配置凭证 <code>ZAI_API_KEY<\/code><\/span><a /);
+});
+
 test('the skeleton summary has two cells when no provider is a subscription', () => {
 	const providers = [
 		provider('deepseek-official', 'DeepSeek', 'balance'),

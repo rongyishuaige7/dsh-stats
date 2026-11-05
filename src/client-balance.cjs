@@ -1,15 +1,16 @@
 // Account balance view: one row per connected provider, ordered by urgency.
 // All calculations live in client-balance-model.cjs; this file only renders.
 const react = require("react");
-const { fmtBalanceAmount, fmtClock } = require("./client-format.cjs");
+const { fmtBalanceAmount, fmtClock, fmtSyncClock } = require("./client-format.cjs");
 const {
-	accountChip, accountMeta, accountReason, alertFor, attentionList, balanceParts, balanceTotals,
-	fmtQuotaPercent, legacyNotice, quotaLevel, resetParts, safeActionUrl,
+	accountMeta, accountNotes, alertFor, attentionList, balanceParts, balanceTotals,
+	fmtQuotaPercent, idleGroups, legacyNotice, quotaLevel, resetParts, safeActionUrl,
 	skeletonModel, sortAccounts, splitAccounts, tightestWindow, validateAlertAmount
 } = require("./client-balance-model.cjs");
 const { tipProps, tipRows } = require("./client-tip.cjs");
 const { Popover } = require("./client-dialog.cjs");
 const { IconBell } = require("./client-icons.cjs");
+const { InfoTip } = require("./client-overview.cjs");
 
 const e = react.createElement;
 
@@ -41,10 +42,15 @@ function resetText(parts, t) {
 		: fill(t("balance.resetDay"), [parts.days]);
 }
 
-function reasonText(reason, t) {
+function reasonText(reason, t, now) {
 	if (!reason) return null;
-	if (reason.key === "reason.stale") return fill(t("balance.reason.stale"), [fmtClock(reason.at)]);
+	if (reason.key === "reason.stale") return fill(t("balance.reason.stale"), [fmtSyncClock(reason.at, now)]);
 	return t("balance." + reason.key);
+}
+
+// The official DeepSeek account carries its own blue skin.
+function isDeepSeekOfficial(account) {
+	return account.adapter === "deepseek-balance" || account.id === "deepseek-official";
 }
 
 function metaText(meta, t) {
@@ -167,7 +173,6 @@ function AccountMain(props) {
 	const account = props.account;
 	const t = props.t;
 	const now = props.now;
-	const reason = accountReason(account);
 	const nodes = [];
 
 	if (account.mode === "subscription") {
@@ -216,7 +221,7 @@ function AccountMain(props) {
 		}
 	}
 
-	const reasonNode = reasonText(reason, t);
+	const reasonNode = reasonText(props.reason, t, now);
 	if (reasonNode) nodes.push(e("div", { className: "dss-bal-reason", key: "reason" }, reasonNode));
 	return e("div", { className: "dss-bal-main" }, nodes);
 }
@@ -346,7 +351,7 @@ function alertBell(account, props) {
 		action: "balance-alert",
 		buttonClassName: "dss-bal-bell" + (alert ? " is-on" : ""),
 		panelClassName: "dss-bal-alert",
-		trigger: e(IconBell, { size: 15 }),
+		trigger: e(react.Fragment, null, e(IconBell, { size: 15 }), e("span", null, props.t("balance.alert.label"))),
 		flip: true,
 		children: function(api) {
 			return e(BalanceAlert, {
@@ -360,13 +365,32 @@ function alertBell(account, props) {
 	});
 }
 
+// A chip whose reason was folded into it explains itself on hover and focus;
+// screen readers get the same text through aria-describedby.
+function chipNodes(account, notes, t) {
+	const chip = notes.chip;
+	if (!chip) return e("span", { className: "dss-sr" }, t("balance.statusOk"));
+	const className = "dss-bal-chip is-" + chip.tone;
+	const text = t("balance." + chip.key);
+	if (!notes.tip) return e("span", { className: className }, text);
+	const tip = t("balance." + notes.tip.key);
+	// aria-describedby takes a space-separated id list, so keep the id one token.
+	const id = "dss-bal-chip-tip-" + String(account.id).replace(/[^A-Za-z0-9_-]/g, "_");
+	return e(react.Fragment, null,
+		e("span", Object.assign({ className: className + " has-tip", tabIndex: 0, "aria-describedby": id }, tipProps(function() {
+			return tipRows(tip, []);
+		})), text),
+		e("span", { className: "dss-sr", id: id }, tip)
+	);
+}
+
 function AccountRow(props) {
 	const account = props.account;
-	const chip = accountChip(account, props.alerts);
-	const tone = chip ? chip.tone : "ok";
+	const notes = accountNotes(account, props.alerts);
+	const tone = notes.chip ? notes.chip.tone : "ok";
 	const link = safeActionUrl(account.actionUrl);
 	return e("li", {
-		className: "dss-bal-row" + (tone === "ok" ? "" : " is-" + tone),
+		className: "dss-bal-row" + (tone === "ok" ? "" : " is-" + tone) + (isDeepSeekOfficial(account) ? " is-ds" : ""),
 		"data-account-id": account.id,
 		"data-tone": tone
 	},
@@ -375,12 +399,10 @@ function AccountRow(props) {
 			e("div", { className: "dss-bal-nm" },
 				e("b", { className: "dss-bal-name" }, account.displayName || account.id),
 				e("span", { className: "dss-bal-meta" }, metaText(accountMeta(account), props.t)),
-				chip
-					? e("span", { className: "dss-bal-chip is-" + chip.tone }, props.t("balance." + chip.key))
-					: e("span", { className: "dss-sr" }, props.t("balance.statusOk"))
+				chipNodes(account, notes, props.t)
 			)
 		),
-		e(AccountMain, { account: account, alerts: props.alerts, now: props.now, t: props.t }),
+		e(AccountMain, { account: account, alerts: props.alerts, reason: notes.reason, now: props.now, t: props.t }),
 		e("div", { className: "dss-bal-act" },
 			alertBell(account, props),
 			link ? e("a", {
@@ -397,33 +419,46 @@ function AccountRow(props) {
 	);
 }
 
-function idleReason(account, t) {
-	if (account.status === "not-configured") {
-		const key = typeof account.missingCredential === "string" ? account.missingCredential.trim() : "";
-		if (!key) return t("balance.notConfigured");
+function idleReason(group, t) {
+	if (group.key === "idle.missing") {
 		const parts = String(t("balance.idle.missing")).split("%s");
-		return [parts[0], e("code", { key: "credential" }, key), parts.slice(1).join("%s")];
+		return [parts[0], e("code", { key: "credential" }, group.accounts[0].missingCredential.trim()), parts.slice(1).join("%s")];
 	}
-	if (account.status === "unsupported") return t("balance.idle.unsupported");
-	return t("balance.notConfigured");
+	return t("balance." + group.key);
+}
+
+function idleName(account) {
+	return account.displayName || account.id;
 }
 
 function IdleAccounts(props) {
 	const idle = props.idle;
 	const t = props.t;
 	if (!idle.length) return null;
-	const names = idle.map(function(account) { return account.displayName || account.id; }).join(" · ");
+	const names = idle.map(idleName).join(" · ");
+	const groups = idleGroups(idle);
+	// When one shared reason covers every idle account, the summary already
+	// lists the names, so the line only states the reason.
+	const named = groups.length > 1 || groups[0].accounts.length === 1;
 	return e("details", {
 		className: "dss-bal-idle",
 		open: props.open,
 		onToggle: props.onToggle
 	},
 		e("summary", { className: "dss-bal-idle-sum" }, fill(t("balance.idle.summary"), [idle.length, names])),
-		idle.map(function(account) {
-			const link = safeActionUrl(account.actionUrl);
-			return e("div", { className: "dss-bal-idle-row", "data-account-id": account.id, key: account.id },
-				e("b", null, account.displayName || account.id),
-				e("span", { className: "dss-bal-reason" }, idleReason(account, t)),
+		groups.map(function(group) {
+			const account = group.accounts[0];
+			const single = group.accounts.length === 1;
+			const link = single ? safeActionUrl(account.actionUrl) : null;
+			const ids = group.accounts.map(function(item) { return item.id; }).join(" ");
+			return e("div", {
+				className: "dss-bal-idle-row" + (single ? "" : " is-group"),
+				"data-account-id": single ? account.id : undefined,
+				"data-account-ids": single ? undefined : ids,
+				key: ids
+			},
+				named ? e("b", null, group.accounts.map(idleName).join(" · ")) : null,
+				e("span", { className: "dss-bal-reason" }, idleReason(group, t)),
 				link ? e("a", {
 					className: "dss-bal-link",
 					"data-action": "balance-link",
@@ -599,9 +634,11 @@ function BalanceView(props) {
 			legacyNotice(data) ? e("p", { className: "dss-bal-note", "data-code": "LEGACY_ACCOUNT_API" }, t("balance.legacy")) : null,
 			active.length < 2 ? null : e(BalanceKpis, { active: active, alerts: alerts, now: now, t: t }),
 			active.length ? e("section", { className: "dss-bal-list" },
-				e("div", { className: "dss-bal-cols", "aria-hidden": "true" },
-					e("span", null, t("balance.col.account")),
-					e("span", null, t("balance.col.value")),
+				e("div", { className: "dss-bal-cols" },
+					e("span", { "aria-hidden": "true" }, t("balance.col.account")),
+					e("span", { className: "dss-bal-col-v" },
+						e("span", { "aria-hidden": "true" }, t("balance.col.value")),
+						e(InfoTip, { id: "dss-bal-cols-tip", label: t("balance.footLabel"), text: t("balance.foot") })),
 					e("span", null, "")),
 				e("ul", { className: "dss-bal-rows", "aria-label": t("balance.listLabel") },
 					sorted.map(function(account) {
@@ -622,7 +659,12 @@ function BalanceView(props) {
 				onToggle: function(event) { setIdleOpen(event.currentTarget.open); },
 				t: t
 			}),
-			e("p", { className: "dss-bal-foot" }, t("balance.foot"))
+			// Narrow layouts hide the column header, so its ⓘ moves here; without
+			// a list there is no header at all.
+			e("p", { className: "dss-bal-foot" + (active.length ? " is-tip" : "") },
+				active.length
+					? [t("balance.footLabel"), e(InfoTip, { key: "tip", id: "dss-bal-foot-tip", label: t("balance.footLabel"), text: t("balance.foot") })]
+					: t("balance.foot"))
 		),
 		t
 	);

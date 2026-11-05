@@ -7,7 +7,7 @@ const {
 	alertFor, validateAlertAmount, accountChip, accountTone, sortAccounts,
 	accountMeta, accountReason, balanceParts, resetParts, balanceTotals,
 	tightestWindow, attentionList, balanceHeaderState, legacyNotice,
-	skeletonModel, safeActionUrl,
+	skeletonModel, safeActionUrl, accountNotes, idleGroups,
 } = require('../src/client-balance-model.cjs');
 
 // Every test pins "now" to the fixture clock (2026-09-08T02:00:00Z). The model
@@ -245,6 +245,48 @@ test('accountReason picks the first applicable reason', () => {
 	});
 	expect(accountReason(account({ balance: balance({ remaining: 0, unlimited: true }) }))).toBeNull();
 	expect(accountReason(account())).toBeNull();
+});
+
+test('accountNotes folds a reason that restates its chip into the chip tip', () => {
+	expect(accountNotes(account({ status: 'unauthorized', balance: null }), {})).toEqual({
+		chip: { tone: 'danger', key: 'chip.unauthorized' }, tip: { key: 'message.unauthorized' }, reason: null,
+	});
+	expect(accountNotes(account({ balance: balance({ remaining: 0, toppedUp: 0, granted: 0 }) }), {})).toEqual({
+		chip: { tone: 'danger', key: 'chip.balanceOut' }, tip: { key: 'reason.balanceOut' }, reason: null,
+	});
+	expect(accountNotes(account({ stale: true, lastSuccessAt: null }), {})).toEqual({
+		chip: { tone: 'warn', key: 'chip.stale' }, tip: { key: 'staleHint' }, reason: null,
+	});
+	// The snapshot time is new information, so the stale reason stays visible.
+	expect(accountNotes(account({ stale: true, status: 'unavailable', lastSuccessAt: 1000 }), {})).toEqual({
+		chip: { tone: 'warn', key: 'chip.stale' }, tip: null, reason: { key: 'reason.stale', at: 1000 },
+	});
+	// A status without a chip keeps its reason line.
+	expect(accountNotes(account({ status: 'pending' }), {})).toEqual({ chip: null, tip: null, reason: { key: 'message.pending' } });
+	expect(accountNotes(account(), {})).toEqual({ chip: null, tip: null, reason: null });
+	expect(accountNotes(account({ balance: balance({ remaining: 5 }) }), { 'deepseek-official': { amount: 20, currency: 'CNY' } })).toEqual({
+		chip: { tone: 'warn', key: 'chip.balanceLow' }, tip: null, reason: null,
+	});
+});
+
+test('idleGroups collapses idle accounts that share a reason and have nothing of their own', () => {
+	const idle = [
+		account({ id: 'zai-coding-cn', providerFamily: 'zai', status: 'not-configured', missingCredential: 'ZAI_API_KEY', actionUrl: 'https://z.ai/manage-apikey/apikey-list' }),
+		account({ id: 'cpa', providerFamily: 'unknown', adapter: null, status: 'unsupported', actionUrl: null }),
+		account({ id: 'anthropic', providerFamily: 'anthropic', adapter: null, status: 'unsupported', actionUrl: null }),
+		account({ id: 'workbuddy', providerFamily: 'unknown', adapter: null, status: 'unsupported', actionUrl: null }),
+		account({ id: 'rongyiwb', providerFamily: 'unknown', adapter: 'generic-usage', status: 'unsupported', actionUrl: null }),
+		account({ id: 'openai', providerFamily: 'openai', adapter: null, status: 'unsupported', actionUrl: null }),
+		account({ id: 'kimi', providerFamily: 'moonshot', status: 'unsupported', actionUrl: 'https://platform.moonshot.cn/console/account' }),
+	];
+	expect(idleGroups(idle).map(group => [group.key, group.accounts.map(item => item.id)])).toEqual([
+		['idle.missing', ['zai-coding-cn']],
+		['idle.noUsage', ['cpa', 'workbuddy', 'rongyiwb']],
+		['idle.unsupported', ['anthropic', 'openai']],
+		['idle.unsupported', ['kimi']],
+	]);
+	expect(idleGroups([account({ id: 'x', status: 'not-configured', missingCredential: ' ', actionUrl: null })]).map(group => group.key)).toEqual(['notConfigured']);
+	expect(idleGroups(null)).toEqual([]);
 });
 
 test('balanceParts omits empty parts and clamps the available meter', () => {

@@ -187,6 +187,56 @@ function accountReason(account) {
 	return null;
 }
 
+// A reason line that only restates its chip moves into the chip's tip; a
+// reason with new information (the stale snapshot time) stays visible.
+function accountNotes(account, alerts) {
+	const chip = accountChip(account, alerts);
+	const reason = accountReason(account);
+	if (!chip || !reason) return { chip: chip, tip: null, reason: reason };
+	const restates = chip.key === "chip.stale"
+		? reason.key === "staleHint"
+		: chip.key === "chip.balanceOut"
+			? reason.key === "reason.balanceOut"
+			: Object.prototype.hasOwnProperty.call(STATUS_CHIPS, account.status) && reason.key === "message." + account.status;
+	return restates ? { chip: chip, tip: reason, reason: null } : { chip: chip, tip: null, reason: reason };
+}
+
+// Custom routes (pi-ai relays) only offer the generic `/v1/usage` contract,
+// so "no official account API" would misdescribe them.
+function isCustomRoute(account) {
+	return account.adapter === "generic-usage" || account.providerFamily === "unknown";
+}
+
+function idleReasonKey(account) {
+	if (account.status === "not-configured") {
+		return isNonEmptyString(account.missingCredential) ? "idle.missing" : "notConfigured";
+	}
+	if (account.status === "unsupported") return isCustomRoute(account) ? "idle.noUsage" : "idle.unsupported";
+	return "notConfigured";
+}
+
+// Idle accounts that share a reason and have nothing of their own to show
+// (no credential name, no console link) collapse into one line.
+function idleGroups(idle) {
+	const groups = [];
+	const byKey = {};
+	(Array.isArray(idle) ? idle : []).forEach(function(account) {
+		if (!isRecord(account)) return;
+		const key = idleReasonKey(account);
+		const own = key === "idle.missing" || !!safeActionUrl(account.actionUrl);
+		if (own) {
+			groups.push({ key: key, accounts: [account] });
+			return;
+		}
+		if (!byKey[key]) {
+			byKey[key] = { key: key, accounts: [] };
+			groups.push(byKey[key]);
+		}
+		byKey[key].accounts.push(account);
+	});
+	return groups;
+}
+
 // B5: amount, breakdown parts, optional alert line and the optional "available"
 // meter. Null and zero parts are omitted; unlimited balances never warn.
 function balanceParts(account, alert) {
@@ -382,6 +432,7 @@ module.exports = {
 	QUOTA_WARN,
 	accountChip,
 	accountMeta,
+	accountNotes,
 	accountReason,
 	accountTone,
 	alertFor,
@@ -390,6 +441,7 @@ module.exports = {
 	balanceParts,
 	balanceTotals,
 	fmtQuotaPercent,
+	idleGroups,
 	legacyNotice,
 	normalizeBalanceAlerts,
 	quotaLevel,

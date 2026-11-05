@@ -116,6 +116,7 @@
   3. 否则：`<类型> · <id>`，类型是"订阅"或"余额"。
 
   同一 family 的账户因此不会重名，这一行也取代了旧的 `providerPickerLabel`。
+- 官方 DeepSeek 账户（`adapter === "deepseek-balance"` 或 `id === "deepseek-official"`）的行加 `.is-ds`：左侧 3px 蓝色竖条，背景从左到中部渐隐的浅蓝。只改这一行的底色，状态点、标签和金额颜色仍按 B6、B7 表达状态；账户列左内边距多 6px，让状态点离开竖条。自定义的 DeepSeek 路由不加。
 - 右列依次是余额提醒铃铛（B8）和外链。外链只在 `actionUrl` 是 `https:` 时渲染：余额账户写"充值"，订阅账户写"管理"；`target="_blank" rel="noreferrer"`，链接内带仅读屏可见的"（新标签页打开）"。
 
 **B5 余额列。**
@@ -140,7 +141,7 @@
 
 | 条件 | 色调 | 标签 |
 | --- | --- | --- |
-| `stale` | warn | 已过期 |
+| `stale` | warn | 数据过期 |
 | `status === "unauthorized"` | danger | 凭证无效 |
 | `status === "blocked"` | danger | 已拦截 |
 | `status === "rate-limited"` | warn | 请求受限 |
@@ -153,17 +154,19 @@
 | 余额：低于提醒线（B8） | warn | 余额偏低 |
 | 其他 | ok | 无标签 |
 
-金额下方的原因行只在以下情况出现，取第一个成立的：
-1. `stale`：有 `lastSuccessAt` 时写"刷新失败，显示的是 <fmtClock(lastSuccessAt)> 的结果"，否则用 `balance.staleHint`。原型写的是"最近几次刷新失败"，但宿主一次失败就会标记 `stale`，所以改为"刷新失败"。
+原因取下面第一个成立的：
+1. `stale`：有 `lastSuccessAt` 时写"刷新失败，显示的是 <fmtSyncClock(lastSuccessAt)> 的结果"（当天只写 HH:MM，跨天才带日期，与头部同步时间一致），否则用 `balance.staleHint`。原型写的是"最近几次刷新失败"，但宿主一次失败就会标记 `stale`，所以改为"刷新失败"。
 2. `status` 不是 `ok`：用 `balance.message.<status>`。原型里 `unauthorized` 的原因带了凭证键名，客户端拿不到失败账户的凭证键名，所以不带。
 3. 余额为 0 且不是 `unlimited`：写"余额为 0，充值后才能继续调用"。`unlimited` 已显示为"不限额"，余额为 0 时也没有原因行，与上表"余额已用完"的条件一致。
+
+原因只是在复述标签时（`accountNotes`）：不再单独占一行，改为标签的提示，悬停或聚焦标签时显示，标签可聚焦（`tabIndex=0`，`.has-tip`），读屏经 `aria-describedby` 读到同一句。包括：状态标签配 `balance.message.<status>`、"余额已用完"配"余额为 0…"、"数据过期"配 `balance.staleHint`。带新信息的原因保留在金额下方，目前只有"刷新失败，显示的是 <时刻> 的结果"。没有标签的状态（例如 `pending`）照常显示原因行。
 
 额度紧张和余额偏低不加原因行，颜色和提醒线已经说明了。宿主的 `warnings[].message` 和 `errorCode` 都不进入行内文字。
 
 **B8 余额提醒。**
 - 存储：`usePref("balanceAlerts", {})`，即 `localStorage["dsh-stats.balanceAlerts"]`，形如 `{"deepseek-official": {"amount": 20, "currency": "CNY"}}`。读出后一律经过 `normalizeBalanceAlerts`，丢弃不合法的条目。列表里暂时没有的账户条目保留，不清理，因为账户可能只是暂时从配置里移除。
 - 生效条件：账户是余额账户，`balance` 不为空、不是 `unlimited`，并且 `balance.currency === alert.currency`。币种变了，提醒就自动失效，不做换算。生效后 `0 < remaining < amount` 时是"余额偏低"（warn）。`remaining === 0` 时始终是 B7 的"余额已用完"，与是否设了提醒无关。
-- 铃铛：只出现在余额账户、并且 `balance` 不为空（知道币种）的行。失败且没有旧快照的行暂时没有铃铛，已保存的提醒不受影响。有生效的提醒时铃铛加 `.is-on`，用强调色并填充图标。
+- 铃铛：只出现在余额账户、并且 `balance` 不为空（知道币种）的行。失败且没有旧快照的行暂时没有铃铛，已保存的提醒不受影响。有生效的提醒时铃铛加 `.is-on`，用强调色并填充图标。图标旁写"提醒"（`balance.alert.label`），不悬停也看得出这是余额页唯一的设置入口。
   - `aria-label`："<账户名> 余额提醒：低于 X"或"<账户名> 余额提醒：未设置"。
   - `title`："余额提醒"。
   - 带 `aria-haspopup="dialog"` 和 `aria-expanded`。
@@ -191,9 +194,10 @@
 
 **B9 未接入。**
 - `not-configured` 和 `unsupported` 的账户收进列表下方一个 `<details>`，默认收起。摘要写"未接入 N 个：A · B"。
-- 展开后每个账户一行：名字、原因，有 `https:` 的 `actionUrl` 时再加一个"控制台"外链。原因是：
+- 展开后的行由 `idleGroups` 决定：带凭证键名或 `https:` 控制台外链的账户各占一行（名字、原因、"控制台"）；其余账户按原因合并成一行，名字用" · "连接，原因只写一次。只有一组且组内不止一个账户时，摘要已经列出了全部名字，这一行只写原因。合并的行用 `data-account-ids`（空格分隔），单个账户的行仍是 `data-account-id`。原因是：
   - `not-configured`："未配置凭证 `<missingCredential>`"，键名放在 `<code>` 里；`missingCredential` 为空时用 `balance.notConfigured`；
-  - `unsupported`："没有可用的官方账户查询接口，不影响 Token 统计"。
+  - `unsupported` 且是自定义路由（`providerFamily === "unknown"` 或 `adapter === "generic-usage"`）："自定义路由未提供 HTTPS 的 /v1/usage 余额接口，不影响 Token 统计"。宿主只对 `https:` 的 baseURL 尝试通用的 `/v1/usage`，回环地址的 `http:` 中转和返回 404 的中转都会落到这里，"没有官方接口"不适用于它们；
+  - 其他 `unsupported`："没有可用的官方账户查询接口，不影响 Token 统计"。
 - 展开状态存在组件内，60 秒刷新不会收起它。
 - 所有账户都未接入时，列表位置写"还没有可查询的账户"，并默认展开这个 `<details>`。`accounts` 为空时只写 `balance.empty`。
 
@@ -252,14 +256,15 @@ section.dss-bal[style=--dss-bal-mk]                   外层 .dss-body 已经是
     div.dss-bal-kpi              最紧的额度；.dss-bal-kpi-v 带 .is-warn / .is-danger
     div.dss-bal-kpi              需要关注；副行 span.dss-bal-nw × N
   section.dss-bal-list
-    div.dss-bal-cols[aria-hidden]                     账户 | 余额 / 剩余额度 | 空
+    div.dss-bal-cols                                  span[aria-hidden] 账户 | span.dss-bal-col-v（span[aria-hidden] 余额 / 剩余额度 · InfoTip#dss-bal-cols-tip 数据说明）| 空
     ul.dss-bal-rows[aria-label=账户列表]
-      li.dss-bal-row[data-account-id][data-tone=ok|warn|danger](.is-warn .is-danger)
+      li.dss-bal-row[data-account-id][data-tone=ok|warn|danger](.is-warn .is-danger .is-ds)
         div.dss-bal-id
           i.dss-bal-dot[aria-hidden]
           div.dss-bal-nm
             b.dss-bal-name · span.dss-bal-meta
-            span.dss-bal-chip.is-warn|.is-danger      异常时；正常时为 span.dss-sr 状态正常
+            span.dss-bal-chip.is-warn|.is-danger(.has-tip[tabIndex=0][aria-describedby])   异常时；正常时为 span.dss-sr 状态正常
+            span.dss-sr#dss-bal-chip-tip-<id>         标签带提示时
         div.dss-bal-main
           div.dss-bal-amt-line                        余额账户
             span.dss-bal-amt(.is-stale .is-zero .is-none .is-unlimited)
@@ -271,13 +276,13 @@ section.dss-bal[style=--dss-bal-mk]                   外层 .dss-body 已经是
             span.dss-bal-reset[tabIndex=0]            有 resetsAt 时
           div.dss-bal-reason                          B7
         div.dss-bal-act
-          div.dss-popover-wrap > button.dss-bal-bell[data-action=balance-alert](.is-on)
+          div.dss-popover-wrap > button.dss-bal-bell[data-action=balance-alert](.is-on) > svg · span 提醒
             div.dss-popover.dss-bal-alert(.is-up)[role=dialog] > form   打开时
           a.dss-bal-link[data-action=balance-link]    外链
   details.dss-bal-idle(open)                          B9
     summary.dss-bal-idle-sum                          未接入 N 个：…
-    div.dss-bal-idle-row[data-account-id] × N         b · span.dss-bal-reason · a.dss-bal-link
-  p.dss-bal-foot                                      数据来自各 Provider 的官方账户接口……
+    div.dss-bal-idle-row[data-account-id] | div.dss-bal-idle-row.is-group[data-account-ids]   b · span.dss-bal-reason · a.dss-bal-link
+  p.dss-bal-foot.is-tip                               数据说明 · InfoTip#dss-bal-foot-tip；只在 ≤640px（列标题隐藏）时显示
 ```
 
 ### 5.2 其他状态
@@ -300,7 +305,7 @@ section.dss-bal > div.dss-bal-failed[role=status]
 section.dss-bal > div.dss-bal-failed > p 账户服务不可用
 
 没有账户 / 全部未接入（B9）
-section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）· details.dss-bal-idle[open]
+section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）· details.dss-bal-idle[open] · p.dss-bal-foot（没有列标题，数据说明直接写出）
 ```
 
 ### 5.3 `data-action` 一览
@@ -317,6 +322,7 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | --- | --- | --- | --- |
 | `--dss-warn-fill` | `#f59e0b` | `#d97706` | 额度条、状态点的琥珀色填充。`--dss-warn` 是文字色，浅色下是 `#92400e`，做填充太暗 |
 | `--dss-skel` | `#232933` | `#eceff3` | 骨架占位条 |
+| `--dss-bal-ds` / `--dss-bal-ds-soft` | `#6b85ff` / `rgba(77,107,254,.16)` | `#4d6bfe` / `rgba(77,107,254,.09)` | DeepSeek 行的竖条和渐变（B4） |
 
 其余颜色复用现有 token：`--dss-ok`、`--dss-warn`/`-soft`/`-line`、`--dss-danger`/`-soft`/`-line`、`--dss-accent`、`--dss-track`、`--dss-line`、`--dss-line-soft`、`--dss-layer`、`--dss-panel`、`--dss-hover`、`--dss-hover-row`、`--dss-text`/`-2`/`-3`、`--dss-shadow-pop`。字号只用 `--dss-fs-xs/sm/md/xl/2xl`。
 
@@ -324,14 +330,14 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 
 | 部位 | 宽屏 | ≤860px | ≤640px |
 | --- | --- | --- | --- |
-| 列表三列 `--cols` | `minmax(170px,1.15fr) minmax(0,3.4fr) 92px`，列距 20px | `minmax(140px,1fr) minmax(0,3.2fr) 84px` | `minmax(0,1fr) auto`，`grid-template-areas: "id act" "main main"`，行距 10px；隐藏 `.dss-bal-cols` |
+| 列表三列 `--cols` | `minmax(170px,1.15fr) minmax(0,3.4fr) 128px`，列距 20px | `minmax(140px,1fr) minmax(0,3.2fr) 120px` | `minmax(0,1fr) auto`，`grid-template-areas: "id act" "main main"`，行距 10px；隐藏 `.dss-bal-cols` |
 | 行 | 内边距 12px 4px，底边 `--dss-line-soft`，悬停 `--dss-hover-row` | 同 | 内边距 12px 2px |
 | 状态点 / 标签 | 8px 圆点，`margin-top: 6px` 与名字首行对齐；标签 `fs-xs` 600，行高 18px，内边距 0 6px，圆角 5px | 同 | 同 |
 | 金额 / 副行 | `fs-xl` 650 / `fs-sm` `--dss-text-3` | 同 | 同 |
 | 额度条一行 | `grid-template-columns: var(--dss-bal-mk) minmax(80px,300px) 4.2em minmax(9.5em,auto)`，列距 10px，`fs-sm` | `var(--dss-bal-mk) minmax(0,1fr) 4.2em`，重置时间换到第二行（`grid-column: 2 / -1`，`fs-xs`） | 同 ≤860 |
 | 额度条标签列 `--dss-bal-mk` | 取 `t("balance.meterKeyWidth")`：中文 `4.2em`，英文 `8em`。写在 `section.dss-bal` 的行内 `style` 上；CSS 在 `.dss-bal` 上给默认值 `8em`，满足 `tests/styles.test.js` 对 `--dss-*` 必须有定义的检查 | 同 | 同 |
 | 条 | 高 6px，圆角 3px，轨道 `--dss-track` | 同 | 同 |
-| 铃铛 | 26×26px，圆角 7px | 同 | 同 |
+| 铃铛 | 高 26px，内边距 0 7px 0 5px，图标与"提醒"间距 3px，`fs-xs`，圆角 7px；操作列 `auto 52px` | 同 | 同 |
 | 提醒弹层 | 宽 270px（`panelClassName` 覆盖 `.dss-popover` 的 290px），内边距 12px，间距 9px；输入框高 32px | 同 | 同 |
 | 摘要条 | `grid-template-columns: 1.45fr repeat(2,minmax(0,1fr))`，`.is-two` 为 `1.45fr minmax(0,1fr)`；首格大字 `fs-2xl`，其余 `fs-xl`，副行 `fs-xs` | 两列：首格占满一行，另两格共用下一行；`.is-two` 时第二格也占满一行；副行允许换行（"需要关注"的副行在宽屏也允许换行，见 B3） | 内边距 10px 12px；首格大字 `fs-xl` |
 | 未接入 | 外框 `--dss-line-soft`，圆角 10px；摘要行内边距 9px 12px，`fs-sm`；每行左缩进 34px | 同 | 名字和原因上下排，左缩进 30px |
@@ -373,7 +379,9 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | `accountTone(account, alerts)` | → `"ok" \| "warn" \| "danger"` | `accountChip(...)?.tone ?? "ok"` |
 | `sortAccounts(active, alerts)` | → 新数组 | B2；不修改输入 |
 | `accountMeta(account)` | → `{type: "subscription" \| "balance", detail: {kind: "plan" \| "route" \| "id", value}}` | B4 的副行规则；文案由组件拼 |
-| `accountReason(account)` | → `{key, at?} \| null` | B7 的原因行；`at` 是 `stale` 时的 `lastSuccessAt` |
+| `accountReason(account)` | → `{key, at?} \| null` | B7 的原因；`at` 是 `stale` 时的 `lastSuccessAt` |
+| `accountNotes(account, alerts)` | → `{chip, tip, reason}` | B7：原因只是复述标签时放进 `tip`，否则留在 `reason` |
+| `idleGroups(idle)` | → `[{key, accounts[]}]` | B9：`key` ∈ `idle.missing`、`notConfigured`、`idle.noUsage`、`idle.unsupported`；带凭证键名或控制台外链的账户单独成组，其余按 `key` 合并，保持首次出现的顺序 |
 | `balanceParts(account, alert)` | → `{amount, currency, zero, unlimited, parts[{key, value}], alertLine: {amount, below} \| null, meter: {remaining} \| null}` | B5；`parts` 已省略 `null` 和 0，`key` ∈ `toppedUp`、`granted`、`used`（`value` 为 `[used, total]`）。`meter.remaining` 按整数"分"计算：`floor(round(remaining×100)×100 / round(total×100))`，夹在 0–100，避免浮点误差让 1.4/20 得 6；`total` 折成 0 分时没有额度条 |
 | `resetParts(resetsAt, now)` | → `null \| {soon: true} \| {days, hours, minutes}` | B6；`days > 0` 时不再返回 `minutes` |
 | `balanceTotals(active)` | → `{lead: {currency, amount} \| null, others[{currency, amount}], balanceCount, staleCount, unreadCount}` | B3 首格；按"分"累加，输出时除以 100 |
@@ -488,7 +496,7 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | `balance.kpi.attention` / `.allClear` | 需要关注 / 全部正常 | Needs attention / All clear |
 | `balance.kpi.nameSep` | 、 | `, `（逗号后有一个空格） |
 | `balance.meterKeyWidth` | 4.2em | 8em |
-| `balance.alert.title` / `balance.alert.button` | %s 余额提醒 / 余额提醒 | %s balance alert / Balance alert |
+| `balance.alert.title` / `balance.alert.button` / `.label` | %s 余额提醒 / 余额提醒 / 提醒 | %s balance alert / Balance alert / Alert |
 | `balance.alert.aria` / `.below` / `.unset` | %s 余额提醒：%s / 低于 %s / 未设置 | %s balance alert: %s / below %s / not set |
 | `balance.alert.field` / `.placeholder` / `.inputLabel` | 低于 / 例如 20 / 提醒金额（%s） | Below / e.g. 20 / Alert amount (%s) |
 | `balance.alert.hint` | 余额低于这个金额时，这一行显示"余额偏低"并排到前面。按 %s 比较，不换算汇率；只保存在当前浏览器。 | Below this amount the row shows "Balance low" and moves up. Compared in %s without conversion; saved in this browser only. |
@@ -498,10 +506,12 @@ section.dss-bal > p.dss-empty（balance.empty 或 还没有可查询的账户）
 | `balance.idle.summary` | 未接入 %d 个：%s | %d not connected: %s |
 | `balance.idle.missing` | 未配置凭证 %s | Credential not configured: %s |
 | `balance.idle.unsupported` | 没有可用的官方账户查询接口，不影响 Token 统计 | No official account API; token statistics are unaffected |
+| `balance.idle.noUsage` | 自定义路由未提供 HTTPS 的 /v1/usage 余额接口，不影响 Token 统计 | Custom route without an HTTPS /v1/usage balance endpoint; token statistics are unaffected |
 | `balance.console` / `balance.newTab` | 控制台 / （新标签页打开） | Console / (opens in a new tab) |
 | `balance.noActive` | 还没有可查询的账户 | No accounts to query yet |
 | `balance.failed` | 没有读到账户数据 | Account data could not be read |
 | `balance.legacy` | 当前宿主版本只能查询 DeepSeek 余额。 | This host version can only read DeepSeek balances. |
+| `balance.footLabel` | 数据说明 | About this data |
 | `balance.foot` | 数据来自各 Provider 的官方账户接口，凭证只在宿主侧使用。结果缓存 5 分钟，点刷新会绕过缓存。 | Data comes from each provider's official account API; credentials stay on the host. Results are cached for 5 minutes; Refresh bypasses the cache. |
 | `balance.loadingCount` | 正在读取 %d 个账户… | Reading %d accounts… |
 | `source.error` / `source.unavailable` | 读取失败 / 账户服务不可用 | Read failed / Account service unavailable |
