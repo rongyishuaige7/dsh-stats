@@ -216,7 +216,7 @@
 - 图例 `div.dss-tr-legend`：
   - 费用模式：虚线样本加"虚线 = 活跃日的日均"；范围内有部分计价的柱子时，再加斜纹样本和"部分待计价"；
   - Token 模式：三个色块，缓存命中 / 未命中 / 输出；
-  - 最右是"点柱子查看当天总览"。
+  - 图例为空时整行不渲染。"每根柱 = 1 天。点柱子查看当天总览。"收进标题后的 ⓘ（`id=dss-tr-daily-tip`，`tr.dailyInfo`）。
 
 **U6 跳到当天总览。** 柱子和热力格共用 `StatsPanel` 的 `openDay(date)`：
 1. `dates.indexOf(date) < 0` 时什么也不做。这种柱子按 U5 带 `aria-disabled`。宿主数据里有 Token 的日子都在 `activityDates` 里，这一条只为回退数据兜底。
@@ -238,16 +238,19 @@
 **U7 热力图。** `section.dss-tr-sec.dss-tr-heat`：
 
 - 窗口：起点是"今天所在那周的周一"往前 25 周，共 26 周。夹具上是 2026-03-16 至 09-08，共 177 天。今天之后的格子不渲染。热力图跟随筛选和指标，不跟随范围。
-- 标题行：`h3` 写"活动热力图"，说明写"近 26 周 · 按费用"或"按 Token"（`tr.heatNote` 配合 `tr.byCost` / `tr.byToken`）。
-- 主体 `div.dss-tr-heat-body`，左边是地图 `div.dss-tr-heat-map`，右边是统计 `dl.dss-tr-heat-stats`（U8）。面板 ≤860px 时统计移到地图下方，三项排成一行。
+- 标题行：`h3` 写"活动热力图"，后面是 ⓘ（`InfoTip`，`id=dss-tr-heat-tip`，`tr.heatInfo`：分级口径、固定 26 周不随范围切换、描边的含义、点格子查看当天总览），说明写"固定近 26 周 · 按费用"或"按 Token"（`tr.heatNote` 配合 `tr.byCost` / `tr.byToken`）。
+- 主体 `div.dss-tr-heat-body`：左边是地图 `div.dss-tr-heat-map`，右边是统计 `dl.dss-tr-heat-stats`（U8），统计左侧有一条细分隔线，右边贴齐区块右缘。面板 ≤860px 时统计移到地图下方，三项排成一行。
+- 地图分三列：星期列 `2.4em`、网格（格子最大 22px，`26 × 22px + 25 × 间距`）、按星期合计（至少 120px，取剩余宽度）。面板 ≤760px 时去掉第三列，网格占满。
 - 地图：
   - 月份行 `div.dss-tr-heat-months`，和网格同为 26 列。哪一周里有某月 1 日，就在那一列写月份（`tr.months`）。第一列总是写它所在的月份，但下一个月份标签离它不到 3 列时，第一列不写。夹具上第一列是 3 月，4 月 1 日在第 3 列，所以第一个标签是 4 月；某月 1 日晚于今天时不写，因为那一天的格子还没画出来；
   - 星期列 `div.dss-tr-heat-dow`：第 1、3、5 行写"一 / 三 / 五"，英文写"Mon / Wed / Fri"，取自 `w.weekdays` 的第 1、3、5 项，其余行留空；
-  - 网格 `div.dss-tr-heat-grid[role=group]`：`aria-label` 由 `tr.groupAria` 拼 `tr.heat` 和 `tr.heatNote`，例如"活动热力图，近 26 周 · 按费用"；`grid-template-columns: repeat(26, minmax(0,1fr))`，7 行。每格用行内 `gridColumn`、`gridRow` 显式定位，不靠自动流动，所以最后一周缺格时不会错位。格子 `aspect-ratio: 1`，地图最大宽 640px。
+  - 网格 `div.dss-tr-heat-grid[role=group]`：`aria-label` 由 `tr.groupAria` 拼 `tr.heat` 和 `tr.heatNote`，例如"活动热力图，固定近 26 周 · 按费用"；`grid-template-columns: repeat(26, minmax(0,1fr))`，7 行。每格用行内 `gridColumn`、`gridRow` 显式定位，不靠自动流动，所以最后一周缺格时不会错位。格子 `aspect-ratio: 1`，最大 22px；
+  - 按星期合计 `div.dss-tr-heat-wk[role=img]`：上方 `span.dss-tr-heat-wk-h` 写"按星期合计"（`tr.weekday`），和月份行同高；下面 7 行 `span.dss-tr-wk`，和网格的 7 行逐行对齐（同样的行距，`contain: size` 让它不参与行高计算）。每行是一根强调色细条（按 7 行里的最大值缩放）和右对齐的数值（费用用 `fmtAxisCost`，Token 用 `fmtTokens`，0 写"—"）。只统计活跃日，由 `weekdayTotals(cells, values)` 计算。`aria-label` 是"按星期合计：周一 ¥5.2，周二 ¥4.5，…"（`tr.weekdayAria`）。
 - 格子：
   - 活跃日是 `button.dss-tr-cell[data-date][data-level][data-action=tr-heat-day]`，带 `tipProps`，键盘规则见 U6；
   - 不活跃的过去日是 `i.dss-tr-cell[data-date][data-level=0][aria-hidden]`，没有 tooltip；
-  - 今天加 `.is-today`。
+  - 今天加 `.is-today`；
+  - 上方范围（7 / 30 / 90 天）里的格子加 `.is-in-range`。其中挨着范围外的格子带一个 `span.dss-tr-in-range.is-t/.is-b/.is-l/.is-r[aria-hidden]`，只画朝外的边（`rangeEdges(date, from, to)`：上下邻居是前后一天，左右邻居是前后一周）。这个框向四周伸进半个格距，边宽也是半个格距，相邻格子的边正好连成一条外轮廓，颜色 `--dss-text-2`。
 - 分级：
   - 取窗口内所有活跃日在当前指标下的值，排序后取 25 / 50 / 75 分位，规则同现有 `CalendarHeatmap`：`v[floor(f × n)]`。大于第 75 分位是 4 级，大于第 50 分位是 3 级，大于第 25 分位是 2 级，其余是 1 级；
   - 活跃日少于 4 天，或第 25 与第 75 分位相等时，退回 `max(1, ceil(4 × v / 最大值))`；
@@ -262,8 +265,8 @@
 - 读屏：每格 `aria-label` 是"2026-08-16 周日 ¥12.30，打开当天总览"，Token 模式下金额换成 Token。
 - 图例 `div.dss-tr-legend`：
   - 左边是"少"、五个 `i.dss-mx-lg[data-level=0..4]`、"多"，复用 `trends.less`、`trends.more`；
-  - 中间是"每格 = 1 天，颜色按活跃日的分位数分级"；
-  - 右边是"点格子查看当天总览"。
+  - 后面是描边样例 `i.dss-tr-sw.is-range` 和"当前选中的近 30 天"（`tr.rangeMark`）；
+  - 分级口径和"点格子查看当天总览"收进标题行的 ⓘ，不常驻。
 
 **U8 活跃与连续。** `dl.dss-tr-heat-stats`，三项，每项是 `div.dss-tr-stat > dt + dd`，统计范围是热力图窗口：
 1. 活跃天数：`dd` 写"86 / 177 天"（`tl.activeValue`）。
@@ -292,15 +295,15 @@
   - `.is-other` 的模型合成一段灰色"其他"，放在最后；
   - 中间是 `div.dss-tr-ring-hole`，底色同面板。
 - 中心：
-  - 第一行是当前指标下的范围合计（"¥82.40"或"3.2M"），`fs-lg` 650。费用模式下范围内有待计价时带"*"，与摘要条一致；
-  - 第二行是"近 30 天"，`fs-xs`；
-  - 合计为 0 时整环是 `--dss-track`，中心写"—"。
+  - 默认第一行是模型数"4 个模型"（`tr.modelCount`），`fs-lg` 650；第二行是"近 30 天"，`fs-xs`。范围合计已经在摘要条里，这里不再重复；
+  - 鼠标移到表格某一行或焦点进入这一行时，中心换成这一行的占比和模型名（`div.dss-tr-ring-hole.is-row`），离开表格后恢复。过长的名字单行省略；
+  - 合计为 0 时整环是 `--dss-track`。
 - `aria-label`："模型费用占比：deepseek-v4-flash 62.4%，deepseek-v4-pro 25.1%，其他 12.5%"（`tr.ringAria`，各项之间用 `tr.listSep`）。
 - 不再单独画图例，下面的表格就是图例。有"其他"时，环下方加一行说明"灰色 = 其他 3 个模型"（`tr.ringOther`）。
 
 **U11 模型表。** `section.dss-tr-sec.dss-tr-models`：
 
-- 标题行：`h3` 写"模型"，说明写"近 30 天 · 4 个模型 · 按费用占比"（或"按 Token 占比"）。
+- 标题行：`h3` 写"模型"，说明写"近 30 天 · 按费用占比"（或"按 Token 占比"）；模型数在环图中心。
 - 主体 `div.dss-tr-models-body`：左边是环（U10），右边是 `table.dss-tr-mtable`，带仅读屏可见的 `caption`"模型明细，近 30 天"。
 - 表格外观和总览 `.dss-ptable` 同一套，在 CSS 里合并选择器。
 
@@ -312,7 +315,6 @@
 | 会话 | `c-sessions` / `sessions` | `fmtN(sessions)`。主会话和子对话都算，一个会话用了两个模型时两行各算一次 |
 | Token | `c-tokens` / `tokens` | `fmtTokens(input + output)`；副行"输入 1.1M · 输出 82K" |
 | 缓存命中 | `c-hit` / `hit` | `cacheRead / input`，取整到百分比；`input` 为 0 时写"—" |
-| LLM | `c-llm` / `llm` | `fmtDuration(llmMs)`。表格下方加脚注"LLM 时长按 Token 占比从会话分摊，是近似值。"（`p.dss-tr-foot`） |
 | 预估费用 | `c-cost` / `cost` | `div.dss-cost-line` 里是 `fmtCostSummary(costSummary)`，部分计价时带"*"。`costSummary.unpricedTokens > 0` 时前面放一个紧凑的 `PendingChip`，和总览表格一致：`compact: true`，`label` 是 `tr.pendingShort`"待计价"，`focus` 是 `{provider: providerId, model: modelRaw, tokens: unpricedTokens}`。没有任何已计价金额时只显示 chip，不重复写"待计价" |
 | 占比 | `c-share` / 不可排序 | `.dss-share`：`span.dss-share-bar.dss-tr-share[data-color] > i`，条用模型颜色（`.is-other` 时用灰色），后面是 `.dss-share-pct`。占比按当前指标计算；占比为 0 时条宽为 0 |
 
@@ -324,8 +326,8 @@
   - 切换指标后回到新指标的默认排序；
   - 并列时先比 Token 降序，再比名字升序；
   - 排序状态存在组件里，不写偏好。
+- 不再有 LLM 列：它是按 Token 占比从会话分摊的近似值，需要脚注自我说明，删掉后表格和脚注一起变短。
 - 窄屏：
-  - ≤860px 隐藏 LLM 列；
   - ≤640px 每行改成两行网格，隐藏表头，改用 `select.dss-sort-narrow[data-action=tr-sort-narrow]` 选择排序键，写法同总览：
     - 第一行是圆点、名字、费用；
     - 第二行是 Provider · 会话 · Token · 命中，以及占比条。
@@ -410,7 +412,6 @@ div.dss-tr
           caption.dss-sr
           thead > tr > th(.c-model …)[aria-sort] > button.dss-sort-btn[data-action=tr-sort][data-key]
           tbody > tr.dss-tr-mrow[data-model-key] × M
-        p.dss-tr-foot                                        LLM 脚注
 ```
 
 ### 5.2 其他状态
@@ -461,11 +462,11 @@ div.dss-tr
 | 分区 | `.dss-tr-sec` 上边距 22px，上边框 `--dss-line-soft`，上内边距 14px；`h3` `fs-lg` 650；说明 `fs-sm` `--dss-text-3` | 同 | 上边距 18px |
 | 柱图 | y 轴列宽 44px，`fs-xs` `--dss-text-3`，右对齐；绘图区高 168px；列距 2px（90 天 1px）；柱宽上限 40px，圆角 `2px 2px 0 0`；x 轴行高 18px，`fs-xs` | 同 | 绘图区高 132px；y 轴列宽 38px |
 | 均线 | 1px dashed `--dss-text-3`，没有文字标签 | 同 | 同 |
-| 热力图 | 主体 `grid-template-columns: minmax(0,640px) minmax(180px,1fr)`，列距 28px；网格间距 3px，格子圆角 3px；星期列 `2.4em`；月份行高 16px | 单列；统计排成三列一行 | 网格间距 2px，格子圆角 2px |
+| 热力图 | 主体 `grid-template-columns: minmax(0,1fr) auto`，列距 24px；地图三列：星期 `2.4em`、网格（格子最大 22px）、按星期合计 `minmax(120px,1fr)`；网格间距 3px（`--dss-tr-gap`），格子圆角 3px；月份行高 16px；统计左侧细分隔线 | 单列；统计排成三列一行；≤760px 去掉按星期合计 | 网格间距 2px，格子圆角 2px |
 | 统计 | `dt` `fs-sm` `--dss-text-2`；`dd` `fs-xl` 650；副行 `fs-xs` `--dss-text-3`；各项之间 14px | 三列，各项左边框 `--dss-line-soft` | 同 ≤860，`dd` 改 `fs-lg`（"125 / 177 天"在三分之一宽里不换行） |
 | 模型区 | `grid-template-columns: 160px minmax(0,1fr)`，列距 24px，顶端对齐 | 同 | 单列，环居中在表格上方 |
 | 环 | 直径 132px，环宽 18px | 同 | 直径 112px，环宽 16px |
-| 模型表 | 与 `.dss-ptable` 合并选择器；列宽：会话 64px、Token 128px、命中 72px、LLM 76px、费用 116px、占比 120px，模型列取剩余 | 隐藏 `.c-llm` | 两行网格，隐藏 `thead`，显示 `.dss-sort-narrow` |
+| 模型表 | 与 `.dss-ptable` 合并选择器；列宽：会话 64px、Token 128px、命中 72px、费用 116px、占比 120px，模型列取剩余 | 同 | 两行网格，隐藏 `thead`，显示 `.dss-sort-narrow` |
 | 图例 | `fs-xs` `--dss-text-3`，色块 10×10px，圆角 2px，各段间距 14px，可换行 | 同 | 同 |
 
 - 断点一律用 `@container dss-panel (max-width: …)`。
@@ -519,6 +520,8 @@ div.dss-tr
 | `heatLevel(value, sortedActiveValues)` | → 0–4 | U7 的分级 |
 | `heatMonths(window)` | → `[{column, month}]` | U7 的月份规则；只看 `window.dates`（不晚于今天）里的 1 日；`month` 是 1–12，文字由组件用 `tr.months` 拼 |
 | `streaks(activeSet, window, today)` | → `{active, total, current, currentEnd, longest, longestStart, longestEnd}` | U8；`currentEnd` 是 `"today" \| "yesterday" \| null` |
+| `weekdayTotals(cells, values)` | → `{rows: [{row: 1..7, value, active}], max}` | U7 的按星期合计；只累加活跃格子，第 1 行周一 |
+| `rangeEdges(date, from, to)` | → `"tblr"` 的子串 | U7 的范围描边；范围外或日期无效时为空串 |
 | `modelColorIndexes(models)` | → `Map<key, 0..7>` | U9 |
 | `modelValue(row, metric)` | → 数字 | `cost` 取 `amountOf(row.costSummary)`，`token` 取 `input + output` |
 | `modelShares(rows, metric)` | → `Map<key, 0..1>` | 合计为 0 时全部为 0 |
@@ -614,12 +617,14 @@ div.dss-tr
 | `tr.groupAria` | %s，%s | %s, %s |
 | `tr.openDay` | %s，打开当天总览 | %s, open in Overview |
 | `tr.avgLine` | 虚线 = 活跃日的日均 | Dashed line = average per active day |
-| `tr.clickBar` / `tr.clickCell` | 点柱子查看当天总览 / 点格子查看当天总览 | Click a bar to open that day in Overview / Click a cell to open that day in Overview |
+| `tr.dailyInfo` | 每根柱 = 1 天。点柱子查看当天总览。 | One bar per day. Click a bar to open that day in Overview. |
 | `tr.months` | 1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月 | Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec |
 | `tr.heat` | 活动热力图 | Activity heatmap |
-| `tr.heatNote` | 近 26 周 · %s | Last 26 weeks · %s |
+| `tr.heatNote` | 固定近 26 周 · %s | Always the last 26 weeks · %s |
 | `tr.byCost` / `tr.byToken` | 按费用 / 按 Token | by cost / by tokens |
-| `tr.heatUnit` | 每格 = 1 天，颜色按活跃日的分位数分级 | One cell per day; shades follow quartiles of active days |
+| `tr.heatInfo` | 每格 = 1 天，颜色按活跃日的分位数分级。热力图固定显示近 26 周，不随上方范围切换；描边框出的是当前选中的范围。点格子查看当天总览。 | One cell per day; shades follow quartiles of active days. The heatmap always shows the last 26 weeks and does not follow the range above; the outline marks the selected range. Click a cell to open that day in Overview. |
+| `tr.rangeMark` | 当前选中的近 %d 天 | Selected: last %d days |
+| `tr.weekday` / `tr.weekdayAria` | 按星期合计 / 按星期合计：%s | By weekday / Totals by weekday: %s |
 | `tr.stat.active` / `.current` / `.longest` | 活跃天数 / 当前连续 / 最长连续 | Active days / Current streak / Longest streak |
 | `tr.stat.today` / `tr.stat.yesterday` | 截至今天 / 截至昨天 | Through today / Through yesterday |
 | `tr.models` | 模型 | Models |
@@ -632,7 +637,6 @@ div.dss-tr
 | `tr.listSep` | ， | `, `（逗号后有一个空格） |
 | `tr.other` | 其他 | Other |
 | `tr.ringOther` | 灰色 = 其他 %d 个模型 | Grey = %d other models |
-| `tr.llmNote` | LLM 时长按 Token 占比从会话分摊，是近似值。 | LLM time is split from sessions by token share and is approximate. |
 | `tr.pendingShort` | 待计价 | Unpriced |
 | `tr.providerUnknown` | 未知 Provider | Unknown provider |
 | `tr.reasoning` | 思考 | Reasoning |

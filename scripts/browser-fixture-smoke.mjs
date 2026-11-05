@@ -3073,6 +3073,58 @@ try {
   assert(heatStats[0].includes('7 / 177 天'), 'active days stat: ' + heatStats[0]);
   assert(heatStats[1].includes('7 天') && heatStats[1].includes('截至今天'), 'current streak stat: ' + heatStats[1]);
   assert(heatStats[2].includes('7 天') && heatStats[2].includes('09-02 至 09-08'), 'longest streak stat: ' + heatStats[2]);
+  // Slice 4: the selected range is outlined, the weekday column lines up with the grid rows,
+  // the stats sit at the right edge, and the hints live in ⓘ tips.
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await click('[data-action=tr-range-7]');
+  await until('document.querySelectorAll(".dss-tr-col").length === 7');
+  assert.equal(await evaluate('document.querySelectorAll(".dss-tr-cell.is-in-range").length'), 7, 'the 7-day range marks seven heat cells');
+  assert((await evaluate('document.querySelector(".dss-tr-heat .dss-tr-legend").textContent')).includes('当前选中的近 7 天'), 'the heat legend names the selected range');
+  const rangeOutline = await evaluate(`(() => {
+    const edges = date => document.querySelector('.dss-tr-cell[data-date="' + date + '"] .dss-tr-in-range')?.className || '';
+    const box = document.querySelector('.dss-tr-cell[data-date="2026-09-02"] .dss-tr-in-range').getBoundingClientRect();
+    const cell = document.querySelector('.dss-tr-cell[data-date="2026-09-02"]').getBoundingClientRect();
+    return { first: edges('2026-09-02'), middle: edges('2026-09-03'), last: edges('2026-09-08'), widthGrowth: box.width - cell.width, color: getComputedStyle(document.querySelector('.dss-tr-cell[data-date="2026-09-02"] .dss-tr-in-range')).borderTopColor };
+  })()`);
+  assert.equal(rangeOutline.first, 'dss-tr-in-range is-t is-l is-r', 'range start draws top, left and right: ' + JSON.stringify(rangeOutline));
+  assert.equal(rangeOutline.middle, 'dss-tr-in-range is-l is-r', 'a middle day draws only the sides: ' + JSON.stringify(rangeOutline));
+  assert.equal(rangeOutline.last, 'dss-tr-in-range is-b is-l is-r', 'today closes the outline: ' + JSON.stringify(rangeOutline));
+  assert(Math.abs(rangeOutline.widthGrowth - 3) <= 0.5, 'the outline reaches half a gap on each side: ' + JSON.stringify(rangeOutline));
+  const heatLayout = await evaluate(`(() => {
+    const heat = document.querySelector('.dss-tr-heat').getBoundingClientRect();
+    const stats = document.querySelector('.dss-tr-heat-stats').getBoundingClientRect();
+    const wk = document.querySelector('.dss-tr-heat-wk').getBoundingClientRect();
+    const rows = [...document.querySelectorAll('.dss-tr-wk')].map(node => node.getBoundingClientRect());
+    const cells = [1, 2, 3, 4, 5, 6, 7].map(row => [...document.querySelectorAll('.dss-tr-cell')].find(node => node.style.gridRowStart === String(row)).getBoundingClientRect());
+    const offsets = rows.map((rect, index) => Math.round(Math.abs((rect.top + rect.bottom) / 2 - (cells[index].top + cells[index].bottom) / 2) * 10) / 10);
+    return { rows: rows.length, offsets, wkWidth: Math.round(wk.width), statsRight: Math.round(stats.right), heatRight: Math.round(heat.right), cell: Math.round(cells[0].width * 10) / 10 };
+  })()`);
+  assert.equal(heatLayout.rows, 7, 'seven weekday rows: ' + JSON.stringify(heatLayout));
+  assert(heatLayout.offsets.every(offset => offset <= 1), 'weekday rows line up with the grid rows: ' + JSON.stringify(heatLayout));
+  assert(heatLayout.wkWidth >= 120 && Math.abs(heatLayout.statsRight - heatLayout.heatRight) <= 1, 'the weekday column and the stats fill the width: ' + JSON.stringify(heatLayout));
+  assert(heatLayout.cell <= 22.5, 'heat cells stop at 22px: ' + JSON.stringify(heatLayout));
+  assert(await evaluate('!document.querySelector(".dss-tr .dss-tr-legend-grp.is-hint")'), 'trends legends carry no click hints');
+  assert(await evaluate('document.querySelector("#dss-tr-heat-tip").textContent.includes("点格子查看当天总览") && document.querySelector("#dss-tr-daily-tip").textContent.includes("点柱子查看当天总览")'), 'the click hints moved into the ⓘ tips');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: true });
+  await evaluate('window.dispatchEvent(new Event("resize"))');
+  await delay(200);
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".dss-tr-heat-wk")).display'), 'none', 'the weekday column folds away on narrow panels');
+  for (const selector of ['#dss-tr-heat-tip', '#dss-tr-daily-tip']) {
+    await focus(`.dss-info[aria-describedby="${selector.slice(1)}"]`);
+    await delay(50);
+    const tipBox = await evaluate(`(() => {
+      const node = document.querySelector('${selector}');
+      const body = document.querySelector('.dss-body').getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return { display: getComputedStyle(node).display, left: rect.left, right: rect.right, bodyLeft: body.left, bodyRight: body.right };
+    })()`);
+    assert(tipBox.display !== 'none' && tipBox.left >= tipBox.bodyLeft - 1 && tipBox.right <= tipBox.bodyRight + 1, selector + ' stays inside the body at 320: ' + JSON.stringify(tipBox));
+    await evaluate('document.activeElement.blur()');
+  }
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await evaluate('window.dispatchEvent(new Event("resize"))');
+  await delay(200);
+  report.checks.push('slice 4 trends: selected range outline and legend, weekday column aligned with the grid rows, stats at the right edge, click hints in ⓘ tips that stay inside the body at 320');
   // 16. 键盘与跳转
   assert.deepEqual(await evaluate('[...document.querySelectorAll("button.dss-tr-cell")].filter(node => node.tabIndex === 0).map(node => node.dataset.date)'), ['2026-09-08'], 'the only heat tab stop is today');
   await command('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -3121,6 +3173,22 @@ try {
   const ringAria = await evaluate('document.querySelector(".dss-tr-ring[role=img]").getAttribute("aria-label")');
   assert(ringAria.includes('deepseek-v4-flash') && ringAria.includes('MiniMax-M3'), 'ring aria-label names both models: ' + ringAria);
   assert(await evaluate('!document.querySelector(".dss-model-list-viewport")'), 'the old scrolling model list is gone');
+  assert(await evaluate('!document.querySelector(".dss-tr-mtable .c-llm") && !document.querySelector(".dss-tr-foot")'), 'the LLM column and its footnote are gone');
+  const ringCenter = () => evaluate('[...document.querySelectorAll(".dss-tr-ring-hole > *")].map(node => node.textContent)');
+  assert.deepEqual(await ringCenter(), ['2 个模型', '近 30 天'], 'the ring center shows the model count');
+  const hoverRow = await evaluate(`(() => {
+    const row = document.querySelectorAll('.dss-tr-mrow')[1];
+    row.scrollIntoView({ block: 'center' });
+    const rect = row.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, name: row.querySelector('.dss-tr-mname span').textContent, share: row.querySelector('.dss-share-pct').textContent };
+  })()`);
+  await delay(100);
+  await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverRow.x, y: hoverRow.y });
+  await until('document.querySelector(".dss-tr-ring-hole").classList.contains("is-row")');
+  assert.deepEqual(await ringCenter(), [hoverRow.share, hoverRow.name], 'hovering a row shows its share in the ring');
+  await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+  await until('!document.querySelector(".dss-tr-ring-hole").classList.contains("is-row")');
+  assert.deepEqual(await ringCenter(), ['2 个模型', '近 30 天'], 'leaving the table restores the model count');
   // 21. 颜色稳定
   const dotColor = () => evaluate(`(() => { const row = [...document.querySelectorAll('.dss-tr-mrow')].find(node => node.dataset.modelKey.includes('deepseek-v4-flash')); return row?.querySelector('.dss-pdot')?.getAttribute('data-color') || null; })()`);
   const baseColor = await dotColor();

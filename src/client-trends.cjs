@@ -1,14 +1,14 @@
 // 趋势页组件：工具栏、摘要条、每日柱图、26 周热力图和模型区（5g–5i）。
 const react = require("react");
 const { PendingChip, InfoTip, ProjectFilterMenu, CostText } = require("./client-overview.cjs");
-const { fmtCostSummary, fmtDuration, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
+const { fmtCostSummary, fmtN, fmtSharePct, fmtTokens } = require("./client-format.cjs");
 const { hasTokenUsage, modelAgg, modelDisplayName, modelNameOnly, sessionDayTokens } = require("./client-data.cjs");
 const { costDelta, defaultSortDir, pendingFocus } = require("./client-overview-model.cjs");
-const { dayCostSummaries } = require("./client-timeline-model.cjs");
+const { addDays, dayCostSummaries } = require("./client-timeline-model.cjs");
 const {
 	HEAT_WEEKS, RANGES, amountOf, dayPoints, defaultModelSort, fmtAxisCost, heatCells, heatMonths, heatWindow,
 	metricValue, modelColorIndexes, modelShares, niceMax, previousDates, rangeDates, rangeTotals,
-	ringStops, sortModels, streaks, topModel, xLabels
+	rangeEdges, ringStops, sortModels, streaks, topModel, weekdayTotals, xLabels
 } = require("./client-trends-model.cjs");
 const { tipProps, tipRows } = require("./client-tip.cjs");
 
@@ -296,6 +296,7 @@ function DailyChart(props) {
 	return e("section", { className: "dss-tr-sec dss-tr-daily" },
 		e("div", { className: "dss-tr-sec-head" },
 			e("h3", null, title),
+			e(InfoTip, { id: "dss-tr-daily-tip", label: t("tl.legendInfo"), text: t("tr.dailyInfo") }),
 			e("span", { className: "dss-tr-sec-note" }, ...note)
 		),
 		e("div", { className: "dss-tr-chart" },
@@ -320,10 +321,7 @@ function DailyChart(props) {
 			),
 			e("div", { className: "dss-tr-x" + (count >= 90 ? " is-dense" : ""), "aria-hidden": "true", style: { "--n": count } }, labels)
 		),
-		e("div", { className: "dss-tr-legend" },
-			legend,
-			e("span", { className: "dss-tr-legend-grp is-hint" }, t("tr.clickBar"))
-		)
+		legend.some(Boolean) ? e("div", { className: "dss-tr-legend" }, legend) : null
 	);
 }
 
@@ -338,8 +336,9 @@ function heatTip(point, t) {
 }
 
 function Heatmap(props) {
-	const { heat, today, metric, canOpen, onOpenDay, cellDate, setCellDate, t } = props;
+	const { heat, today, metric, range, canOpen, onOpenDay, cellDate, setCellDate, t } = props;
 	const isToken = metric === "token";
+	const rangeFrom = range > 0 ? addDays(today, 1 - range) : null;
 	const activeDates = heat.cells.filter(function(cell) { return cell.active; }).map(function(cell) { return cell.date; });
 	// 默认停在今天；今天不活跃时停在最近的活跃日。切换指标或筛选后仍然活跃就保留。
 	const fallback = activeDates.indexOf(today) >= 0 ? today : activeDates.length ? activeDates[activeDates.length - 1] : null;
@@ -365,13 +364,14 @@ function Heatmap(props) {
 
 	const cells = heat.cells.map(function(cell) {
 		const style = { gridColumn: cell.column, gridRow: cell.row };
-		const classes = "dss-tr-cell" + (cell.today ? " is-today" : "");
-		if (!cell.active) {
-			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style });
-		}
-		const point = heat.points.get(cell.date);
+		const inRange = !!rangeFrom && cell.date >= rangeFrom && cell.date <= today;
+		const classes = "dss-tr-cell" + (cell.today ? " is-today" : "") + (inRange ? " is-in-range" : "");
+		// 上方选中范围的外轮廓，只画挨着范围外的边。
+		const edges = inRange ? rangeEdges(cell.date, rangeFrom, today) : "";
+		const outline = edges ? e("span", { className: "dss-tr-in-range" + edges.split("").map(function(edge) { return " is-" + edge; }).join(""), "aria-hidden": "true" }) : null;
+		const point = cell.active ? heat.points.get(cell.date) : null;
 		if (!point) {
-			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style });
+			return e("i", { key: cell.date, className: classes, "data-date": cell.date, "data-level": 0, "aria-hidden": "true", style }, outline);
 		}
 		const openable = canOpen(cell.date);
 		const label = dayLabel(cell.date, t, true);
@@ -399,8 +399,27 @@ function Heatmap(props) {
 				});
 			},
 			...tipProps(function() { return tipRows(label, heatTip(point, t)); })
-		});
+		}, outline);
 	});
+
+	// 右侧按星期合计，每行和左边网格的同一行对齐。
+	const weekly = weekdayTotals(heat.cells, heat.values);
+	const weekdayText = function(value) { return value > 0 ? (isToken ? fmtTokens(value) : fmtAxisCost(value)) : "—"; };
+	const weekParts = weekly.rows.map(function(row) { return t("w.dayPrefix") + weekdayNames[row.row % 7] + " " + weekdayText(row.value); });
+	const weekHead = e("span", { className: "dss-tr-heat-wk-h", "aria-hidden": "true" }, t("tr.weekday"));
+	const week = e("div", {
+		className: "dss-tr-heat-wk",
+		role: "img",
+		"aria-label": t("tr.weekdayAria").replace("%s", weekParts.join(t("tr.listSep")))
+	},
+		weekly.rows.map(function(row) {
+			const width = weekly.max > 0 ? (row.value / weekly.max * 100).toFixed(1) + "%" : "0";
+			return e("span", { key: row.row, className: "dss-tr-wk", "aria-hidden": "true" },
+				e("i", { className: "dss-tr-wk-bar" }, e("b", { style: { width: row.value > 0 ? "max(2px, " + width + ")" : "0" } })),
+				e("span", { className: "dss-tr-wk-v" }, weekdayText(row.value))
+			);
+		})
+	);
 
 	const stats = heat.stats;
 	const note = t("tr.heatNote").replace("%s", t(isToken ? "tr.byToken" : "tr.byCost"));
@@ -409,13 +428,16 @@ function Heatmap(props) {
 	return e("section", { className: "dss-tr-sec dss-tr-heat" },
 		e("div", { className: "dss-tr-sec-head" },
 			e("h3", null, t("tr.heat")),
+			e(InfoTip, { id: "dss-tr-heat-tip", label: t("tl.legendInfo"), text: t("tr.heatInfo") }),
 			e("span", { className: "dss-tr-sec-note" }, note)
 		),
 		e("div", { className: "dss-tr-heat-body" },
 			e("div", { className: "dss-tr-heat-map" },
 				e("div", { className: "dss-tr-heat-months", "aria-hidden": "true" }, months),
+				weekHead,
 				e("div", { className: "dss-tr-heat-dow", "aria-hidden": "true" }, dow),
-				e("div", { className: "dss-tr-heat-grid", role: "group", "aria-label": t("tr.groupAria").replace("%s", t("tr.heat")).replace("%s", note) }, cells)
+				e("div", { className: "dss-tr-heat-grid", role: "group", "aria-label": t("tr.groupAria").replace("%s", t("tr.heat")).replace("%s", note) }, cells),
+				week
 			),
 			e("dl", { className: "dss-tr-heat-stats" },
 				e("div", { className: "dss-tr-stat" },
@@ -442,8 +464,10 @@ function Heatmap(props) {
 				[0, 1, 2, 3, 4].map(function(level) { return e("i", { key: level, className: "dss-mx-lg", "data-level": level }); }),
 				t("trends.more")
 			),
-			e("span", { className: "dss-tr-legend-grp" }, t("tr.heatUnit")),
-			e("span", { className: "dss-tr-legend-grp is-hint" }, t("tr.clickCell"))
+			rangeFrom ? e("span", { className: "dss-tr-legend-grp" },
+				e("i", { className: "dss-tr-sw is-range" }),
+				t("tr.rangeMark").replace("%d", String(range))
+			) : null
 		)
 	);
 }
@@ -460,11 +484,17 @@ function ModelSection(props) {
 		list.forEach(function(row) { map.set(row.key, row); });
 		return map;
 	}, [list]);
+	// 鼠标或焦点所在的表格行；环图中心换成这一行的占比。
+	const [ringKey, setRingKey] = useState(null);
 	// 提前返回放在所有 hooks 之后：挂载期间 models 变成空时 hooks 数量不变。
 	if (!list.length) return null;
 
 	const total = isToken ? totals.tokens : amountOf(totals.cost);
-	const center = total > 0 ? (isToken ? fmtTokens(totals.tokens) : fmtCostSummary(totals.cost, t)) : "—";
+	const rangeText = t("tr.recent").replace("%d", String(range));
+	const ringRow = ringKey != null ? byKey.get(ringKey) : null;
+	const center = ringRow
+		? [fmtSharePct((shares.get(ringRow.key) || 0) * 100), modelNameOnly(ringRow)]
+		: [t("tr.modelCount").replace("%d", String(list.length)), rangeText];
 	const gradient = total > 0 && stops.length
 		? "conic-gradient(" + stops.map(function(stop) {
 			const color = stop.colorIndex == null ? "var(--dss-text-3)" : "var(--dss-p" + stop.colorIndex + ")";
@@ -478,14 +508,12 @@ function ModelSection(props) {
 	});
 	const ringAria = t("tr.ringAria").replace("%s", t(isToken ? "tr.ringToken" : "tr.ringCost")).replace("%s", ringParts.join(t("tr.listSep")));
 	const others = stops.filter(function(stop) { return stop.colorIndex == null; });
-	const rangeText = t("tr.recent").replace("%d", String(range));
 
 	const columns = [
 		{ key: "name", label: t("tr.col.model"), cls: "c-model" },
 		{ key: "sessions", label: t("th.sessions"), cls: "c-sessions" },
 		{ key: "tokens", label: t("kpi.tokens"), cls: "c-tokens" },
 		{ key: "hit", label: t("th.cacheHit"), cls: "c-hit" },
-		{ key: "llm", label: t("th.llm"), cls: "c-llm" },
 		{ key: "cost", label: t("th.cost"), cls: "c-cost" },
 		{ key: "share", label: t("tr.col.share"), cls: "c-share", sortable: false }
 	];
@@ -505,7 +533,10 @@ function ModelSection(props) {
 		}, column.label, active ? e("span", { className: "dss-sort-arr", "aria-hidden": "true" }, sort.dir < 0 ? "↓" : "↑") : null));
 	})));
 
-	const body = e("tbody", null, rows.map(function(row) {
+	const body = e("tbody", {
+		onMouseLeave: function() { setRingKey(null); },
+		onBlur: function(ev) { if (!ev.currentTarget.contains(ev.relatedTarget)) setRingKey(null); }
+	}, rows.map(function(row) {
 		const color = modelColors.get(row.key);
 		const dotColor = Number.isInteger(color) ? color : null;
 		const tokens = (row.input || 0) + (row.output || 0);
@@ -524,7 +555,9 @@ function ModelSection(props) {
 		return e("tr", {
 			key: row.key,
 			className: "dss-tr-mrow",
-			"data-model-key": String(row.key).replace(/\u0000/g, "|")
+			"data-model-key": String(row.key).replace(/\u0000/g, "|"),
+			onMouseEnter: function() { setRingKey(row.key); },
+			onFocus: function() { setRingKey(row.key); }
 		},
 			e("td", { className: "c-model" },
 				e("div", { className: "dss-tr-mname" }, dot, e("span", { title: row.displayName || modelDisplayName(row) }, modelNameOnly(row))),
@@ -537,7 +570,6 @@ function ModelSection(props) {
 				e("div", { className: "dss-cell-sub" }, t("w.input") + " " + fmtTokens(row.input || 0) + " · " + t("w.output") + " " + fmtTokens(row.output || 0))
 			),
 			e("td", { className: "c-hit" }, hit),
-			e("td", { className: "c-llm" }, fmtDuration(row.llmMs || 0)),
 			e("td", { className: "c-cost" },
 				e("div", { className: "dss-cost-line" },
 					unpriced > 0 ? e(PendingChip, {
@@ -565,15 +597,14 @@ function ModelSection(props) {
 	return e("section", { className: "dss-tr-sec dss-tr-models" },
 		e("div", { className: "dss-tr-sec-head" },
 			e("h3", null, t("tr.models")),
-			e("span", { className: "dss-tr-sec-note" },
-				rangeText + " · " + t("tr.modelCount").replace("%d", String(list.length)) + " · " + t(isToken ? "tr.shareByToken" : "tr.shareByCost"))
+			e("span", { className: "dss-tr-sec-note" }, rangeText + " · " + t(isToken ? "tr.shareByToken" : "tr.shareByCost"))
 		),
 		e("div", { className: "dss-tr-models-body" },
 			e("div", { className: "dss-tr-ring-wrap" },
 				e("div", { className: "dss-tr-ring", role: "img", "aria-label": ringAria, style: { background: gradient } },
-					e("div", { className: "dss-tr-ring-hole" },
-						e("b", null, center),
-						e("span", null, rangeText)
+					e("div", { className: "dss-tr-ring-hole" + (ringRow ? " is-row" : "") },
+						e("b", null, center[0]),
+						e("span", null, center[1])
 					)
 				),
 				others.length ? e("p", { className: "dss-tr-ring-note" },
@@ -595,8 +626,7 @@ function ModelSection(props) {
 					e("caption", { className: "dss-sr" }, t("tr.tableLabel").replace("%s", rangeText)),
 					head,
 					body
-				),
-				e("p", { className: "dss-tr-foot" }, t("tr.llmNote"))
+				)
 			)
 		)
 	);
@@ -690,6 +720,7 @@ function TrendsView(props) {
 		return {
 			window: win,
 			points: pointsByDate,
+			values,
 			cells: heatCells(win, values, today),
 			stats: streaks(activeSet, win, today)
 		};
@@ -726,7 +757,7 @@ function TrendsView(props) {
 					onClick: function() { props.setPrefs({ range: nextRange }); }
 				}, t("tr.viewRange").replace("%d", String(nextRange))) : null
 			),
-			e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t })
+			e(Heatmap, { heat, today, metric, range, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t })
 		);
 	}
 
@@ -740,7 +771,7 @@ function TrendsView(props) {
 			points, totals, metric, today, barDate, setBarDate,
 			onOpenDay: props.onOpenDay, canOpen, t
 		}),
-		e(Heatmap, { heat, today, metric, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t }),
+		e(Heatmap, { heat, today, metric, range, canOpen, onOpenDay: props.onOpenDay, cellDate, setCellDate, t }),
 		// 没有模型时整节不挂载，ModelSection 的 hooks 也就不会从有到无。
 		models.length ? e(ModelSection, {
 			models, modelColors, metric, range, totals, sort,

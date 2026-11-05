@@ -5,7 +5,7 @@ const {
 	RANGES, HEAT_WEEKS, MODEL_COLORS, TRENDS_PREF_DEFAULTS,
 	normalizeTrendsPrefs, amountOf, isPartial, rangeDates, previousDates,
 	dayPoints, metricValue, rangeTotals, niceMax, fmtAxisCost, xLabels,
-	heatWindow, heatCells, heatLevel, heatMonths, streaks,
+	heatWindow, heatCells, heatLevel, heatMonths, streaks, weekdayTotals, rangeEdges,
 	modelColorIndexes, modelValue, modelShares, topModel, ringStops,
 	defaultModelSort, sortModels,
 } = require('../src/client-trends-model.cjs');
@@ -304,6 +304,43 @@ test('streaks counts the current run from today or yesterday and prefers the lat
 	expect(tie.longestEnd).toBe('2026-09-07');
 	const empty = streaks(new Set(), window, TODAY);
 	expect(empty).toMatchObject({ active: 0, current: 0, currentEnd: null, longest: 0, longestStart: null, longestEnd: null });
+});
+
+test('weekdayTotals sums active cells into the seven grid rows', () => {
+	const window = heatWindow(TODAY);
+	// 2026-09-07 是周一，2026-09-08 是周二。
+	const values = new Map([
+		['2026-08-31', { value: 1, active: true }],
+		['2026-09-07', { value: 2, active: true }],
+		[TODAY, { value: 4, active: true }],
+		['2026-09-05', { value: 9, active: false }],
+	]);
+	const result = weekdayTotals(heatCells(window, values, TODAY), values);
+	expect(result.rows.map(row => row.row)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+	expect(result.rows[0]).toEqual({ row: 1, value: 3, active: 2 });
+	expect(result.rows[1]).toEqual({ row: 2, value: 4, active: 1 });
+	// 不活跃的日子不计入，即使带了数值。
+	expect(result.rows[5]).toEqual({ row: 6, value: 0, active: 0 });
+	expect(result.max).toBe(4);
+	expect(weekdayTotals(null, null)).toEqual({ rows: [1, 2, 3, 4, 5, 6, 7].map(row => ({ row, value: 0, active: 0 })), max: 0 });
+});
+
+test('rangeEdges draws only the outline of the selected range', () => {
+	// 近 7 天：2026-09-02（周三）至 2026-09-08（周二），跨两列。
+	const from = '2026-09-02';
+	expect(rangeEdges('2026-09-02', from, TODAY)).toBe('tlr');
+	expect(rangeEdges('2026-09-03', from, TODAY)).toBe('lr');
+	expect(rangeEdges('2026-09-06', from, TODAY)).toBe('blr');
+	expect(rangeEdges('2026-09-07', from, TODAY)).toBe('tlr');
+	expect(rangeEdges(TODAY, from, TODAY)).toBe('blr');
+	expect(rangeEdges('2026-09-01', from, TODAY)).toBe('');
+	expect(rangeEdges('2026-09-09', from, TODAY)).toBe('');
+	// 近 30 天：2026-08-10（周一）至今天，中间整列只画上下边。
+	expect(rangeEdges('2026-08-10', '2026-08-10', TODAY)).toBe('tl');
+	expect(rangeEdges('2026-08-19', '2026-08-10', TODAY)).toBe('');
+	expect(rangeEdges('2026-08-23', '2026-08-10', TODAY)).toBe('b');
+	expect(rangeEdges('2026-09-02', '2026-08-10', TODAY)).toBe('r');
+	expect(rangeEdges('bad', from, TODAY)).toBe('');
 });
 
 test('modelColorIndexes colors the first eight models by tokens and leaves the rest gray', () => {

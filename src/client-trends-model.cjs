@@ -353,6 +353,34 @@ function streaks(activeSet, window, today) {
 	return { active, total: dates.length, current, currentEnd, longest, longestStart, longestEnd };
 }
 
+// 按星期合计热力图窗口（第 1 行周一 … 第 7 行周日），和网格的 7 行对齐。
+function weekdayTotals(cells, values) {
+	const rows = [1, 2, 3, 4, 5, 6, 7].map(function(row) { return { row, value: 0, active: 0 }; });
+	(Array.isArray(cells) ? cells : []).forEach(function(cell) {
+		const target = cell && rows[cell.row - 1];
+		if (!target || !cell.active) return;
+		const entry = lookup(values, cell.date);
+		target.value += num(entry && entry.value);
+		target.active++;
+	});
+	const max = rows.reduce(function(best, row) { return Math.max(best, row.value); }, 0);
+	return { rows, max };
+}
+
+// 选中范围在热力图里的外轮廓：格子的某一边紧挨着范围外（或网格边界）时画这条边。
+// 网格按列从上到下排日期，所以上下邻居是前后一天，左右邻居是前后一周。
+function rangeEdges(date, from, to) {
+	if (!isDateKey(date) || !isDateKey(from) || !isDateKey(to) || date < from || date > to) return "";
+	const inside = function(other) { return other >= from && other <= to; };
+	const row = rowOf(date);
+	let edges = "";
+	if (row === 1 || !inside(addDays(date, -1))) edges += "t";
+	if (row === 7 || !inside(addDays(date, 1))) edges += "b";
+	if (!inside(addDays(date, -7))) edges += "l";
+	if (!inside(addDays(date, 7))) edges += "r";
+	return edges;
+}
+
 // ------------------------------------------------------------------
 // 模型（U9–U11）
 // ------------------------------------------------------------------
@@ -517,6 +545,8 @@ module.exports = {
 	heatLevel,
 	heatMonths,
 	streaks,
+	weekdayTotals,
+	rangeEdges,
 	modelColorIndexes,
 	modelValue,
 	modelShares,

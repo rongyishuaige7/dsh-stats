@@ -119,7 +119,7 @@ test('renders the 26-week heatmap and the streak stats', () => {
 	expect((html.match(/class="dss-tr-cell/g) || []).length).toBe(177);
 	expect((html.match(/data-action="tr-heat-day"/g) || []).length).toBe(DATES.length);
 	expect(html).toContain('活动热力图');
-	expect(html).toContain('近 26 周 · 按费用');
+	expect(html).toContain('固定近 26 周 · 按费用');
 	expect(html).toContain('活跃天数');
 	expect(html).toContain('当前连续');
 	expect(html).toContain('最长连续');
@@ -130,6 +130,33 @@ test('renders the 26-week heatmap and the streak stats', () => {
 	expect(html).toContain('4月');
 	expect(html).toContain('9月');
 	expect((html.match(/class="dss-tr-cell is-today/g) || []).length).toBe(1);
+});
+
+test('the heatmap outlines the selected range and totals each weekday beside the grid', () => {
+	const html = render({ prefs: { range: 7, metric: 'cost' } });
+	expect((html.match(/is-in-range/g) || []).length).toBe(7);
+	expect(html).toContain('当前选中的近 7 天');
+	// 2026-09-02（周三）是范围第一天：上、左、右三边。
+	expect(html).toMatch(/data-date="2026-09-02"[^>]*>(?:(?!<\/button>).)*<span class="dss-tr-in-range is-t is-l is-r" aria-hidden="true"><\/span>/);
+	// 说明收进 ⓘ，图例里不再常驻。
+	expect(html).toContain('id="dss-tr-heat-tip"');
+	expect(html).not.toContain('dss-tr-legend-grp is-hint');
+	// 按星期合计：7 行，和网格的 7 行对齐；夹具只在 09-02 至 09-08 有数据，每个星期各一天。
+	expect((html.match(/class="dss-tr-wk"/g) || []).length).toBe(7);
+	expect(html).toContain('按星期合计');
+	expect(html).toMatch(/aria-label="按星期合计：周一 ¥[\d.]+，周二 ¥[\d.]+，周三/);
+	const wide = render({ prefs: { range: 30, metric: 'token' } });
+	expect((wide.match(/is-in-range/g) || []).length).toBe(30);
+	expect(wide).toContain('当前选中的近 30 天');
+	expect(wide).toContain('固定近 26 周 · 按 Token');
+});
+
+test('the daily chart keeps its legend and moves the click hint into an info tip', () => {
+	const html = render();
+	expect(html).toContain('id="dss-tr-daily-tip"');
+	expect(html).toContain('每根柱 = 1 天。点柱子查看当天总览。');
+	expect(html).toContain('虚线 = 活跃日的日均');
+	expect(html).not.toContain('is-hint');
 });
 
 test('partial pricing marks the cost and offers the pending chip', () => {
@@ -160,7 +187,11 @@ test('renders the model ring and a sortable table', () => {
 	expect(html).toContain('class="dss-tr-ring"');
 	expect(html).toContain('role="img"');
 	expect(html).toContain('模型费用占比');
-	expect(html).toContain('LLM 时长按 Token 占比从会话分摊');
+	// LLM 列和它的脚注已删除；环图中心写模型数，标题行不再重复。
+	expect(html).not.toContain('c-llm');
+	expect(html).not.toContain('dss-tr-foot');
+	expect(html).toContain('<div class="dss-tr-ring-hole"><b>2 个模型</b><span>近 30 天</span></div>');
+	expect(html).toContain('<span class="dss-tr-sec-note">近 30 天 · 按费用占比</span>');
 	expect(html).not.toContain('dss-model-');
 	expect(html).not.toContain('dss-section');
 	expect(html).not.toContain('dss-ring');
